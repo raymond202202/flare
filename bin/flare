@@ -1,0 +1,5 @@
+#!/usr/bin/env node
+import('../dist/cli/index.js').catch(e => {
+  console.error('Flare 启动失败:', e.message)
+  process.exit(1)
+})

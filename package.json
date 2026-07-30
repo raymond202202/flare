@@ -1,0 +1,32 @@
+{
+  "name": "flare-agent",
+  "version": "0.1.0",
+  "description": "Flare — Your AI coding agent, your way. 灵感如闪光，Flare 帮你抓住它。",
+  "type": "module",
+  "bin": {
+    "flare": "./bin/flare"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx src/cli/index.ts",
+    "start": "node dist/cli/index.js",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "commander": "^13.0.0",
+    "openai": "^4.73.0",
+    "chalk": "^5.4.0",
+    "ora": "^8.1.0",
+    "better-sqlite3": "^11.7.0",
+    "dotenv": "^16.4.0",
+    "readline": "^1.3.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.0",
+    "tsx": "^4.19.0",
+    "@types/node": "^22.0.0",
+    "@types/better-sqlite3": "^7.6.0",
+    "vitest": "^2.1.0"
+  }
+}
