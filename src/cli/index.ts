@@ -11,7 +11,8 @@ import { Command } from 'commander'
 import { Agent } from '../core/agent.js'
 import { getMemoryStore } from '../memory/store.js'
 import chalk from 'chalk'
-import { createInterface } from 'readline'
+import * as readline from 'readline'
+import { execSync } from 'child_process'
 
 const pkg = { version: '0.1.0' } as const
 const FLARE_ASCII = `
@@ -21,6 +22,63 @@ const FLARE_ASCII = `
   ╚══════════════════════════════════╝
 `
 
+const PROMPT_STR = chalk.green('🔥 flare> ')
+
+/**
+ * 获取终端行列数
+ */
+function getTerminalSize(): { cols: number; rows: number } {
+  try {
+    const output = execSync('stty size', { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] })
+    const [rows, cols] = output.trim().split(' ').map(Number)
+    return { rows, cols }
+  } catch {
+    return { rows: 24, cols: 80 }
+  }
+}
+
+/**
+ * 计算字符串在终端中的可视宽度（考虑中文字符占2列）
+ */
+function visualWidth(str: string): number {
+  let width = 0
+  for (const ch of str) {
+    // 中文字符（包括中文标点）在终端中占2列
+    if (/[\u4e00-\u9fff\u3000-\u303f\uff00-\uffef]/.test(ch)) {
+      width += 2
+    } else {
+      width += 1
+    }
+  }
+  return width
+}
+
+/**
+ * 清除当前终端行
+ */
+function clearCurrentLine() {
+  readline.clearLine(process.stdout, 0)
+  readline.cursorTo(process.stdout, 0)
+}
+
+/**
+ * 禁用终端本地回显
+ */
+function disableEcho() {
+  try {
+    execSync('stty -echo', { stdio: ['pipe', 'pipe', 'pipe'] })
+  } catch {}
+}
+
+/**
+ * 启用终端本地回显
+ */
+function enableEcho() {
+  try {
+    execSync('stty echo', { stdio: ['pipe', 'pipe', 'pipe'] })
+  } catch {}
+}
+
 function startInteractive() {
   console.log(chalk.cyan(FLARE_ASCII))
   console.log(chalk.gray('输入 /help 查看命令，/exit 退出\n'))
@@ -29,23 +87,16 @@ function startInteractive() {
   const sessionId = store.createSession('CLI 会话')
   const agent = new Agent({ sessionId })
 
-  const rl = createInterface({
+  const rl = readline.createInterface({
     input: process.stdin,
     output: process.stdout,
-    prompt: chalk.green('🔥 flare> '),
+    prompt: PROMPT_STR,
   })
-
-  let isRunning = false  // 防止 Agent 运行时触发重复输入
 
   rl.prompt()
 
   rl.on('line', async (line: string) => {
     const input = line.trim()
-
-    // 如果 Agent 正在运行，忽略本次输入（防重复）
-    if (isRunning) {
-      return
-    }
 
     if (!input) {
       rl.prompt()
@@ -59,12 +110,13 @@ function startInteractive() {
       return
     }
 
-    // 运行 Agent
-    isRunning = true
-    // 停止 readline 内部的事件监听，防止输入重叠
-    rl.pause()
-    // 输出一个空行把 prompt 隔开
-    process.stdout.write('\n')
+    // ★ 核心修复：在 Agent 运行前关闭终端回显
+    // 这样 execSync 执行子进程时，终端不会把 stdin 残留数据 echo 到屏幕上
+    disableEcho()
+
+    // 清除当前行（去掉 prompt 和输入内容）
+    clearCurrentLine()
+
     process.stdout.write(chalk.yellow('⚡ Flare 思考中...\n\n'))
     
     try {
@@ -92,9 +144,9 @@ function startInteractive() {
       process.stdout.write(chalk.red(`\n❌ 错误: ${e.message}\n`))
     }
 
-    // Agent 执行完毕，恢复 readline 并重新绘制干净的 prompt
-    rl.resume()
-    isRunning = false
+    // ★ Agent 执行完毕：恢复终端回显
+    enableEcho()
+
     rl.prompt()
   })
 
@@ -106,7 +158,7 @@ function startInteractive() {
 
 async function handleSlashCommand(
   cmd: string,
-  rl: ReturnType<typeof createInterface>,
+  rl: readline.Interface,
   store: ReturnType<typeof getMemoryStore>,
   sessionId: string
 ) {
