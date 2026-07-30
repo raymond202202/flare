@@ -35,10 +35,17 @@ function startInteractive() {
     prompt: chalk.green('🔥 flare> '),
   })
 
+  let isRunning = false  // 防止 Agent 运行时触发重复输入
+
   rl.prompt()
 
   rl.on('line', async (line: string) => {
     const input = line.trim()
+
+    // 如果 Agent 正在运行，忽略本次输入（防重复）
+    if (isRunning) {
+      return
+    }
 
     if (!input) {
       rl.prompt()
@@ -53,7 +60,12 @@ function startInteractive() {
     }
 
     // 运行 Agent
-    process.stdout.write(chalk.yellow('\n⚡ Flare 思考中...\n\n'))
+    isRunning = true
+    // 停止 readline 内部的事件监听，防止输入重叠
+    rl.pause()
+    // 输出一个空行把 prompt 隔开
+    process.stdout.write('\n')
+    process.stdout.write(chalk.yellow('⚡ Flare 思考中...\n\n'))
     
     try {
       for await (const chunk of agent.run(input)) {
@@ -80,6 +92,9 @@ function startInteractive() {
       process.stdout.write(chalk.red(`\n❌ 错误: ${e.message}\n`))
     }
 
+    // Agent 执行完毕，恢复 readline 并重新绘制干净的 prompt
+    rl.resume()
+    isRunning = false
     rl.prompt()
   })
 
