@@ -21,7 +21,7 @@ const pkg = require('../../package.json') as { version: string }
 const FLARE_ASCII = `
   ╔══════════════════════════════════╗
   ║          ✦  F L A R E  ✦        ║
-  ║     Your AI Agent, Your Way      ║
+  ║   Let your inspiration flare    ║
   ╚══════════════════════════════════╝
 `
 
