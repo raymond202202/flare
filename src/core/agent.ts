@@ -8,6 +8,7 @@
 import { Message, LLMProvider, createProvider, ToolDefinition } from './llm.js'
 import { getToolDefinitions, executeTool } from '../tools/index.js'
 import { getMemoryStore } from '../memory/store.js'
+import { logger } from './logger.js'
 
 export interface AgentConfig {
   systemPrompt?: string
@@ -100,6 +101,13 @@ export class Agent {
     for (let i = 0; i < this.messages.length; i++) {
       const msg = this.messages[i]
 
+      // 主循环遇到的 tool 消息都是"孤立"的（前面没有 assistant(tool_calls) 配对）：
+      // 配对完整的 tool 响应已经被下面的 assistant 前瞻逻辑消费掉了。
+      // 孤立 tool 会导致 LLM 400 错误，直接丢弃。
+      if (msg.role === 'tool') {
+        continue
+      }
+
       // 普通消息（system/user/纯文本 assistant）：直接保留
       if (msg.role !== 'assistant' || !msg.tool_calls) {
         cleaned.push(msg)
@@ -159,12 +167,27 @@ export class Agent {
 
     while (iterations < maxIter) {
       iterations++
+      logger.debug(`迭代 #${iterations}/${maxIter}，上下文消息数: ${this.messages.length}`)
 
       // 截断消息上下文，防止内存暴涨
       this.trimContext()
 
       // 调用 LLM
       const response = await this.llm.chat(this.messages, this.tools)
+      logger.debug(`LLM 响应: model=${response.model}, content=${(response.content || '').length}字符, tool_calls=${response.tool_calls?.length || 0}`)
+
+      // 记录 token 用量（如果 provider 返回了 usage）
+      if (response.usage && (response.usage.prompt_tokens > 0 || response.usage.completion_tokens > 0)) {
+        try {
+          const store = getMemoryStore()
+          store.logUsage(
+            this.config.sessionId || null,
+            response.usage.prompt_tokens,
+            response.usage.completion_tokens,
+            response.model
+          )
+        } catch { /* 用量记录失败不影响主流程 */ }
+      }
       
       // 保存助手响应
       this.messages.push({
@@ -198,8 +221,27 @@ export class Agent {
         const callsToProcess = response.tool_calls.slice(0, 5)
 
         for (const tc of callsToProcess) {
-          const args = JSON.parse(tc.function.arguments)
           yield { type: 'tool_call', content: tc.function.name, toolName: tc.function.name }
+
+          // 解析工具参数：LLM 可能返回格式异常的 JSON，不能让它崩溃整个循环
+          let args: Record<string, any>
+          try {
+            args = JSON.parse(tc.function.arguments)
+            if (typeof args !== 'object' || args === null || Array.isArray(args)) {
+              throw new Error('参数必须是 JSON 对象')
+            }
+          } catch (parseErr: any) {
+            const errMsg = `工具「${tc.function.name}」的参数解析失败: ${parseErr.message}`
+            yield { type: 'tool_result', content: errMsg, toolName: tc.function.name }
+            // 把错误喂回给 LLM，让它修正参数而不是崩溃
+            this.messages.push({
+              role: 'tool',
+              tool_call_id: tc.id,
+              name: tc.function.name,
+              content: `错误: ${errMsg}`,
+            })
+            continue
+          }
           
           // 死循环检测：同一工具 + 相似参数连续出现 4 次 = 卡住
           const signature = `${tc.function.name}:${JSON.stringify(args).slice(0, 120)}`

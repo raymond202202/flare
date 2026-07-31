@@ -67,8 +67,15 @@ export class OpenAIProvider implements LLMProvider {
     if (!baseURL) {
       if (model.includes('deepseek')) {
         baseURL = 'https://api.deepseek.com/v1'
-      } else if (model.includes('gpt') || model.includes('o1') || model.includes('o3')) {
+      } else if (model.includes('gpt') || model.includes('o1') || model.includes('o3') || model.includes('chatgpt')) {
         baseURL = 'https://api.openai.com/v1'
+      } else if (model.includes('claude')) {
+        // Anthropic 原生 API 不是 OpenAI 兼容格式，需要代理或 Anthropic SDK
+        // 这里给出明确错误而不是静默用 OpenAI URL 导致 401
+        throw new Error(
+          `模型「${model}」是 Claude 系列。当前版本 Flare 通过 OpenAI 兼容 API 调用模型，` +
+          `尚不支持 Anthropic 原生 API。请使用 DeepSeek (deepseek-chat) 或 OpenAI (gpt-4o) 模型。`
+        )
       }
     }
 
@@ -85,30 +92,51 @@ export class OpenAIProvider implements LLMProvider {
   }
 
   async chat(messages: Message[], tools?: ToolDefinition[]): Promise<LLMResponse> {
-    const response = await this.client.chat.completions.create({
-      model: this.model,
-      messages: messages as any,
-      tools: tools as any,
-      stream: false,
-    })
+    // 重试机制：网络抖动/限流自动重试（最多3次，指数退避）
+    const maxRetries = 3
+    let lastError: Error | null = null
 
-    const choice = response.choices[0]
-    return {
-      content: choice.message.content || '',
-      tool_calls: choice.message.tool_calls?.map(tc => ({
-        id: tc.id,
-        type: 'function' as const,
-        function: {
-          name: tc.function.name,
-          arguments: tc.function.arguments,
-        },
-      })),
-      model: response.model,
-      usage: response.usage ? {
-        prompt_tokens: response.usage.prompt_tokens,
-        completion_tokens: response.usage.completion_tokens,
-      } : undefined,
+    for (let attempt = 0; attempt < maxRetries; attempt++) {
+      try {
+        const response = await this.client.chat.completions.create({
+          model: this.model,
+          messages: messages as any,
+          tools: tools as any,
+          stream: false,
+        })
+
+        const choice = response.choices[0]
+        return {
+          content: choice.message.content || '',
+          tool_calls: choice.message.tool_calls?.map(tc => ({
+            id: tc.id,
+            type: 'function' as const,
+            function: {
+              name: tc.function.name,
+              arguments: tc.function.arguments,
+            },
+          })),
+          model: response.model,
+          usage: response.usage ? {
+            prompt_tokens: response.usage.prompt_tokens,
+            completion_tokens: response.usage.completion_tokens,
+          } : undefined,
+        }
+      } catch (e: any) {
+        lastError = e
+        // 只对可重试错误重试：429 限流、5xx 服务端错误、网络错误
+        const status = e?.status
+        const retryable = status === 429 || (status >= 500 && status < 600) || !status
+        if (!retryable || attempt === maxRetries - 1) {
+          break
+        }
+        // 指数退避：1s → 2s → 4s
+        const delay = 1000 * Math.pow(2, attempt)
+        await new Promise(r => setTimeout(r, delay))
+      }
     }
+
+    throw lastError || new Error('LLM 调用失败')
   }
 
   async *chatStream(messages: Message[], tools?: ToolDefinition[]): AsyncGenerator<string, void, unknown> {
