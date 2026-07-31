@@ -12,9 +12,12 @@ import { Agent } from '../core/agent.js'
 import { getMemoryStore } from '../memory/store.js'
 import chalk from 'chalk'
 import { execSync } from 'child_process'
+import { createRequire } from 'module'
 import { LineInput } from './line-input.js'
 
-const pkg = { version: '0.1.0' } as const
+// 从 package.json 读取版本号（不要硬编码，否则 --version 会过期）
+const require = createRequire(import.meta.url)
+const pkg = require('../../package.json') as { version: string }
 const FLARE_ASCII = `
   ╔══════════════════════════════════╗
   ║          ✦  F L A R E  ✦        ║
