@@ -91,7 +91,8 @@ function renderBanner(): string {
 async function startInteractive() {
   console.log()  // 欢迎词上方留一行空格
   console.log(renderBanner())
-  console.log(chalk.gray('输入 /help 查看命令，/exit 退出\n'))
+  console.log()  // 提示语与标语隔一行
+  console.log(chalk.gray('输入 /help 查看命令，/exit 退出'))
 
   const store = getMemoryStore()
   const sessionId = store.createSession('CLI 会话')
