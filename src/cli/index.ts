@@ -18,15 +18,32 @@ import { LineInput } from './line-input.js'
 // 从 package.json 读取版本号（不要硬编码，否则 --version 会过期）
 const require = createRequire(import.meta.url)
 const pkg = require('../../package.json') as { version: string }
-const FLARE_ASCII = `
-  ╔══════════════════════════════════╗
-  ║          ✦  F L A R E  ✦        ║
-  ║   Let your inspiration flare    ║
-  ╚══════════════════════════════════╝
-`
+
+// ===== 火焰色系（Flare 品牌色）=====
+// 红 → 橙 → 琥珀 → 黄，弱化用暗琥珀
+const FLAME_RED = '#ef4444'      // 火焰核心（答卷分隔线、flare 单词、错误）
+const FLAME_ORANGE = '#f97316'   // 主行动色（prompt、工具调用）
+const FLAME_AMBER = '#f59e0b'    // 过渡色（草稿、banner 中段）
+const FLAME_YELLOW = '#fbbf24'   // 亮黄（banner 下框、思考中）
+const FLAME_DARK = '#b45309'     // 暗琥珀（工具结果边框，弱化不抢戏）
+const R = (s: string) => chalk.hex(FLAME_RED)(s)
+const O = (s: string) => chalk.hex(FLAME_ORANGE)(s)
+const A = (s: string) => chalk.hex(FLAME_AMBER)(s)
+const Y = (s: string) => chalk.hex(FLAME_YELLOW)(s)
+const D = (s: string) => chalk.hex(FLAME_DARK)(s)
+
+/** 火焰渐变 Banner：上框红 → 主体橙黄 → 下框黄，flare 单词红色（火焰核心） */
+function renderBanner(): string {
+  return [
+    R('  ╔══════════════════════════════════╗'),
+    O('  ║          ✦  ') + Y('F L A R E') + O('  ✦        ║'),
+    A('  ║   Let your inspiration ') + R('flare') + A('    ║'),
+    Y('  ╚══════════════════════════════════╝'),
+  ].join('\n')
+}
 
 async function startInteractive() {
-  console.log(chalk.cyan(FLARE_ASCII))
+  console.log(renderBanner())
   console.log(chalk.gray('输入 /help 查看命令，/exit 退出\n'))
 
   const store = getMemoryStore()
@@ -34,7 +51,7 @@ async function startInteractive() {
   const agent = new Agent({ sessionId })
 
   // 自研输入行：完全绕开 Node readline 的折行重绘 bug
-  const lineInput = new LineInput(chalk.green('🔥 flare> '))
+  const lineInput = new LineInput(O('🔥 flare> '))
   const isUnix = process.platform !== 'win32'
 
   while (true) {
@@ -65,7 +82,7 @@ async function startInteractive() {
       } catch { /* 非终端环境忽略 */ }
     }
 
-    process.stdout.write('\r\n' + chalk.yellow('⚡ Flare 思考中...\n\n'))
+    process.stdout.write('\r\n' + Y('⚡ Flare 思考中...\n\n'))
 
     // ===== 草稿/答卷 视觉分层 =====
     // 把 LLM 输出的文本缓冲起来，看到下一个 chunk 再决定它是
@@ -75,13 +92,14 @@ async function startInteractive() {
     const flushDraft = () => {
       if (!pendingText.trim()) return
       const lines = pendingText.trim().split('\n')
-      process.stdout.write(lines.map(l => chalk.gray(`  💭 ${l}`)).join('\n') + '\n')
+      process.stdout.write(lines.map(l => A(`  💭 ${l}`)).join('\n') + '\n')
       pendingText = ''
     }
 
     const flushAnswer = () => {
       if (!pendingText.trim()) return
-      const sep = chalk.hex('#6d4aff')('─'.repeat(44))
+      // 答卷：最终交付，用火焰红色分隔线框出（最醒目）
+      const sep = R('─'.repeat(44))
       process.stdout.write('\n' + sep + '\n')
       process.stdout.write(pendingText.replace(/\n+$/, '') + '\n')
       process.stdout.write(sep + '\n\n')
@@ -92,8 +110,8 @@ async function startInteractive() {
       const maxLen = toolName === 'terminal' ? 500 : 300
       const truncated = content.slice(0, maxLen)
       const lines = truncated.split('\n')
-      const body = lines.map(l => `  ${chalk.gray('│')} ${l}`).join('\n')
-      return `\n${chalk.gray(`  ┌─ ${toolName}`)}\n${body}\n${chalk.gray('  └─')}\n`
+      const body = lines.map(l => `  ${D('│')} ${l}`).join('\n')
+      return `\n${D(`  ┌─ ${toolName}`)}\n${body}\n${D('  └─')}\n`
     }
 
     try {
@@ -104,7 +122,7 @@ async function startInteractive() {
             break
           case 'tool_call':
             flushDraft()
-            process.stdout.write(chalk.yellow(`  🔧 调用工具: ${chunk.content}\n`))
+            process.stdout.write(O(`  🔧 调用工具: ${chunk.content}\n`))
             break
           case 'tool_result':
             process.stdout.write(renderToolResult(chunk.toolName || 'tool', chunk.content))
@@ -206,7 +224,7 @@ async function handleSlashCommand(
       break
     case '/clear':
       console.clear()
-      console.log(chalk.cyan(FLARE_ASCII))
+      console.log(renderBanner())
       console.log(chalk.gray('输入 /help 查看命令，/exit 退出\n'))
       break
     default:
@@ -221,7 +239,7 @@ async function runQuery(query: string, maxIterations?: number) {
   const sessionId = store.createSession('单次查询')
   const agent = new Agent({ sessionId, maxIterations })
 
-  console.error(chalk.yellow('⚡ Flare 思考中...'))
+  console.error(Y('⚡ Flare 思考中...'))
 
   try {
     let pendingText = ''
@@ -229,12 +247,12 @@ async function runQuery(query: string, maxIterations?: number) {
 
     const flushDraft = () => {
       if (!pendingText.trim()) return
-      parts.push(chalk.gray(`  💭 ${pendingText.trim()}`))
+      parts.push(A(`  💭 ${pendingText.trim()}`))
       pendingText = ''
     }
     const flushAnswer = () => {
       if (!pendingText.trim()) return
-      const sep = chalk.hex('#6d4aff')('─'.repeat(44))
+      const sep = R('─'.repeat(44))
       parts.push('\n' + sep + '\n' + pendingText.replace(/\n+$/, '') + '\n' + sep + '\n')
       pendingText = ''
     }
@@ -246,12 +264,12 @@ async function runQuery(query: string, maxIterations?: number) {
           break
         case 'tool_call':
           flushDraft()
-          parts.push(chalk.yellow(`  🔧 调用工具: ${chunk.content}`))
+          parts.push(O(`  🔧 调用工具: ${chunk.content}`))
           break
         case 'tool_result':
-          parts.push(chalk.gray(`  ┌─ ${chunk.toolName || 'tool'}`))
-          parts.push(chunk.content.slice(0, 200).split('\n').map(l => `  ${chalk.gray('│')} ${l}`).join('\n'))
-          parts.push(chalk.gray('  └─'))
+          parts.push(D(`  ┌─ ${chunk.toolName || 'tool'}`))
+          parts.push(chunk.content.slice(0, 200).split('\n').map(l => `  ${D('│')} ${l}`).join('\n'))
+          parts.push(D('  └─'))
           break
         case 'error':
           flushDraft()
