@@ -77,11 +77,13 @@ function gradientText(text: string, reverse = false): string {
 /**
  * 火焰渐变 Banner（无边框）：
  *   F L A R E 逐字母红→黄渐变（居中）
+ *   （空行分隔）
  *   标语左黄→右红渐变（flare 落在火焰核心红）+ 火把 🔥
  */
 function renderBanner(): string {
   return [
     gradientText('           F L A R E            '),
+    '',
     gradientText('  Let your inspiration flare', true) + ' 🔥',
   ].join('\n')
 }
