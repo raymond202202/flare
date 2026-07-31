@@ -294,6 +294,11 @@ Interactive mode commands:
 
 ### Changelog / 更新记录
 
+#### v0.2.1 (2026-07-31) — AI 记忆隔离修复
+
+- 🐛 **修复 Flare 误读其他 AI 记忆**：search_files 跳过 `~/.hermes`、`~/.agents`、`~/.codebuddy`、`~/.claude` 等目录
+- 🧠 **系统提示明确记忆边界**：Flare 的记忆在 `~/.flare/flare.db`，禁止读取其他 AI 的记忆文件
+
 #### v0.2.0 (2026-07-31) — 安全与健壮性大版本
 
 - 🔒 **危险命令黑名单**：拦截 `rm -rf /`、fork bomb、`curl|bash`、格式化磁盘等毁灭性命令
