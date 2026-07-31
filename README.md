@@ -294,6 +294,11 @@ Interactive mode commands:
 
 ### Changelog / 更新记录
 
+#### v0.2.2 (2026-07-31) — 终端视觉分层
+
+- 🎨 **草稿/答卷视觉分层**：工具调用过程用灰色边框弱化（`🔧` 黄色 + `┌─│└─` 边框 + `💭` 灰色草稿），最终答案用分隔线框出、正常颜色突出
+- 🐛 **read_file / write_file / search_files 支持 `~` 展开**（之前只有 terminal 支持）
+
 #### v0.2.1 (2026-07-31) — AI 记忆隔离修复
 
 - 🐛 **修复 Flare 误读其他 AI 记忆**：search_files 跳过 `~/.hermes`、`~/.agents`、`~/.codebuddy`、`~/.claude` 等目录
