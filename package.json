@@ -1,6 +1,6 @@
 {
   "name": "flare-agent",
-  "version": "0.1.0",
+  "version": "0.1.2",
   "description": "Flare — Your AI coding agent, your way. 灵感如闪光，Flare 帮你抓住它。",
   "type": "module",
   "bin": {
