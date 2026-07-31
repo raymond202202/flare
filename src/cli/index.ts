@@ -11,8 +11,8 @@ import { Command } from 'commander'
 import { Agent } from '../core/agent.js'
 import { getMemoryStore } from '../memory/store.js'
 import chalk from 'chalk'
-import { createInterface } from 'readline'
 import { execSync } from 'child_process'
+import { LineInput } from './line-input.js'
 
 const pkg = { version: '0.1.0' } as const
 const FLARE_ASCII = `
@@ -22,7 +22,7 @@ const FLARE_ASCII = `
   ╚══════════════════════════════════╝
 `
 
-function startInteractive() {
+async function startInteractive() {
   console.log(chalk.cyan(FLARE_ASCII))
   console.log(chalk.gray('输入 /help 查看命令，/exit 退出\n'))
 
@@ -30,44 +30,30 @@ function startInteractive() {
   const sessionId = store.createSession('CLI 会话')
   const agent = new Agent({ sessionId })
 
-  const rl = createInterface({
-    input: process.stdin,
-    output: process.stdout,
-    prompt: chalk.green('🔥 flare> '),
-  })
+  // 自研输入行：完全绕开 Node readline 的折行重绘 bug
+  const lineInput = new LineInput(chalk.green('🔥 flare> '))
+  const isUnix = process.platform !== 'win32'
 
-  // 标记 Agent 是否正在运行（防止并发输入干扰 readline 状态）
-  let isRunning = false
+  while (true) {
+    // 读取一行输入（长中文/emoji 折行也不会重复）
+    const raw = await lineInput.readLine()
 
-  rl.prompt()
+    // Ctrl+C 退出
+    if (raw === '\u0003') break
 
-  rl.on('line', async (line: string) => {
-    // Agent 运行期间忽略新的输入，避免 readline 状态错乱
-    if (isRunning) return
+    const input = raw.trim()
+    if (!input) continue
 
-    const input = line.trim()
-
-    if (!input) {
-      rl.prompt()
-      return
-    }
-
-    // 处理斜杠命令
+    // 斜杠命令
     if (input.startsWith('/')) {
-      await handleSlashCommand(input, rl, store, sessionId)
-      rl.prompt()
-      return
+      const action = await handleSlashCommand(input, store)
+      if (action === 'exit') break
+      continue
     }
 
     // ===== 进入 Agent 运行阶段 =====
-    isRunning = true
-
-    // 1. 暂停 readline 输入监听（防止用户输入干扰终端状态）
-    rl.pause()
-
-    // 2. 关闭终端回显（仅 Linux/macOS；Windows 没有 stty，跳过）
-    //    用 try/finally 保证无论 Agent 是否抛异常都恢复终端
-    const isUnix = process.platform !== 'win32'
+    // 1. 暂停输入 + 关闭终端回显（仅 Unix；try/finally 保证恢复）
+    lineInput.pause()
     let echoDisabled = false
     if (isUnix) {
       try {
@@ -76,18 +62,15 @@ function startInteractive() {
       } catch { /* 非终端环境忽略 */ }
     }
 
-    // 3. 光标移到新行，开始输出
-    process.stdout.write('\r\n')
-    process.stdout.write(chalk.yellow('⚡ Flare 思考中...\n\n'))
+    process.stdout.write('\r\n' + chalk.yellow('⚡ Flare 思考中...\n\n'))
 
     // ===== 草稿/答卷 视觉分层 =====
     // 把 LLM 输出的文本缓冲起来，看到下一个 chunk 再决定它是
-    // "过程中的话"（草稿，灰色）还是"最终答案"（答卷，分隔线+正常色）
+    // "过程中的话"（草稿，灰色）还是"最终答案"（答卷，紫色分隔线+正常色）
     let pendingText = ''
 
     const flushDraft = () => {
       if (!pendingText.trim()) return
-      // 草稿：过程中 LLM 说的话（"我来看看..."），灰色弱化
       const lines = pendingText.trim().split('\n')
       process.stdout.write(lines.map(l => chalk.gray(`  💭 ${l}`)).join('\n') + '\n')
       pendingText = ''
@@ -95,7 +78,6 @@ function startInteractive() {
 
     const flushAnswer = () => {
       if (!pendingText.trim()) return
-      // 答卷：最终交付给用户的答案，用亮紫色分隔线框出，正常颜色突出
       const sep = chalk.hex('#6d4aff')('─'.repeat(44))
       process.stdout.write('\n' + sep + '\n')
       process.stdout.write(pendingText.replace(/\n+$/, '') + '\n')
@@ -115,11 +97,9 @@ function startInteractive() {
       for await (const chunk of agent.run(input)) {
         switch (chunk.type) {
           case 'text':
-            // 先缓冲，等看到下一个 chunk 再定性
             pendingText += chunk.content
             break
           case 'tool_call':
-            // 缓冲的文本是草稿（过程中说的话）
             flushDraft()
             process.stdout.write(chalk.yellow(`  🔧 调用工具: ${chunk.content}\n`))
             break
@@ -131,7 +111,6 @@ function startInteractive() {
             process.stdout.write(chalk.red(`\n❌ ${chunk.content}\n`))
             break
           case 'done':
-            // 缓冲的文本是最终答案（答卷）
             flushAnswer()
             break
         }
@@ -140,38 +119,31 @@ function startInteractive() {
       flushDraft()
       process.stdout.write(chalk.red(`\n❌ 错误: ${e.message}\n`))
     } finally {
-      // 4. 无论如何都恢复终端回显（Agent 崩溃也不丢失）
+      // 2. 无论如何都恢复终端回显（Agent 崩溃也不丢失）
       if (isUnix && echoDisabled) {
         try {
           execSync('stty echo', { stdio: 'ignore' })
         } catch { /* 忽略 */ }
       }
-
-      // 5. 恢复 readline，重新绘制干净的 prompt
-      rl.resume()
-      isRunning = false
-      rl.prompt()
+      // 3. 恢复输入，重新绘制干净的 prompt
+      lineInput.resume()
     }
-  })
+  }
 
-  rl.on('close', () => {
-    // 确保退出时恢复终端状态
-    if (process.platform !== 'win32') {
-      try {
-        execSync('stty echo', { stdio: 'ignore' })
-      } catch { /* 忽略 */ }
-    }
-    console.log(chalk.cyan('\n再见！✨'))
-    process.exit(0)
-  })
+  // 退出：确保恢复终端状态
+  if (isUnix) {
+    try {
+      execSync('stty echo', { stdio: 'ignore' })
+    } catch { /* 忽略 */ }
+  }
+  console.log(chalk.cyan('\n再见！✨'))
+  process.exit(0)
 }
 
 async function handleSlashCommand(
   cmd: string,
-  rl: ReturnType<typeof createInterface>,
-  store: ReturnType<typeof getMemoryStore>,
-  sessionId: string
-) {
+  store: ReturnType<typeof getMemoryStore>
+): Promise<'exit' | 'continue'> {
   switch (cmd.toLowerCase()) {
     case '/help':
       console.log(chalk.cyan('\n可用命令:'))
@@ -206,8 +178,7 @@ async function handleSlashCommand(
       break
     case '/exit':
     case '/quit':
-      rl.close()
-      break
+      return 'exit'
     case '/memory':
       const memories = store.getAllMemories()
       if (memories.length === 0) {
@@ -239,6 +210,7 @@ async function handleSlashCommand(
       console.log(chalk.yellow(`\n未知命令: ${cmd}。输入 /help 查看可用命令`))
   }
   console.log()
+  return 'continue'
 }
 
 async function runQuery(query: string, maxIterations?: number) {
