@@ -65,12 +65,16 @@ function startInteractive() {
     // 1. 暂停 readline 输入监听（防止用户输入干扰终端状态）
     rl.pause()
 
-    // 2. 关闭终端回显（用户在此期间打字不会显示，避免回显与重绘打架）
+    // 2. 关闭终端回显（仅 Linux/macOS；Windows 没有 stty，跳过）
+    //    用 try/finally 保证无论 Agent 是否抛异常都恢复终端
+    const isUnix = process.platform !== 'win32'
     let echoDisabled = false
-    try {
-      execSync('stty -echo', { stdio: 'ignore' })
-      echoDisabled = true
-    } catch { /* 非终端环境忽略 */ }
+    if (isUnix) {
+      try {
+        execSync('stty -echo', { stdio: 'ignore' })
+        echoDisabled = true
+      } catch { /* 非终端环境忽略 */ }
+    }
 
     // 3. 光标移到新行，开始输出
     process.stdout.write('\r\n')
@@ -102,26 +106,28 @@ function startInteractive() {
       }
     } catch (e: any) {
       process.stdout.write(chalk.red(`\n❌ 错误: ${e.message}\n`))
-    }
+    } finally {
+      // 4. 无论如何都恢复终端回显（Agent 崩溃也不丢失）
+      if (isUnix && echoDisabled) {
+        try {
+          execSync('stty echo', { stdio: 'ignore' })
+        } catch { /* 忽略 */ }
+      }
 
-    // 4. 恢复终端回显
-    if (echoDisabled) {
-      try {
-        execSync('stty echo', { stdio: 'ignore' })
-      } catch { /* 忽略 */ }
+      // 5. 恢复 readline，重新绘制干净的 prompt
+      rl.resume()
+      isRunning = false
+      rl.prompt()
     }
-
-    // 5. 恢复 readline，重新绘制干净的 prompt
-    rl.resume()
-    isRunning = false
-    rl.prompt()
   })
 
   rl.on('close', () => {
     // 确保退出时恢复终端状态
-    try {
-      execSync('stty echo', { stdio: 'ignore' })
-    } catch { /* 忽略 */ }
+    if (process.platform !== 'win32') {
+      try {
+        execSync('stty echo', { stdio: 'ignore' })
+      } catch { /* 忽略 */ }
+    }
     console.log(chalk.cyan('\n再见！✨'))
     process.exit(0)
   })
@@ -136,11 +142,34 @@ async function handleSlashCommand(
   switch (cmd.toLowerCase()) {
     case '/help':
       console.log(chalk.cyan('\n可用命令:'))
-      console.log('  /help      - 显示帮助')
-      console.log('  /exit      - 退出')
-      console.log('  /memory    - 查看记忆')
-      console.log('  /sessions  - 查看会话列表')
-      console.log('  /clear     - 清屏')
+      console.log('  /help        - 显示帮助')
+      console.log('  /exit        - 退出')
+      console.log('  /memory      - 查看记忆')
+      console.log('  /remember    - 保存一条记忆（如: /remember 用户喜欢浅色主题）')
+      console.log('  /usage       - 查看 token 用量')
+      console.log('  /sessions    - 查看会话列表')
+      console.log('  /clear       - 清屏')
+      break
+    case '/remember':
+      const rememberContent = cmd.replace(/^\/remember\s+/, '').trim()
+      if (!rememberContent) {
+        console.log(chalk.yellow('\n用法: /remember <要记住的内容>'))
+      } else {
+        store.saveMemory(rememberContent, 'note')
+        console.log(chalk.green(`\n✅ 已记住: ${rememberContent.slice(0, 80)}`))
+      }
+      break
+    case '/usage':
+      const usage = store.getUsageStats()
+      if (!usage || usage.totalTokens === 0) {
+        console.log(chalk.yellow('\n暂无用量记录'))
+      } else {
+        console.log(chalk.cyan('\n📊 Token 用量:'))
+        console.log(`  ${chalk.gray('Prompt:')}     ${usage.promptTokens.toLocaleString()}`)
+        console.log(`  ${chalk.gray('Completion:')} ${usage.completionTokens.toLocaleString()}`)
+        console.log(`  ${chalk.gray('总计:')}       ${usage.totalTokens.toLocaleString()} tokens`)
+        console.log(`  ${chalk.gray('会话数:')}     ${usage.sessionCount}`)
+      }
       break
     case '/exit':
     case '/quit':
@@ -179,10 +208,10 @@ async function handleSlashCommand(
   console.log()
 }
 
-async function runQuery(query: string) {
+async function runQuery(query: string, maxIterations?: number) {
   const store = getMemoryStore()
   const sessionId = store.createSession('单次查询')
-  const agent = new Agent({ sessionId })
+  const agent = new Agent({ sessionId, maxIterations })
 
   console.error(chalk.yellow('⚡ Flare 思考中...'))
 
@@ -227,9 +256,11 @@ export function main() {
     .command('chat')
     .description('与 Flare 对话')
     .option('-q, --query <text>', '单次查询模式，直接提问')
-    .action(async (options: { query?: string }) => {
+    .option('-m, --max-iterations <n>', '最大工具调用迭代次数（默认30，上限50）')
+    .action(async (options: { query?: string; maxIterations?: string }) => {
       if (options.query) {
-        await runQuery(options.query)
+        const maxIter = options.maxIterations ? parseInt(options.maxIterations, 10) : undefined
+        await runQuery(options.query, maxIter)
       } else {
         startInteractive()
       }

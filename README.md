@@ -294,6 +294,20 @@ Interactive mode commands:
 
 ### Changelog / 更新记录
 
+#### v0.2.0 (2026-07-31) — 安全与健壮性大版本
+
+- 🔒 **危险命令黑名单**：拦截 `rm -rf /`、fork bomb、`curl|bash`、格式化磁盘等毁灭性命令
+- 🔒 **文件路径保护**：拒绝写入 `/etc/`、`.ssh/`、`.git/` 等系统关键位置
+- 🛡️ **工具参数 JSON.parse 保护**：LLM 返回非法 JSON 不再崩溃，错误喂回给 LLM 修正
+- 🧠 **记忆写入**：新增 `/remember` 命令，记忆系统可写可读
+- 📊 **Token 用量追踪**：新增 `/usage` 命令，记录每次 LLM 调用的 token 消耗
+- 🔁 **API 重试**：网络抖动/限流自动重试（3次，指数退避）
+- 🖥️ **平台兼容**：Windows 跳过 stty；Agent 崩溃也保证恢复终端（try/finally）
+- 📁 **原子写入**：write_file 先写临时文件再 rename，不损坏原文件
+- 🔍 **搜索优化**：大文件只匹配文件名，跳过 node_modules/.git/dist
+- 🧪 **单元测试**：10 个测试覆盖 store/agent 核心逻辑
+- 🐛 修复 joinPath（用 path.join）、claude 模型检测、DEBUG 日志、--max-iterations 参数
+
 #### v0.1.2 (2026-07-31)
 
 - 🐛 **修复 Agent 迭代限制过紧**：迭代上限从 10 提升到 30（上限 50，与 Hermes 对齐），复杂任务（读文档→改代码→推送）不再中途停止

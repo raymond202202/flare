@@ -68,11 +68,32 @@ export class MemoryStore {
         created_at TEXT DEFAULT (datetime('now'))
       );
 
+      CREATE TABLE IF NOT EXISTS usage_log (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        session_id TEXT,
+        prompt_tokens INTEGER NOT NULL DEFAULT 0,
+        completion_tokens INTEGER NOT NULL DEFAULT 0,
+        model TEXT,
+        created_at TEXT DEFAULT (datetime('now'))
+      );
+
       CREATE VIRTUAL TABLE IF NOT EXISTS messages_fts USING fts5(
         content,
         content='messages',
         content_rowid='id'
       );
+
+      -- FTS 同步触发器：messages 表 INSERT/DELETE 时同步索引
+      CREATE TRIGGER IF NOT EXISTS messages_ai AFTER INSERT ON messages BEGIN
+        INSERT INTO messages_fts(rowid, content) VALUES (new.id, new.content);
+      END;
+      CREATE TRIGGER IF NOT EXISTS messages_ad AFTER DELETE ON messages BEGIN
+        INSERT INTO messages_fts(messages_fts, rowid, content) VALUES('delete', old.id, old.content);
+      END;
+      CREATE TRIGGER IF NOT EXISTS messages_au AFTER UPDATE ON messages BEGIN
+        INSERT INTO messages_fts(messages_fts, rowid, content) VALUES('delete', old.id, old.content);
+        INSERT INTO messages_fts(rowid, content) VALUES (new.id, new.content);
+      END;
 
       CREATE INDEX IF NOT EXISTS idx_messages_session 
         ON messages(session_id, created_at);
@@ -151,6 +172,30 @@ export class MemoryStore {
     this.db.prepare(
       'INSERT INTO memories (content, type) VALUES (?, ?)'
     ).run(content, type)
+  }
+
+  /** 记录一次 LLM 调用的 token 用量 */
+  logUsage(sessionId: string | null, promptTokens: number, completionTokens: number, model?: string) {
+    this.db.prepare(
+      'INSERT INTO usage_log (session_id, prompt_tokens, completion_tokens, model) VALUES (?, ?, ?, ?)'
+    ).run(sessionId, promptTokens, completionTokens, model || null)
+  }
+
+  /** 汇总 token 用量 */
+  getUsageStats() {
+    const row = this.db.prepare(
+      `SELECT
+         COALESCE(SUM(prompt_tokens), 0) as promptTokens,
+         COALESCE(SUM(completion_tokens), 0) as completionTokens,
+         COUNT(*) as sessionCount
+       FROM usage_log`
+    ).get() as any
+    return {
+      promptTokens: row.promptTokens,
+      completionTokens: row.completionTokens,
+      totalTokens: row.promptTokens + row.completionTokens,
+      sessionCount: row.sessionCount,
+    }
   }
 
   /** 获取相关记忆 */

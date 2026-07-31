@@ -7,8 +7,8 @@
 
 import { ToolDefinition } from '../core/llm.js'
 import { execSync } from 'child_process'
-import { existsSync, readFileSync, writeFileSync, readdirSync, statSync } from 'fs'
-import { resolve } from 'path'
+import { existsSync, readFileSync, writeFileSync, readdirSync, statSync, renameSync } from 'fs'
+import { resolve, join } from 'path'
 
 export interface ToolResult {
   success: boolean
@@ -67,6 +67,28 @@ const readFileTool: Tool = {
 }
 
 /**
+ * 受保护路径前缀（write_file 拒绝写入这些位置）
+ * 防止 AI 误覆盖系统关键文件
+ */
+const PROTECTED_PATHS: string[] = [
+  '/etc/', '/usr/', '/boot/', '/var/', '/proc/', '/sys/', '/lib/',
+  '/bin/', '/sbin/', '/dev/', '/run/', '/opt/', '/root/',
+  '/usr/local/',
+]
+
+function isProtectedPath(path: string): boolean {
+  const resolved = resolve(path)
+  for (const prefix of PROTECTED_PATHS) {
+    if (resolved.startsWith(prefix)) return true
+  }
+  // 保护 git 内部文件和 ssh 配置（防止 AI 覆盖 .git/config 或 ssh key）
+  const pathParts = resolved.split('/')
+  if (pathParts.includes('.git')) return true
+  if (pathParts.includes('.ssh') && (pathParts.includes('id_rsa') || pathParts.includes('id_ed25519') || pathParts.includes('config'))) return true
+  return false
+}
+
+/**
  * 写入文件工具
  */
 const writeFileTool: Tool = {
@@ -88,7 +110,16 @@ const writeFileTool: Tool = {
   execute: ((args: { path: string; content: string }) => {
     try {
       const resolvedPath = resolve(args.path)
-      writeFileSync(resolvedPath, args.content, 'utf-8')
+
+      // 路径校验：拒绝写入受保护位置
+      if (isProtectedPath(resolvedPath)) {
+        return { success: false, output: '', error: `拒绝写入受保护路径: ${resolvedPath}。Flare 不会修改系统关键文件。` }
+      }
+
+      // 原子写入：先写临时文件再 rename，避免中途崩溃损坏原文件
+      const tmpPath = `${resolvedPath}.tmp-${process.pid}`
+      writeFileSync(tmpPath, args.content, 'utf-8')
+      renameSync(tmpPath, resolvedPath)
       return { success: true, output: `已写入 ${resolvedPath}` }
     } catch (e: any) {
       return { success: false, output: '', error: `写入失败: ${e.message}` }
@@ -132,16 +163,24 @@ const searchFilesTool: Tool = {
         }
         for (const entry of entries) {
           if (results.length >= maxResults) return
-          if (entry.startsWith('.') || entry === 'node_modules') continue
-          const fullPath = joinPath(dir, entry)
+          // 跳过隐藏目录、node_modules、.git、dist 等大目录
+          if (entry === 'node_modules' || entry === '.git' || entry === 'dist' || entry === 'coverage' || entry === '.cache') continue
+          if (entry.startsWith('.') && entry !== '.' && entry !== '..') continue
+          const fullPath = join(dir, entry)
           try {
             const stat = statSync(fullPath)
             if (stat.isDirectory()) {
               walkDir(fullPath)
             } else if (stat.isFile()) {
-              const content = readFileSync(fullPath, 'utf-8')
-              if (content.includes(args.pattern) || fullPath.includes(args.pattern)) {
-                results.push(fullPath.replace(searchPath, '.'))
+              // 大文件（>500KB）只做文件名匹配，不做内容搜索（防 OOM）
+              const nameMatches = fullPath.includes(args.pattern)
+              if (stat.size <= 500 * 1024) {
+                const content = readFileSync(fullPath, 'utf-8')
+                if (content.includes(args.pattern) || nameMatches) {
+                  results.push(fullPath.replace(searchPath, '.'))
+                }
+              } else if (nameMatches) {
+                results.push(`${fullPath.replace(searchPath, '.')} (大文件，仅文件名匹配)`)
               }
             }
           } catch { /* skip unreadable */ }
@@ -162,8 +201,34 @@ const searchFilesTool: Tool = {
 }
 
 function joinPath(...parts: string[]): string {
-  // Simple path join that avoids import issues
-  return parts.join('/').replace(/\/+/g, '/')
+  return join(...parts)
+}
+
+/**
+ * 危险命令黑名单（正则匹配）
+ * 命中直接拒绝执行，防止 AI 误操作毁灭性命令
+ */
+const DANGEROUS_COMMANDS: RegExp[] = [
+  /\brm\s+(-[a-zA-Z]*[rf][a-zA-Z]*\s+)+\/\s*(\*|$)/,          // rm -rf /
+  /\brm\s+-[a-zA-Z]*[rf][a-zA-Z]*\s+~/,                        // rm -rf ~
+  /\brm\s+-[a-zA-Z]*[rf][a-zA-Z]*\s+\/home\b/,                 // rm -rf /home
+  /\bmkfs\./,                                                   // mkfs 格式化
+  /\bdd\s+if=.*\s+of=\/dev\/(sd|nvme|hd)/,                      // dd 写磁盘
+  /:\s*\(\)\s*\{\s*:\s*\|\s*:\s*&\s*\};?\s*:/,                 // fork bomb
+  /\bchmod\s+-R\s+777\s+\//,                                    // chmod 根目录
+  /\b>\/dev\/sda\b/,                                            // 直接写设备
+  /\bwget|curl\b.*\|\s*(ba)?sh\b/,                              // curl | bash（下载执行）
+  /\bshutdown\b|\breboot\b|\binit\s+0\b/,                       // 关机/重启
+  /\bgit\s+push\s+.*\s+--force\b/,                              // force push（默认拒绝，防误推）
+]
+
+function isDangerousCommand(command: string): string | null {
+  for (const pattern of DANGEROUS_COMMANDS) {
+    if (pattern.test(command)) {
+      return pattern.toString()
+    }
+  }
+  return null
 }
 
 /**
@@ -187,6 +252,16 @@ const terminalTool: Tool = {
   },
   execute: ((args: { command: string; timeout?: number }) => {
     try {
+      // 危险命令拦截
+      const danger = isDangerousCommand(args.command)
+      if (danger) {
+        return {
+          success: false,
+          output: '',
+          error: `命令被安全策略拦截（匹配危险模式: ${danger}）。Flare 拒绝执行可能造成不可逆损坏的命令。`,
+        }
+      }
+
       // 用 bash 执行：支持 ~ 展开、&& 链式命令等
       // （execSync 默认 /bin/sh 不展开 ~，会导致 cd ~/xxx 失败）
       let cmd = args.command
