@@ -74,31 +74,15 @@ function gradientText(text: string, reverse = false): string {
   }).join('')
 }
 
-/** 边框渐变线（每个 ═ 字符独立渐变） */
-function gradientBorder(count: number, reverse = false): string {
-  let out = ''
-  for (let i = 0; i < count; i++) {
-    const t = count <= 1 ? 0 : i / (count - 1)
-    const tt = reverse ? 1 - t : t
-    out += chalk.hex(flameColor(tt))('═')
-  }
-  return out
-}
-
 /**
- * 火焰渐变 Banner：
- *   上边框：左红 → 右黄（36 列）
- *   主体：F L A R E 逐字母红→黄渐变
- *   标语：左黄 → 右红（flare 落在火焰核心红）+ 火把 🔥
- *   下边框：左黄 → 右红（火焰循环）
- *   所有行严格 36 列对齐（✦ 宽度终端不确定，弃用）
+ * 火焰渐变 Banner（无边框）：
+ *   F L A R E 逐字母红→黄渐变（居中）
+ *   标语左黄→右红渐变（flare 落在火焰核心红）+ 火把 🔥
  */
 function renderBanner(): string {
   return [
-    '  ╔' + gradientBorder(32) + '╗',
-    '  ║' + gradientText('           F L A R E            ') + '║',
-    '  ║  ' + gradientText('Let your inspiration flare', true) + ' 🔥 ║',
-    '  ╚' + gradientBorder(32, true) + '╝',
+    gradientText('           F L A R E            '),
+    gradientText('  Let your inspiration flare', true) + ' 🔥',
   ].join('\n')
 }
 
@@ -217,7 +201,7 @@ async function startInteractive() {
       execSync('stty echo', { stdio: 'ignore' })
     } catch { /* 忽略 */ }
   }
-  console.log(chalk.cyan('\n再见！✨'))
+  console.log(Y('\n再见！✨'))
   process.exit(0)
 }
 
