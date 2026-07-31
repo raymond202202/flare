@@ -95,8 +95,8 @@ function startInteractive() {
 
     const flushAnswer = () => {
       if (!pendingText.trim()) return
-      // 答卷：最终交付给用户的答案，用分隔线框出，正常颜色突出
-      const sep = chalk.dim('─'.repeat(44))
+      // 答卷：最终交付给用户的答案，用亮紫色分隔线框出，正常颜色突出
+      const sep = chalk.hex('#6d4aff')('─'.repeat(44))
       process.stdout.write('\n' + sep + '\n')
       process.stdout.write(pendingText.replace(/\n+$/, '') + '\n')
       process.stdout.write(sep + '\n\n')
@@ -259,7 +259,7 @@ async function runQuery(query: string, maxIterations?: number) {
     }
     const flushAnswer = () => {
       if (!pendingText.trim()) return
-      const sep = chalk.dim('─'.repeat(44))
+      const sep = chalk.hex('#6d4aff')('─'.repeat(44))
       parts.push('\n' + sep + '\n' + pendingText.replace(/\n+$/, '') + '\n' + sep + '\n')
       pendingText = ''
     }
