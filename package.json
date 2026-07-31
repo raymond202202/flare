@@ -1,7 +1,7 @@
 {
   "name": "flare-agent",
   "version": "0.2.4",
-  "description": "Flare — Your AI coding agent, your way. 灵感如闪光，Flare 帮你抓住它。",
+  "description": "Flare — Your AI Agent, Your Way. 通用能力 AI Agent：不局限于编程，可嵌入其他产品（如桌面应用 AI 面板）。",
   "type": "module",
   "bin": {
     "flare": "./bin/flare"
