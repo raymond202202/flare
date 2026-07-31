@@ -1,6 +1,6 @@
 # Flare 🔥
 
-> **Your AI Agent, Your Way** — 灵感如闪光，Flare 帮你抓住它。
+> **Let your inspiration flare** — 让你的灵感燃起来。
 >
 > 🧠 **由 AI 构建** — 本项目由 AI 智能体（Hermes Agent by Nous Research）在人类指导下开发，并由 Flare 自身持续迭代进化。
 
