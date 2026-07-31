@@ -187,10 +187,19 @@ const terminalTool: Tool = {
   },
   execute: ((args: { command: string; timeout?: number }) => {
     try {
-      const output = execSync(args.command, {
+      // 用 bash 执行：支持 ~ 展开、&& 链式命令等
+      // （execSync 默认 /bin/sh 不展开 ~，会导致 cd ~/xxx 失败）
+      let cmd = args.command
+      // 兜底：手动替换 ~ 为 HOME（即使 shell 不支持也能工作）
+      const home = process.env.HOME || ''
+      if (home) {
+        cmd = cmd.replace(/^~(?=\/|$)/, home).replace(/(?<=\s)~(?=\/|$)/g, home)
+      }
+      const output = execSync(cmd, {
         encoding: 'utf-8',
         timeout: (args.timeout || 30) * 1000,
         maxBuffer: 1024 * 1024,
+        shell: '/bin/bash',
       })
       return { success: true, output: output.slice(0, 10000) }
     } catch (e: any) {

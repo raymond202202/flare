@@ -23,7 +23,7 @@ const DEFAULT_SYSTEM_PROMPT = `你是 Flare，一个智能 AI 编程助手。
 - read_file：读取文件内容
 - write_file：写/覆盖文件
 - search_files：搜索文件
-- terminal：执行终端命令
+- terminal：执行终端命令（可以运行 node/npm/git/gh 等任何系统命令）
 
 ## 工作原则
 1. 先理解用户需求，再行动
@@ -31,6 +31,18 @@ const DEFAULT_SYSTEM_PROMPT = `你是 Flare，一个智能 AI 编程助手。
 3. 每次工具调用后，根据结果决定下一步
 4. 任务完成后，给用户一个清晰的总结
 5. 代码要准确、安全，注意异常处理
+
+## 探索型任务的正确模式
+有些任务需要先收集大量信息才能回答（比如"读文档→对比代码→修改→推送"）。
+这种任务你可以连续调用多个工具来收集信息，中间不需要每步都输出文字。
+收集完所有信息后，再统一给用户一个完整的总结。
+
+## 复杂任务的持续推进
+复杂任务（如修改项目、推 GitHub）可能需要很多步骤：
+1. 先探查现状（读文件、看目录）
+2. 再执行修改（写文件、运行命令）
+3. 最后验证（测试、git status）
+只要任务还没完成，就继续调用工具推进，不要中途停下来等用户确认。
 
 ## 记忆
 你记得这个用户的历史会话和偏好。
@@ -54,6 +66,8 @@ export class Agent {
     if (config.sessionId) {
       const history = store.getMessages(config.sessionId)
       this.messages = history
+      // 清理历史中不完整的 tool_calls 配对（尾部孤儿消息）
+      this.cleanOrphanTail()
     }
 
     // 加载相关记忆
@@ -73,18 +87,81 @@ export class Agent {
   }
 
   /**
+   * 清理消息历史中的"孤儿"消息：
+   * - assistant(tool_calls) 后面没有对应的 tool 响应 → 删除该 assistant
+   * - 孤立的 tool 响应（前面没有 assistant(tool_calls) 配对）→ 删除
+   * 
+   * 这些消息发给 LLM 会导致 400 错误：
+   * "assistant message with 'tool_calls' must be followed by tool messages"
+   */
+  private cleanOrphanTail() {
+    const cleaned: Message[] = []
+
+    for (let i = 0; i < this.messages.length; i++) {
+      const msg = this.messages[i]
+
+      // 普通消息（system/user/纯文本 assistant）：直接保留
+      if (msg.role !== 'assistant' || !msg.tool_calls) {
+        cleaned.push(msg)
+        continue
+      }
+
+      // assistant(tool_calls)：检查后面是否有完整的 tool 响应配对
+      const toolCallIds = new Set(msg.tool_calls.map(tc => tc.id))
+      let j = i + 1
+      // 收集后面的 tool 响应
+      while (j < this.messages.length && this.messages[j].role === 'tool') {
+        const toolMsg = this.messages[j]
+        if (toolMsg.tool_call_id && toolCallIds.has(toolMsg.tool_call_id)) {
+          toolCallIds.delete(toolMsg.tool_call_id)
+        }
+        j++
+      }
+
+      if (toolCallIds.size === 0) {
+        // 配对完整：保留 assistant(tool_calls) + 对应的 tool 响应
+        cleaned.push(msg)
+        for (let k = i + 1; k < j; k++) {
+          cleaned.push(this.messages[k])
+        }
+        i = j - 1
+      } else {
+        // 配对不完整：丢弃这个 assistant(tool_calls)（连同后面可能的部分 tool 响应）
+        // 但保留它可能的文本内容（如果有）
+        if (msg.content) {
+          cleaned.push({ role: 'assistant', content: msg.content })
+        }
+        i = j - 1
+      }
+    }
+
+    this.messages = cleaned
+  }
+
+  /**
    * 执行一次完整的 Agent 推理循环
    * 直到 LLM 不再调用工具或达到最大迭代次数
    */
-  async *run(userInput: string): AsyncGenerator<{ type: 'text' | 'tool_call' | 'tool_result' | 'done'; content: string; toolName?: string }, void, unknown> {
+  async *run(userInput: string): AsyncGenerator<{ type: 'text' | 'tool_call' | 'tool_result' | 'done' | 'error'; content: string; toolName?: string }, void, unknown> {
+    // 防御：清理内存中可能存在的孤儿消息（上次运行中途失败等）
+    this.cleanOrphanTail()
+
     // 添加用户消息
     this.messages.push({ role: 'user', content: userInput })
+    // 记录本轮消息的起始位置（用于会话保存）
+    const turnStartIdx = this.messages.length - 1
 
     let iterations = 0
-    const maxIter = this.config.maxIterations || 20
+    // 复杂任务（读文档→改代码→推送）可能需要 20-40 次工具调用
+    const maxIter = Math.min(this.config.maxIterations || 30, 50) // 上限50，默认30
+    let noProgressCount = 0 // 连续无文本输出的工具调用次数
+    const recentToolSignatures: string[] = [] // 最近工具调用签名（检测死循环）
 
     while (iterations < maxIter) {
       iterations++
+
+      // 截断消息上下文，防止内存暴涨
+      this.trimContext()
 
       // 调用 LLM
       const response = await this.llm.chat(this.messages, this.tools)
@@ -98,29 +175,60 @@ export class Agent {
 
       // 生成文本输出
       if (response.content) {
+        noProgressCount = 0 // 有文本输出，重置计数器
         yield { type: 'text', content: response.content }
       }
 
       // 处理工具调用
       if (response.tool_calls && response.tool_calls.length > 0) {
-        for (const tc of response.tool_calls) {
+        if (!response.content) {
+          noProgressCount++ // 工具调用没有伴随文本输出，算"无进展"
+        } else {
+          noProgressCount = 0
+        }
+
+        // 宽松无进展保护：探索型任务（连续读文件收集信息）允许较多次
+        // 无文本工具调用，只有超过 15 次才强制停止
+        if (noProgressCount >= 15) {
+          yield { type: 'error', content: '连续多次工具调用均无进展，已自动停止。请简化任务后重试。' }
+          break
+        }
+
+        // 限制每次工具调用的数量（允许并行 5 个）
+        const callsToProcess = response.tool_calls.slice(0, 5)
+
+        for (const tc of callsToProcess) {
           const args = JSON.parse(tc.function.arguments)
           yield { type: 'tool_call', content: tc.function.name, toolName: tc.function.name }
           
+          // 死循环检测：同一工具 + 相似参数连续出现 4 次 = 卡住
+          const signature = `${tc.function.name}:${JSON.stringify(args).slice(0, 120)}`
+          recentToolSignatures.push(signature)
+          const repeatCount = recentToolSignatures.filter(s => s === signature).length
+          if (repeatCount >= 4) {
+            yield { type: 'error', content: `检测到重复调用工具「${tc.function.name}」多次，已自动停止。请换个方式描述你的需求。` }
+            break
+          }
+
           const result = await executeTool(tc.function.name, args)
           
+          // 截断工具结果（防止上下文爆炸）
+          const truncatedOutput = result.success
+            ? result.output.slice(0, 2000)
+            : (result.error || '执行失败').slice(0, 1000)
+
           yield {
             type: 'tool_result',
-            content: result.success ? result.output : result.error || '执行失败',
+            content: truncatedOutput,
             toolName: tc.function.name,
           }
 
-          // 将工具结果加入消息
+          // 将截断后的工具结果加入消息
           this.messages.push({
             role: 'tool',
             tool_call_id: tc.id,
             name: tc.function.name,
-            content: result.success ? result.output : `错误: ${result.error}`,
+            content: result.success ? truncatedOutput : `错误: ${result.error?.slice(0, 500)}`,
           })
         }
       } else {
@@ -129,18 +237,78 @@ export class Agent {
       }
     }
 
-    // 保存到会话
+    if (iterations >= maxIter) {
+      yield { type: 'error', content: `已达到最大迭代次数(${maxIter})，已自动停止。请简化你的请求后重试。` }
+    }
+
+    // 保存到会话：把本轮所有消息（从 turnStartIdx 开始）完整保存
     if (this.config.sessionId) {
       const store = getMemoryStore()
-      store.saveMessage(this.config.sessionId, { role: 'user', content: userInput })
-      
-      const lastAssistant = this.messages[this.messages.length - 1]
-      if (lastAssistant.role === 'assistant') {
-        store.saveMessage(this.config.sessionId, lastAssistant)
+      for (let i = turnStartIdx; i < this.messages.length; i++) {
+        store.saveMessage(this.config.sessionId, this.messages[i])
       }
     }
 
     yield { type: 'done', content: '' }
+  }
+
+  /**
+   * 安全地截断上下文，防止内存和 token 爆炸。
+   * 保留 system prompt + 最近若干条消息，
+   * 且保证不截断 tool_calls ↔ tool 响应的配对关系。
+   * 
+   * 规则：从末尾往前找到最近的"完整对话轮次"边界：
+   *   - 如果最后一条是 tool 响应，向前找到它的 tool_calls 一起保留
+   *   - 如果有 assistant(tool_calls)+tool 配对，整对保留
+   */
+  private trimContext() {
+    if (this.messages.length <= 30) return
+
+    const systemMsg = this.messages.find(m => m.role === 'system')
+    const maxKept = 30 // 保留最近 30 条（覆盖较长的工具调用链）
+
+    // 从末尾向前收集消息，保证不拆散 tool_calls/tool 配对
+    const kept: Message[] = []
+    let pendingToolCallIds = new Set<string>() // 需要找 tool_calls 的 ID
+
+    for (let i = this.messages.length - 1; i >= 0; i--) {
+      const msg = this.messages[i]
+
+      // 如果还有待配对的 tool_calls，继续往前找
+      if (msg.role === 'tool' && msg.tool_call_id) {
+        pendingToolCallIds.add(msg.tool_call_id)
+        kept.unshift(msg)
+        continue
+      }
+
+      if (msg.role === 'assistant' && msg.tool_calls) {
+        // 这个 assistant 发了 tool_calls
+        kept.unshift(msg)
+        // 把它的 tool_call_id 从待配对中移除
+        for (const tc of msg.tool_calls) {
+          pendingToolCallIds.delete(tc.id)
+        }
+        // 如果这个 assistant 还有文本内容，说明一轮对话完整结束
+        if (msg.content) {
+          pendingToolCallIds.clear()
+        }
+        // 待配对清空 = 这一轮完整了，可以停
+        if (pendingToolCallIds.size === 0 && kept.length >= maxKept) {
+          break
+        }
+        continue
+      }
+
+      // user 或 assistant(无tool_calls) 或 system
+      kept.unshift(msg)
+      if (kept.length >= maxKept && pendingToolCallIds.size === 0) {
+        break
+      }
+    }
+
+    this.messages = systemMsg
+      ? [systemMsg, ...kept]
+      : kept
   }
 
   /** 获取当前消息列表 */

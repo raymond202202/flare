@@ -10,16 +10,15 @@ import { homedir } from 'os'
 import { join } from 'path'
 import { mkdirSync } from 'fs'
 
-// 加载 .env
-const envPaths = [
-  join(process.cwd(), '.env'),
-  join(homedir(), '.flare', '.env'),
-]
-for (const p of envPaths) {
-  if (existsSync(p)) {
-    dotenv.config({ path: p })
-    break
-  }
+// 加载 .env — 先加载用户的，再加载本地的覆盖（这样 ~/.flare/.env 优先级更高）
+const homeEnv = join(homedir(), '.flare', '.env')
+const localEnv = join(process.cwd(), '.env')
+
+if (existsSync(homeEnv)) {
+  dotenv.config({ path: homeEnv })
+}
+if (existsSync(localEnv) && localEnv !== homeEnv) {
+  dotenv.config({ path: localEnv, override: false })
 }
 
 // 确保 Flare 数据目录存在

@@ -35,9 +35,9 @@ export class MemoryStore {
     const isNew = !existsSync(path)
     this.db = new Database(path)
     
-    if (isNew) {
-      this.init()
-    }
+    // 总是执行建表 + 迁移（CREATE TABLE IF NOT EXISTS 是幂等的，
+    // migrate() 会为老库补充缺失的列）
+    this.init()
   }
 
   private init() {
@@ -54,6 +54,8 @@ export class MemoryStore {
         session_id TEXT NOT NULL,
         role TEXT NOT NULL,
         content TEXT NOT NULL,
+        tool_call_id TEXT,
+        name TEXT,
         tool_calls TEXT,
         created_at TEXT DEFAULT (datetime('now')),
         FOREIGN KEY (session_id) REFERENCES sessions(id)
@@ -75,6 +77,21 @@ export class MemoryStore {
       CREATE INDEX IF NOT EXISTS idx_messages_session 
         ON messages(session_id, created_at);
     `)
+
+    // 老库迁移：检查是否有 tool_call_id / name 列
+    this.migrate()
+  }
+
+  /** 老版本数据库迁移：补充缺失的列 */
+  private migrate() {
+    const cols = this.db.prepare('PRAGMA table_info(messages)').all() as any[]
+    const colNames = cols.map(c => c.name)
+    if (!colNames.includes('tool_call_id')) {
+      this.db.exec('ALTER TABLE messages ADD COLUMN tool_call_id TEXT')
+    }
+    if (!colNames.includes('name')) {
+      this.db.exec('ALTER TABLE messages ADD COLUMN name TEXT')
+    }
   }
 
   /** 创建新会话 */
@@ -90,12 +107,14 @@ export class MemoryStore {
   /** 保存消息到会话 */
   saveMessage(sessionId: string, message: Message) {
     const stmt = this.db.prepare(
-      'INSERT INTO messages (session_id, role, content, tool_calls) VALUES (?, ?, ?, ?)'
+      'INSERT INTO messages (session_id, role, content, tool_call_id, name, tool_calls) VALUES (?, ?, ?, ?, ?, ?)'
     )
     stmt.run(
       sessionId,
       message.role,
       message.content || '',
+      message.tool_call_id || null,
+      message.name || null,
       message.tool_calls ? JSON.stringify(message.tool_calls) : null
     )
 
@@ -108,12 +127,14 @@ export class MemoryStore {
   /** 获取会话消息历史 */
   getMessages(sessionId: string, limit = 50): Message[] {
     const rows = this.db.prepare(
-      'SELECT role, content, tool_calls FROM messages WHERE session_id = ? ORDER BY created_at ASC LIMIT ?'
+      'SELECT role, content, tool_call_id, name, tool_calls FROM messages WHERE session_id = ? ORDER BY created_at ASC LIMIT ?'
     ).all(sessionId, limit) as any[]
 
     return rows.map(r => ({
       role: r.role as Message['role'],
       content: r.content || '',
+      ...(r.tool_call_id ? { tool_call_id: r.tool_call_id } : {}),
+      ...(r.name ? { name: r.name } : {}),
       ...(r.tool_calls ? { tool_calls: JSON.parse(r.tool_calls) } : {}),
     }))
   }

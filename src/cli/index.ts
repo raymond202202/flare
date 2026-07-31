@@ -11,7 +11,7 @@ import { Command } from 'commander'
 import { Agent } from '../core/agent.js'
 import { getMemoryStore } from '../memory/store.js'
 import chalk from 'chalk'
-import * as readline from 'readline'
+import { createInterface } from 'readline'
 import { execSync } from 'child_process'
 
 const pkg = { version: '0.1.0' } as const
@@ -22,63 +22,6 @@ const FLARE_ASCII = `
   ╚══════════════════════════════════╝
 `
 
-const PROMPT_STR = chalk.green('🔥 flare> ')
-
-/**
- * 获取终端行列数
- */
-function getTerminalSize(): { cols: number; rows: number } {
-  try {
-    const output = execSync('stty size', { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] })
-    const [rows, cols] = output.trim().split(' ').map(Number)
-    return { rows, cols }
-  } catch {
-    return { rows: 24, cols: 80 }
-  }
-}
-
-/**
- * 计算字符串在终端中的可视宽度（考虑中文字符占2列）
- */
-function visualWidth(str: string): number {
-  let width = 0
-  for (const ch of str) {
-    // 中文字符（包括中文标点）在终端中占2列
-    if (/[\u4e00-\u9fff\u3000-\u303f\uff00-\uffef]/.test(ch)) {
-      width += 2
-    } else {
-      width += 1
-    }
-  }
-  return width
-}
-
-/**
- * 清除当前终端行
- */
-function clearCurrentLine() {
-  readline.clearLine(process.stdout, 0)
-  readline.cursorTo(process.stdout, 0)
-}
-
-/**
- * 禁用终端本地回显
- */
-function disableEcho() {
-  try {
-    execSync('stty -echo', { stdio: ['pipe', 'pipe', 'pipe'] })
-  } catch {}
-}
-
-/**
- * 启用终端本地回显
- */
-function enableEcho() {
-  try {
-    execSync('stty echo', { stdio: ['pipe', 'pipe', 'pipe'] })
-  } catch {}
-}
-
 function startInteractive() {
   console.log(chalk.cyan(FLARE_ASCII))
   console.log(chalk.gray('输入 /help 查看命令，/exit 退出\n'))
@@ -87,15 +30,21 @@ function startInteractive() {
   const sessionId = store.createSession('CLI 会话')
   const agent = new Agent({ sessionId })
 
-  const rl = readline.createInterface({
+  const rl = createInterface({
     input: process.stdin,
     output: process.stdout,
-    prompt: PROMPT_STR,
+    prompt: chalk.green('🔥 flare> '),
   })
+
+  // 标记 Agent 是否正在运行（防止并发输入干扰 readline 状态）
+  let isRunning = false
 
   rl.prompt()
 
   rl.on('line', async (line: string) => {
+    // Agent 运行期间忽略新的输入，避免 readline 状态错乱
+    if (isRunning) return
+
     const input = line.trim()
 
     if (!input) {
@@ -110,15 +59,23 @@ function startInteractive() {
       return
     }
 
-    // ★ 核心修复：在 Agent 运行前关闭终端回显
-    // 这样 execSync 执行子进程时，终端不会把 stdin 残留数据 echo 到屏幕上
-    disableEcho()
+    // ===== 进入 Agent 运行阶段 =====
+    isRunning = true
 
-    // 清除当前行（去掉 prompt 和输入内容）
-    clearCurrentLine()
+    // 1. 暂停 readline 输入监听（防止用户输入干扰终端状态）
+    rl.pause()
 
+    // 2. 关闭终端回显（用户在此期间打字不会显示，避免回显与重绘打架）
+    let echoDisabled = false
+    try {
+      execSync('stty -echo', { stdio: 'ignore' })
+      echoDisabled = true
+    } catch { /* 非终端环境忽略 */ }
+
+    // 3. 光标移到新行，开始输出
+    process.stdout.write('\r\n')
     process.stdout.write(chalk.yellow('⚡ Flare 思考中...\n\n'))
-    
+
     try {
       for await (const chunk of agent.run(input)) {
         switch (chunk.type) {
@@ -135,6 +92,9 @@ function startInteractive() {
               process.stdout.write(chalk.dim(chunk.content.slice(0, 300)) + '\n')
             }
             break
+          case 'error':
+            process.stdout.write(chalk.yellow(`\n⚠️  ${chunk.content}\n`))
+            break
           case 'done':
             process.stdout.write('\n\n')
             break
@@ -144,13 +104,24 @@ function startInteractive() {
       process.stdout.write(chalk.red(`\n❌ 错误: ${e.message}\n`))
     }
 
-    // ★ Agent 执行完毕：恢复终端回显
-    enableEcho()
+    // 4. 恢复终端回显
+    if (echoDisabled) {
+      try {
+        execSync('stty echo', { stdio: 'ignore' })
+      } catch { /* 忽略 */ }
+    }
 
+    // 5. 恢复 readline，重新绘制干净的 prompt
+    rl.resume()
+    isRunning = false
     rl.prompt()
   })
 
   rl.on('close', () => {
+    // 确保退出时恢复终端状态
+    try {
+      execSync('stty echo', { stdio: 'ignore' })
+    } catch { /* 忽略 */ }
     console.log(chalk.cyan('\n再见！✨'))
     process.exit(0)
   })
@@ -158,7 +129,7 @@ function startInteractive() {
 
 async function handleSlashCommand(
   cmd: string,
-  rl: readline.Interface,
+  rl: ReturnType<typeof createInterface>,
   store: ReturnType<typeof getMemoryStore>,
   sessionId: string
 ) {
@@ -223,10 +194,13 @@ async function runQuery(query: string) {
           fullOutput += chunk.content
           break
         case 'tool_call':
-          fullOutput += `\n[工具: ${chunk.content}]\n`
+          fullOutput += `\n🔧 工具: ${chunk.content}\n`
           break
         case 'tool_result':
-          fullOutput += `[结果: ${chunk.content.slice(0, 200)}]\n`
+          fullOutput += `📎 ${chunk.content.slice(0, 200)}\n`
+          break
+        case 'error':
+          fullOutput += `\n⚠️  ${chunk.content}\n`
           break
         case 'done':
           break
