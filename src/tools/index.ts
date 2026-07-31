@@ -165,6 +165,8 @@ const searchFilesTool: Tool = {
           if (results.length >= maxResults) return
           // 跳过隐藏目录、node_modules、.git、dist 等大目录
           if (entry === 'node_modules' || entry === '.git' || entry === 'dist' || entry === 'coverage' || entry === '.cache') continue
+          // 跳过其他 AI 工具的内部目录（这些不是 Flare 的资产，不该被搜索/读取）
+          if (entry === '.hermes' || entry === '.agents' || entry === '.codebuddy' || entry === '.claude' || entry === '.cursor' || entry === '.gemini' || entry === '.mimocode' || entry === '.windsurf' || entry === '.continue') continue
           if (entry.startsWith('.') && entry !== '.' && entry !== '..') continue
           const fullPath = join(dir, entry)
           try {
