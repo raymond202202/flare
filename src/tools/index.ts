@@ -25,6 +25,16 @@ export interface Tool {
 }
 
 /**
+ * 展开路径中的 ~ 为 HOME（所有文件工具通用）
+ */
+function expandHome(p: string): string {
+  const home = process.env.HOME || ''
+  if (home && p === '~') return home
+  if (home && p.startsWith('~/')) return home + p.slice(1)
+  return p
+}
+
+/**
  * 读取文件工具
  */
 const readFileTool: Tool = {
@@ -46,7 +56,7 @@ const readFileTool: Tool = {
   },
   execute: ((args: { path: string; offset?: number; limit?: number }) => {
     try {
-      const resolvedPath = resolve(args.path)
+      const resolvedPath = resolve(expandHome(args.path))
       if (!existsSync(resolvedPath)) {
         return { success: false, output: '', error: `文件不存在: ${resolvedPath}` }
       }
@@ -109,7 +119,7 @@ const writeFileTool: Tool = {
   },
   execute: ((args: { path: string; content: string }) => {
     try {
-      const resolvedPath = resolve(args.path)
+      const resolvedPath = resolve(expandHome(args.path))
 
       // 路径校验：拒绝写入受保护位置
       if (isProtectedPath(resolvedPath)) {
@@ -149,7 +159,7 @@ const searchFilesTool: Tool = {
   },
   execute: ((args: { pattern: string; path?: string; maxResults?: number }) => {
     try {
-      const searchPath = resolve(args.path || '.')
+      const searchPath = resolve(expandHome(args.path || '.'))
       const results: string[] = []
       const maxResults = args.maxResults || 20
 

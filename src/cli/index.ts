@@ -80,31 +80,64 @@ function startInteractive() {
     process.stdout.write('\r\n')
     process.stdout.write(chalk.yellow('⚡ Flare 思考中...\n\n'))
 
+    // ===== 草稿/答卷 视觉分层 =====
+    // 把 LLM 输出的文本缓冲起来，看到下一个 chunk 再决定它是
+    // "过程中的话"（草稿，灰色）还是"最终答案"（答卷，分隔线+正常色）
+    let pendingText = ''
+
+    const flushDraft = () => {
+      if (!pendingText.trim()) return
+      // 草稿：过程中 LLM 说的话（"我来看看..."），灰色弱化
+      const lines = pendingText.trim().split('\n')
+      process.stdout.write(lines.map(l => chalk.gray(`  💭 ${l}`)).join('\n') + '\n')
+      pendingText = ''
+    }
+
+    const flushAnswer = () => {
+      if (!pendingText.trim()) return
+      // 答卷：最终交付给用户的答案，用分隔线框出，正常颜色突出
+      const sep = chalk.dim('─'.repeat(44))
+      process.stdout.write('\n' + sep + '\n')
+      process.stdout.write(pendingText.replace(/\n+$/, '') + '\n')
+      process.stdout.write(sep + '\n\n')
+      pendingText = ''
+    }
+
+    const renderToolResult = (toolName: string, content: string) => {
+      const maxLen = toolName === 'terminal' ? 500 : 300
+      const truncated = content.slice(0, maxLen)
+      const lines = truncated.split('\n')
+      const body = lines.map(l => `  ${chalk.gray('│')} ${l}`).join('\n')
+      return `\n${chalk.gray(`  ┌─ ${toolName}`)}\n${body}\n${chalk.gray('  └─')}\n`
+    }
+
     try {
       for await (const chunk of agent.run(input)) {
         switch (chunk.type) {
           case 'text':
-            process.stdout.write(chunk.content)
+            // 先缓冲，等看到下一个 chunk 再定性
+            pendingText += chunk.content
             break
           case 'tool_call':
-            process.stdout.write(chalk.dim(`\n🔧 调用工具: ${chunk.content}\n`))
+            // 缓冲的文本是草稿（过程中说的话）
+            flushDraft()
+            process.stdout.write(chalk.yellow(`  🔧 调用工具: ${chunk.content}\n`))
             break
           case 'tool_result':
-            if (chunk.toolName === 'terminal') {
-              process.stdout.write(chalk.dim(chunk.content.slice(0, 500)) + '\n')
-            } else {
-              process.stdout.write(chalk.dim(chunk.content.slice(0, 300)) + '\n')
-            }
+            process.stdout.write(renderToolResult(chunk.toolName || 'tool', chunk.content))
             break
           case 'error':
-            process.stdout.write(chalk.yellow(`\n⚠️  ${chunk.content}\n`))
+            flushDraft()
+            process.stdout.write(chalk.red(`\n❌ ${chunk.content}\n`))
             break
           case 'done':
-            process.stdout.write('\n\n')
+            // 缓冲的文本是最终答案（答卷）
+            flushAnswer()
             break
         }
       }
     } catch (e: any) {
+      flushDraft()
       process.stdout.write(chalk.red(`\n❌ 错误: ${e.message}\n`))
     } finally {
       // 4. 无论如何都恢复终端回显（Agent 崩溃也不丢失）
@@ -216,28 +249,45 @@ async function runQuery(query: string, maxIterations?: number) {
   console.error(chalk.yellow('⚡ Flare 思考中...'))
 
   try {
-    let fullOutput = ''
+    let pendingText = ''
+    const parts: string[] = []
+
+    const flushDraft = () => {
+      if (!pendingText.trim()) return
+      parts.push(chalk.gray(`  💭 ${pendingText.trim()}`))
+      pendingText = ''
+    }
+    const flushAnswer = () => {
+      if (!pendingText.trim()) return
+      const sep = chalk.dim('─'.repeat(44))
+      parts.push('\n' + sep + '\n' + pendingText.replace(/\n+$/, '') + '\n' + sep + '\n')
+      pendingText = ''
+    }
+
     for await (const chunk of agent.run(query)) {
       switch (chunk.type) {
         case 'text':
-          fullOutput += chunk.content
+          pendingText += chunk.content
           break
         case 'tool_call':
-          fullOutput += `\n🔧 工具: ${chunk.content}\n`
+          flushDraft()
+          parts.push(chalk.yellow(`  🔧 调用工具: ${chunk.content}`))
           break
         case 'tool_result':
-          fullOutput += `📎 ${chunk.content.slice(0, 200)}\n`
+          parts.push(chalk.gray(`  ┌─ ${chunk.toolName || 'tool'}`))
+          parts.push(chunk.content.slice(0, 200).split('\n').map(l => `  ${chalk.gray('│')} ${l}`).join('\n'))
+          parts.push(chalk.gray('  └─'))
           break
         case 'error':
-          fullOutput += `\n⚠️  ${chunk.content}\n`
+          flushDraft()
+          parts.push(chalk.red(`❌ ${chunk.content}`))
           break
         case 'done':
+          flushAnswer()
           break
       }
     }
-    console.log(fullOutput)
-    // Force stdout flush
-    process.stdout.write('')
+    console.log(parts.join('\n'))
   } catch (e: any) {
     console.error(chalk.red(`\n❌ 错误: ${e.message}`))
     process.exit(1)
