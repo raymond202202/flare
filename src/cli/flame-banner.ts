@@ -143,25 +143,28 @@ export function updateFlame(state: FlameState, dt: number) {
 }
 
 /**
- * 渲染一帧火焰 banner（4 行，方案 A：文字整体呼吸，无粒子）。
- * t 为动画时间（秒），用于文字呼吸。
+ * 渲染一帧火焰 banner（4 行，流动渐变：逐字符渐变 + 时间流动）。
+ * 相邻字母颜色不同（每时每刻都是渐变色），渐变随时间缓缓流动（跳动）。
+ * t 为动画时间（秒）。
  */
 export function renderFlameFrame(_state: FlameState, t: number): string {
-  // 方案 A：文字整体呼吸（红→橙→黄→红，5s 周期内呼吸 2 次）
-  const breathPhase = (Math.sin(t * Math.PI * 2 * 2 / 5) + 1) / 2
-  const textColor = flameColor(breathPhase)
-
-  const colorText = (text: string): string => {
-    return [...text].map((ch) => {
+  // 逐字符渐变 + 时间流动：相邻字母位置不同 → 颜色不同；时间推移 → 渐变流动
+  const colorText = (text: string, reverse = false): string => {
+    const chars = [...text]
+    const len = chars.length
+    return chars.map((ch, i) => {
       if (ch === ' ' || ch.codePointAt(0)! > 0xffff) return ch  // 空格/emoji 不着色
-      return chalk.hex(textColor)(ch)
+      // 位置相位 + 时间偏移（流动速度 0.4/s，柔和跳动）
+      let phase = (i / len + t * 0.4) % 1
+      if (reverse) phase = 1 - phase
+      return chalk.hex(flameColor(phase))(ch)
     }).join('')
   }
 
   return [
     colorText('           F L A R E            '),
     '',
-    colorText('  Let your inspiration flare', ) + ' 🔥',
+    colorText('  Let your inspiration flare', true) + ' 🔥',
     '',
   ].join('\n')
 }
