@@ -14,79 +14,11 @@ import chalk from 'chalk'
 import { execSync } from 'child_process'
 import { createRequire } from 'module'
 import { LineInput } from './line-input.js'
+import { R, O, A, Y, D, renderStaticBanner, playFlameBanner } from './flame-banner.js'
 
 // 从 package.json 读取版本号（不要硬编码，否则 --version 会过期）
 const require = createRequire(import.meta.url)
 const pkg = require('../../package.json') as { version: string }
-
-// ===== 火焰色系（Flare 品牌色）=====
-// 红 → 橙 → 琥珀 → 黄，弱化用暗琥珀
-const FLAME_RED = '#ef4444'      // 火焰核心（答卷分隔线、错误）
-const FLAME_ORANGE = '#f97316'   // 主行动色（prompt、工具调用）
-const FLAME_AMBER = '#f59e0b'    // 过渡色（草稿）
-const FLAME_YELLOW = '#fbbf24'   // 亮黄（思考中）
-const FLAME_DARK = '#b45309'     // 暗琥珀（工具结果边框，弱化不抢戏）
-const R = (s: string) => chalk.hex(FLAME_RED)(s)
-const O = (s: string) => chalk.hex(FLAME_ORANGE)(s)
-const A = (s: string) => chalk.hex(FLAME_AMBER)(s)
-const Y = (s: string) => chalk.hex(FLAME_YELLOW)(s)
-const D = (s: string) => chalk.hex(FLAME_DARK)(s)
-
-type RGB = [number, number, number]
-const C_RED: RGB = [239, 68, 68]
-const C_ORANGE: RGB = [249, 115, 22]
-const C_YELLOW: RGB = [251, 191, 36]
-
-function rgbToHex(r: number, g: number, b: number): string {
-  return `#${[r, g, b].map(v => v.toString(16).padStart(2, '0')).join('')}`
-}
-
-/** 红→橙→黄 火焰渐变颜色（t: 0~1） */
-function flameColor(t: number): string {
-  let r: number, g: number, b: number
-  if (t < 0.5) {
-    const u = t * 2
-    r = Math.round(C_RED[0] + (C_ORANGE[0] - C_RED[0]) * u)
-    g = Math.round(C_RED[1] + (C_ORANGE[1] - C_RED[1]) * u)
-    b = Math.round(C_RED[2] + (C_ORANGE[2] - C_RED[2]) * u)
-  } else {
-    const u = (t - 0.5) * 2
-    r = Math.round(C_ORANGE[0] + (C_YELLOW[0] - C_ORANGE[0]) * u)
-    g = Math.round(C_ORANGE[1] + (C_YELLOW[1] - C_ORANGE[1]) * u)
-    b = Math.round(C_ORANGE[2] + (C_YELLOW[2] - C_ORANGE[2]) * u)
-  }
-  return rgbToHex(r, g, b)
-}
-
-/**
- * 逐字符火焰渐变。
- * 空格和 emoji（code point > 0xffff）不着色，保持原样。
- * reverse=true 时从右往左渐变（用于让句尾 flare 落在红色端）。
- */
-function gradientText(text: string, reverse = false): string {
-  const chars = [...text]
-  const len = chars.length
-  return chars.map((ch, i) => {
-    if (ch === ' ' || ch.codePointAt(0)! > 0xffff) return ch
-    const t = len <= 1 ? 0 : i / (len - 1)
-    const tt = reverse ? 1 - t : t
-    return chalk.hex(flameColor(tt))(ch)
-  }).join('')
-}
-
-/**
- * 火焰渐变 Banner（无边框）：
- *   F L A R E 逐字母红→黄渐变（居中）
- *   （空行分隔）
- *   标语左黄→右红渐变（flare 落在火焰核心红）+ 火把 🔥
- */
-function renderBanner(): string {
-  return [
-    gradientText('           F L A R E            '),
-    '',
-    gradientText('  Let your inspiration flare', true) + ' 🔥',
-  ].join('\n')
-}
 
 async function startInteractive() {
   // 非 TTY（管道/重定向输入）下无法交互，友好提示而不是崩溃
@@ -97,7 +29,12 @@ async function startInteractive() {
   }
 
   console.log()  // 欢迎词上方留一行空格
-  console.log(renderBanner())
+
+  // 播放火焰欢迎动画（粒子 + 呼吸），结束后定格静态火焰招牌
+  if (process.stdout.isTTY) {
+    await playFlameBanner()
+  }
+  console.log(renderStaticBanner())
   console.log()  // 提示语与标语隔一行
   console.log(chalk.gray('输入 /help 查看命令，/exit 退出'))
 
@@ -304,7 +241,7 @@ async function handleSlashCommand(
       break
     case '/clear':
       console.clear()
-      console.log(renderBanner())
+      console.log(renderStaticBanner())
       console.log(chalk.gray('输入 /help 查看命令，/exit 退出\n'))
       break
     default:
