@@ -4,7 +4,7 @@
 >
 > 🧠 **由 AI 构建** — 本项目由 AI 智能体（Hermes Agent by Nous Research）在人类指导下开发，并由 Flare 自身持续迭代进化。
 
-**Flare 是一个通用能力的 AI Agent**，从零构建。它不局限于编程——能读文件、写文件、执行命令、搜索、持久记忆，也能被嵌入到其他产品中充当 AI 能力核心（如桌面应用的 AI 面板）。兼容 OpenAI / DeepSeek 等多种 LLM。
+**flare 的目标是成为你唯一需要的 AI 助理。** 兼容 OpenAI / DeepSeek 等多种 LLM。
 
 ![Node](https://img.shields.io/badge/Node-22-339933) ![TypeScript](https://img.shields.io/badge/TypeScript-5.7-3178C6) ![SQLite](https://img.shields.io/badge/SQLite-FTS5-003B57) ![License](https://img.shields.io/badge/License-MIT-yellow)
 
@@ -156,6 +156,8 @@ cp .env.example ~/.flare/.env
 ---
 
 ## English
+
+**Flare's goal is to be the only AI assistant you need.** Compatible with OpenAI / DeepSeek and more LLMs.
 
 ### Quick Start
 
