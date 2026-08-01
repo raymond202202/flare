@@ -13,7 +13,9 @@
  *   - 退格/插入/移动光标时用正确的 wcwidth 计算行数重绘（中文/emoji 算 2 列）
  *   - 方向键：←→ 移动光标（按字符移动，中文/emoji 一次移一个字），↑↓ 历史记录
  *   - 光标定位用 ANSI 绝对定位（\x1b[row;colH），跨行可靠
+ *   - 帧模式（frameMode）：按键只更新状态 + 回调，由外部渲染循环统一重绘
  */
+import chalk from 'chalk'
 
 /** 字符显示宽度（wcwidth 简化版，正确处理中文/emoji/ANSI） */
 export function charWidth(ch: string): number {
@@ -60,9 +62,14 @@ export class LineInput {
   private escapeBuf = ''
   private onData: ((chunk: Buffer) => void) | null = null
   private paused = false
+  /** 帧模式：按键只更新状态，不直接写终端，通过 onChange 通知外部重绘 */
+  private frameMode = false
+  private onChange: (() => void) | null = null
 
-  constructor(prompt: string) {
+  constructor(prompt: string, options?: { frameMode?: boolean; onChange?: () => void }) {
     this.prompt = prompt
+    this.frameMode = options?.frameMode ?? false
+    this.onChange = options?.onChange ?? null
   }
 
   /**
@@ -201,29 +208,50 @@ export class LineInput {
         if (this.cursor < this.buffer.length) {
           const cp = this.buffer.codePointAt(this.cursor)!
           this.cursor += cp > 0xffff ? 2 : 1
-          this.positionCursor()
+          this.afterCursorMove()
         }
         break
       case '\u001b[D': // ← 光标左移
         if (this.cursor > 0) {
           const cp = this.buffer.codePointAt(this.cursor - 1)!
           this.cursor -= cp > 0xffff ? 2 : 1
-          this.positionCursor()
+          this.afterCursorMove()
         }
         break
       // 其他序列（Home/End/Delete 等）：暂时忽略
     }
   }
 
-  /** 整行替换（历史切换用），重绘并定位 */
+  /** 光标移动后的处理：帧模式通知外部，否则直接定位 */
+  private afterCursorMove() {
+    if (this.frameMode) {
+      this.onChange?.()
+    } else {
+      this.positionCursor()
+    }
+  }
+
+  /** 整行替换（历史切换用） */
   private setBuffer(newBuf: string) {
     this.buffer = newBuf
     this.cursor = this.buffer.length
+    if (this.frameMode) {
+      this.lastDrawnBuffer = this.buffer
+      this.onChange?.()
+      return
+    }
     this.redraw()
   }
 
   /** 在光标处插入字符 */
   private insertChar(ch: string) {
+    if (this.frameMode) {
+      this.buffer = this.buffer.slice(0, this.cursor) + ch + this.buffer.slice(this.cursor)
+      this.cursor += ch.length
+      this.lastDrawnBuffer = this.buffer
+      this.onChange?.()
+      return
+    }
     if (this.cursor === this.buffer.length) {
       // 光标在末尾：直接 echo（快路径，终端自然折行）
       this.buffer += ch
@@ -245,6 +273,11 @@ export class LineInput {
     const charLen = cp > 0xffff ? 2 : 1
     this.buffer = this.buffer.slice(0, this.cursor - charLen) + this.buffer.slice(this.cursor)
     this.cursor -= charLen
+    if (this.frameMode) {
+      this.lastDrawnBuffer = this.buffer
+      this.onChange?.()
+      return
+    }
     this.redraw()
   }
 
@@ -294,5 +327,30 @@ export class LineInput {
   /** 是否处于暂停状态 */
   get isPaused() {
     return this.paused
+  }
+
+  // ===== 帧模式渲染接口（供外部渲染循环使用）=====
+
+  /** 渲染输入行（prompt 呼吸色 + buffer），供帧渲染拼装 */
+  renderLine(promptColorHex: string): string {
+    const prompt = chalk.hex(promptColorHex)('🔥 flare> ')
+    return prompt + this.buffer
+  }
+
+  /**
+   * 光标绝对定位（帧渲染后调用）。
+   * baseRow/baseCol 是输入行起始位置（0 基），光标按显示宽度定位。
+   */
+  positionCursorAt(baseRow: number, baseCol: number) {
+    const cols = process.stdout.columns || 80
+    const prefixWidth = stringWidth(this.prompt) + stringWidth(this.buffer.slice(0, this.cursor))
+    const row = baseRow + Math.floor(prefixWidth / cols)
+    const col = baseCol + (prefixWidth % cols)
+    process.stdout.write(`\x1b[${row + 1};${col + 1}H`)
+  }
+
+  /** 当前 buffer（提交/测试用） */
+  get value() {
+    return this.buffer
   }
 }

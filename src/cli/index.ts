@@ -14,7 +14,7 @@ import chalk from 'chalk'
 import { execSync } from 'child_process'
 import { createRequire } from 'module'
 import { LineInput } from './line-input.js'
-import { R, O, A, Y, D, renderStaticBanner, playFlameBanner } from './flame-banner.js'
+import { R, O, A, Y, D, createFlameState, updateFlame, renderFlameFrame, flameBreathColor } from './flame-banner.js'
 
 // 从 package.json 读取版本号（不要硬编码，否则 --version 会过期）
 const require = createRequire(import.meta.url)
@@ -28,82 +28,101 @@ async function startInteractive() {
     process.exit(1)
   }
 
-  console.log()  // 欢迎词上方留一行空格
-
-  // 播放火焰欢迎动画（粒子 + 呼吸），结束后定格静态火焰招牌
-  if (process.stdout.isTTY) {
-    await playFlameBanner()
-  }
-  console.log(renderStaticBanner())
-  console.log()  // 提示语与标语隔一行
-  console.log(chalk.gray('输入 /help 查看命令，/exit 退出'))
-
   const store = getMemoryStore()
   const sessionId = store.createSession('CLI 会话')
   const agent = new Agent({ sessionId })
-
-  // 自研输入行：完全绕开 Node readline 的折行重绘 bug
-  const lineInput = new LineInput(O('🔥 flare> '))
   const isUnix = process.platform !== 'win32'
 
-  while (true) {
-    // 读取一行输入（长中文/emoji 折行也不会重复）
-    const raw = await lineInput.readLine()
+  // ===== 常驻火焰动画 =====
+  const flame = createFlameState()
 
-    // Ctrl+C 退出
-    if (raw === '\u0003') break
+  // ===== 帧模式输入（按键只更新状态，由渲染循环重绘）=====
+  const lineInput = new LineInput('🔥 flare> ', {
+    frameMode: true,
+    onChange: () => renderFrame(),
+  })
 
-    const input = raw.trim()
-    if (!input) continue
+  // ===== 状态 =====
+  let agentRunning = false
+  let agentOutput = ''
+  let pendingText = ''   // Agent 草稿缓冲
+  let exiting = false
 
-    // 斜杠命令
-    if (input.startsWith('/')) {
-      const action = await handleSlashCommand(input, store)
-      if (action === 'exit') break
-      continue
+  // ===== 渲染 =====
+  const CONTENT_ROW = 6   // 内容区起始行（0 基）：banner 4 行 + 空行 + 提示语行
+
+  const flushDraft = () => {
+    if (!pendingText.trim()) return
+    const lines = pendingText.trim().split('\n')
+    agentOutput += lines.map(l => A(`  💭 ${l}`)).join('\n') + '\n'
+    pendingText = ''
+  }
+
+  const flushAnswer = () => {
+    if (!pendingText.trim()) return
+    const sep = R('─'.repeat(44))
+    agentOutput += '\n' + sep + '\n' + pendingText.replace(/\n+$/, '') + '\n' + sep + '\n'
+    pendingText = ''
+  }
+
+  const renderToolResult = (toolName: string, content: string) => {
+    const maxLen = toolName === 'terminal' ? 500 : 300
+    const truncated = content.slice(0, maxLen)
+    const body = truncated.split('\n').map(l => `  ${D('│')} ${l}`).join('\n')
+    return `\n${D(`  ┌─ ${toolName}`)}\n${body}\n${D('  └─')}\n`
+  }
+
+  /** 渲染一帧：火焰 banner（常驻动画）+ 固定提示语 + 内容区（输入行或 Agent 输出） */
+  function renderFrame() {
+    const t = Date.now() / 1000
+    const banner = renderFlameFrame(flame, t)
+    const breath = flameBreathColor(Date.now())
+    let out = '\x1b[2J\x1b[H'
+    out += banner + '\n'
+    out += '输入 /help 查看命令，/exit 退出\n'
+    if (agentRunning) {
+      out += agentOutput
+    } else {
+      out += lineInput.renderLine(breath)  // prompt 呼吸色
     }
+    process.stdout.write(out)
+    // 输入模式下光标定位到输入位置（Agent 运行时无输入光标）
+    if (!agentRunning) {
+      lineInput.positionCursorAt(CONTENT_ROW, 0)
+    }
+  }
 
-    // ===== 进入 Agent 运行阶段 =====
-    // 1. 暂停输入 + 关闭终端回显（仅 Unix；try/finally 保证恢复）
-    lineInput.pause()
+  // 渲染循环（常驻：火焰持续跳动）
+  let renderTimer: ReturnType<typeof setInterval> | null = null
+  const startRenderLoop = () => {
+    renderTimer = setInterval(() => {
+      updateFlame(flame, 0.08)
+      renderFrame()
+    }, 80)
+  }
+  const stopRenderLoop = () => {
+    if (renderTimer) clearInterval(renderTimer)
+    renderTimer = null
+  }
+
+  // Ctrl+C：恢复光标退出
+  const onSigint = () => {
+    stopRenderLoop()
+    process.stdout.write('\x1b[?25h\x1b[0m\n')
+    process.exit(0)
+  }
+  process.on('SIGINT', onSigint)
+
+  // ===== Agent 运行（输出累积到内容区，火焰继续跳）=====
+  async function runAgent(input: string) {
+    agentRunning = true
+    agentOutput = ''
+    pendingText = ''
+    agentOutput += O(`🔥 flare> ${input}`) + '\n\n'
+
     let echoDisabled = false
     if (isUnix) {
-      try {
-        execSync('stty -echo', { stdio: 'ignore' })
-        echoDisabled = true
-      } catch { /* 非终端环境忽略 */ }
-    }
-
-    process.stdout.write('\r\n' + Y('⚡ Flare 思考中...\n\n'))
-
-    // ===== 草稿/答卷 视觉分层 =====
-    // 把 LLM 输出的文本缓冲起来，看到下一个 chunk 再决定它是
-    // "过程中的话"（草稿，灰色）还是"最终答案"（答卷，紫色分隔线+正常色）
-    let pendingText = ''
-
-    const flushDraft = () => {
-      if (!pendingText.trim()) return
-      const lines = pendingText.trim().split('\n')
-      process.stdout.write(lines.map(l => A(`  💭 ${l}`)).join('\n') + '\n')
-      pendingText = ''
-    }
-
-    const flushAnswer = () => {
-      if (!pendingText.trim()) return
-      // 答卷：最终交付，用火焰红色分隔线框出（最醒目）
-      const sep = R('─'.repeat(44))
-      process.stdout.write('\n' + sep + '\n')
-      process.stdout.write(pendingText.replace(/\n+$/, '') + '\n')
-      process.stdout.write(sep + '\n\n')
-      pendingText = ''
-    }
-
-    const renderToolResult = (toolName: string, content: string) => {
-      const maxLen = toolName === 'terminal' ? 500 : 300
-      const truncated = content.slice(0, maxLen)
-      const lines = truncated.split('\n')
-      const body = lines.map(l => `  ${D('│')} ${l}`).join('\n')
-      return `\n${D(`  ┌─ ${toolName}`)}\n${body}\n${D('  └─')}\n`
+      try { execSync('stty -echo', { stdio: 'ignore' }); echoDisabled = true } catch { /* 忽略 */ }
     }
 
     try {
@@ -114,40 +133,66 @@ async function startInteractive() {
             break
           case 'tool_call':
             flushDraft()
-            process.stdout.write(O(`  🔧 调用工具: ${chunk.content}\n`))
+            agentOutput += O(`  🔧 调用工具: ${chunk.content}\n`)
             break
           case 'tool_result':
-            process.stdout.write(renderToolResult(chunk.toolName || 'tool', chunk.content))
+            agentOutput += renderToolResult(chunk.toolName || 'tool', chunk.content)
             break
           case 'error':
             flushDraft()
-            process.stdout.write(chalk.red(`\n❌ ${chunk.content}\n`))
+            agentOutput += chalk.red(`\n❌ ${chunk.content}\n`)
             break
           case 'done':
             flushAnswer()
             break
         }
+        renderFrame()  // 即时反馈
       }
     } catch (e: any) {
       flushDraft()
-      process.stdout.write(chalk.red(`\n❌ 错误: ${e.message}\n`))
+      agentOutput += chalk.red(`\n❌ 错误: ${e.message}\n`)
     } finally {
-      // 2. 无论如何都恢复终端回显（Agent 崩溃也不丢失）
       if (isUnix && echoDisabled) {
-        try {
-          execSync('stty echo', { stdio: 'ignore' })
-        } catch { /* 忽略 */ }
+        try { execSync('stty echo', { stdio: 'ignore' }) } catch { /* 忽略 */ }
       }
-      // 3. 恢复输入，重新绘制干净的 prompt
-      lineInput.resume()
+      agentRunning = false
+      renderFrame()
     }
   }
 
-  // 退出：确保恢复终端状态
+  // ===== 斜杠命令（输出到内容区）=====
+  async function runCommand(cmd: string): Promise<'exit' | 'continue'> {
+    agentRunning = true
+    agentOutput = ''
+    agentOutput += O(`🔥 flare> ${cmd}`) + '\n\n'
+    pendingText = ''
+    const result = await handleSlashCommand(cmd, store, (s) => { agentOutput += s + '\n' })
+    agentRunning = false
+    renderFrame()
+    return result
+  }
+
+  // ===== 主循环 =====
+  startRenderLoop()
+  renderFrame()
+
+  while (!exiting) {
+    const raw = await lineInput.readLine()
+    if (raw === '\u0003') break
+    const input = raw.trim()
+    if (!input) continue
+    if (input.startsWith('/')) {
+      const action = await runCommand(input)
+      if (action === 'exit') break
+      continue
+    }
+    await runAgent(input)
+  }
+
+  stopRenderLoop()
+  process.off('SIGINT', onSigint)
   if (isUnix) {
-    try {
-      execSync('stty echo', { stdio: 'ignore' })
-    } catch { /* 忽略 */ }
+    try { execSync('stty echo', { stdio: 'ignore' }) } catch { /* 忽略 */ }
   }
   console.log(Y('\n再见！✨'))
   process.exit(0)
@@ -155,43 +200,43 @@ async function startInteractive() {
 
 async function handleSlashCommand(
   cmd: string,
-  store: ReturnType<typeof getMemoryStore>
+  store: ReturnType<typeof getMemoryStore>,
+  output: (s: string) => void = console.log
 ): Promise<'exit' | 'continue'> {
   const lower = cmd.toLowerCase()
   // /remember 带内容，必须用前缀匹配（switch 精确匹配会永远"未知命令"）
   if (lower === '/remember' || lower.startsWith('/remember ')) {
     const rememberContent = cmd.replace(/^\/remember\s+/, '').trim()
     if (!rememberContent) {
-      console.log(chalk.yellow('\n用法: /remember <要记住的内容>'))
+      output(chalk.yellow('\n用法: /remember <要记住的内容>'))
     } else {
       store.saveMemory(rememberContent, 'note')
-      console.log(chalk.green(`\n✅ 已记住: ${rememberContent.slice(0, 80)}`))
+      output(chalk.green(`\n✅ 已记住: ${rememberContent.slice(0, 80)}`))
     }
-    console.log()
     return 'continue'
   }
 
   switch (lower) {
     case '/help':
-      console.log(chalk.cyan('\n可用命令:'))
-      console.log('  /help        - 显示帮助')
-      console.log('  /exit        - 退出')
-      console.log('  /memory      - 查看记忆')
-      console.log('  /remember    - 保存一条记忆（如: /remember 用户喜欢浅色主题）')
-      console.log('  /usage       - 查看 token 用量')
-      console.log('  /sessions    - 查看会话列表')
-      console.log('  /clear       - 清屏')
+      output(chalk.cyan('\n可用命令:'))
+      output('  /help        - 显示帮助')
+      output('  /exit        - 退出')
+      output('  /memory      - 查看记忆')
+      output('  /remember    - 保存一条记忆（如: /remember 用户喜欢浅色主题）')
+      output('  /usage       - 查看 token 用量')
+      output('  /sessions    - 查看会话列表')
+      output('  /clear       - 清屏')
       break
     case '/usage':
       const usage = store.getUsageStats()
       if (!usage || usage.totalTokens === 0) {
-        console.log(chalk.yellow('\n暂无用量记录'))
+        output(chalk.yellow('\n暂无用量记录'))
       } else {
-        console.log(chalk.cyan('\n📊 Token 用量:'))
-        console.log(`  ${chalk.gray('Prompt:')}     ${usage.promptTokens.toLocaleString()}`)
-        console.log(`  ${chalk.gray('Completion:')} ${usage.completionTokens.toLocaleString()}`)
-        console.log(`  ${chalk.gray('总计:')}       ${usage.totalTokens.toLocaleString()} tokens`)
-        console.log(`  ${chalk.gray('会话数:')}     ${usage.sessionCount}`)
+        output(chalk.cyan('\n📊 Token 用量:'))
+        output(`  ${chalk.gray('Prompt:')}     ${usage.promptTokens.toLocaleString()}`)
+        output(`  ${chalk.gray('Completion:')} ${usage.completionTokens.toLocaleString()}`)
+        output(`  ${chalk.gray('总计:')}       ${usage.totalTokens.toLocaleString()} tokens`)
+        output(`  ${chalk.gray('会话数:')}     ${usage.sessionCount}`)
       }
       break
     case '/exit':
@@ -200,20 +245,20 @@ async function handleSlashCommand(
     case '/memory':
       const memories = store.getAllMemories()
       if (memories.length === 0) {
-        console.log(chalk.yellow('\n暂无记忆'))
+        output(chalk.yellow('\n暂无记忆'))
       } else {
-        console.log(chalk.cyan('\n📝 记忆列表:'))
+        output(chalk.cyan('\n📝 记忆列表:'))
         memories.forEach(m => {
-          console.log(`  ${chalk.gray(`[${m.created_at}]`)} ${m.content.slice(0, 80)}`)
+          output(`  ${chalk.gray(`[${m.created_at}]`)} ${m.content.slice(0, 80)}`)
         })
       }
       break
     case '/sessions':
       const sessions = store.getRecentSessions()
       if (sessions.length === 0) {
-        console.log(chalk.yellow('\n暂无会话'))
+        output(chalk.yellow('\n暂无会话'))
       } else {
-        console.log(chalk.cyan('\n💬 最近会话:'))
+        output(chalk.cyan('\n💬 最近会话:'))
         const now = new Date()
         sessions.forEach(s => {
           // 会话标题：取第一条用户消息（可读），空会话标注
@@ -235,19 +280,17 @@ async function handleSlashCommand(
               timeStr = `${d.getMonth() + 1}月${d.getDate()}日`
             }
           } catch { /* 解析失败用原始时间 */ }
-          console.log(`  ${chalk.gray(`[${timeStr}]`)} ${preview}`)
+          output(`  ${chalk.gray(`[${timeStr}]`)} ${preview}`)
         })
       }
       break
     case '/clear':
-      console.clear()
-      console.log(renderStaticBanner())
-      console.log(chalk.gray('输入 /help 查看命令，/exit 退出\n'))
+      output(chalk.gray('已清屏（帧模式自动重绘）'))
       break
     default:
-      console.log(chalk.yellow(`\n未知命令: ${cmd}。输入 /help 查看可用命令`))
+      output(chalk.yellow(`\n未知命令: ${cmd}。输入 /help 查看可用命令`))
   }
-  console.log()
+  output('')
   return 'continue'
 }
 
