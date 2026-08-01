@@ -143,19 +143,21 @@ export function updateFlame(state: FlameState, dt: number) {
 }
 
 /**
- * 渲染一帧火焰 banner（4 行，流动渐变：逐字符渐变 + 时间流动）。
- * 相邻字母颜色不同（每时每刻都是渐变色），渐变随时间缓缓流动（跳动）。
+ * 渲染一帧火焰 banner（4 行，融合方案 A：渐变 + 安静呼吸）。
+ * 每个字母独立渐变色（相邻不同色），渐变整体随 sin 波来回呼吸——
+ * 保留方案 A 的安静跳动感，同时每时每刻都是渐变色。
  * t 为动画时间（秒）。
  */
 export function renderFlameFrame(_state: FlameState, t: number): string {
-  // 逐字符渐变 + 时间流动：相邻字母位置不同 → 颜色不同；时间推移 → 渐变流动
+  // 呼吸：5s 一个完整周期，振幅 0.12（渐变整体轻轻起伏，不单向流动）
+  const breath = Math.sin(t * Math.PI * 2 / 5) * 0.12
   const colorText = (text: string, reverse = false): string => {
     const chars = [...text]
     const len = chars.length
     return chars.map((ch, i) => {
       if (ch === ' ' || ch.codePointAt(0)! > 0xffff) return ch  // 空格/emoji 不着色
-      // 位置相位 + 时间偏移（流动速度 0.4/s，柔和跳动）
-      let phase = (i / len + t * 0.4) % 1
+      // 位置相位（相邻不同色）+ 呼吸偏移（安静跳动）
+      let phase = (i / len + breath) % 1
       if (reverse) phase = 1 - phase
       return chalk.hex(flameColor(phase))(ch)
     }).join('')
