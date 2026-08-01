@@ -69,7 +69,25 @@ export class LineInput {
 
       this.onData = (chunk: Buffer) => {
         const s = chunk.toString('utf8')
+        // ANSI 转义序列状态：方向键等以 \x1b 开头，整体忽略（不输入乱码）
+        let inEscape = false
+        let escapeBuf = ''
         for (const ch of s) {
+          // 在转义序列中：直到字母或 ~ 结束才退出
+          if (inEscape) {
+            escapeBuf += ch
+            if (/[a-zA-Z~]/.test(ch)) {
+              inEscape = false
+              escapeBuf = ''
+            }
+            continue
+          }
+          // 遇到 ESC 开头：进入转义序列（方向键 \x1b[A、Home/End \x1b[1~ 等）
+          if (ch === '\u001b') {
+            inEscape = true
+            escapeBuf = '\u001b'
+            continue
+          }
           // 回车/换行：提交
           if (ch === '\r' || ch === '\n') {
             process.stdout.write('\n')
@@ -95,7 +113,7 @@ export class LineInput {
             }
             continue
           }
-          // 其他控制字符（方向键等）：忽略
+          // 其他控制字符：忽略
           if (ch.charCodeAt(0) < 32) continue
           // 可打印字符（含中文/emoji）：追加并直接 echo，终端自然折行
           this.buffer += ch
