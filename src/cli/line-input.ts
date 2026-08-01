@@ -10,8 +10,9 @@
  *
  * 本实现：
  *   - 输入时逐字符 echo，让终端自然折行（宽度由终端自己算，永远正确）
- *   - 退格时用正确的 wcwidth 计算行数重绘（中文/emoji 算 2 列，ANSI 剥离）
- *   - 不依赖任何第三方行编辑库
+ *   - 退格/插入/移动光标时用正确的 wcwidth 计算行数重绘（中文/emoji 算 2 列）
+ *   - 方向键：←→ 移动光标（按字符移动，中文/emoji 一次移一个字），↑↓ 历史记录
+ *   - 光标定位用 ANSI 绝对定位（\x1b[row;colH），跨行可靠
  */
 
 /** 字符显示宽度（wcwidth 简化版，正确处理中文/emoji/ANSI） */
@@ -46,10 +47,17 @@ export function stringWidth(s: string): number {
   return w
 }
 
+const HISTORY_MAX = 100
+
 export class LineInput {
   private prompt: string
   private buffer = ''
-  private lastDrawnBuffer = ''  // 最近一次绘制时的 buffer（退格重绘用）
+  private cursor = 0                        // 光标位置（UTF-16 单元索引）
+  private lastDrawnBuffer = ''              // 最近一次绘制时的 buffer（退格重绘用）
+  private history: string[] = []            // 命令历史
+  private historyIndex = -1                 // 当前历史位置
+  private inEscape = false                  // 是否在 ANSI 转义序列中（跨 chunk 保持）
+  private escapeBuf = ''
   private onData: ((chunk: Buffer) => void) | null = null
   private paused = false
 
@@ -64,33 +72,37 @@ export class LineInput {
   readLine(): Promise<string> {
     return new Promise(resolve => {
       this.buffer = ''
+      this.cursor = 0
       this.lastDrawnBuffer = ''
+      this.inEscape = false
+      this.escapeBuf = ''
+      this.historyIndex = this.history.length   // 从最新位置开始
       this.drawPrompt()
 
       this.onData = (chunk: Buffer) => {
         const s = chunk.toString('utf8')
-        // ANSI 转义序列状态：方向键等以 \x1b 开头，整体忽略（不输入乱码）
-        let inEscape = false
-        let escapeBuf = ''
         for (const ch of s) {
-          // 在转义序列中：直到字母或 ~ 结束才退出
-          if (inEscape) {
-            escapeBuf += ch
+          // 在转义序列中：直到字母或 ~ 结束（\x1b[A 方向键、\x1b[1~ Home 等）
+          if (this.inEscape) {
+            this.escapeBuf += ch
             if (/[a-zA-Z~]/.test(ch)) {
-              inEscape = false
-              escapeBuf = ''
+              const seq = this.escapeBuf
+              this.inEscape = false
+              this.escapeBuf = ''
+              this.handleEscape(seq)
             }
             continue
           }
-          // 遇到 ESC 开头：进入转义序列（方向键 \x1b[A、Home/End \x1b[1~ 等）
+          // 遇到 ESC 开头：进入转义序列
           if (ch === '\u001b') {
-            inEscape = true
-            escapeBuf = '\u001b'
+            this.inEscape = true
+            this.escapeBuf = '\u001b'
             continue
           }
           // 回车/换行：提交
           if (ch === '\r' || ch === '\n') {
             process.stdout.write('\n')
+            this.saveHistory()
             this.cleanup()
             resolve(this.buffer)
             return
@@ -102,23 +114,15 @@ export class LineInput {
             resolve('\u0003')
             return
           }
-          // 退格：删除最后一个字符并重绘
+          // 退格：删除光标前的字符
           if (ch === '\u007f' || ch === '\u0008') {
-            if (this.buffer.length > 0) {
-              // 正确处理 emoji 代理对：如果最后一个 code point > 0xffff，删 2 个 UTF-16 单元
-              const lastCodePoint = this.buffer.codePointAt(this.buffer.length - 1)!
-              const charLen = lastCodePoint > 0xffff ? 2 : 1
-              this.buffer = this.buffer.slice(0, this.buffer.length - charLen)
-              this.redraw()
-            }
+            this.backspace()
             continue
           }
           // 其他控制字符：忽略
           if (ch.charCodeAt(0) < 32) continue
-          // 可打印字符（含中文/emoji）：追加并直接 echo，终端自然折行
-          this.buffer += ch
-          this.lastDrawnBuffer = this.buffer
-          process.stdout.write(ch)
+          // 可打印字符（含中文/emoji）：在光标处插入
+          this.insertChar(ch)
         }
       }
 
@@ -146,7 +150,10 @@ export class LineInput {
   resume() {
     this.paused = false
     this.buffer = ''
+    this.cursor = 0
     this.lastDrawnBuffer = ''
+    this.inEscape = false
+    this.escapeBuf = ''
     // 注意：这里不画 prompt！readLine() 会画，否则一轮后出现两个 prompt
     try {
       process.stdin.setRawMode(true)
@@ -171,10 +178,91 @@ export class LineInput {
     process.stdout.write(this.prompt)
   }
 
+  /** 处理 ANSI 转义序列（方向键） */
+  private handleEscape(seq: string) {
+    switch (seq) {
+      case '\u001b[A': // ↑ 历史上一条
+        if (this.historyIndex > 0) {
+          this.historyIndex--
+          this.setBuffer(this.history[this.historyIndex])
+        }
+        break
+      case '\u001b[B': // ↓ 历史下一条
+        if (this.historyIndex < this.history.length - 1) {
+          this.historyIndex++
+          this.setBuffer(this.history[this.historyIndex])
+        } else {
+          // 越过最新一条 → 回到空编辑状态
+          this.historyIndex = this.history.length
+          this.setBuffer('')
+        }
+        break
+      case '\u001b[C': // → 光标右移（按字符，中文/emoji 一次移一字）
+        if (this.cursor < this.buffer.length) {
+          const cp = this.buffer.codePointAt(this.cursor)!
+          this.cursor += cp > 0xffff ? 2 : 1
+          this.positionCursor()
+        }
+        break
+      case '\u001b[D': // ← 光标左移
+        if (this.cursor > 0) {
+          const cp = this.buffer.codePointAt(this.cursor - 1)!
+          this.cursor -= cp > 0xffff ? 2 : 1
+          this.positionCursor()
+        }
+        break
+      // 其他序列（Home/End/Delete 等）：暂时忽略
+    }
+  }
+
+  /** 整行替换（历史切换用），重绘并定位 */
+  private setBuffer(newBuf: string) {
+    this.buffer = newBuf
+    this.cursor = this.buffer.length
+    this.redraw()
+  }
+
+  /** 在光标处插入字符 */
+  private insertChar(ch: string) {
+    if (this.cursor === this.buffer.length) {
+      // 光标在末尾：直接 echo（快路径，终端自然折行）
+      this.buffer += ch
+      this.cursor = this.buffer.length
+      this.lastDrawnBuffer = this.buffer
+      process.stdout.write(ch)
+    } else {
+      // 光标在中间：插入并重绘
+      this.buffer = this.buffer.slice(0, this.cursor) + ch + this.buffer.slice(this.cursor)
+      this.cursor += ch.length
+      this.redraw()
+    }
+  }
+
+  /** 退格：删除光标前的字符 */
+  private backspace() {
+    if (this.cursor <= 0) return
+    const cp = this.buffer.codePointAt(this.cursor - 1)!
+    const charLen = cp > 0xffff ? 2 : 1
+    this.buffer = this.buffer.slice(0, this.cursor - charLen) + this.buffer.slice(this.cursor)
+    this.cursor -= charLen
+    this.redraw()
+  }
+
+  /** 提交后保存历史 */
+  private saveHistory() {
+    const trimmed = this.buffer.trim()
+    if (trimmed && this.history[this.history.length - 1] !== this.buffer) {
+      this.history.push(this.buffer)
+      if (this.history.length > HISTORY_MAX) {
+        this.history.shift()
+      }
+    }
+  }
+
   /**
-   * 退格后的整行重绘。
-   * 用退格前的宽度计算占用行数（oldRows），把光标上移到旧输入区的
+   * 整行重绘：用退格/插入前的宽度计算占用行数（oldRows），把光标上移到旧输入区的
    * 顶部再清除重绘——避免新 buffer 变短后清不到旧行导致文字残留。
+   * 重绘后光标用绝对定位放回 cursor 显示位置。
    */
   private redraw() {
     const cols = process.stdout.columns || 80
@@ -190,6 +278,17 @@ export class LineInput {
     // 重画
     process.stdout.write(this.prompt + this.buffer)
     this.lastDrawnBuffer = this.buffer
+    // 光标绝对定位到 cursor 显示位置
+    this.positionCursor()
+  }
+
+  /** 光标绝对定位（\x1b[row;colH，1 基）——跨行可靠 */
+  private positionCursor() {
+    const cols = process.stdout.columns || 80
+    const prefixWidth = stringWidth(this.prompt) + stringWidth(this.buffer.slice(0, this.cursor))
+    const row = Math.floor(prefixWidth / cols) + 1
+    const col = (prefixWidth % cols) + 1
+    process.stdout.write(`\x1b[${row};${col}H`)
   }
 
   /** 是否处于暂停状态 */
