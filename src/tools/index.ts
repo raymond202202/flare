@@ -17,7 +17,7 @@ export interface ToolResult {
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-type ToolExecutor = (args: Record<string, any>) => ToolResult | Promise<ToolResult>
+export type ToolExecutor = (args: Record<string, any>) => ToolResult | Promise<ToolResult>
 
 export interface Tool {
   definition: ToolDefinition
@@ -37,7 +37,7 @@ function expandHome(p: string): string {
 /**
  * 读取文件工具
  */
-const readFileTool: Tool = {
+export const readFileTool: Tool = {
   definition: {
     type: 'function',
     function: {
@@ -101,7 +101,7 @@ function isProtectedPath(path: string): boolean {
 /**
  * 写入文件工具
  */
-const writeFileTool: Tool = {
+export const writeFileTool: Tool = {
   definition: {
     type: 'function',
     function: {
@@ -140,7 +140,7 @@ const writeFileTool: Tool = {
 /**
  * 搜索文件工具
  */
-const searchFilesTool: Tool = {
+export const searchFilesTool: Tool = {
   definition: {
     type: 'function',
     function: {
@@ -246,7 +246,7 @@ function isDangerousCommand(command: string): string | null {
 /**
  * 执行终端命令工具
  */
-const terminalTool: Tool = {
+export const terminalTool: Tool = {
   definition: {
     type: 'function',
     function: {

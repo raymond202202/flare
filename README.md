@@ -300,11 +300,25 @@ Interactive mode commands:
 
 > 中文条目 / Chinese entries · English summary for each version
 
+#### v0.3.0 (2026-08-01) — 引擎库化 + 专家模式 / Engine as a library + Expert Profile
+- 📦 **M1 flare-core 抽离**：新增库入口 `src/index.ts`，导出 `Agent` / `createProvider` / `Tool` / `MemoryStore` / `ExpertProfile`；package.json exports（`.` 与 `./core` 指向引擎，`./cli` 保留 CLI）；CLI 变第一个消费者
+- 🧩 **M2 Expert Profile 机制**：`Agent` 支持注入工具集（`tools`）、独立记忆库（`storage`）、身份话术（`identity` / `flareIntro` 品牌共生）；工具可单独 import（read/write/search/terminal）
+- 🧪 新增专家模式单测 4 项（工具注入 / 内置缺省 / 身份话术 / 存储隔离），共 14/14
+- ✅ 外部项目验证：`import { Agent } from 'flare-agent'` 编译 + 运行通过
+- EN: Engine extracted as importable library (@flare/core) with Expert Profile mechanism — tool injection, isolated storage, brand identity. 14/14 tests.
+
+#### v0.2.20 (2026-08-01) — 常驻火焰动画（方案A定稿）/ Persistent flame animation
+- 🔥 常驻渲染循环：火焰永久跳动，动画期间可正常打字输入（帧模式 LineInput）
+- 🎨 方案 A 融合版定稿：逐字符渐变（相邻字母不同色）+ 整体 sin 呼吸（5s 周期，安静起伏）
+- 📐 布局：顶部空行 + FLARE + 标语 + 提示语固定 + prompt 呼吸色
+- 🏷️ tag v0.2.20 = fa4a853（最终版）；中间迭代（粒子/常驻/方案A/流动渐变）保留在历史
+- EN: Persistent flame animation — breathing gradient (final plan A), typing works during animation. Tagged v0.2.20.
+
 #### v0.2.19 (2026-08-01) — 火焰粒子动画启动画面 / Flame particle animation
 - 🔥 启动画面：粒子火焰 + 整体呼吸动画（火苗与文字重叠燃烧，约 5 秒）
 - 🎨 视觉令牌抽离（FLAME_TOKENS：色阶/渐变/动画参数），CLI 与未来桌面/嵌入版多端复用
 - 📄 flame-banner.ts 模块化：静态招牌 + 动画分离；非 TTY / 窄终端自动降级静态
-- ⚠️ 本版本尚未推送 GitHub（待确认）
+- 🏷️ tag v0.2.19 = a48e400（粒子动画里程碑）
 
 #### v0.2.18 (2026-08-01) — 方向键移动光标 / Arrow key cursor movement
 - 🎯 LineInput 支持 ←/→ 光标移动（中文/emoji 按字移动）、↑/↓ 历史记录、中间插入、退格删光标前
