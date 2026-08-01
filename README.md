@@ -159,6 +159,8 @@ cp .env.example ~/.flare/.env
 
 **Flare's goal is to be the only AI assistant you need.** Compatible with OpenAI / DeepSeek and more LLMs.
 
+> 🧠 **Built by AI** — This project was developed by AI agents (Hermes Agent by Nous Research) under human guidance, and continuously evolves through Flare's own iteration.
+
 ### Quick Start
 
 ```bash
