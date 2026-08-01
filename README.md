@@ -294,30 +294,77 @@ Interactive mode commands:
 | `/clear` | Clear screen |
 | `/exit` | Exit |
 
-### Changelog / 更新记录
+### Changelog / Release Notes
 
-#### v0.2.4 (2026-07-31) — 根治长输入折行重复
+> 中文条目 / Chinese entries · English summary for each version
+
+#### v0.2.14 (2026-08-01) — README 定位文案更新 / Updated README positioning
+- 📝 中文定位改为"flare 的目标是成为你唯一需要的 AI 助理"
+- EN: Tagline updated to "flare's goal is to be the only AI assistant you need"
+
+#### v0.2.13 (2026-08-01) — 修复两个 bug / Fixed two bugs
+- 🐛 修复 `/remember` 命令永远"未知命令"（switch 精确匹配 bug，改为前缀匹配）
+- 🐛 修复非 TTY 启动交互模式崩溃（友好提示退出）
+- EN: Fixed `/remember` command never matching; fixed crash when stdin is not a TTY
+
+#### v0.2.12 (2026-08-01) — /sessions 人类可读化 / Human-readable sessions
+- ✨ 会话标题改为第一条用户消息，时间友好化（今天 HH:MM / 昨天 / M月D日）
+- EN: Session list now shows first user message as title with friendly timestamps
+
+#### v0.2.11 (2026-08-01) — 修复多轮会话 prompt 重复 / Fixed duplicate prompt
+- 🐛 resume() 和 readLine() 都画 prompt，一轮后出现两个 `🔥 flare>`；统一由 readLine() 绘制
+- EN: Fixed double prompt after each turn (resume no longer draws prompt)
+
+#### v0.2.10 (2026-07-31) — 提示语布局 / Hint layout
+- ✨ 提示语与标语隔一行、与 prompt 紧邻
+- EN: Blank line between hint and tagline; prompt sits right below hint
+
+#### v0.2.9 (2026-07-31) — FLARE 与标语间空行 / Blank line in banner
+- ✨ Banner 两行内容之间加空行
+- EN: Added blank line between FLARE and the tagline
+
+#### v0.2.8 (2026-07-31) — Banner 上方空行 / Blank line above banner
+- ✨ 启动时 Banner 上方留一行空格
+- EN: Added blank line above the banner
+
+#### v0.2.7 (2026-07-31) — Banner 去边框 / Borderless banner
+- 🎨 移除边框，纯渐变文字；"再见！✨"改为火焰亮黄
+- EN: Removed banner border; farewell message now flame yellow
+
+#### v0.2.6 (2026-07-31) — 逐字符火焰渐变 / Per-character flame gradient
+- 🎨 Banner 每个字母独立渐变（红→橙→黄），上下边框渐变，标语加火把 🔥
+- EN: Every letter in the banner has its own flame gradient; torch emoji added
+
+#### v0.2.5 (2026-07-31) — 火焰色系全面换装 / Flame color scheme
+- 🔥 Banner/prompt/草稿/工具/答卷分隔线全部改为红橙黄火焰色系
+- EN: Full flame color scheme (red-orange-yellow) across CLI UI
+
+#### v0.2.4 (2026-07-31) — 根治长输入折行重复 / Fixed long-input duplication
 
 - 🎯 **弃用 Node readline，自研输入行（line-input.ts）**：readline 对中文/emoji 的宽度计算不可靠（ANSI 码算进长度、中文按 1 列算），折行重绘时清行不干净导致文字重复
 - ✅ 输入时逐字符 echo，终端自然折行（宽度由终端计算，永远正确）
 - ✅ 退格重绘用正确的 wcwidth（中文/emoji 算 2 列，ANSI 剥离），基于退格前宽度上移清除
 - ✅ 已用 pyte 终端模拟器验证：长输入、退格、跨行删除三种场景最终显示均无重复
+- EN: Replaced buggy Node readline with a custom input line; verified with pyte terminal emulator
 
-#### v0.2.3 (2026-07-31) — 答卷分隔线亮紫色
+#### v0.2.3 (2026-07-31) — 答卷分隔线亮紫色 / Purple answer separator
 
 - 🎨 答卷分隔线从暗灰色改为亮紫色 `#6d4aff`（品牌色）
+- EN: Answer separator changed to brand purple #6d4aff
 
-#### v0.2.2 (2026-07-31) — 终端视觉分层
+#### v0.2.2 (2026-07-31) — 终端视觉分层 / Visual layering
 
 - 🎨 **草稿/答卷视觉分层**：工具调用过程用灰色边框弱化（`🔧` 黄色 + `┌─│└─` 边框 + `💭` 灰色草稿），最终答案用分隔线框出、正常颜色突出
 - 🐛 **read_file / write_file / search_files 支持 `~` 展开**（之前只有 terminal 支持）
+- EN: Draft/answer visual layering; ~ expansion for all file tools
 
-#### v0.2.1 (2026-07-31) — AI 记忆隔离修复
+#### v0.2.1 (2026-07-31) — AI 记忆隔离修复 / AI memory isolation
 
 - 🐛 **修复 Flare 误读其他 AI 记忆**：search_files 跳过 `~/.hermes`、`~/.agents`、`~/.codebuddy`、`~/.claude` 等目录
 - 🧠 **系统提示明确记忆边界**：Flare 的记忆在 `~/.flare/flare.db`，禁止读取其他 AI 的记忆文件
+- EN: search_files skips other AI tools' dirs; system prompt defines memory boundary
 
-#### v0.2.0 (2026-07-31) — 安全与健壮性大版本
+#### v0.2.0 (2026-07-31) — 安全与健壮性大版本 / Security & robustness
 
 - 🔒 **危险命令黑名单**：拦截 `rm -rf /`、fork bomb、`curl|bash`、格式化磁盘等毁灭性命令
 - 🔒 **文件路径保护**：拒绝写入 `/etc/`、`.ssh/`、`.git/` 等系统关键位置
@@ -330,8 +377,9 @@ Interactive mode commands:
 - 🔍 **搜索优化**：大文件只匹配文件名，跳过 node_modules/.git/dist
 - 🧪 **单元测试**：10 个测试覆盖 store/agent 核心逻辑
 - 🐛 修复 joinPath（用 path.join）、claude 模型检测、DEBUG 日志、--max-iterations 参数
+- EN: Dangerous command blacklist, path protection, /remember memory, /usage tokens, API retry, atomic writes, 10 unit tests
 
-#### v0.1.2 (2026-07-31)
+#### v0.1.2 (2026-07-31) — Agent 健壮性修复 / Agent robustness fixes
 
 - 🐛 **修复 Agent 迭代限制过紧**：迭代上限从 10 提升到 30（上限 50，与 Hermes 对齐），复杂任务（读文档→改代码→推送）不再中途停止
 - 🐛 **改进死循环检测**：从"连续 5 次无文本输出即停止"改为"同一工具同参数重复 4 次才停止"，探索型任务（连续读文件收集信息）不再被误杀
@@ -340,14 +388,17 @@ Interactive mode commands:
 - 🐛 **修复会话历史 tool_calls 配对丢失**：messages 表新增 `tool_call_id`/`name` 列 + 老库自动迁移，多轮对话不再报 400 错误
 - 🐛 **修复 .env 加载优先级**：`~/.flare/.env` 优先，本地 `.env` 不覆盖已有配置
 - ✨ **上下文保留提升**：trimContext 保留 12 → 30 条消息，覆盖更长工具调用链
+- EN: Iteration limit 10→30, smarter loop detection, tool_call pairing fix, .env priority fix
 
-#### v0.1.1 (2026-07-30)
+#### v0.1.1 (2026-07-30) — 回显修复 / Echo fix
 
 - 🐛 修复 CLI 交互模式输入重复回显问题（Agent 运行时暂停输入监听）
+- EN: Fixed duplicated echo while Agent is running
 
-#### v0.1.0 (2026-07-30)
+#### v0.1.0 (2026-07-30) — 初次发布 / Initial release
 
 - 🎉 初次发布：CLI 交互/单次查询、Agent 循环、LLM 抽象、工具系统、SQLite 记忆
+- EN: Initial release: CLI interactive/single query, Agent loop, LLM abstraction, tools, SQLite memory
 
 ### License
 
