@@ -300,6 +300,28 @@ Interactive mode commands:
 
 > 中文条目 / Chinese entries · English summary for each version
 
+#### v0.2.19 (2026-08-01) — 火焰粒子动画启动画面 / Flame particle animation
+- 🔥 启动画面：粒子火焰 + 整体呼吸动画（火苗与文字重叠燃烧，约 5 秒）
+- 🎨 视觉令牌抽离（FLAME_TOKENS：色阶/渐变/动画参数），CLI 与未来桌面/嵌入版多端复用
+- 📄 flame-banner.ts 模块化：静态招牌 + 动画分离；非 TTY / 窄终端自动降级静态
+- ⚠️ 本版本尚未推送 GitHub（待确认）
+
+#### v0.2.18 (2026-08-01) — 方向键移动光标 / Arrow key cursor movement
+- 🎯 LineInput 支持 ←/→ 光标移动（中文/emoji 按字移动）、↑/↓ 历史记录、中间插入、退格删光标前
+- EN: Arrow keys move cursor; up/down browse history; ANSI absolute positioning
+
+#### v0.2.17 (2026-08-01) — 修复方向键输入乱码 / Fixed arrow key gibberish
+- 🐛 方向键转义序列被拆成字符输入（出现 [D 乱码），改为整体识别忽略
+- EN: Arrow key escape sequences were split into characters; now skipped as a whole
+
+#### v0.2.16 (2026-08-01) — 英文 README 补 Built by AI / Built by AI note in EN README
+- 📝 英文 README 补上"Built by AI"说明（与中文对应）
+- EN: Added "Built by AI" note to the English README
+
+#### v0.2.15 (2026-08-01) — Changelog 双语化 / Bilingual changelog
+- 📝 Changelog 每个版本标题双语 + 英文概要，补齐 v0.2.5~v0.2.14
+- EN: Bilingual changelog with English summary per version
+
 #### v0.2.14 (2026-08-01) — README 定位文案更新 / Updated README positioning
 - 📝 中文定位改为"flare 的目标是成为你唯一需要的 AI 助理"
 - EN: Tagline updated to "flare's goal is to be the only AI assistant you need"
