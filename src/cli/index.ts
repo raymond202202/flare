@@ -265,8 +265,28 @@ async function handleSlashCommand(
         console.log(chalk.yellow('\n暂无会话'))
       } else {
         console.log(chalk.cyan('\n💬 最近会话:'))
+        const now = new Date()
         sessions.forEach(s => {
-          console.log(`  ${chalk.gray(s.id.slice(0, 16))} ${s.title} (${s.updated_at})`)
+          // 会话标题：取第一条用户消息（可读），空会话标注
+          const msg = (s as any).first_user_msg || '（空会话）'
+          const preview = msg.replace(/\s+/g, ' ').trim().slice(0, 30)
+          // 友好时间：今天显示 HH:MM，昨天显示"昨天"，更早显示 M月D日
+          let timeStr = s.updated_at
+          try {
+            const d = new Date(s.updated_at.replace(' ', 'T'))
+            const isToday = d.toDateString() === now.toDateString()
+            const yesterday = new Date(now)
+            yesterday.setDate(now.getDate() - 1)
+            const isYesterday = d.toDateString() === yesterday.toDateString()
+            if (isToday) {
+              timeStr = d.toTimeString().slice(0, 5)
+            } else if (isYesterday) {
+              timeStr = '昨天'
+            } else {
+              timeStr = `${d.getMonth() + 1}月${d.getDate()}日`
+            }
+          } catch { /* 解析失败用原始时间 */ }
+          console.log(`  ${chalk.gray(`[${timeStr}]`)} ${preview}`)
         })
       }
       break

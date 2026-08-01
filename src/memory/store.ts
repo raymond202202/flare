@@ -162,8 +162,14 @@ export class MemoryStore {
 
   /** 获取最近会话 */
   getRecentSessions(limit = 10): SessionRow[] {
+    // 为每个会话取第一条 user 消息作为标题（人类可读，用于区分会话）
     return this.db.prepare(
-      'SELECT * FROM sessions ORDER BY updated_at DESC LIMIT ?'
+      `SELECT s.id, s.title, s.updated_at,
+        (SELECT content FROM messages m
+         WHERE m.session_id = s.id AND m.role = 'user'
+         ORDER BY m.id LIMIT 1) as first_user_msg
+       FROM sessions s
+       ORDER BY s.updated_at DESC LIMIT ?`
     ).all(limit) as SessionRow[]
   }
 
