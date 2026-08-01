@@ -6,8 +6,8 @@
  */
 
 import Database from 'better-sqlite3'
-import { join } from 'path'
-import { existsSync } from 'fs'
+import { join, dirname } from 'path'
+import { existsSync, mkdirSync } from 'fs'
 import { config } from '../core/config.js'
 import { Message } from '../core/llm.js'
 
@@ -32,6 +32,11 @@ export class MemoryStore {
 
   constructor(dbPath?: string) {
     const path = dbPath || DB_PATH
+    // 自动创建父目录（better-sqlite3 不会自动建目录；支持任意外部路径如 ~/.pulse/pulse-ai.db）
+    try {
+      const dir = dirname(path)
+      if (dir && dir !== '.') mkdirSync(dir, { recursive: true })
+    } catch { /* 目录创建失败不阻塞（DB 打开时会报错） */ }
     const isNew = !existsSync(path)
     this.db = new Database(path)
     
