@@ -122,12 +122,12 @@ export class LineInput {
     } catch { /* 忽略 */ }
   }
 
-  /** 恢复输入（Agent 运行结束后调用，重新绘制干净 prompt 并监听） */
+  /** 恢复输入（Agent 运行结束后调用，重新监听；prompt 由 readLine() 统一绘制） */
   resume() {
     this.paused = false
     this.buffer = ''
     this.lastDrawnBuffer = ''
-    this.drawPrompt()
+    // 注意：这里不画 prompt！readLine() 会画，否则一轮后出现两个 prompt
     try {
       process.stdin.setRawMode(true)
     } catch { /* 忽略 */ }
