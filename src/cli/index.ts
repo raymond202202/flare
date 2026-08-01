@@ -8,8 +8,7 @@
  */
 
 import { Command } from 'commander'
-import { Agent } from '../core/agent.js'
-import { getMemoryStore } from '../memory/store.js'
+import { Agent, getMemoryStore } from '../index.js'
 import chalk from 'chalk'
 import { execSync } from 'child_process'
 import { createRequire } from 'module'
