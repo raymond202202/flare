@@ -89,6 +89,13 @@ function renderBanner(): string {
 }
 
 async function startInteractive() {
+  // 非 TTY（管道/重定向输入）下无法交互，友好提示而不是崩溃
+  if (!process.stdin.isTTY) {
+    console.error(chalk.red('❌ 交互模式需要在终端中运行（当前输入不是终端）。'))
+    console.error(chalk.gray('  用法：直接运行 `flare` 进入交互模式，或用 `flare chat -q "问题"` 单次查询。'))
+    process.exit(1)
+  }
+
   console.log()  // 欢迎词上方留一行空格
   console.log(renderBanner())
   console.log()  // 提示语与标语隔一行
@@ -213,7 +220,21 @@ async function handleSlashCommand(
   cmd: string,
   store: ReturnType<typeof getMemoryStore>
 ): Promise<'exit' | 'continue'> {
-  switch (cmd.toLowerCase()) {
+  const lower = cmd.toLowerCase()
+  // /remember 带内容，必须用前缀匹配（switch 精确匹配会永远"未知命令"）
+  if (lower === '/remember' || lower.startsWith('/remember ')) {
+    const rememberContent = cmd.replace(/^\/remember\s+/, '').trim()
+    if (!rememberContent) {
+      console.log(chalk.yellow('\n用法: /remember <要记住的内容>'))
+    } else {
+      store.saveMemory(rememberContent, 'note')
+      console.log(chalk.green(`\n✅ 已记住: ${rememberContent.slice(0, 80)}`))
+    }
+    console.log()
+    return 'continue'
+  }
+
+  switch (lower) {
     case '/help':
       console.log(chalk.cyan('\n可用命令:'))
       console.log('  /help        - 显示帮助')
@@ -223,15 +244,6 @@ async function handleSlashCommand(
       console.log('  /usage       - 查看 token 用量')
       console.log('  /sessions    - 查看会话列表')
       console.log('  /clear       - 清屏')
-      break
-    case '/remember':
-      const rememberContent = cmd.replace(/^\/remember\s+/, '').trim()
-      if (!rememberContent) {
-        console.log(chalk.yellow('\n用法: /remember <要记住的内容>'))
-      } else {
-        store.saveMemory(rememberContent, 'note')
-        console.log(chalk.green(`\n✅ 已记住: ${rememberContent.slice(0, 80)}`))
-      }
       break
     case '/usage':
       const usage = store.getUsageStats()
