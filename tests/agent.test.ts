@@ -4,9 +4,8 @@
  * 使用 Mock LLM，不发起真实 API 调用
  */
 import { describe, it, expect } from 'vitest'
-import { Agent } from '../src/core/agent.js'
-import { getMemoryStore } from '../src/memory/store.js'
-import { Message, LLMResponse, ToolCall } from '../src/core/llm.js'
+import { Agent, getMemoryStore } from '../src/index.js'
+import { Message, LLMResponse, ToolCall } from '../src/index.js'
 import { mkdtempSync, rmSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
