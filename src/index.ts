@@ -36,6 +36,14 @@ export {
   type ToolExecutor,
 } from './tools/index.js'
 
+// ===== 网络工具集（M3：Pulse 网络专家）=====
+export {
+  networkTools,
+  httpRequestTool,
+  urlParseTool,
+  responseAnalyzeTool,
+} from './tools/network.js'
+
 // ===== 记忆系统 =====
 export { MemoryStore, getMemoryStore } from './memory/store.js'
 
