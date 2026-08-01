@@ -6,8 +6,8 @@
  */
 
 import { Message, LLMProvider, createProvider, ToolDefinition } from './llm.js'
-import { getToolDefinitions, executeTool } from '../tools/index.js'
-import { getMemoryStore } from '../memory/store.js'
+import { getToolDefinitions, executeTool, type Tool } from '../tools/index.js'
+import { getMemoryStore, MemoryStore } from '../memory/store.js'
 import { logger } from './logger.js'
 
 export interface AgentConfig {
@@ -15,6 +15,14 @@ export interface AgentConfig {
   maxIterations?: number
   sessionId?: string
   model?: string
+  /** M2: 注入工具集（含 execute）；缺省用 Flare 内置工具 */
+  tools?: Tool[]
+  /** M2: 独立记忆库路径（如 ~/.pulse/pulse-ai.db）；缺省用 Flare 默认库 */
+  storage?: string
+  /** M2: 身份话术——用户问"你是谁"时按此回答（如 "我是 pulse 助手…"） */
+  identity?: string
+  /** M2: Flare 介绍话术——用户追问"flare 是什么"时按此回答（品牌共生） */
+  flareIntro?: string
 }
 
 const DEFAULT_SYSTEM_PROMPT = `你是 Flare，一个通用能力的 AI Agent。
@@ -61,19 +69,37 @@ export class Agent {
   private config: AgentConfig
   private messages: Message[] = []
   private tools: ToolDefinition[] = []
+  private toolExecutors: Map<string, Tool> = new Map()
+  private store: MemoryStore
 
   constructor(config: AgentConfig = {}) {
     this.llm = createProvider()
     this.config = config
-    this.tools = getToolDefinitions()
+
+    // M2: 注入工具集（config.tools 优先，缺省用内置）
+    const injected = config.tools || []
+    this.toolExecutors = new Map(injected.map(t => [t.definition.function.name, t]))
+    this.tools = injected.length > 0 ? injected.map(t => t.definition) : getToolDefinitions()
+
+    // M2: 独立记忆库（config.storage 优先，缺省用 Flare 全局单例）
+    this.store = config.storage ? new MemoryStore(config.storage) : getMemoryStore()
 
     // 加载会话历史
-    const store = getMemoryStore()
+    const store = this.store
     if (config.sessionId) {
       const history = store.getMessages(config.sessionId)
       this.messages = history
       // 清理历史中不完整的 tool_calls 配对（尾部孤儿消息）
       this.cleanOrphanTail()
+    }
+
+    // M2: 身份 + flare 介绍注入系统提示（品牌共生话术）
+    let basePrompt = config.systemPrompt || DEFAULT_SYSTEM_PROMPT
+    if (config.identity) {
+      basePrompt += `\n\n## 你的身份\n当用户问"你是谁"、"你是什么助手"或"你叫什么"时，按以下话术回答（自然融入，不要生硬照抄）：\n${config.identity}`
+    }
+    if (config.flareIntro) {
+      basePrompt += `\n\n## 关于 Flare\n当用户问"flare 是什么"、"你是由什么驱动的"、"flare 和你的关系"时，按以下话术回答（可稍作润色，保持核心信息）：\n${config.flareIntro}`
     }
 
     // 加载相关记忆
@@ -82,12 +108,12 @@ export class Agent {
       const memoryContext = memories.slice(0, 5).map(m => m.content).join('\n')
       this.messages.unshift({
         role: 'system',
-        content: `${config.systemPrompt || DEFAULT_SYSTEM_PROMPT}\n\n## 关于这个用户\n${memoryContext}`,
+        content: `${basePrompt}\n\n## 关于这个用户\n${memoryContext}`,
       })
     } else {
       this.messages.unshift({
         role: 'system',
-        content: config.systemPrompt || DEFAULT_SYSTEM_PROMPT,
+        content: basePrompt,
       })
     }
   }
@@ -184,7 +210,7 @@ export class Agent {
       // 记录 token 用量（如果 provider 返回了 usage）
       if (response.usage && (response.usage.prompt_tokens > 0 || response.usage.completion_tokens > 0)) {
         try {
-          const store = getMemoryStore()
+          const store = this.store
           store.logUsage(
             this.config.sessionId || null,
             response.usage.prompt_tokens,
@@ -257,7 +283,11 @@ export class Agent {
             break
           }
 
-          const result = await executeTool(tc.function.name, args)
+          // M2: 注入工具优先执行（应用自定义工具），否则回退内置 executeTool
+          const injectedTool = this.toolExecutors.get(tc.function.name)
+          const result = injectedTool
+            ? await injectedTool.execute(args)
+            : await executeTool(tc.function.name, args)
           
           // 截断工具结果（防止上下文爆炸）
           const truncatedOutput = result.success
@@ -290,7 +320,7 @@ export class Agent {
 
     // 保存到会话：把本轮所有消息（从 turnStartIdx 开始）完整保存
     if (this.config.sessionId) {
-      const store = getMemoryStore()
+      const store = this.store
       for (let i = turnStartIdx; i < this.messages.length; i++) {
         store.saveMessage(this.config.sessionId, this.messages[i])
       }
