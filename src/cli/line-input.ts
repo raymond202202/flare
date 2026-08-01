@@ -105,7 +105,9 @@ export class LineInput {
       }
 
       // 进入 raw mode（关闭行缓冲和回显，逐字符接收）
-      process.stdin.setRawMode(true)
+      if (typeof process.stdin.setRawMode === 'function') {
+        process.stdin.setRawMode(true)
+      }
       process.stdin.on('data', this.onData)
     })
   }
