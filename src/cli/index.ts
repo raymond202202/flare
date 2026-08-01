@@ -78,6 +78,7 @@ async function startInteractive() {
     const banner = renderFlameFrame(flame, t)
     const breath = flameBreathColor(Date.now())
     let out = '\x1b[2J\x1b[H'
+    out += '\n'                       // 顶部空行（不顶格）
     out += banner + '\n'
     out += '输入 /help 查看命令，/exit 退出\n'
     if (agentRunning) {

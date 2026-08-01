@@ -143,60 +143,27 @@ export function updateFlame(state: FlameState, dt: number) {
 }
 
 /**
- * 渲染一帧火焰 banner（4 行，含粒子与文字重叠 + 整体呼吸）。
+ * 渲染一帧火焰 banner（4 行，方案 A：文字整体呼吸，无粒子）。
  * t 为动画时间（秒），用于文字呼吸。
  */
-export function renderFlameFrame(state: FlameState, t: number): string {
-  const { W, H } = state
-  const grid: string[][] = Array.from({ length: H }, () => Array(W).fill(' '))
-  const colors: (string | null)[][] = Array.from({ length: H }, () => Array(W).fill(null))
-
-  // 文字（整体呼吸色）
-  const breathPhase = (Math.sin(t * Math.PI * 2 * FLAME_TOKENS.animation.breathCycles / 5) + 1) / 2
+export function renderFlameFrame(_state: FlameState, t: number): string {
+  // 方案 A：文字整体呼吸（红→橙→黄→红，5s 周期内呼吸 2 次）
+  const breathPhase = (Math.sin(t * Math.PI * 2 * 2 / 5) + 1) / 2
   const textColor = flameColor(breathPhase)
-  const putText = (text: string, y: number) => {
-    const x0 = Math.floor((W - text.length) / 2)
-    ;[...text].forEach((ch, i) => {
-      if (ch === ' ') return  // 空格不覆盖（火苗可见）
-      const x = x0 + i
-      if (x >= 0 && x < W && y >= 0 && y < H) {
-        grid[y][x] = ch
-        colors[y][x] = ch.codePointAt(0)! > 0xffff ? null : textColor  // emoji 不着色
-      }
-    })
-  }
-  putText(FLARE_TEXT, BANNER_LINE1)
-  putText(TAGLINE, BANNER_LINE2)
 
-  // 粒子（覆盖文字 → 重叠燃烧）
-  for (const p of state.particles) {
-    const xi = Math.round(p.x)
-    const yi = Math.round(p.y)
-    if (xi >= 0 && xi < W && yi >= 0 && yi < H) {
-      const k = p.life / p.maxLife
-      const chars = ['█', '▓', '▒', '░']
-      grid[yi][xi] = chars[Math.min(3, Math.floor(k * 4))]
-      colors[yi][xi] = flameColor(0.12 + k * 0.88)  // 黄 → 红
-    }
+  const colorText = (text: string): string => {
+    return [...text].map((ch) => {
+      if (ch === ' ' || ch.codePointAt(0)! > 0xffff) return ch  // 空格/emoji 不着色
+      return chalk.hex(textColor)(ch)
+    }).join('')
   }
 
-  // 拼装 4 行
-  const lines: string[] = []
-  for (let y = 0; y < H; y++) {
-    let line = '  '
-    for (let x = 0; x < W; x++) {
-      const ch = grid[y][x]
-      if (ch === ' ') {
-        line += ' '
-      } else if (colors[y][x]) {
-        line += chalk.hex(colors[y][x]!)(ch)
-      } else {
-        line += ch  // emoji 原色
-      }
-    }
-    lines.push(line)
-  }
-  return lines.join('\n')
+  return [
+    colorText('           F L A R E            '),
+    '',
+    colorText('  Let your inspiration flare', ) + ' 🔥',
+    '',
+  ].join('\n')
 }
 
 /** 火焰呼吸色（prompt 等持续元素用） */
