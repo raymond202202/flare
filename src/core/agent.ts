@@ -194,7 +194,7 @@ export class Agent {
    * @param userInput 用户输入（会自动识别其中的图片路径 / data URL）
    * @param attachments 显式图片附件（本地路径或 data URL；与自动识别合并）
    */
-  async *run(userInput: string, attachments?: string[]): AsyncGenerator<{ type: 'text' | 'tool_call' | 'tool_result' | 'done' | 'error'; content: string; toolName?: string }, void, unknown> {
+  async *run(userInput: string, attachments?: string[]): AsyncGenerator<{ type: 'text' | 'tool_call' | 'tool_result' | 'done' | 'error'; content: string; toolName?: string; args?: string }, void, unknown> {
     // 防御：清理内存中可能存在的孤儿消息（上次运行中途失败等）
     this.cleanOrphanTail()
 
@@ -300,7 +300,13 @@ export class Agent {
         const callsToProcess = response.tool_calls.slice(0, 5)
 
         for (const tc of callsToProcess) {
-          yield { type: 'tool_call', content: tc.function.name, toolName: tc.function.name }
+          yield {
+            type: 'tool_call',
+            content: tc.function.name,
+            toolName: tc.function.name,
+            // 附上工具参数（应用侧可据此把请求写入 UI，如 Pulse 请求区标签页）
+            args: tc.function.arguments || '',
+          }
 
           // 解析工具参数：LLM 可能返回格式异常的 JSON，不能让它崩溃整个循环
           let args: Record<string, any>
