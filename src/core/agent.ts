@@ -198,9 +198,15 @@ export class Agent {
     // 防御：清理内存中可能存在的孤儿消息（上次运行中途失败等）
     this.cleanOrphanTail()
 
-    // 自动识别图片（路径 / data URL）；显式 attachments 合并
+    // 自动识别图片（路径 / data URL）；显式 attachments 合并（去重）
     const parsed = parseAttachments(userInput)
-    const finalAttachments = [...(attachments || []), ...parsed.attachments]
+    const seen = new Set<string>()
+    const dedupe = (list: string[]) => list.filter(p => {
+      if (seen.has(p)) return false
+      seen.add(p)
+      return true
+    })
+    const finalAttachments = dedupe([...(attachments || []), ...parsed.attachments])
     const hasImages = this.config.visionEnabled !== false && finalAttachments.length > 0
     const inputText = parsed.text || (hasImages ? '请描述这张图片' : userInput)
 
