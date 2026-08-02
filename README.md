@@ -131,7 +131,7 @@ cp .env.example ~/.flare/.env
 | `ANTHROPIC_API_KEY` | Anthropic API 密钥 | — |
 | `DEFAULT_MODEL` | 默认模型 | `deepseek-chat` |
 | `OPENAI_BASE_URL` | 自定义 API 地址 | 自动检测 |
-| `VISION_MODEL` | 视觉模型（看图时用） | `qwen2.5vl:7b` |
+| `VISION_MODEL` | 视觉模型（看图时用，可 /vision 切换） | `qwen2.5vl:3b` |
 | `VISION_BASE_URL` | 视觉模型 API 地址（本地 Ollama） | `http://localhost:11434/v1` |
 | `VISION_API_KEY` | 视觉模型 API 密钥 | `ollama` |
 | `FLARE_HOME` | 数据目录 | `~/.flare` |
@@ -151,6 +151,7 @@ cp .env.example ~/.flare/.env
 |------|------|
 | `/help` | 显示帮助 |
 | `/image <路径> <问题>` | 显式看图 |
+| `/vision [3b\|7b\|default]` | 切换看图模型（3b 快速 ~4s / 7b 质量 30-60s） |
 | `/memory` | 查看持久记忆 |
 | `/sessions` | 查看最近会话 |
 | `/clear` | 清屏 |
@@ -307,6 +308,18 @@ Interactive mode commands:
 ### Changelog / Release Notes
 
 > 中文条目 / Chinese entries · English summary for each version
+
+#### v0.4.2 (2026-08-02) — 看图提速：默认 3B + /vision 切换 / Faster vision: 3B default + /vision switch
+- ⚡ 看图默认模型改为 **qwen2.5vl:3b**：模型加载后单张 ~4 秒（7B 是 30-60 秒），日常 OCR/截图流畅
+- 🔀 新增 `/vision` 命令：`/vision 3b|fast`（快速）/ `/vision 7b|quality`（质量）/ `/vision default`（回 .env 默认）；切换持久化到 settings 表，无需改 .env 重启
+- 🗄️ MemoryStore 新增 settings 表（key-value getSetting/setSetting）
+- EN: Default vision model now 3B (~4s/image after load vs 7B's 30-60s). New /vision command switches fast/quality modes at runtime, persisted in DB.
+
+#### v0.4.1 (2026-08-02) — 修复 fcitx5 中文输入消息丢失 / Fixed IME input loss
+- 🐛 LineInput Enter 延迟 200ms 提交（IME 防抖）：fcitx5 确认候选的 Enter 不再抢先提交半截内容；pending 期间有字符到达自动续等；连按两次 Enter 立即提交
+- 🐛 parseAttachments 引号/裸路径只在文件真实存在时剥离（避免 `"hello.png"` 这类文本被误吞）
+- 🧪 新增防误吞测试（36/36）
+- EN: Fixed Chinese IME input loss (fcitx5) — Enter debounce before submit. Quoted non-existent paths no longer stripped. 36/36 tests.
 
 #### v0.4.0 (2026-08-02) — 本地视觉能力 / Local vision (VLM)
 - 👁️ **多模态支持**：`Message.content` 支持 `string | ContentPart[]`（text + image_url），OpenAI 兼容格式

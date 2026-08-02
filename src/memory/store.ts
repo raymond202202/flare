@@ -130,6 +130,12 @@ export class MemoryStore {
 
       CREATE INDEX IF NOT EXISTS idx_messages_session 
         ON messages(session_id, created_at);
+
+      CREATE TABLE IF NOT EXISTS settings (
+        key TEXT PRIMARY KEY,
+        value TEXT NOT NULL,
+        updated_at TEXT DEFAULT (datetime('now'))
+      );
     `)
 
     // 老库迁移：检查是否有 tool_call_id / name 列
@@ -253,6 +259,24 @@ export class MemoryStore {
     return this.db.prepare(
       'SELECT * FROM memories ORDER BY created_at DESC'
     ).all() as MemoryRow[]
+  }
+
+  /** 读取运行时设置（key-value，如看图模型切换） */
+  getSetting(key: string): string | null {
+    const row = this.db.prepare('SELECT value FROM settings WHERE key = ?').get(key) as any
+    return row ? row.value : null
+  }
+
+  /** 写入运行时设置；value 为空串表示删除（回默认） */
+  setSetting(key: string, value: string) {
+    if (!value) {
+      this.db.prepare('DELETE FROM settings WHERE key = ?').run(key)
+      return
+    }
+    this.db.prepare(
+      `INSERT INTO settings (key, value) VALUES (?, ?)
+       ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = datetime('now')`
+    ).run(key, value)
   }
 
   close() {

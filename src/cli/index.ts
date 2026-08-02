@@ -8,7 +8,7 @@
  */
 
 import { Command } from 'commander'
-import { Agent, getMemoryStore } from '../index.js'
+import { Agent, getMemoryStore, config } from '../index.js'
 import chalk from 'chalk'
 import { execSync } from 'child_process'
 import { createRequire } from 'module'
@@ -249,6 +249,30 @@ async function handleSlashCommand(
     return 'continue'
   }
 
+  // /vision 切换看图模型（3B 快速 / 7B 质量）
+  if (lower === '/vision' || lower.startsWith('/vision ')) {
+    const arg = cmd.replace(/^\/vision\s+/, '').trim().toLowerCase()
+    const current = store.getSetting('vision_model') || config.get('VISION_MODEL') || 'qwen2.5vl:3b'
+    if (!arg) {
+      output(chalk.cyan(`\n👁️ 当前看图模型: ${current}`))
+      output('  /vision 3b|fast   - 快速模式（qwen2.5vl:3b，OCR/截图推荐）')
+      output('  /vision 7b|quality- 质量模式（qwen2.5vl:7b，精细理解稍慢）')
+      output('  /vision default   - 回默认（.env 的 VISION_MODEL）')
+    } else if (arg === '3b' || arg === 'fast') {
+      store.setSetting('vision_model', 'qwen2.5vl:3b')
+      output(chalk.green('\n✅ 看图模型已切换: qwen2.5vl:3b（快速，OCR/截图推荐）'))
+    } else if (arg === '7b' || arg === 'quality') {
+      store.setSetting('vision_model', 'qwen2.5vl:7b')
+      output(chalk.green('\n✅ 看图模型已切换: qwen2.5vl:7b（质量优先，稍慢）'))
+    } else if (arg === 'default' || arg === 'reset') {
+      store.setSetting('vision_model', '')
+      output(chalk.green(`\n✅ 已恢复默认看图模型（${config.get('VISION_MODEL') || 'qwen2.5vl:3b'}）`))
+    } else {
+      output(chalk.yellow('\n用法: /vision [3b|fast|7b|quality|default]'))
+    }
+    return 'continue'
+  }
+
   switch (lower) {
     case '/help':
       output(chalk.cyan('\n可用命令:'))
@@ -260,6 +284,7 @@ async function handleSlashCommand(
       output('  /sessions    - 查看会话列表')
       output('  /clear       - 清屏')
       output('  /image       - 显式看图（如: /image ~/Pictures/a.png 这张图里有什么）')
+      output('  /vision      - 切换看图模型（/vision 3b 快速 | /vision 7b 质量）')
       output(chalk.gray('  💡 对话里直接发图片路径也会自动识别（如: 看看这张图 xxx.png）'))
       break
     case '/usage':
