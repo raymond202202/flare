@@ -181,9 +181,13 @@ export class MemoryStore {
     }))
   }
 
-  /** 更新会话标题 */
+  /** 更新会话标题（UPSERT：会话记录不存在时同时创建，避免 UPDATE 0 行） */
   updateSessionTitle(sessionId: string, title: string) {
-    this.db.prepare('UPDATE sessions SET title = ? WHERE id = ?').run(title, sessionId)
+    this.db.prepare(`
+      INSERT INTO sessions (id, title, updated_at)
+      VALUES (?, ?, datetime('now'))
+      ON CONFLICT(id) DO UPDATE SET title = excluded.title, updated_at = datetime('now')
+    `).run(sessionId, title)
   }
 
   /** 保存消息到会话 */
