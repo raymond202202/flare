@@ -17,6 +17,9 @@
  */
 import chalk from 'chalk'
 
+/** IME 防抖窗口：Enter 后等待输入法提交中文字符的毫秒数 */
+const ENTER_DEBOUNCE_MS = 200
+
 /** 字符显示宽度（wcwidth 简化版，正确处理中文/emoji/ANSI） */
 export function charWidth(ch: string): number {
   const code = ch.codePointAt(0)!
@@ -65,6 +68,10 @@ export class LineInput {
   /** 帧模式：按键只更新状态，不直接写终端，通过 onChange 通知外部重绘 */
   private frameMode = false
   private onChange: (() => void) | null = null
+  /** IME 防抖：Enter 后延迟提交的计时器与状态（等 fcitx5 提交完中文字符） */
+  private enterTimer: ReturnType<typeof setTimeout> | null = null
+  private enterPending = false
+  private pendingResolve: ((v: string) => void) | null = null
 
   constructor(prompt: string, options?: { frameMode?: boolean; onChange?: () => void }) {
     this.prompt = prompt
@@ -106,12 +113,9 @@ export class LineInput {
             this.escapeBuf = '\u001b'
             continue
           }
-          // 回车/换行：提交
+          // 回车/换行：提交（IME 防抖：Enter 可能是 fcitx5 确认候选，延迟提交等待输入法后续字符）
           if (ch === '\r' || ch === '\n') {
-            process.stdout.write('\n')
-            this.saveHistory()
-            this.cleanup()
-            resolve(this.buffer)
+            this.handleEnterSubmit(resolve)
             return
           }
           // Ctrl+C：退出
@@ -170,7 +174,46 @@ export class LineInput {
     }
   }
 
+  /**
+   * Enter 提交（IME 防抖）：
+   * - 第一次 Enter：进入 pending，延迟 ENTER_DEBOUNCE_MS 再提交——等 fcitx5 确认候选后提交的中文字符
+   * - pending 期间有字符到达 → insertChar 重置计时器（输入法还在提交）
+   * - 第二次 Enter：立即提交（用户确实要提交）
+   */
+  private handleEnterSubmit(resolve: (v: string) => void) {
+    if (this.enterPending) {
+      if (this.enterTimer) clearTimeout(this.enterTimer)
+      this.enterTimer = null
+      this.enterPending = false
+      this.pendingResolve = null
+      this.submitLine(resolve)
+      return
+    }
+    this.enterPending = true
+    this.pendingResolve = resolve
+    this.enterTimer = setTimeout(() => {
+      this.enterTimer = null
+      this.enterPending = false
+      const r = this.pendingResolve
+      this.pendingResolve = null
+      if (r) this.submitLine(r)
+    }, ENTER_DEBOUNCE_MS)
+  }
+
+  /** 真正提交：输出换行 + 存历史 + 清理 + resolve */
+  private submitLine(resolve: (v: string) => void) {
+    process.stdout.write('\n')
+    this.saveHistory()
+    this.cleanup()
+    resolve(this.buffer)
+  }
+
   private cleanup() {
+    if (this.enterTimer) {
+      clearTimeout(this.enterTimer)
+      this.enterTimer = null
+    }
+    this.enterPending = false
     if (this.onData) {
       process.stdin.removeListener('data', this.onData)
       this.onData = null
@@ -245,6 +288,17 @@ export class LineInput {
 
   /** 在光标处插入字符 */
   private insertChar(ch: string) {
+    // IME 防抖：pending 期间有字符到达 → 重置计时器（输入法还在提交，等待完整内容）
+    if (this.enterPending && this.enterTimer) {
+      clearTimeout(this.enterTimer)
+      this.enterTimer = setTimeout(() => {
+        this.enterTimer = null
+        this.enterPending = false
+        const r = this.pendingResolve
+        this.pendingResolve = null
+        if (r) this.submitLine(r)
+      }, ENTER_DEBOUNCE_MS)
+    }
     if (this.frameMode) {
       this.buffer = this.buffer.slice(0, this.cursor) + ch + this.buffer.slice(this.cursor)
       this.cursor += ch.length
