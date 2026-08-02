@@ -56,6 +56,13 @@ export {
   responseAnalyzeTool,
 } from './tools/network.js'
 
+// ===== 写作工具集（M4：StorySpire 写作专家）=====
+export {
+  storyTools,
+  storyToolDefinitions,
+  getStoryToolDefinitions,
+} from './tools/story.js'
+
 // ===== 记忆系统 =====
 export { MemoryStore, getMemoryStore, serializeContent, deserializeContent } from './memory/store.js'
 
