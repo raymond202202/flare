@@ -13,6 +13,7 @@ export { Agent, type AgentConfig } from './core/agent.js'
 // ===== LLM 抽象 =====
 export {
   createProvider,
+  createVisionProvider,
   OpenAIProvider,
   type LLMProvider,
   type LLMResponse,
@@ -22,7 +23,18 @@ export {
   type ToolDefinition,
 } from './core/llm.js'
 
-// ===== 工具基座 =====
+// ===== 多模态 / 图片识别（v0.4.0）=====
+export {
+  parseAttachments,
+  buildImageContent,
+  fileToDataUrl,
+  resolveImagePath,
+  isImageFile,
+  IMAGE_EXTENSIONS,
+  type ContentPart,
+  type ParsedInput,
+} from './core/llm.js'
+
 export {
   tools,
   getToolDefinitions,
@@ -45,7 +57,7 @@ export {
 } from './tools/network.js'
 
 // ===== 记忆系统 =====
-export { MemoryStore, getMemoryStore } from './memory/store.js'
+export { MemoryStore, getMemoryStore, serializeContent, deserializeContent } from './memory/store.js'
 
 // ===== 配置（M2 将解耦为可注入；先导出保留现状）=====
 export { config } from './core/config.js'

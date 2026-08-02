@@ -27,6 +27,34 @@ interface MemoryRow {
   created_at: string
 }
 
+/**
+ * content 序列化：多模态数组（含图片）存 JSON，纯文本原样
+ * 图片 part 用占位符替代——不把 base64 图片数据落库（防止 SQLite 膨胀、FTS 污染）
+ */
+export function serializeContent(content: Message['content']): string {
+  if (typeof content === 'string') return content
+  if (!Array.isArray(content)) return String(content || '')
+  const parts = content.map(p => {
+    if (p && p.type === 'text') return p.text
+    return '[图片]'
+  })
+  return JSON.stringify({ type: 'multimodal', parts })
+}
+
+/** content 反序列化：多模态 JSON → 拼接文本（图片已占位）；老数据字符串原样 */
+export function deserializeContent(raw: string): Message['content'] {
+  if (!raw) return ''
+  try {
+    const parsed = JSON.parse(raw)
+    if (parsed && typeof parsed === 'object' && parsed.type === 'multimodal' && Array.isArray(parsed.parts)) {
+      return parsed.parts.join('')
+    }
+    return raw
+  } catch {
+    return raw
+  }
+}
+
 export class MemoryStore {
   private db: Database.Database
 
@@ -138,7 +166,7 @@ export class MemoryStore {
     stmt.run(
       sessionId,
       message.role,
-      message.content || '',
+      serializeContent(message.content),
       message.tool_call_id || null,
       message.name || null,
       message.tool_calls ? JSON.stringify(message.tool_calls) : null
@@ -158,7 +186,7 @@ export class MemoryStore {
 
     return rows.map(r => ({
       role: r.role as Message['role'],
-      content: r.content || '',
+      content: deserializeContent(r.content || ''),
       ...(r.tool_call_id ? { tool_call_id: r.tool_call_id } : {}),
       ...(r.name ? { name: r.name } : {}),
       ...(r.tool_calls ? { tool_calls: JSON.parse(r.tool_calls) } : {}),

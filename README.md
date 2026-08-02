@@ -131,6 +131,9 @@ cp .env.example ~/.flare/.env
 | `ANTHROPIC_API_KEY` | Anthropic API 密钥 | — |
 | `DEFAULT_MODEL` | 默认模型 | `deepseek-chat` |
 | `OPENAI_BASE_URL` | 自定义 API 地址 | 自动检测 |
+| `VISION_MODEL` | 视觉模型（看图时用） | `qwen2.5vl:7b` |
+| `VISION_BASE_URL` | 视觉模型 API 地址（本地 Ollama） | `http://localhost:11434/v1` |
+| `VISION_API_KEY` | 视觉模型 API 密钥 | `ollama` |
 | `FLARE_HOME` | 数据目录 | `~/.flare` |
 
 ### CLI 命令
@@ -140,16 +143,21 @@ cp .env.example ~/.flare/.env
 | `flare` | 交互模式（默认） |
 | `flare chat` | 交互模式 |
 | `flare chat -q "问题"` | 单次查询模式 |
+| `flare chat -q "问题" -i 图片.png` | 单次查询附带图片 |
 
 交互模式命令：
 
 | 命令 | 功能 |
 |------|------|
 | `/help` | 显示帮助 |
+| `/image <路径> <问题>` | 显式看图 |
 | `/memory` | 查看持久记忆 |
 | `/sessions` | 查看最近会话 |
 | `/clear` | 清屏 |
 | `/exit` | 退出 |
+
+> 💡 **看图**：对话里直接发图片路径也会自动识别（如 `看看这张图 ~/Pictures/a.png`），
+> 自动切换到本地视觉模型（VLM），图片不出本机。支持引号路径、data URL（未来 GUI 贴截图）。
 
 ---
 
@@ -299,6 +307,16 @@ Interactive mode commands:
 ### Changelog / Release Notes
 
 > 中文条目 / Chinese entries · English summary for each version
+
+#### v0.4.0 (2026-08-02) — 本地视觉能力 / Local vision (VLM)
+- 👁️ **多模态支持**：`Message.content` 支持 `string | ContentPart[]`（text + image_url），OpenAI 兼容格式
+- 🖼️ **自动识别图片**：对话中直接发图片路径（`看看这张图 xxx.png`）自动附加并切换本地视觉模型；支持 `~` 展开、引号路径（含空格）、data URL（未来 GUI 贴截图）
+- 🧠 **视觉 / 文本双模型**：普通对话走默认模型（DeepSeek），看图自动走本地 VLM（`VISION_MODEL`/`VISION_BASE_URL`/`VISION_API_KEY` 配置，默认 qwen2.5vl:7b @ localhost:11434），图片不出本机
+- ⌨️ 新命令 `/image <路径> <问题>`（显式看图）+ `chat -q -i <图片>`（单次模式带图）
+- 🗄️ 会话存储兼容：多模态 content 序列化存取，图片数据不落库（`[图片]` 占位，防 SQLite 膨胀）
+- 🧪 新增视觉单测 16 项（parseAttachments 自动识别 / buildImageContent / 序列化往返），共 35/35
+- ⚠️ 已知：Ollama qwen2.5vl 不支持 function calling——看图时纯对话（不传 tools）
+- EN: Local vision support — auto-detect image paths in chat, route to local VLM (qwen2.5vl:7b via Ollama), multimodal message type, /image command, image data not persisted. 35/35 tests.
 
 #### v0.3.0 (2026-08-01) — 引擎库化 + 专家模式 / Engine as a library + Expert Profile
 - 📦 **M1 flare-core 抽离**：新增库入口 `src/index.ts`，导出 `Agent` / `createProvider` / `Tool` / `MemoryStore` / `ExpertProfile`；package.json exports（`.` 与 `./core` 指向引擎，`./cli` 保留 CLI）；CLI 变第一个消费者
