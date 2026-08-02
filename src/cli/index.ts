@@ -46,6 +46,7 @@ async function startInteractive() {
   let agentOutput = ''
   let pendingText = ''   // Agent 草稿缓冲
   let exiting = false
+  let paused = false     // 动画暂停（便于复制输出；暂停时只重绘输入行不清屏）
 
   // ===== 渲染 =====
   const CONTENT_ROW = 6   // 内容区起始行（0 基）：banner 4 行 + 空行 + 提示语行
@@ -76,6 +77,15 @@ async function startInteractive() {
     const t = Date.now() / 1000
     const banner = renderFlameFrame(flame, t)
     const breath = flameBreathColor(Date.now())
+
+    // 暂停模式：只重绘输入行（不清屏），屏幕静止可选中复制
+    if (paused) {
+      const inputRow = CONTENT_ROW + (agentOutput.trim() ? agentOutput.split('\n').length : 0)
+      process.stdout.write(`\x1b[${inputRow};1H\x1b[2K` + lineInput.renderLine(breath))
+      lineInput.positionCursorAt(inputRow - 1, 0)
+      return
+    }
+
     let out = '\x1b[2J\x1b[H'
     out += '\n'                       // 顶部空行（不顶格）
     out += banner + '\n'
@@ -177,6 +187,24 @@ async function startInteractive() {
     return result
   }
 
+  // ===== 动画暂停/恢复（复制输出用）=====
+  const togglePause = () => {
+    if (paused) {
+      // 恢复
+      paused = false
+      agentOutput += Y('（动画已恢复，/pause 可再次暂停）') + '\n'
+      renderFrame()
+      startRenderLoop()
+    } else {
+      // 暂停：停循环 → 全量渲染一次（含提示）→ 进入静止模式
+      stopRenderLoop()
+      paused = false
+      agentOutput += Y('⏸ 动画已暂停：屏幕静止，可选中复制输出；输入 /resume 恢复') + '\n'
+      renderFrame()
+      paused = true
+    }
+  }
+
   // ===== 主循环 =====
   startRenderLoop()
   renderFrame()
@@ -187,6 +215,11 @@ async function startInteractive() {
     const input = raw.trim()
     if (!input) continue
     if (input.startsWith('/')) {
+      // /pause /resume：动画暂停（复制输出用）
+      if (input === '/pause' || input === '/resume') {
+        togglePause()
+        continue
+      }
       // /image <路径> <问题> —— 显式看图（普通对话直接发图片路径也会自动识别）
       if (input.toLowerCase().startsWith('/image')) {
         const img = parseImageCommand(input)
@@ -290,6 +323,8 @@ async function handleSlashCommand(
       output('  /clear       - 清屏')
       output('  /image       - 显式看图（如: /image ~/Pictures/a.png 这张图里有什么）')
       output('  /vision      - 切换看图模型（/vision 3b 快速 | /vision 7b 质量）')
+      output('  /pause       - 暂停动画（屏幕静止，可选中复制输出）')
+      output('  /resume      - 恢复动画')
       output(chalk.gray('  💡 对话里直接发图片路径也会自动识别（如: 看看这张图 xxx.png）'))
       break
     case '/usage':
