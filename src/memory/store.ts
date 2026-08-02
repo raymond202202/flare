@@ -164,6 +164,28 @@ export class MemoryStore {
     return id
   }
 
+  /** 列出所有会话（含消息数），按更新时间倒序 */
+  getAllSessions(): { id: string; title: string; createdAt: string; updatedAt: string; messageCount: number }[] {
+    const rows = this.db.prepare(`
+      SELECT s.id, s.title, s.created_at, s.updated_at,
+             (SELECT COUNT(*) FROM messages m WHERE m.session_id = s.id) AS message_count
+      FROM sessions s
+      ORDER BY s.updated_at DESC
+    `).all() as any[]
+    return rows.map(r => ({
+      id: r.id,
+      title: r.title || '新会话',
+      createdAt: r.created_at || '',
+      updatedAt: r.updated_at || '',
+      messageCount: Number(r.message_count) || 0,
+    }))
+  }
+
+  /** 更新会话标题 */
+  updateSessionTitle(sessionId: string, title: string) {
+    this.db.prepare('UPDATE sessions SET title = ? WHERE id = ?').run(title, sessionId)
+  }
+
   /** 保存消息到会话 */
   saveMessage(sessionId: string, message: Message) {
     // 自动创建会话（幂等）：外部应用传固定 sessionId（如 pulse-ai）时，
