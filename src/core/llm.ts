@@ -116,20 +116,25 @@ export function parseAttachments(input: string): ParsedInput {
   for (const d of dataUrls) attachments.push(d)
   text = text.replace(DATA_URL_RE, ' ')
 
-  // 2. 引号包裹的路径
-  const quotedMatches = [...text.matchAll(QUOTED_PATH_RE)]
-  for (const m of quotedMatches) {
-    if (isImageFile(m[2])) attachments.push(m[2])
-  }
-  text = text.replace(QUOTED_PATH_RE, ' ')
+  // 2. 引号包裹的路径：只有真实存在的图片才剥离，否则保留原文
+  //    （避免用户输入 "hello.png" 这类引号文本时内容被误吞）
+  text = text.replace(QUOTED_PATH_RE, (match, _q, p) => {
+    if (isImageFile(p)) {
+      attachments.push(p)
+      return ' '
+    }
+    return match
+  })
 
-  // 3. 裸路径 token（去尾部标点）
-  const bareMatches = [...text.matchAll(BARE_PATH_RE)]
-  for (const m of bareMatches) {
-    const cleaned = m[1].replace(/[),;:!?。，；：！？]+$/, '')
-    if (isImageFile(cleaned)) attachments.push(cleaned)
-  }
-  text = text.replace(BARE_PATH_RE, ' ')
+  // 3. 裸路径 token：同样只剥离存在的图片（去尾部标点）
+  text = text.replace(BARE_PATH_RE, (match, p) => {
+    const cleaned = p.replace(/[),;:!?。，；：！？]+$/, '')
+    if (isImageFile(cleaned)) {
+      attachments.push(cleaned)
+      return ' '
+    }
+    return match
+  })
 
   return { text: text.replace(/\s+/g, ' ').trim(), attachments }
 }

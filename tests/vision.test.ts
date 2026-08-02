@@ -53,6 +53,13 @@ describe('parseAttachments 自动识别图片', () => {
     expect(r.text).toContain(txtPath)
   })
 
+  it('引号包裹但文件不存在的路径 → 保留原文不剥离（防误吞）', () => {
+    const r = parseAttachments('"hello.png" 请解释这个')
+    expect(r.attachments).toEqual([])
+    expect(r.text).toContain('"hello.png"')
+    expect(r.text).toContain('请解释这个')
+  })
+
   it('尾部标点剥离（xxx.png？）', () => {
     const r = parseAttachments(`看 ${pngPath}？`)
     expect(r.attachments).toEqual([pngPath])
