@@ -99,12 +99,31 @@ const QUOTED_PATH_RE = /(["'])(.*?\.(?:png|jpe?g|webp|gif|bmp|heic|avif|svg))\1/
 const BARE_PATH_RE = /(\S+\.(?:png|jpe?g|webp|gif|bmp|heic|avif|svg))/gi
 
 /**
+ * 从 token 中提取可能的路径部分：
+ * 输入可能粘连中文/标点（"识别这张图：/home/...png" 无空格时整句是一个 token），
+ * 从第一个路径起点（~/、./、../、/）截取到结尾作为路径候选。
+ */
+function extractPathFromToken(token: string): string | null {
+  const starts: number[] = []
+  const tilde = token.indexOf('~/')
+  const dotDot = token.indexOf('../')
+  const dot = token.indexOf('./')
+  const abs = token.indexOf('/')
+  if (tilde >= 0) starts.push(tilde)
+  if (dotDot >= 0) starts.push(dotDot)
+  if (dot >= 0) starts.push(dot)
+  if (abs >= 0) starts.push(abs)
+  if (starts.length === 0) return null
+  return token.slice(Math.min(...starts))
+}
+
+/**
  * 从用户输入中自动识别图片（路径 或 内嵌 data URL）：
  * - 引号包裹的路径（含空格）："我的截图 01.png"
- * - 裸路径 token：~/Pictures/a.png
+ * - 裸路径 token：~/Pictures/a.png（支持粘连中文/标点：识别这张图：/home/...png）
  * - data URL：data:image/png;base64,...
  *
- * 命中且文件存在 → 从文本中剥离，加入 attachments。
+ * 命中且文件存在 → 从文本中剥离，加入 attachments（保留路径前的中文提示文本）。
  * 调用方无需显式传图；未来 GUI 贴截图（data URL）也能自动处理。
  */
 export function parseAttachments(input: string): ParsedInput {
@@ -116,22 +135,26 @@ export function parseAttachments(input: string): ParsedInput {
   for (const d of dataUrls) attachments.push(d)
   text = text.replace(DATA_URL_RE, ' ')
 
-  // 2. 引号包裹的路径：只有真实存在的图片才剥离，否则保留原文
-  //    （避免用户输入 "hello.png" 这类引号文本时内容被误吞）
-  text = text.replace(QUOTED_PATH_RE, (match, _q, p) => {
-    if (isImageFile(p)) {
-      attachments.push(p)
-      return ' '
+  // 2. 引号包裹的路径：提取真实路径部分，只有存在才剥离，否则保留原文
+  text = text.replace(QUOTED_PATH_RE, (match, quote, p) => {
+    const pathCandidate = extractPathFromToken(p)
+    if (pathCandidate && isImageFile(pathCandidate)) {
+      attachments.push(pathCandidate)
+      const prefix = p.slice(0, p.length - pathCandidate.length)
+      // 有前缀文本保留引号结构；纯路径直接替换为空格
+      return prefix ? quote + prefix + ' ' + quote : ' '
     }
     return match
   })
 
-  // 3. 裸路径 token：同样只剥离存在的图片（去尾部标点）
+  // 3. 裸路径 token：提取路径部分，只剥离存在的图片（保留前缀文本）
   text = text.replace(BARE_PATH_RE, (match, p) => {
     const cleaned = p.replace(/[),;:!?。，；：！？]+$/, '')
-    if (isImageFile(cleaned)) {
-      attachments.push(cleaned)
-      return ' '
+    const pathCandidate = extractPathFromToken(cleaned)
+    if (pathCandidate && isImageFile(pathCandidate)) {
+      attachments.push(pathCandidate)
+      const prefix = cleaned.slice(0, cleaned.length - pathCandidate.length)
+      return prefix + ' '
     }
     return match
   })

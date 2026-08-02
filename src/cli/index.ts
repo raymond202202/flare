@@ -83,12 +83,17 @@ async function startInteractive() {
     if (agentRunning) {
       out += agentOutput
     } else {
+      // 保留上一轮回答（不随运行结束清掉），输入行在回答下方
+      if (agentOutput.trim()) {
+        out += agentOutput
+      }
       out += lineInput.renderLine(breath)  // prompt 呼吸色
     }
     process.stdout.write(out)
     // 输入模式下光标定位到输入位置（Agent 运行时无输入光标）
     if (!agentRunning) {
-      lineInput.positionCursorAt(CONTENT_ROW, 0)
+      const contentRows = agentOutput.trim() ? agentOutput.split('\n').length : 0
+      lineInput.positionCursorAt(CONTENT_ROW + contentRows, 0)
     }
   }
 

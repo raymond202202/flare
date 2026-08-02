@@ -60,6 +60,20 @@ describe('parseAttachments 自动识别图片', () => {
     expect(r.text).toContain('请解释这个')
   })
 
+  it('路径粘连中文/标点（无空格）也能识别', () => {
+    // 模拟用户输入：识别这张图：/tmp/xxx/test.png（路径前粘连中文和全角冒号）
+    const r = parseAttachments(`识别这张图：${pngPath}`)
+    expect(r.attachments).toEqual([pngPath])
+    expect(r.text).toContain('识别这张图')
+  })
+
+  it('粘连路径保留前缀文本（提示语不丢）', () => {
+    const r = parseAttachments(`帮我看看${pngPath}里面有什么`)
+    expect(r.attachments).toEqual([pngPath])
+    expect(r.text).toContain('帮我看看')
+    expect(r.text).toContain('里面有什么')
+  })
+
   it('尾部标点剥离（xxx.png？）', () => {
     const r = parseAttachments(`看 ${pngPath}？`)
     expect(r.attachments).toEqual([pngPath])

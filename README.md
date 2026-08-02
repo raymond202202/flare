@@ -309,6 +309,12 @@ Interactive mode commands:
 
 > 中文条目 / Chinese entries · English summary for each version
 
+#### v0.4.3 (2026-08-02) — 修复图片识别粘连 + 回答消失 / Fixed path detection + answer persistence
+- 🐛 **parseAttachments 支持粘连中文/标点的路径**：`识别这张图：/home/...png`（无空格）之前整句被当 token 验证失败 → 消息误走 DeepSeek 文本（它只能装 OCR 硬啃）。现在提取路径部分（从 ~/、./、../、/ 起点截取）验证存在性，识别成功且保留前缀提示文本
+- 🐛 **Agent 回答不再消失**：运行结束后 renderFrame 清掉输出区只留输入行（回答随重绘消失）。现在回答保留在屏幕，输入行动态定位到回答下方
+- 🧪 新增 2 项测试（粘连路径识别/前缀保留），共 38/38
+- EN: Path detection now handles Chinese/punctuation-adjacent paths (no space needed). Agent answers persist on screen after completion instead of vanishing on redraw. 38/38 tests.
+
 #### v0.4.2 (2026-08-02) — 看图提速：默认 3B + /vision 切换 / Faster vision: 3B default + /vision switch
 - ⚡ 看图默认模型改为 **qwen2.5vl:3b**：模型加载后单张 ~4 秒（7B 是 30-60 秒），日常 OCR/截图流畅
 - 🔀 新增 `/vision` 命令：`/vision 3b|fast`（快速）/ `/vision 7b|quality`（质量）/ `/vision default`（回 .env 默认）；切换持久化到 settings 表，无需改 .env 重启
