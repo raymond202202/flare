@@ -129,6 +129,19 @@ export class Agent {
   }
 
   /**
+   * 动态注入额外系统上下文（如宿主应用当前状态快照）
+   * 不污染消息历史；重复调用会替换上一次的注入（避免累积）
+   */
+  setContext(extra: string) {
+    const sysMsg = this.messages.find(m => m.role === 'system')
+    if (sysMsg && typeof sysMsg.content === 'string') {
+      const marker = '\n\n## 当前状态'
+      const base = sysMsg.content.split(marker)[0]
+      sysMsg.content = extra ? `${base}${marker}\n${extra}` : base
+    }
+  }
+
+  /**
    * 清理消息历史中的"孤儿"消息：
    * - assistant(tool_calls) 后面没有对应的 tool 响应 → 删除该 assistant
    * - 孤立的 tool 响应（前面没有 assistant(tool_calls) 配对）→ 删除
