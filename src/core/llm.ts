@@ -289,14 +289,16 @@ export function createProvider(): LLMProvider {
  * 创建视觉 LLM 提供者（本地 VLM）
  *
  * 配置来源（~/.flare/.env）：
- *   VISION_MODEL=qwen2.5vl:7b
+ *   VISION_MODEL=qwen2.5vl:3b
  *   VISION_BASE_URL=http://localhost:11434/v1
  *   VISION_API_KEY=ollama
  *
+ * modelOverride 优先于 VISION_MODEL（运行时 /vision 命令切换用）。
+ * 默认 qwen2.5vl:3b（快一倍，覆盖日常 OCR/截图）；质量优先可切 7B。
  * 仅在看图（消息含图片）时使用；普通文本对话仍走默认 provider。
  */
-export function createVisionProvider(): LLMProvider {
-  const model = config.get('VISION_MODEL') || 'qwen2.5vl:7b'
+export function createVisionProvider(modelOverride?: string): LLMProvider {
+  const model = modelOverride || config.get('VISION_MODEL') || 'qwen2.5vl:3b'
   const baseURL = config.get('VISION_BASE_URL') || 'http://localhost:11434/v1'
   const apiKey = config.get('VISION_API_KEY') || 'ollama'
   return new OpenAIProvider({ model, baseURL, apiKey })

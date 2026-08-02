@@ -211,7 +211,9 @@ export class Agent {
       // 懒创建视觉 provider（仅在真正看图时初始化）
       if (!this.visionProvider) {
         try {
-          this.visionProvider = createVisionProvider()
+          // 运行时 /vision 切换的模型优先（存 settings 表）；否则 VISION_MODEL 或默认 3B
+          const savedModel = this.store.getSetting('vision_model') || undefined
+          this.visionProvider = createVisionProvider(savedModel)
         } catch (e: any) {
           yield { type: 'error', content: `视觉模型初始化失败: ${e.message}。请检查 ~/.flare/.env 的 VISION_* 配置。` }
           yield { type: 'done', content: '' }
