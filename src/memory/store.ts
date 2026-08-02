@@ -166,6 +166,12 @@ export class MemoryStore {
 
   /** 保存消息到会话 */
   saveMessage(sessionId: string, message: Message) {
+    // 自动创建会话（幂等）：外部应用传固定 sessionId（如 pulse-ai）时，
+    // 首次写入若不创建 sessions 记录会触发 FOREIGN KEY constraint failed
+    this.db.prepare(
+      'INSERT OR IGNORE INTO sessions (id, title) VALUES (?, ?)'
+    ).run(sessionId, '新会话')
+
     const stmt = this.db.prepare(
       'INSERT INTO messages (session_id, role, content, tool_call_id, name, tool_calls) VALUES (?, ?, ?, ?, ?, ?)'
     )
