@@ -114,7 +114,7 @@ async function startInteractive() {
   process.on('SIGINT', onSigint)
 
   // ===== Agent 运行（输出累积到内容区，火焰继续跳）=====
-  async function runAgent(input: string) {
+  async function runAgent(input: string, attachments?: string[]) {
     agentRunning = true
     agentOutput = ''
     pendingText = ''
@@ -126,7 +126,7 @@ async function startInteractive() {
     }
 
     try {
-      for await (const chunk of agent.run(input)) {
+      for await (const chunk of agent.run(input, attachments)) {
         switch (chunk.type) {
           case 'text':
             pendingText += chunk.content
@@ -182,6 +182,17 @@ async function startInteractive() {
     const input = raw.trim()
     if (!input) continue
     if (input.startsWith('/')) {
+      // /image <路径> <问题> —— 显式看图（普通对话直接发图片路径也会自动识别）
+      if (input.toLowerCase().startsWith('/image')) {
+        const img = parseImageCommand(input)
+        if (img.attachments.length === 0) {
+          const action = await runCommand(input) // 显示用法提示
+          if (action === 'exit') break
+        } else {
+          await runAgent(img.text || '请描述这张图片', img.attachments)
+        }
+        continue
+      }
       const action = await runCommand(input)
       if (action === 'exit') break
       continue
@@ -196,6 +207,28 @@ async function startInteractive() {
   }
   console.log(Y('\n再见！✨'))
   process.exit(0)
+}
+
+/**
+ * 解析 /image 命令：/image <图片路径> <问题>
+ * 路径支持引号包裹（含空格）；剩余文本为问题
+ */
+function parseImageCommand(cmd: string): { text: string; attachments: string[] } {
+  const rest = cmd.replace(/^\/image\s+/i, '').trim()
+  if (!rest) return { text: '', attachments: [] }
+
+  // 引号包裹的路径："我的截图 01.png" 剩下的都是问题
+  const quoted = rest.match(/^["'](.+?)["']\s*([\s\S]*)$/)
+  if (quoted) {
+    return { text: quoted[2].trim(), attachments: [quoted[1]] }
+  }
+
+  // 第一个空格前的 token 当路径
+  const sp = rest.indexOf(' ')
+  if (sp === -1) {
+    return { text: '', attachments: [rest] }
+  }
+  return { text: rest.slice(sp + 1).trim(), attachments: [rest.slice(0, sp)] }
 }
 
 async function handleSlashCommand(
@@ -226,6 +259,8 @@ async function handleSlashCommand(
       output('  /usage       - 查看 token 用量')
       output('  /sessions    - 查看会话列表')
       output('  /clear       - 清屏')
+      output('  /image       - 显式看图（如: /image ~/Pictures/a.png 这张图里有什么）')
+      output(chalk.gray('  💡 对话里直接发图片路径也会自动识别（如: 看看这张图 xxx.png）'))
       break
     case '/usage':
       const usage = store.getUsageStats()
@@ -294,7 +329,7 @@ async function handleSlashCommand(
   return 'continue'
 }
 
-async function runQuery(query: string, maxIterations?: number) {
+async function runQuery(query: string, maxIterations?: number, attachments?: string[]) {
   const store = getMemoryStore()
   const sessionId = store.createSession('单次查询')
   const agent = new Agent({ sessionId, maxIterations })
@@ -317,7 +352,7 @@ async function runQuery(query: string, maxIterations?: number) {
       pendingText = ''
     }
 
-    for await (const chunk of agent.run(query)) {
+    for await (const chunk of agent.run(query, attachments)) {
       switch (chunk.type) {
         case 'text':
           pendingText += chunk.content
@@ -359,11 +394,12 @@ export function main() {
     .command('chat')
     .description('与 Flare 对话')
     .option('-q, --query <text>', '单次查询模式，直接提问')
+    .option('-i, --image <path>', '附带图片路径（可与 -q 一起用；也可在问题中直接写路径）')
     .option('-m, --max-iterations <n>', '最大工具调用迭代次数（默认30，上限50）')
-    .action(async (options: { query?: string; maxIterations?: string }) => {
+    .action(async (options: { query?: string; image?: string; maxIterations?: string }) => {
       if (options.query) {
         const maxIter = options.maxIterations ? parseInt(options.maxIterations, 10) : undefined
-        await runQuery(options.query, maxIter)
+        await runQuery(options.query, maxIter, options.image ? [options.image] : undefined)
       } else {
         startInteractive()
       }

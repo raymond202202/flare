@@ -5,7 +5,7 @@
  * 参考：Hermes、Claude Code 的 agent loop 设计
  */
 
-import { Message, LLMProvider, createProvider, ToolDefinition } from './llm.js'
+import { Message, LLMProvider, createProvider, createVisionProvider, buildImageContent, parseAttachments, type ContentPart, type ToolDefinition } from './llm.js'
 import { getToolDefinitions, executeTool, type Tool } from '../tools/index.js'
 import { getMemoryStore, MemoryStore } from '../memory/store.js'
 import { logger } from './logger.js'
@@ -23,6 +23,12 @@ export interface AgentConfig {
   identity?: string
   /** M2: Flare 介绍话术——用户追问"flare 是什么"时按此回答（品牌共生） */
   flareIntro?: string
+  /** M3+: 视觉 LLM provider（消息含图片时用；缺省懒创建本地 VLM） */
+  visionProvider?: LLMProvider
+  /** 是否启用图片自动识别（默认 true；false 时忽略消息中的图片） */
+  visionEnabled?: boolean
+  /** 注入主 LLM provider（默认 createProvider()）；测试可注入 mock */
+  llm?: LLMProvider
 }
 
 const DEFAULT_SYSTEM_PROMPT = `你是 Flare，一个通用能力的 AI Agent。
@@ -66,6 +72,7 @@ const DEFAULT_SYSTEM_PROMPT = `你是 Flare，一个通用能力的 AI Agent。
 
 export class Agent {
   private llm: LLMProvider
+  private visionProvider: LLMProvider | null = null
   private config: AgentConfig
   private messages: Message[] = []
   private tools: ToolDefinition[] = []
@@ -73,8 +80,11 @@ export class Agent {
   private store: MemoryStore
 
   constructor(config: AgentConfig = {}) {
-    this.llm = createProvider()
+    this.llm = config.llm || createProvider()
     this.config = config
+    if (config.visionProvider) {
+      this.visionProvider = config.visionProvider
+    }
 
     // M2: 注入工具集（config.tools 优先，缺省用内置）
     const injected = config.tools || []
@@ -180,13 +190,42 @@ export class Agent {
   /**
    * 执行一次完整的 Agent 推理循环
    * 直到 LLM 不再调用工具或达到最大迭代次数
+   *
+   * @param userInput 用户输入（会自动识别其中的图片路径 / data URL）
+   * @param attachments 显式图片附件（本地路径或 data URL；与自动识别合并）
    */
-  async *run(userInput: string): AsyncGenerator<{ type: 'text' | 'tool_call' | 'tool_result' | 'done' | 'error'; content: string; toolName?: string }, void, unknown> {
+  async *run(userInput: string, attachments?: string[]): AsyncGenerator<{ type: 'text' | 'tool_call' | 'tool_result' | 'done' | 'error'; content: string; toolName?: string }, void, unknown> {
     // 防御：清理内存中可能存在的孤儿消息（上次运行中途失败等）
     this.cleanOrphanTail()
 
-    // 添加用户消息
-    this.messages.push({ role: 'user', content: userInput })
+    // 自动识别图片（路径 / data URL）；显式 attachments 合并
+    const parsed = parseAttachments(userInput)
+    const finalAttachments = [...(attachments || []), ...parsed.attachments]
+    const hasImages = this.config.visionEnabled !== false && finalAttachments.length > 0
+    const inputText = parsed.text || (hasImages ? '请描述这张图片' : userInput)
+
+    // 构建用户消息（多模态：文本 + 图片）
+    let content: string | ContentPart[]
+    if (hasImages) {
+      content = buildImageContent(inputText, finalAttachments)
+      // 懒创建视觉 provider（仅在真正看图时初始化）
+      if (!this.visionProvider) {
+        try {
+          this.visionProvider = createVisionProvider()
+        } catch (e: any) {
+          yield { type: 'error', content: `视觉模型初始化失败: ${e.message}。请检查 ~/.flare/.env 的 VISION_* 配置。` }
+          yield { type: 'done', content: '' }
+          return
+        }
+      }
+    } else {
+      content = inputText
+    }
+    this.messages.push({ role: 'user', content })
+
+    // 本轮使用的 provider：含图 → 视觉模型；否则主模型
+    const provider = hasImages && this.visionProvider ? this.visionProvider : this.llm
+
     // 记录本轮消息的起始位置（用于会话保存）
     const turnStartIdx = this.messages.length - 1
 
@@ -204,7 +243,8 @@ export class Agent {
       this.trimContext()
 
       // 调用 LLM
-      const response = await this.llm.chat(this.messages, this.tools)
+      // 视觉模型（Ollama qwen2.5vl）不支持 function calling——看图时纯对话，不传 tools
+      const response = await provider.chat(this.messages, hasImages ? undefined : this.tools)
       logger.debug(`LLM 响应: model=${response.model}, content=${(response.content || '').length}字符, tool_calls=${response.tool_calls?.length || 0}`)
 
       // 记录 token 用量（如果 provider 返回了 usage）

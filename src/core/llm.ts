@@ -6,16 +6,132 @@
  */
 
 import OpenAI from 'openai'
+import { existsSync, readFileSync } from 'fs'
+import { homedir } from 'os'
+import { extname, join, resolve } from 'path'
 import { config } from '../core/config.js'
 
 export type MessageRole = 'system' | 'user' | 'assistant' | 'tool'
 
+/**
+ * 多模态消息内容片段（OpenAI 兼容格式）
+ * - text: 纯文本
+ * - image_url: 图片（本地路径转 data URL，或直接传 data URL / http URL）
+ */
+export type ContentPart =
+  | { type: 'text'; text: string }
+  | { type: 'image_url'; image_url: { url: string } }
+
 export interface Message {
   role: MessageRole
-  content: string
+  /** 纯文本 或 多模态片段数组（含图片） */
+  content: string | ContentPart[]
   tool_call_id?: string
   name?: string
   tool_calls?: ToolCall[]
+}
+
+// ===== 图片识别 / 多模态构建 =====
+
+export const IMAGE_EXTENSIONS = ['.png', '.jpg', '.jpeg', '.webp', '.gif', '.bmp', '.heic', '.avif', '.svg']
+
+const MIME_TYPES: Record<string, string> = {
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.webp': 'image/webp',
+  '.gif': 'image/gif',
+  '.bmp': 'image/bmp',
+  '.heic': 'image/heic',
+  '.avif': 'image/avif',
+  '.svg': 'image/svg+xml',
+}
+
+/** 展开 ~ 并解析为绝对路径 */
+export function resolveImagePath(p: string): string {
+  const expanded = p.startsWith('~/') ? join(homedir(), p.slice(2)) : p
+  return resolve(expanded)
+}
+
+/** 本地图片文件 → data URL */
+export function fileToDataUrl(filePath: string): string {
+  const ext = extname(filePath).toLowerCase()
+  const mime = MIME_TYPES[ext] || 'image/png'
+  const b64 = readFileSync(filePath).toString('base64')
+  return `data:${mime};base64,${b64}`
+}
+
+/** 判断是否为存在的本地图片文件（支持 ~ 展开、相对路径） */
+export function isImageFile(p: string): boolean {
+  try {
+    const resolved = resolveImagePath(p)
+    return existsSync(resolved) && IMAGE_EXTENSIONS.includes(extname(resolved).toLowerCase())
+  } catch {
+    return false
+  }
+}
+
+/** 构建多模态消息内容：文本 + 图片列表（路径或 data URL） */
+export function buildImageContent(text: string, attachments: string[]): ContentPart[] {
+  const parts: ContentPart[] = []
+  if (text.trim()) parts.push({ type: 'text', text })
+  for (const p of attachments) {
+    if (p.startsWith('data:image/')) {
+      parts.push({ type: 'image_url', image_url: { url: p } })
+    } else if (p.startsWith('data:')) {
+      parts.push({ type: 'image_url', image_url: { url: p } })
+    } else {
+      parts.push({ type: 'image_url', image_url: { url: fileToDataUrl(resolveImagePath(p)) } })
+    }
+  }
+  return parts
+}
+
+export interface ParsedInput {
+  /** 剥离图片路径/data URL 后的纯文本 */
+  text: string
+  /** 识别出的图片附件（本地路径 或 data URL） */
+  attachments: string[]
+}
+
+const DATA_URL_RE = /data:image\/[a-zA-Z0-9+./-]+;base64,[A-Za-z0-9+/=]+/g
+const QUOTED_PATH_RE = /(["'])(.*?\.(?:png|jpe?g|webp|gif|bmp|heic|avif|svg))\1/gi
+const BARE_PATH_RE = /(\S+\.(?:png|jpe?g|webp|gif|bmp|heic|avif|svg))/gi
+
+/**
+ * 从用户输入中自动识别图片（路径 或 内嵌 data URL）：
+ * - 引号包裹的路径（含空格）："我的截图 01.png"
+ * - 裸路径 token：~/Pictures/a.png
+ * - data URL：data:image/png;base64,...
+ *
+ * 命中且文件存在 → 从文本中剥离，加入 attachments。
+ * 调用方无需显式传图；未来 GUI 贴截图（data URL）也能自动处理。
+ */
+export function parseAttachments(input: string): ParsedInput {
+  const attachments: string[] = []
+  let text = input
+
+  // 1. data URL
+  const dataUrls = text.match(DATA_URL_RE) || []
+  for (const d of dataUrls) attachments.push(d)
+  text = text.replace(DATA_URL_RE, ' ')
+
+  // 2. 引号包裹的路径
+  const quotedMatches = [...text.matchAll(QUOTED_PATH_RE)]
+  for (const m of quotedMatches) {
+    if (isImageFile(m[2])) attachments.push(m[2])
+  }
+  text = text.replace(QUOTED_PATH_RE, ' ')
+
+  // 3. 裸路径 token（去尾部标点）
+  const bareMatches = [...text.matchAll(BARE_PATH_RE)]
+  for (const m of bareMatches) {
+    const cleaned = m[1].replace(/[),;:!?。，；：！？]+$/, '')
+    if (isImageFile(cleaned)) attachments.push(cleaned)
+  }
+  text = text.replace(BARE_PATH_RE, ' ')
+
+  return { text: text.replace(/\s+/g, ' ').trim(), attachments }
 }
 
 export interface ToolCall {
@@ -162,4 +278,21 @@ export class OpenAIProvider implements LLMProvider {
  */
 export function createProvider(): LLMProvider {
   return new OpenAIProvider()
+}
+
+/**
+ * 创建视觉 LLM 提供者（本地 VLM）
+ *
+ * 配置来源（~/.flare/.env）：
+ *   VISION_MODEL=qwen2.5vl:7b
+ *   VISION_BASE_URL=http://localhost:11434/v1
+ *   VISION_API_KEY=ollama
+ *
+ * 仅在看图（消息含图片）时使用；普通文本对话仍走默认 provider。
+ */
+export function createVisionProvider(): LLMProvider {
+  const model = config.get('VISION_MODEL') || 'qwen2.5vl:7b'
+  const baseURL = config.get('VISION_BASE_URL') || 'http://localhost:11434/v1'
+  const apiKey = config.get('VISION_API_KEY') || 'ollama'
+  return new OpenAIProvider({ model, baseURL, apiKey })
 }
