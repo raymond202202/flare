@@ -11,7 +11,7 @@
 
 ```bash
 cd ~/hermes-projects/pulse
-npm install /home/fantastic/hermes-projects/flare   # 本地路径（开发期）
+npm install /path/to/flare   # 本地路径（开发期）
 # 发布后：npm install flare-agent
 ```
 
