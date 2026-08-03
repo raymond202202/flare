@@ -72,3 +72,7 @@ export { config } from './core/config.js'
 // ===== 专家配置（Expert Profile）=====
 export type { ExpertProfile } from './types.js'
 export { profileToConfig } from './types.js'
+
+// ===== 工具确认机制（withConfirmation）=====
+export { withConfirmation, isDenied } from './core/confirm.js'
+export type { ConfirmDecision, Confirmer } from './core/confirm.js'
