@@ -14,6 +14,10 @@ export interface ToolResult {
   success: boolean
   output: string
   error?: string
+  /** 用户拒绝（withConfirmation 机制） */
+  denied?: boolean
+  /** 用户要求替代方案 */
+  alternative?: boolean
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
