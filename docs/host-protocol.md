@@ -19,12 +19,13 @@ flare server --profile <expert-profile-file> --storage <db-path>
 ### 1. chat — 发起对话（流式）
 
 ```json
-{"type":"chat","sessionId":"s1","input":"帮我分析这个报错","context":"（可选状态快照）","tools":[<ToolDefinition>...]}
+{"type":"chat","sessionId":"s1","input":"帮我分析这个报错","context":"（可选状态快照）","tools":[<ToolDefinition>...],"model":"qwen2.5:7b"}
 ```
 
 - `sessionId`：会话标识（同 id 连续对话，历史累积）
 - `context`：可选，调用 `setContext` 注入宿主状态快照
 - `tools`：可选，宿主声明的工具定义；服务为会话创建"宿主代理工具"（执行时经 `tool_execute` 事件问宿主）
+- `model`：可选（v0.5.2），指定该会话主模型——本地 Ollama（如 `qwen2.5:7b`，自动走 localhost:11434/v1）/ 远端（如 `deepseek-chat`）；缺省用默认路由（.env DEFAULT_MODEL）；同一会话切换 model 会自动重建 Agent（历史从记忆库恢复）
 
 ### 2. cancel — 取消当前生成
 

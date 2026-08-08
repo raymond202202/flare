@@ -12,7 +12,7 @@
  */
 
 import { createInterface } from 'node:readline'
-import { Agent, profileToConfig, type ExpertProfile, type ToolDefinition, type Tool, type ToolResult } from './index.js'
+import { Agent, createProvider, profileToConfig, type ExpertProfile, type ToolDefinition, type Tool, type ToolResult } from './index.js'
 
 export interface HostServerOptions {
   profile: ExpertProfile
@@ -49,7 +49,8 @@ function makeHostTools(defs: ToolDefinition[], reply: (msg: any) => void, pendin
 /** 启动宿主协议服务（阻塞读 stdin） */
 export function startHostServer(opts: HostServerOptions) {
   const { profile, storage, toolTimeoutMs = 30000, namespace } = opts
-  const agents = new Map<string, Agent>()
+  // 会话 → { agent, model }：model 变化时重建 Agent（同 sessionId，历史从记忆库恢复）
+  const agents = new Map<string, { agent: Agent; model?: string }>()
   const cancels = new Map<string, { cancelled: boolean }>()
   const pending = new Map<string, PendingTool>()
 
@@ -57,21 +58,31 @@ export function startHostServer(opts: HostServerOptions) {
     process.stdout.write(JSON.stringify(msg) + '\n')
   }
 
-  const getAgent = (sessionId: string, tools?: ToolDefinition[]): Agent => {
-    let agent = agents.get(sessionId)
-    if (!agent) {
+  const getAgent = (sessionId: string, tools?: ToolDefinition[], model?: string): Agent => {
+    let entry = agents.get(sessionId)
+    // 请求带 model 且与会话当前模型不同 → 重建（新模型立即生效）
+    if (entry && model && entry.model !== model) {
+      entry = undefined
+    }
+    if (!entry) {
       const hostTools = tools && tools.length > 0
         ? makeHostTools(tools, reply, pending, toolTimeoutMs)
         : undefined
-      agent = new Agent({
-        ...profileToConfig(profile),
-        ...(hostTools ? { tools: hostTools } : {}),
-        sessionId: namespace ? `${namespace}:${sessionId}` : sessionId,
-        storage,
-      })
-      agents.set(sessionId, agent)
+      // model 字段 → 指定主模型 provider（如本地 Ollama qwen2.5:7b）；缺省用默认路由
+      const llm = model ? createProvider({ model }) : undefined
+      entry = {
+        agent: new Agent({
+          ...profileToConfig(profile),
+          ...(hostTools ? { tools: hostTools } : {}),
+          ...(llm ? { llm } : {}),
+          sessionId: namespace ? `${namespace}:${sessionId}` : sessionId,
+          storage,
+        }),
+        model,
+      }
+      agents.set(sessionId, entry)
     }
-    return agent
+    return entry.agent
   }
 
   const rl = createInterface({ input: process.stdin })
@@ -87,7 +98,8 @@ export function startHostServer(opts: HostServerOptions) {
       switch (req.type) {
         case 'chat': {
           const sessionId = String(req.sessionId || 'default')
-          const agent = getAgent(sessionId, req.tools)
+          // model 可选：指定本次会话主模型（如 qwen2.5:7b 本地 Ollama / deepseek-chat 远端）；缺省用默认路由
+          const agent = getAgent(sessionId, req.tools, req.model ? String(req.model) : undefined)
           if (req.context && typeof agent.setContext === 'function') {
             agent.setContext(String(req.context))
           }

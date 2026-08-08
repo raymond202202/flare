@@ -33,10 +33,11 @@
 - [x] **P1** LLM 模型路由（llm.ts）：抽出纯函数 `resolveProviderOptions({ model, baseURL, apiKey })`——模型名含 `:`（Ollama 命名如 `qwen2.5:7b`/`llama3.1:8b`）→ 本地 `http://localhost:11434/v1` + apiKey `ollama`；deepseek/gpt 自动检测保持；claude 明确报错保持；新增 `LLM_BASE_URL` / `LLM_API_KEY` 配置覆盖（config.ts + .env.example）；`createProvider(options?)` 支持传参；导出供测试。新增 tests/llm.test.ts（纯函数，无网络）
 - [x] **P2** CLI `/model` 命令（cli/index.ts）：`/model` 显示当前主模型、`/model <name>` 切换（写 settings `main_model`）、`/model default` 回默认；切换后重建 Agent（同 sessionId，历史从记忆库恢复）并注入 `llm: createProvider({ model })`；单次查询模式同样读取 `main_model`；`/help` 同步；导出 handleSlashCommand 供单测。附带修复：CLI 入口守卫（作为库 import 不自动启动 main，避免测试触发 commander）
 - [x] **P3** 文档与收尾：README Changelog v0.5.2 + 版本号 + README 配置表（LLM_BASE_URL/LLM_API_KEY/DEFAULT_MODEL 说明）+ docs/multi-model.md 多模型指南 + 全量回归
+- [x] **P4** server chat 支持 `model` 字段（宿主选模型）：chat 请求带 model → 注入 `llm: createProvider({ model })`；同会话 model 变化自动重建 Agent（历史从库恢复）；host-protocol.md 文档；协议流测试
 
-> 本轮里程碑完成：多模型 provider 增强（模型路由 + CLI /model 切换），100 测试全绿。
+> 本轮里程碑完成：多模型 provider 增强（模型路由 + CLI /model 切换 + server model 字段），101 测试全绿。
 
-> 备选后续方向（记录）：server chat 支持 model 字段（宿主选模型）/ server 协议补充（version/delete_session）/ MCP 协议支持 / 上下文与性能优化（token 计数）
+> 备选后续方向（记录）：server 协议补充（version/delete_session）/ MCP 协议支持 / 上下文与性能优化（token 计数）/ RAG 注入（Agent 构造按主题自动注入相关记忆）
 
 ## 历史记录（第一轮夜间：记忆检索增强 RAG 里程碑 R0-R6）
 
@@ -59,6 +60,7 @@
 | P1 | 2026-08-09 夜间 | LLM 模型路由：resolveProviderOptions 纯函数（Ollama 冒号检测/LLM_* 覆盖/兼容保留）+ createProvider 支持传参 | tsc 0 错 / 94 全绿 | +13 测试（tests/llm.test.ts，无网络）；.env.example 同步 |
 | P2 | 2026-08-09 夜间 | CLI /model 命令（切换/显示/恢复默认，settings 持久化，重建 Agent 生效）+ CLI 入口守卫 | tsc 0 错 / 100 全绿 | +6 测试（tests/model-command.test.ts）；冒烟：--version/server ping 均正常 |
 | P3 | 2026-08-09 夜间 | 文档收尾：README Changelog v0.5.2 + 配置表 + docs/multi-model.md + 版本号 0.5.2 | tsc 0 错 / 100 全绿 | --version = 0.5.2；多模型里程碑完成（4 提交 P0-P3） |
+| P4 | 2026-08-09 夜间 | server chat 支持 model 字段（宿主选模型，同会话切换重建 Agent） | tsc 0 错 / 101 全绿 | +1 server 测试；host-protocol.md 同步 |
 
 ## 命令
 
