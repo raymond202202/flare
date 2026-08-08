@@ -175,4 +175,14 @@ describe('flare host server 协议', () => {
     expect(msgs[0].sessionId).toBe('s-gone')
     expect(typeof msgs[0].deleted).toBe('boolean')
   })
+
+  it('get_usage → usage 统计（token 用量，只读不生成）', async () => {
+    const msgs = await request({ type: 'get_usage' }, { expect: ['usage'] })
+    expect(msgs[0].type).toBe('usage')
+    expect(typeof msgs[0].stats).toBe('object')
+    expect(typeof msgs[0].stats.promptTokens).toBe('number')
+    expect(typeof msgs[0].stats.completionTokens).toBe('number')
+    expect(typeof msgs[0].stats.totalTokens).toBe('number')
+    expect(typeof msgs[0].stats.sessionCount).toBe('number')
+  })
 })
