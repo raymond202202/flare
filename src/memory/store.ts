@@ -381,6 +381,31 @@ export class MemoryStore {
     ).run(content, type)
   }
 
+  /**
+   * 删除单条持久记忆（按 id）
+   *
+   * - 记忆删除（v0.5.4）：memories 的 DELETE 触发器自动清 memories_fts 索引
+   * - 返回是否真的删除了（id 不存在返回 false，幂等不抛错）
+   */
+  deleteMemory(id: number): boolean {
+    const res = this.db.prepare('DELETE FROM memories WHERE id = ?').run(id)
+    return res.changes > 0
+  }
+
+  /**
+   * 按内容关键词批量删除记忆（LIKE 匹配，v0.5.4）
+   *
+   * 用于 CLI /forget <关键词>、宿主按主题清理记忆。
+   * - 返回删除条数（0 = 无匹配）
+   * - FTS 索引由 DELETE 触发器联动清理（删除后 searchMemories 不再命中）
+   */
+  deleteMemoriesByContent(query: string): number {
+    const q = (query || '').trim()
+    if (!q) return 0
+    const res = this.db.prepare('DELETE FROM memories WHERE content LIKE ?').run(`%${q}%`)
+    return res.changes
+  }
+
   /** 记录一次 LLM 调用的 token 用量 */
   logUsage(sessionId: string | null, promptTokens: number, completionTokens: number, model?: string) {
     this.db.prepare(
