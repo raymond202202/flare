@@ -138,6 +138,18 @@ export function startHostServer(opts: HostServerOptions) {
           reply({ type: 'sessions', sessions })
           break
         }
+        case 'get_messages': {
+          // 宿主读取指定会话的消息历史（同 list_sessions 模式，只读不生成）
+          const sessionId = String(req.sessionId || 'default')
+          const agent = getAgent(sessionId)
+          // Agent 内部 sessionId 可能带 namespace 前缀，用它查询才一致
+          const sid = (agent as any).config?.sessionId || sessionId
+          const messages = (typeof (agent as any).memoryStore?.getMessages === 'function')
+            ? await (agent as any).memoryStore.getMessages(sid)
+            : []
+          reply({ type: 'messages', sessionId, messages })
+          break
+        }
         case 'tool_result': {
           const pendingTool = pending.get(String(req.id))
           if (pendingTool) {
