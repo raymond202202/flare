@@ -8,7 +8,7 @@
  */
 
 import { Command } from 'commander'
-import { Agent, createProvider, getMemoryStore, config, tools, McpManager, type AgentConfig, type McpServerStatus } from '../index.js'
+import { Agent, createProvider, getMemoryStore, config, tools, McpManager, estimateMessagesTokens, type AgentConfig, type McpServerStatus } from '../index.js'
 import chalk from 'chalk'
 import { execSync } from 'child_process'
 import { createRequire } from 'module'
@@ -211,6 +211,10 @@ async function startInteractive() {
         agent = makeAgent()
         agentOutput += chalk.gray('  （会话已按新工具集重建，历史从记忆库恢复）') + '\n'
       },
+    }, () => {
+      // /context 命令（v0.5.6）：读取当前 Agent 的上下文占用（public getMessages()，无侵入）
+      const msgs = agent.getMessages()
+      return { messageCount: msgs.length, estimatedTokens: estimateMessagesTokens(msgs) }
     })
     agentRunning = false
     renderFrame()
@@ -311,6 +315,9 @@ export interface McpCommandHooks {
   onChanged(): void
 }
 
+/** /context 命令回调（v0.5.6）：返回当前会话上下文占用；null 表示不可用 */
+export type ContextInfoGetter = () => { messageCount: number; estimatedTokens: number } | null
+
 export async function handleSlashCommand(
   cmd: string,
   store: ReturnType<typeof getMemoryStore>,
@@ -318,7 +325,9 @@ export async function handleSlashCommand(
   /** /model 切换后回调（宿主/CLI 重建 Agent 使新模型生效） */
   onModelSwitch?: (model: string) => void,
   /** /mcp 命令回调（v0.5.5，外部 MCP 服务器管理） */
-  mcp?: McpCommandHooks
+  mcp?: McpCommandHooks,
+  /** /context 命令回调（v0.5.6，读取当前会话上下文占用） */
+  contextInfo?: ContextInfoGetter
 ): Promise<'exit' | 'continue'> {
   const lower = cmd.toLowerCase()
   // /remember 带内容，必须用前缀匹配（switch 精确匹配会永远"未知命令"）
@@ -442,6 +451,24 @@ export async function handleSlashCommand(
     return 'continue'
   }
 
+  // /context 查看当前会话上下文占用（v0.5.6：消息数 + 估算 tokens）
+  if (lower === '/context') {
+    if (!contextInfo) {
+      output(chalk.yellow('\n  上下文不可用（当前环境未提供 Agent 实例）'))
+      return 'continue'
+    }
+    const info = contextInfo()
+    if (!info) {
+      output(chalk.yellow('\n  上下文不可用'))
+      return 'continue'
+    }
+    output(chalk.cyan('\n📊 当前会话上下文:'))
+    output(`  消息数:      ${info.messageCount}`)
+    output(`  估算 tokens: ${info.estimatedTokens.toLocaleString()}`)
+    output(chalk.gray('  （估算非精确：CJK 1字符≈1 / 英文 4字符≈1；含 system 提示与结构开销）'))
+    return 'continue'
+  }
+
   switch (lower) {
     case '/help':
       output(chalk.cyan('\n可用命令:'))
@@ -451,6 +478,7 @@ export async function handleSlashCommand(
       output('  /remember    - 保存一条记忆（如: /remember 用户喜欢浅色主题）')
       output('  /forget      - 删除记忆（如: /forget 浅色主题，删除包含该关键词的记忆）')
       output('  /usage       - 查看 token 用量')
+      output('  /context     - 查看当前会话上下文占用（消息数/估算 tokens）')
       output('  /sessions    - 查看会话列表')
       output('  /clear       - 清屏')
       output('  /image       - 显式看图（如: /image ~/Pictures/a.png 这张图里有什么）')
