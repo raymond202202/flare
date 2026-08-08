@@ -66,13 +66,51 @@ estimateMessagesTokens(messages)     // 含结构开销
 import {
   estimateTokens,
   estimateMessagesTokens,
+  suggestTrim,               // v0.5.9：按预算建议保留哪些消息
   IMAGE_TOKEN_COST,          // 85
   MESSAGE_STRUCTURE_TOKENS,  // 4
   TOOL_CALL_STRUCTURE_TOKENS,// 3
 } from 'flare-agent'
 ```
 
-宿主可自行实现"按 token 预算裁剪"：调 `estimateMessagesTokens(agent.getMessages())` 判断是否超预算，再决定精简/摘要策略。
+## 按预算裁剪上下文（v0.5.9，suggestTrim）
+
+`suggestTrim(messages, budgetTokens, opts?)` 是**纯函数**：给定消息列表与 token 预算，
+返回建议保留的消息（宿主自行裁剪后再发给引擎，不修改 Agent 内部状态，零 agent.ts 改动）。
+
+```ts
+import { suggestTrim } from 'flare-agent'
+
+const messages = agent.getMessages()          // 当前会话上下文（public，只读）
+const r = suggestTrim(messages, 8000, { reserveForOutput: 1000 })
+// 有效预算 7000：system 保底 + 最近优先
+// 宿主按 r.keep 自行管理：本地缓存只保留这些消息、对新一轮输入前置精简后的摘要、
+// 或调用引擎支持的重置方式（如 delete_session + 重新注入 keep 作为上下文）——接入方式由宿主决定
+console.log(r.droppedCount, r.estimatedKeptTokens)
+```
+
+策略：
+
+| 规则 | 说明 |
+|------|------|
+| system 保底 | 首条 `role=system` 始终保留（AI 需要系统提示）；`keepSystem:false` 可关 |
+| 最近优先 | 从最新消息向前收集，直到估算 tokens 接近预算（最早的消息先被丢弃） |
+| 极小预算保底 | 预算小到一条都放不下时，仍保底保留**最新一条**（AI 必须看到用户最新输入） |
+| reserveForOutput | 为模型输出预留 tokens（保留部分最多 `budget - reserve`） |
+
+返回值：
+
+```ts
+{
+  keep: Message[],            // 建议保留的消息（原顺序；system 在前）
+  droppedCount: number,       // 丢弃条数
+  estimatedKeptTokens: number,// 保留部分估算 tokens
+  estimatedDroppedTokens: number,
+}
+```
+
+> 这是"按 token 预算裁剪"方向的**宿主侧地基**（纯函数、零风险）；
+> 引擎内部 trimContext 的自动裁剪仍需谨慎评估 agent.ts，暂缓。
 
 ## 未来方向（记录）
 
