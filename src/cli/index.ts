@@ -470,6 +470,26 @@ export function main() {
       }
     })
 
+  program
+    .command('server')
+    .description('宿主协议服务（stdin/stdout JSON Lines，供 Qt 等非 Node 宿主调用，见 docs/host-protocol.md）')
+    .option('-p, --profile <path>', 'ExpertProfile JSON 文件路径（可选）')
+    .option('-s, --storage <path>', '记忆库路径（默认 ~/.flare-data/）')
+    .option('-n, --namespace <name>', '会话命名空间（记忆库隔离）')
+    .action(async (options: { profile?: string; storage?: string; namespace?: string }) => {
+      const { startHostServer } = await import('../server.js')
+      const fs = await import('fs/promises')
+      let profile: Record<string, unknown> = {}
+      if (options.profile) {
+        profile = JSON.parse(await fs.readFile(options.profile, 'utf-8'))
+      }
+      startHostServer({
+        profile: profile as any,
+        storage: options.storage,
+        namespace: options.namespace,
+      })
+    })
+
   // 默认命令（无参数时进入交互模式）
   program.action(() => {
     startInteractive()
