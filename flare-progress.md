@@ -30,12 +30,14 @@
 
 ### 迭代计划（分小步，每步独立验证 commit）
 
-- [ ] **T0** 调研：确定方向（记忆生命周期闭环 + server 修复）+ 基线实测（tsc 0 错 / 107 全绿）+ 本文件更新
-- [ ] **T1** server 修复（server.ts）：`(agent as any).memoryStore` → `(agent as any).store`（4 处，delete_session/list_sessions/get_messages/get_usage 恢复真实数据）+ 新增 `create_session` 请求（宿主显式建会话，updateSessionTitle UPSERT 幂等）+ 确定性协议测试（create_session → delete_session deleted:true/false 往返，不再空过）
-- [ ] **T2** MemoryStore 删除（store.ts）：`deleteMemory(id)` 按 id 删单条（FTS 触发器联动清索引）+ `deleteMemoriesByContent(query)` 按内容 LIKE 匹配批量删（返回条数）；tests/store.test.ts（删除后 searchMemories 不再命中 / 不存在返回 false / 不影响其他记忆）
-- [ ] **T3** memory_save 工具 + CLI /forget（tools/memory.ts + tools/index.ts + cli/index.ts）：`createMemorySaveTool(store)`（AI 可真正落库用户要求记住的内容，description 约束"仅用户明确要求时保存"）+ 默认 `memorySaveTool` 加入内置工具集；CLI `/forget <关键词>`（deleteMemoriesByContent）+ /help 同步；测试（工具 schema/保存/参数校验/内置集 + /forget 命令）
-- [ ] **T4** server 记忆接口（server.ts）：`remember`（保存记忆）/ `get_memories`（列出或按 query 搜索）/ `delete_memory`（按 id 或 content 删除）+ host-protocol.md + 协议流测试（数据往返：remember → get_memories 命中 → delete_memory 消失，顺带证明 T1 修复）
-- [ ] **T5** 文档收尾：版本号 0.5.4 + README Changelog + docs/memory-rag.md 补记忆生命周期 + 全量回归
+- [x] **T0** 调研：确定方向（记忆生命周期闭环 + server 修复）+ 基线实测（tsc 0 错 / 107 全绿）+ 本文件更新
+- [x] **T1** server 修复（server.ts）：`(agent as any).memoryStore` → `(agent as any).store`（4 处，delete_session/list_sessions/get_messages/get_usage 恢复真实数据）+ 新增 `create_session` 请求（宿主显式建会话，updateSessionTitle UPSERT 幂等）+ 确定性协议测试（create_session → delete_session deleted:true/false 往返，不再空过）
+- [x] **T2** MemoryStore 删除（store.ts）：`deleteMemory(id)` 按 id 删单条（FTS 触发器联动清索引）+ `deleteMemoriesByContent(query)` 按内容 LIKE 匹配批量删（返回条数）；tests/store.test.ts（删除后 searchMemories 不再命中 / 不存在返回 false / 不影响其他记忆）
+- [x] **T3** memory_save 工具 + CLI /forget（tools/memory.ts + tools/index.ts + cli/index.ts）：`createMemorySaveTool(store)`（AI 可真正落库用户要求记住的内容，description 约束"仅用户明确要求时保存"）+ 默认 `memorySaveTool` 加入内置工具集；CLI `/forget <关键词>`（deleteMemoriesByContent）+ /help 同步；测试（工具 schema/保存/参数校验/内置集 + /forget 命令）
+- [x] **T4** server 记忆接口（server.ts）：`remember`（保存记忆）/ `get_memories`（列出或按 query 搜索）/ `delete_memory`（按 id 或 content 删除）+ host-protocol.md + 协议流测试（数据往返：remember → get_memories 命中 → delete_memory 消失，顺带证明 T1 修复）
+- [x] **T5** 文档收尾：版本号 0.5.4 + README Changelog + docs/memory-rag.md 补记忆生命周期 + 全量回归
+
+> 本轮里程碑完成：记忆生命周期闭环 + server 记忆访问修复（bug：memoryStore→store 字段错位），129 测试全绿（5 提交 T0-T5）；协议冒烟实测：create_session/remember/get_memories/delete_memory/delete_session deleted:true-false 全部真实生效。
 
 > 里程碑完成后更新：备选后续方向（记录）：MCP 协议支持 / RAG 注入（Agent 构造按主题自动注入相关记忆）/ 上下文与性能优化（token 计数）
 
@@ -123,6 +125,7 @@
 
 | 轮次 | 时间 | 完成 | 构建/测试 | 备注 |
 |------|------|------|-----------|------|
+| T0-T5 | 2026-08-09 夜间 | 记忆生命周期闭环 + server 记忆访问修复（memoryStore→store 字段错位 bug）+ create_session/remember/get_memories/delete_memory 协议 + memory_save 工具 + /forget | tsc 0 错 / 129 全绿 | 第四轮夜间里程碑（5 提交 T0-T5）；协议测试改临时隔离库 + 数据往返断言（防再空过）；冒烟实测全部真实生效；版本 0.5.4 |
 | S0-S5 | 2026-08-09 夜间 | server 协议完善：version 版本协商 + delete_session 会话清理 + get_usage 用量统计 + MemoryStore.deleteSession | tsc 0 错 / 107 全绿 | 第三轮夜间里程碑（5 提交 S0-S5）；version 测试断言 engine 与 package.json 一致 |
 | R0-R6 | 2026-08-09 凌晨 | RAG 里程碑（记忆检索增强）+ server ping/get_messages | tsc 0 错 / 81 全绿 | trigram FTS 中文检索 + memory_search 工具 + 宿主协议补充 |
 | P0 | 2026-08-09 夜间 | 调研确定方向（多模型 provider 增强：Ollama 主模型切换）+ 基线实测 | tsc 0 错 / 81 全绿 | 复用 /vision + settings 模式；模型路由做成纯函数单测 |
