@@ -115,6 +115,11 @@ export function startHostServer(opts: HostServerOptions) {
           reply({ type: 'ok', sessionId: String(req.sessionId || 'default') })
           break
         }
+        case 'ping': {
+          // 宿主健康检查：进程存活即回 pong（不依赖任何初始化）
+          reply({ type: 'pong', ts: Date.now() })
+          break
+        }
         case 'set_context': {
           const sessionId = String(req.sessionId || 'default')
           const agent = getAgent(sessionId)

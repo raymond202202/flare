@@ -23,7 +23,7 @@ function request(msg: any, timeoutMs = 45000): Promise<any[]> {
       try {
         const parsed = JSON.parse(line)
         msgs.push(parsed)
-        if (parsed.type === 'error' || parsed.type === 'done' || parsed.type === 'cancelled' || parsed.type === 'sessions' || parsed.type === 'ok') {
+        if (parsed.type === 'error' || parsed.type === 'done' || parsed.type === 'cancelled' || parsed.type === 'sessions' || parsed.type === 'ok' || parsed.type === 'pong') {
           cleanup()
           resolve(msgs)
         }
@@ -96,5 +96,11 @@ describe('flare host server 协议', () => {
     const msgs = await request({ type: 'list_sessions' })
     expect(msgs[0].type).toBe('sessions')
     expect(Array.isArray(msgs[0].sessions)).toBe(true)
+  })
+
+  it('ping → pong（宿主健康检查）', async () => {
+    const msgs = await request({ type: 'ping' })
+    expect(msgs[0].type).toBe('pong')
+    expect(typeof msgs[0].ts).toBe('number')
   })
 })
