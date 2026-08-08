@@ -163,6 +163,8 @@ cp .env.example ~/.flare/.env
 | `/memory` | 查看持久记忆 |
 | `/remember` | 保存一条记忆（如: /remember 用户喜欢浅色主题） |
 | `/forget` | 删除记忆（如: /forget 浅色主题，删除包含该关键词的记忆） |
+| `/usage` | 查看 token 用量 |
+| `/context` | 查看当前会话上下文占用（消息数/估算 tokens，v0.5.6） |
 | `/sessions` | 查看最近会话 |
 | `/clear` | 清屏 |
 | `/exit` | 退出 |
@@ -322,6 +324,14 @@ Interactive mode commands:
 ### Changelog / Release Notes
 
 > 中文条目 / Chinese entries · English summary for each version
+
+#### v0.5.6 (2026-08-09) — 上下文可观测性：token 估算 + context_status + /context / Context observability (token estimation)
+- 🧮 **token 估算纯函数（src/core/context.ts，零依赖）**：`estimateTokens(text)`——CJK 1 字符≈1 token、非 CJK 4 字符≈1 token（贴近 OpenAI cl100k 启发式）；`estimateMessagesTokens(messages)`——消息结构 +4、tool_calls +3、图片 ≈85 token/张；`@flare/core` 导出（宿主可直接用于成本预估/上下文管理）
+- 🖥️ **server 协议 `context_status`**：只读返回 `{ messageCount, estimatedTokens }`（用 Agent 的 public getMessages()，零 agent.ts 改动）——宿主 AI 面板显示上下文占用/接近上限提醒；host-protocol.md 同步
+- ⌨️ **CLI `/context` 命令**：显示当前会话上下文占用（消息数 + 估算 tokens），/help 同步
+- 📚 docs/context-observability.md（token 估算说明 + 宿主用法）+ README CLI 表
+- 🧪 新增 19 项测试（context 估算 12 + server 协议 2 + /context 命令 5），共 180/180；零 agent.ts 改动
+- EN: Context observability — pure token estimation (estimateTokens/estimateMessagesTokens), server context_status (messageCount + estimatedTokens, read-only), CLI /context. Foundation for future token-budget context trimming. 180/180 tests.
 
 #### v0.5.5 (2026-08-09) — MCP 协议支持：连接外部 MCP 服务器 / MCP protocol support (external MCP servers)
 - 🔌 **MCP stdio 客户端（零依赖手写）**：`MCPClient`——spawn 子进程 + initialize 握手 + tools/list + tools/call + close，NDJSON JSON-RPC 行协议（不引入 @modelcontextprotocol/sdk），请求超时/错误响应/进程退出全部有兜底
