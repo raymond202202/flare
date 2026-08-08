@@ -76,3 +76,7 @@ export { profileToConfig } from './types.js'
 // ===== 工具确认机制（withConfirmation）=====
 export { withConfirmation, isDenied } from './core/confirm.js'
 export type { ConfirmDecision, Confirmer } from './core/confirm.js'
+
+// ===== 宿主协议服务（Qt 等非 Node 宿主）=====
+export { startHostServer } from './server.js'
+export type { HostServerOptions } from './server.js'
