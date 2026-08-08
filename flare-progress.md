@@ -26,8 +26,8 @@
 
 ### 迭代计划（分小步，每步独立验证 commit）
 
-- [ ] **S0** 调研：确定方向（server 协议完善）+ 基线实测（tsc 0 错 / 101 全绿）+ 本文件更新
-- [ ] **S1** MemoryStore.deleteSession(sessionId)（store.ts）：删除 sessions 行（messages 由 FK + DELETE 触发器联动清 FTS 索引）+ usage_log 清理；返回是否删除成功；新增 tests/store.test.ts 用例（删除后 getMessages 为空 / FTS 不再命中 / 不存在时返回 false）
+- [x] **S0** 调研：确定方向（server 协议完善）+ 基线实测（tsc 0 错 / 101 全绿）+ 本文件更新
+- [x] **S1** MemoryStore.deleteSession(sessionId)（store.ts）：删除 sessions 行（messages 由 FK + DELETE 触发器联动清 FTS 索引）+ usage_log 清理；返回是否删除成功；新增 tests/store.test.ts 用例（删除后 getMessages 为空 / FTS 不再命中 / 不存在时返回 false）
 - [ ] **S2** server 协议 `version`（server.ts）：返回 `{ type:'version', protocol:'1.0', engine:<版本> }`（宿主版本协商/健康检查升级）；host-protocol.md 文档；协议流测试
 - [ ] **S3** server 协议 `delete_session`（server.ts）：删除指定会话（含消息/用量），回 `ok`；host-protocol.md；协议流测试
 - [ ] **S4** 文档收尾：README Changelog v0.5.3 + 版本号 + host-protocol.md 完整同步 + 全量回归
