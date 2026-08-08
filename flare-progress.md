@@ -31,18 +31,22 @@
 ### 迭代计划（分小步，每步独立验证 commit）
 
 - [x] **R0** 调研：读 roadmap/README/docs/tests/src + 技术验证（trigram）+ 修复 server 测试超时稳定性（dotenv 重新加载真实 key 走远端 API，放宽 chat 测试超时 45s）
-- [ ] **R1** MemoryStore 记忆检索升级：新建 `memories_fts`（trigram tokenizer）+ 触发器同步；`getRelevantMemories` 改 FTS 检索 + LIKE 回退（<3 字）+ 相关度排序；导出 `searchMemories`；新增测试
-- [ ] **R2** 历史消息检索：新建 `messages_fts_trigram`（trigram，不动老表）+ 触发器；新增 `searchMessages(keyword, limit)` API（按主题找回旧对话）；新增测试
-- [ ] **R3** 记忆检索工具：新增 `memory_search` 工具（AI 主动检索记忆/历史消息，注入 Agent 工具集），工具 schema + 执行器 + 测试
-- [ ] **R4** 文档与收尾：README Changelog + docs/ 记忆检索说明 + 全量回归 + 版本号（0.5.1）
+- [x] **R1** MemoryStore 记忆检索升级：新建 `memories_fts`（trigram tokenizer）+ 触发器同步；`getRelevantMemories` 改 FTS 检索 + LIKE 回退（<3 字）+ 相关度排序；导出 `searchMemories`；新增测试
+- [x] **R2** 历史消息检索：新建 `messages_fts_trigram`（trigram，不动老表）+ 触发器；新增 `searchMessages(keyword, limit)` API（按主题找回旧对话）；新增测试
+- [x] **R3** 记忆检索工具：新增 `memory_search` 工具（AI 主动检索记忆/历史消息，注入 Agent 工具集），工具 schema + 执行器 + 测试
+- [x] **R4** 文档与收尾：README Changelog + docs/memory-rag.md + 版本号 0.5.1 + 全量回归
 
-> 备选后续方向（记录）：MCP 协议支持 / 多模型 provider 增强（Ollama 主模型切换）/ server 协议补充（ping/version/delete_session）
+> 备选后续方向（记录）：RAG 注入（Agent 构造按主题自动注入相关记忆）/ MCP 协议支持 / 多模型 provider 增强（Ollama 主模型切换）/ server 协议补充（ping/version/delete_session）
 
 ## 迭代记录
 
 | 轮次 | 时间 | 完成 | 构建/测试 | 备注 |
 |------|------|------|-----------|------|
 | R0 | 2026-08-09 凌晨 | 调研确定方向（记忆检索增强 RAG）；修复 server 测试超时稳定性 | tsc 0 错 / 60 全绿 | chat 测试放宽超时 45s（子进程重载 ~/.flare/.env 注入真实 key 走远端 API） |
+| R1 | 2026-08-09 凌晨 | memories_fts trigram 全文检索 + searchMemories + 老库回填 | tsc 0 错 / 67 全绿 | +7 测试（FTS/排序/2字回退/触发器/回填） |
+| R2 | 2026-08-09 凌晨 | messages_fts_trigram + searchMessages（历史消息按主题找回） | tsc 0 错 / 71 全绿 | +4 测试 |
+| R3 | 2026-08-09 凌晨 | memory_search 工具 + createMemorySearchTool（宿主绑定独立库） | tsc 0 错 / 79 全绿 | +8 测试；工具入内置集 |
+| R4 | 2026-08-09 凌晨 | README Changelog v0.5.1 + docs/memory-rag.md + 版本号 | tsc 0 错 / 79 全绿 | RAG 四步完成 |
 
 ## 命令
 
