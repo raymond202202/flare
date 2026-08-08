@@ -140,6 +140,12 @@ export class MCPServer {
         return { tools: this.toolList.map(toMcpTool) }
       case 'tools/call':
         return this.callTool(params)
+      case 'resources/list':
+        // 无 resources 能力：返回空列表（真实客户端（Claude Desktop 等）连接时会探测）
+        return { resources: [] }
+      case 'prompts/list':
+        // 无 prompts 能力：返回空列表
+        return { prompts: [] }
       case 'ping':
         // JSON-RPC 标准健康检查
         return {}
