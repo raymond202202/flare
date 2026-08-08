@@ -195,4 +195,40 @@ describe('MemoryStore 记忆检索增强（RAG, v0.5.1）', () => {
     expect(hits.length).toBeGreaterThan(0)
     expect(hits[0].content).toContain('回填测试')
   })
+
+  it('searchMessages：trigram FTS 检索历史消息（中文 3 字以上）', () => {
+    const sid = store.createSession('消息检索')
+    store.saveMessage(sid, { role: 'user', content: '帮我调试 flutter 网络请求超时问题' })
+    store.saveMessage(sid, { role: 'assistant', content: '好的，先看下请求配置和超时设置' })
+
+    const hits = store.searchMessages('网络请求超时')
+    expect(hits.length).toBeGreaterThan(0)
+    expect(hits[0].content).toContain('网络请求超时')
+    expect(hits[0].sessionId).toBe(sid)
+    expect(hits[0].role).toBe('user')
+  })
+
+  it('searchMessages：2 字查询 LIKE 回退', () => {
+    const sid = store.createSession('消息检索2')
+    store.saveMessage(sid, { role: 'user', content: '今天讨论浅色主题设计' })
+
+    const hits = store.searchMessages('主题')
+    expect(hits.length).toBeGreaterThan(0)
+    expect(hits[0].content).toContain('主题')
+  })
+
+  it('searchMessages：空查询返回空', () => {
+    const sid = store.createSession('消息检索3')
+    store.saveMessage(sid, { role: 'user', content: '内容' })
+    expect(store.searchMessages('')).toEqual([])
+  })
+
+  it('searchMessages：消息触发器同步（插入即入 trigram 索引）', () => {
+    const sid = store.createSession('消息触发器')
+    store.saveMessage(sid, { role: 'user', content: '龙族故事设定：主角叫林澈' })
+
+    const hits = store.searchMessages('龙族故事')
+    expect(hits.length).toBeGreaterThan(0)
+    expect(hits[0].content).toContain('林澈')
+  })
 })

@@ -126,6 +126,16 @@ export class MemoryStore {
         content_rowid='id'
       );
 
+      -- RAG（v0.5.1）：历史消息中文全文检索索引（trigram tokenizer）
+      -- 老表 messages_fts 用默认 tokenizer，中文检索效果差（整段 CJK 当一个 token）；
+      -- 新增 trigram 表做中文子串匹配（不动老表，避免迁移风险）
+      CREATE VIRTUAL TABLE IF NOT EXISTS messages_fts_trigram USING fts5(
+        content,
+        content='messages',
+        content_rowid='id',
+        tokenize='trigram'
+      );
+
       -- FTS 同步触发器：messages 表 INSERT/DELETE 时同步索引
       CREATE TRIGGER IF NOT EXISTS messages_ai AFTER INSERT ON messages BEGIN
         INSERT INTO messages_fts(rowid, content) VALUES (new.id, new.content);
@@ -150,6 +160,18 @@ export class MemoryStore {
         INSERT INTO memories_fts(rowid, content) VALUES (new.id, new.content);
       END;
 
+      -- messages_fts_trigram 同步触发器（RAG）：INSERT/DELETE/UPDATE 时同步索引
+      CREATE TRIGGER IF NOT EXISTS messages_fts_trigram_ai AFTER INSERT ON messages BEGIN
+        INSERT INTO messages_fts_trigram(rowid, content) VALUES (new.id, new.content);
+      END;
+      CREATE TRIGGER IF NOT EXISTS messages_fts_trigram_ad AFTER DELETE ON messages BEGIN
+        INSERT INTO messages_fts_trigram(messages_fts_trigram, rowid, content) VALUES('delete', old.id, old.content);
+      END;
+      CREATE TRIGGER IF NOT EXISTS messages_fts_trigram_au AFTER UPDATE ON messages BEGIN
+        INSERT INTO messages_fts_trigram(messages_fts_trigram, rowid, content) VALUES('delete', old.id, old.content);
+        INSERT INTO messages_fts_trigram(rowid, content) VALUES (new.id, new.content);
+      END;
+
       CREATE INDEX IF NOT EXISTS idx_messages_session 
         ON messages(session_id, created_at);
 
@@ -163,12 +185,17 @@ export class MemoryStore {
     // 老库迁移：检查是否有 tool_call_id / name 列
     this.migrate()
 
-    // RAG 回填：老库升级时 memories 已有数据但 memories_fts 刚创建为空 → rebuild 索引
+    // RAG 回填：老库升级时已有数据但 trigram FTS 表刚创建为空 → rebuild 索引
     try {
-      const ftsCount = (this.db.prepare('SELECT count(*) AS c FROM memories_fts').get() as any)?.c || 0
+      const ftsMem = (this.db.prepare('SELECT count(*) AS c FROM memories_fts').get() as any)?.c || 0
       const memCount = (this.db.prepare('SELECT count(*) AS c FROM memories').get() as any)?.c || 0
-      if (memCount > 0 && ftsCount === 0) {
+      if (memCount > 0 && ftsMem === 0) {
         this.db.exec("INSERT INTO memories_fts(memories_fts) VALUES('rebuild')")
+      }
+      const ftsMsg = (this.db.prepare('SELECT count(*) AS c FROM messages_fts_trigram').get() as any)?.c || 0
+      const msgCount = (this.db.prepare('SELECT count(*) AS c FROM messages').get() as any)?.c || 0
+      if (msgCount > 0 && ftsMsg === 0) {
+        this.db.exec("INSERT INTO messages_fts_trigram(messages_fts_trigram) VALUES('rebuild')")
       }
     } catch { /* FTS 回填失败不阻塞（检索时 LIKE 回退） */ }
   }
@@ -260,6 +287,60 @@ export class MemoryStore {
       ...(r.name ? { name: r.name } : {}),
       ...(r.tool_calls ? { tool_calls: JSON.parse(r.tool_calls) } : {}),
     }))
+  }
+
+  /**
+   * 全文检索历史消息（RAG，v0.5.1）
+   *
+   * 按关键词在 messages_fts_trigram（trigram tokenizer）中检索历史对话，
+   * bm25 相关度排序。用于"找回旧对话"——宿主导航、Agent 按主题回忆等。
+   * - 查询 ≥3 个字符：FTS 精确子串匹配（中文友好）
+   * - 查询 <3 个字符：LIKE 回退
+   * - 返回：content（消息内容）+ sessionId + role + createdAt（消息时间）
+   */
+  searchMessages(query: string, limit = 10): { sessionId: string; role: string; content: string; createdAt: string }[] {
+    const q = (query || '').trim()
+    if (!q) return []
+
+    if ([...q].length >= 3) {
+      try {
+        const rows = this.db.prepare(
+          `SELECT m.session_id, m.role, m.content, m.created_at, bm25(messages_fts_trigram) AS score
+           FROM messages_fts_trigram
+           JOIN messages m ON m.id = messages_fts_trigram.rowid
+           WHERE messages_fts_trigram MATCH ?
+           ORDER BY score ASC, m.created_at DESC
+           LIMIT ?`
+        ).all(`"${q.replace(/"/g, '""')}"`, limit) as any[]
+        if (rows.length > 0) {
+          return rows.map(r => ({
+            sessionId: r.session_id,
+            role: r.role,
+            content: String(deserializeContent(r.content || '')),
+            createdAt: r.created_at || '',
+          }))
+        }
+      } catch { /* FTS 失败 → LIKE 回退 */ }
+    }
+
+    // 短查询 / FTS 无结果：LIKE 回退
+    try {
+      const rows = this.db.prepare(
+        `SELECT session_id, role, content, created_at
+         FROM messages
+         WHERE content LIKE ?
+         ORDER BY created_at DESC
+         LIMIT ?`
+      ).all(`%${q}%`, limit) as any[]
+      return rows.map(r => ({
+        sessionId: r.session_id,
+        role: r.role,
+        content: String(deserializeContent(r.content || '')),
+        createdAt: r.created_at || '',
+      }))
+    } catch {
+      return []
+    }
   }
 
   /** 获取最近会话 */
