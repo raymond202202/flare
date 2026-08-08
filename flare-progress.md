@@ -35,8 +35,9 @@
 - [x] **R2** 历史消息检索：新建 `messages_fts_trigram`（trigram，不动老表）+ 触发器；新增 `searchMessages(keyword, limit)` API（按主题找回旧对话）；新增测试
 - [x] **R3** 记忆检索工具：新增 `memory_search` 工具（AI 主动检索记忆/历史消息，注入 Agent 工具集），工具 schema + 执行器 + 测试
 - [x] **R4** 文档与收尾：README Changelog + docs/memory-rag.md + 版本号 0.5.1 + 全量回归
+- [x] **R5** server 协议补充 ping：宿主健康检查（进程存活探测，不依赖初始化）+ 测试 + host-protocol.md 文档
 
-> 备选后续方向（记录）：RAG 注入（Agent 构造按主题自动注入相关记忆）/ MCP 协议支持 / 多模型 provider 增强（Ollama 主模型切换）/ server 协议补充（ping/version/delete_session）
+> 备选后续方向（记录）：RAG 注入（Agent 构造按主题自动注入相关记忆）/ MCP 协议支持 / 多模型 provider 增强（Ollama 主模型切换）/ server 协议补充（version/delete_session）
 
 ## 迭代记录
 
@@ -47,6 +48,7 @@
 | R2 | 2026-08-09 凌晨 | messages_fts_trigram + searchMessages（历史消息按主题找回） | tsc 0 错 / 71 全绿 | +4 测试 |
 | R3 | 2026-08-09 凌晨 | memory_search 工具 + createMemorySearchTool（宿主绑定独立库） | tsc 0 错 / 79 全绿 | +8 测试；工具入内置集 |
 | R4 | 2026-08-09 凌晨 | README Changelog v0.5.1 + docs/memory-rag.md + 版本号 | tsc 0 错 / 79 全绿 | RAG 四步完成 |
+| R5 | 2026-08-09 凌晨 | server 协议补充 ping（宿主健康检查） | tsc 0 错 / 80 全绿 | +1 测试；host-protocol.md 同步 |
 
 ## 命令
 
