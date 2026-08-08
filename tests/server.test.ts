@@ -159,4 +159,20 @@ describe('flare host server 协议', () => {
     expect(Array.isArray(msgs[0].messages)).toBe(true)
     expect(msgs[0].sessionId).toBe('s-hist')
   })
+
+  it('version → 协议版本 + 引擎版本（宿主版本协商）', async () => {
+    const msgs = await request({ type: 'version' }, { expect: ['version'] })
+    expect(msgs[0].type).toBe('version')
+    expect(typeof msgs[0].protocol).toBe('string')
+    expect(msgs[0].protocol.length).toBeGreaterThan(0)
+    expect(typeof msgs[0].engine).toBe('string')
+    expect(msgs[0].engine).toMatch(/^\d+\.\d+\.\d+/)
+  })
+
+  it('delete_session → ok（含 deleted 标志；不存在返回 deleted:false）', async () => {
+    const msgs = await request({ type: 'delete_session', sessionId: 's-gone' }, { expect: ['ok'] })
+    expect(msgs[0].type).toBe('ok')
+    expect(msgs[0].sessionId).toBe('s-gone')
+    expect(typeof msgs[0].deleted).toBe('boolean')
+  })
 })
