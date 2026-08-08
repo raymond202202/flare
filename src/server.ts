@@ -12,7 +12,16 @@
  */
 
 import { createInterface } from 'node:readline'
+import { createRequire } from 'node:module'
 import { Agent, createProvider, profileToConfig, type ExpertProfile, type ToolDefinition, type Tool, type ToolResult } from './index.js'
+
+// 从 package.json 读取引擎版本（不硬编码；宿主 version 协商用）
+// 注意：编译产物 dist/server.js 位于 dist/ 下，package.json 在项目根（../package.json）
+const require = createRequire(import.meta.url)
+const pkg = require('../package.json') as { version: string }
+
+/** 宿主协议版本（协议演进时递增；与引擎版本独立） */
+export const HOST_PROTOCOL_VERSION = '1.0'
 
 export interface HostServerOptions {
   profile: ExpertProfile
@@ -130,6 +139,24 @@ export function startHostServer(opts: HostServerOptions) {
         case 'ping': {
           // 宿主健康检查：进程存活即回 pong（不依赖任何初始化）
           reply({ type: 'pong', ts: Date.now() })
+          break
+        }
+        case 'version': {
+          // 宿主版本协商：协议版本 + 引擎版本（宿主启动时探测兼容性）
+          reply({ type: 'version', protocol: HOST_PROTOCOL_VERSION, engine: pkg.version })
+          break
+        }
+        case 'delete_session': {
+          // 宿主清理会话（含消息/用量；隐私数据清除）
+          const sessionId = String(req.sessionId || 'default')
+          const agent = getAgent(sessionId)
+          // Agent 内部 sessionId 可能带 namespace 前缀，用它删除才一致
+          const sid = (agent as any).config?.sessionId || sessionId
+          const deleted = (typeof (agent as any).memoryStore?.deleteSession === 'function')
+            ? await (agent as any).memoryStore.deleteSession(sid)
+            : false
+          agents.delete(sessionId)
+          reply({ type: 'ok', sessionId, deleted })
           break
         }
         case 'set_context': {
