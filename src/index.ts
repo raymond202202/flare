@@ -89,6 +89,15 @@ export type {
   McpServerStatus,
 } from './mcp/types.js'
 
+// ===== 上下文可观测性（v0.5.6）：token 估算（宿主面板显示上下文占用/成本预估）=====
+export {
+  estimateTokens,
+  estimateMessagesTokens,
+  IMAGE_TOKEN_COST,
+  MESSAGE_STRUCTURE_TOKENS,
+  TOOL_CALL_STRUCTURE_TOKENS,
+} from './core/context.js'
+
 // ===== 记忆系统 =====
 export { MemoryStore, getMemoryStore, serializeContent, deserializeContent } from './memory/store.js'
 
