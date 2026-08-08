@@ -16,7 +16,7 @@
 
 import { createInterface } from 'node:readline'
 import { createRequire } from 'node:module'
-import { Agent, createProvider, profileToConfig, type ExpertProfile, type ToolDefinition, type Tool, type ToolResult } from './index.js'
+import { Agent, createProvider, profileToConfig, McpManager, type ExpertProfile, type ToolDefinition, type Tool, type ToolResult, type McpServerConfig } from './index.js'
 
 // 从 package.json 读取引擎版本（不硬编码；宿主 version 协商用）
 // 注意：编译产物 dist/server.js 位于 dist/ 下，package.json 在项目根（../package.json）
@@ -33,6 +33,8 @@ export interface HostServerOptions {
   toolTimeoutMs?: number
   /** 消息来源标识（记忆库隔离用） */
   namespace?: string
+  /** MCP 服务器配置（v0.5.5）：启动时连接外部 MCP 服务器，工具并入 Agent 工具集 */
+  mcp?: McpServerConfig[]
 }
 
 interface PendingTool {
@@ -65,6 +67,16 @@ export function startHostServer(opts: HostServerOptions) {
   const agents = new Map<string, { agent: Agent; model?: string }>()
   const cancels = new Map<string, { cancelled: boolean }>()
   const pending = new Map<string, PendingTool>()
+  // MCP 管理器（v0.5.5）：外部 MCP 服务器工具并入 Agent 工具集
+  const mcpManager = new McpManager({ configPath: '' })
+  if (opts.mcp && opts.mcp.length > 0) {
+    mcpManager.setConfig(opts.mcp)
+  }
+  // 启动时后台连接 MCP 服务器（失败不阻塞服务；mcp_status 可见错误）
+  const mcpConnects: Promise<unknown>[] = []
+  for (const s of mcpManager.servers) {
+    mcpConnects.push(mcpManager.connect(s.name).catch(() => {}))
+  }
 
   const reply = (msg: any) => {
     process.stdout.write(JSON.stringify(msg) + '\n')
@@ -82,10 +94,13 @@ export function startHostServer(opts: HostServerOptions) {
         : undefined
       // model 字段 → 指定主模型 provider（如本地 Ollama qwen2.5:7b）；缺省用默认路由
       const llm = model ? createProvider({ model }) : undefined
+      // MCP 工具（v0.5.5）：已连接的服务器工具并入工具集（与宿主代理工具/专家工具并存）
+      const mcpTools = mcpManager.getAllTools()
+      const mergedTools = [...(hostTools || profile.tools || []), ...mcpTools]
       entry = {
         agent: new Agent({
           ...profileToConfig(profile),
-          ...(hostTools ? { tools: hostTools } : {}),
+          ...(mergedTools.length > 0 ? { tools: mergedTools } : {}),
           ...(llm ? { llm } : {}),
           sessionId: namespace ? `${namespace}:${sessionId}` : sessionId,
           storage,
@@ -269,6 +284,12 @@ export function startHostServer(opts: HostServerOptions) {
               alternative: r.alternative,
             })
           }
+          break
+        }
+        case 'mcp_status': {
+          // 宿主查看 MCP 服务器连接状态（v0.5.5；等待启动时的后台连接落定，保证确定性）
+          await Promise.allSettled(mcpConnects)
+          reply({ type: 'mcp_status', servers: mcpManager.status() })
           break
         }
         default:

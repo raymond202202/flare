@@ -7,7 +7,7 @@ import { createInterface, type Interface } from 'node:readline'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
 import os from 'node:os'
-import { mkdtempSync, rmSync } from 'node:fs'
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const CLI = path.join(__dirname, '..', 'dist', 'cli', 'index.js')
@@ -257,5 +257,49 @@ describe('flare host server 协议', () => {
     const contents = rest[0].memories.map((m: any) => m.content)
     expect(contents).toContain('香蕉的营养价值 C')
     expect(contents.some((c: string) => c.includes('苹果'))).toBe(false)
+  }, 30000)
+
+  it('mcp_status（无 --mcp）→ 空列表（v0.5.5）', async () => {
+    const msgs = await request({ type: 'mcp_status' }, { expect: ['mcp_status'] })
+    expect(Array.isArray(msgs[0].servers)).toBe(true)
+    expect(msgs[0].servers.length).toBe(0)
+  }, 30000)
+
+  it('mcp_status（--mcp mock 配置）→ 服务器连接成功 + 工具数（v0.5.5）', async () => {
+    // 独立子进程：--mcp 指向 mock MCP server 配置（本地子进程，无网络）
+    const dir = mkdtempSync(path.join(os.tmpdir(), 'flare-mcp-server-test-'))
+    const mcpCfg = path.join(dir, 'mcp.json')
+    const mockServer = path.join(__dirname, 'fixtures', 'mcp-mock-server.mjs')
+    writeFileSync(mcpCfg, JSON.stringify({ servers: [{ name: 'mock', command: process.execPath, args: [mockServer] }] }))
+    const env: Record<string, string> = { ...process.env } as Record<string, string>
+    delete env.DEEPSEEK_API_KEY
+    const c = spawn(process.execPath, [CLI, 'server', '--storage', path.join(dir, 'test.db'), '--mcp', mcpCfg], { env, stdio: ['pipe', 'pipe', 'pipe'] })
+    const rl2 = createInterface({ input: c.stdout! })
+    try {
+      const msgs = await new Promise<any[]>((resolve, reject) => {
+        const timer = setTimeout(() => { cleanup(); reject(new Error('超时（mcp_status）')) }, 15000)
+        const handler = (line: string) => {
+          try {
+            const parsed = JSON.parse(line)
+            if (parsed.type === 'mcp_status') {
+              cleanup()
+              resolve([parsed])
+            }
+          } catch { /* 非 JSON 行忽略 */ }
+        }
+        const cleanup = () => { clearTimeout(timer); rl2.removeListener('line', handler) }
+        rl2.on('line', handler)
+        c.stdin!.write(JSON.stringify({ type: 'mcp_status' }) + '\n')
+      })
+      expect(msgs[0].servers.length).toBe(1)
+      expect(msgs[0].servers[0].name).toBe('mock')
+      expect(msgs[0].servers[0].connected).toBe(true)
+      expect(msgs[0].servers[0].toolCount).toBe(3)
+      expect(msgs[0].servers[0].error).toBeUndefined()
+    } finally {
+      c.kill()
+      rl2.close()
+      rmSync(dir, { recursive: true, force: true })
+    }
   }, 30000)
 })
