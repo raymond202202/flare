@@ -9,7 +9,7 @@ import { ToolDefinition } from '../core/llm.js'
 import { execSync } from 'child_process'
 import { existsSync, readFileSync, writeFileSync, readdirSync, statSync, renameSync } from 'fs'
 import { resolve, join } from 'path'
-import { memorySearchTool } from './memory.js'
+import { memorySearchTool, memorySaveTool } from './memory.js'
 
 export interface ToolResult {
   success: boolean
@@ -314,6 +314,8 @@ export const tools: Tool[] = [
   terminalTool,
   // RAG（v0.5.1）：记忆/历史消息检索工具
   memorySearchTool,
+  // 记忆保存（v0.5.4）：用户明确要求记住时落库
+  memorySaveTool,
 ]
 
 /**

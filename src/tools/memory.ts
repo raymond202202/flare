@@ -1,13 +1,15 @@
 /**
- * Flare 记忆检索工具（RAG，v0.5.1）
+ * Flare 记忆工具（RAG，v0.5.1；记忆生命周期 v0.5.4）
  *
  * memory_search：让 AI 主动检索持久记忆（memories）和历史消息（messages）。
  * 中文友好：trigram FTS 全文检索 + bm25 相关度排序（<3 字 LIKE 回退）。
  *
+ * memory_save：让 AI 在用户明确要求"记住"时真正落库持久记忆。
+ *
  * 用法：
- * - 默认 memorySearchTool：检索全局库（~/.flare/flare.db）——CLI 等默认场景
- * - createMemorySearchTool(store)：绑定指定 MemoryStore（宿主应用如 Pulse/StorySpire
- *   用它检索自己的独立库，如 ~/.pulse/pulse-ai.db）
+ * - 默认 memorySearchTool / memorySaveTool：绑定全局库（~/.flare/flare.db）——CLI 等默认场景
+ * - createMemorySearchTool(store) / createMemorySaveTool(store)：绑定指定 MemoryStore
+ *   （宿主应用如 Pulse/StorySpire 用它检索/保存自己的独立库，如 ~/.pulse/pulse-ai.db）
  */
 
 import type { Tool } from './index.js'
@@ -91,3 +93,44 @@ export function createMemorySearchTool(store: MemoryStore | null): Tool {
 
 /** 默认记忆检索工具（延迟绑定全局库 ~/.flare/flare.db） */
 export const memorySearchTool: Tool = createMemorySearchTool(null)
+
+/**
+ * 用指定 store 创建 memory_save 工具（宿主可绑定自己的独立记忆库）
+ * store 为 null 时延迟绑定全局库（模块加载不触发单例创建，避免副作用）
+ *
+ * 约束（与系统提示一致）：仅当用户明确要求"记住"某事时保存（如"记住我偏好 X"），
+ * 不自作主张记录——记忆是用户主动托付给 AI 的长期事实。
+ */
+export function createMemorySaveTool(store: MemoryStore | null): Tool {
+  return {
+    definition: {
+      type: 'function',
+      function: {
+        name: 'memory_save',
+        description: '保存一条持久记忆（跨会话长期记住）。仅当用户明确要求记住某件事时使用（如"记住我的偏好：…"、"记住这个结论"）；不要自作主张保存无关内容。',
+        parameters: {
+          type: 'object',
+          properties: {
+            content: { type: 'string', description: '要记住的内容（用户明确要求记住的事实/偏好/结论）' },
+            type: { type: 'string', description: '记忆类型（默认 note）' },
+          },
+          required: ['content'],
+        },
+      },
+    },
+    execute: async (args: Record<string, any>): Promise<{ success: boolean; output: string; error?: string }> => {
+      const { content, type } = (args || {}) as { content?: string; type?: string }
+      const text = (content || '').trim()
+      if (!text) {
+        return { success: false, output: '', error: 'memory_save 需要 content 参数（要记住的内容）' }
+      }
+      // 延迟绑定：store 为 null 时用全局库（默认工具）
+      const activeStore = store || getMemoryStore()
+      activeStore.saveMemory(text, type || 'note')
+      return { success: true, output: `已保存持久记忆：${text.slice(0, 80)}` }
+    },
+  }
+}
+
+/** 默认记忆保存工具（延迟绑定全局库 ~/.flare/flare.db） */
+export const memorySaveTool: Tool = createMemorySaveTool(null)

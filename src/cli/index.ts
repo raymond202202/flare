@@ -301,6 +301,20 @@ export async function handleSlashCommand(
     return 'continue'
   }
 
+  // /forget 删除记忆（按内容关键词批量删，v0.5.4 记忆生命周期闭环）
+  if (lower === '/forget' || lower.startsWith('/forget ')) {
+    const keyword = cmd.replace(/^\/forget(?:\s+|$)/, '').trim()
+    if (!keyword) {
+      output(chalk.yellow('\n用法: /forget <关键词>（删除包含该关键词的持久记忆）'))
+    } else {
+      const n = store.deleteMemoriesByContent(keyword)
+      output(n > 0
+        ? chalk.green(`\n✅ 已删除 ${n} 条记忆（关键词: ${keyword.slice(0, 40)}）`)
+        : chalk.yellow(`\n未找到包含「${keyword.slice(0, 40)}」的记忆`))
+    }
+    return 'continue'
+  }
+
   // /vision 切换看图模型（3B 快速 / 7B 质量）
   if (lower === '/vision' || lower.startsWith('/vision ')) {
     const arg = cmd.replace(/^\/vision\s+/, '').trim().toLowerCase()
@@ -354,6 +368,7 @@ export async function handleSlashCommand(
       output('  /exit        - 退出')
       output('  /memory      - 查看记忆')
       output('  /remember    - 保存一条记忆（如: /remember 用户喜欢浅色主题）')
+      output('  /forget      - 删除记忆（如: /forget 浅色主题，删除包含该关键词的记忆）')
       output('  /usage       - 查看 token 用量')
       output('  /sessions    - 查看会话列表')
       output('  /clear       - 清屏')
