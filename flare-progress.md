@@ -1,6 +1,6 @@
 # flare 夜间调研迭代进度
 
-> 目标：调研 flare 引擎下一步迭代方向并推进（M4 已完成 = StorySpire 集成 + withConfirmation + 宿主协议；第一轮夜间已完成 RAG 里程碑 R0-R6；第二轮夜间已完成多模型里程碑 P0-P4；第三轮夜间已完成 server 协议里程碑 S0-S5；第四轮夜间已完成记忆生命周期闭环里程碑 T0-T5；第五轮夜间进行 MCP 协议支持里程碑 U0-U6）
+> 目标：调研 flare 引擎下一步迭代方向并推进（M4 已完成 = StorySpire 集成 + withConfirmation + 宿主协议；第一轮夜间已完成 RAG 里程碑 R0-R6；第二轮夜间已完成多模型里程碑 P0-P4；第三轮夜间已完成 server 协议里程碑 S0-S5；第四轮夜间已完成记忆生命周期闭环里程碑 T0-T5；第五轮夜间已完成 MCP 协议支持里程碑 U0-U6）
 > 铁律：**flare 是引擎，Pulse/StorySpire（Electron 版）当前都依赖它**——任何改动必须 tsc 0 错 + 全部测试通过才 commit
 > 规则：每轮实现后 `npx tsc` 0 错 + `PATH=/usr/bin:$PATH npx vitest run` 全绿 + git commit（本地，**禁止 git push**）；每轮结束更新本文件
 
@@ -28,14 +28,14 @@
 ### 迭代计划（分小步，每步独立验证 commit）
 
 - [x] **U0** 调研：确定方向（MCP 协议支持）+ 基线实测（tsc 0 错 / 129 全绿）+ 本文件更新
-- [ ] **U1** MCP 客户端（src/mcp/types.ts + src/mcp/client.ts）：`MCPClient`——spawn 子进程 + initialize 握手（JSON-RPC）+ tools/list + tools/call + close；NDJSON 行协议（零依赖手写）；请求超时/错误响应处理；导出供测试
-- [ ] **U2** mock MCP server（tests/fixtures/mcp-mock-server.mjs：NDJSON JSON-RPC 响应 initialize/tools/list/tools/call）+ tests/mcp-client.test.ts（握手 / 列工具 / 调用工具 / 错误响应 / 超时 / close 清理）
-- [ ] **U3** MCP 工具桥（src/tools/mcp.ts）：`createMcpTools(client)` → flare `Tool[]`（inputSchema → parameters 映射；execute → tools/call → 提取 text 内容；isError → success:false）+ src/index.ts 导出 + tests/mcp-tools.test.ts
-- [ ] **U4** MCP 管理器 + CLI /mcp（src/mcp/manager.ts `McpManager`：loadConfig(~/.flare/mcp.json) / connect / disconnect / getAllTools；cli/index.ts /mcp 命令 list/connect/disconnect + 重建 Agent 注入工具 + /help 同步 + 测试）
-- [ ] **U5** server 协议扩展：startHostServer 支持 `mcp` 配置（启动连接 MCP servers，工具并入 profile/host 工具）+ 新增 `mcp_status` 请求（宿主查看已连接 MCP 服务/工具数）+ `flare server --mcp <config.json>` + host-protocol.md + 协议测试（mock server 配置 + mcp_status 往返）
-- [ ] **U6** 文档收尾：README Changelog + docs/mcp.md（MCP 集成指南）+ 版本号 0.5.5 + 全量回归
+- [x] **U1** MCP 客户端（src/mcp/types.ts + src/mcp/client.ts）：`MCPClient`——spawn 子进程 + initialize 握手（JSON-RPC）+ tools/list + tools/call + close；NDJSON 行协议（零依赖手写）；请求超时/错误响应处理；导出供测试
+- [x] **U2** mock MCP server（tests/fixtures/mcp-mock-server.mjs：NDJSON JSON-RPC 响应 initialize/tools/list/tools/call）+ tests/mcp-client.test.ts（握手 / 列工具 / 调用工具 / 错误响应 / 超时 / close 清理）
+- [x] **U3** MCP 工具桥（src/tools/mcp.ts）：`createMcpTools(client)` → flare `Tool[]`（inputSchema → parameters 映射；execute → tools/call → 提取 text 内容；isError → success:false）+ src/index.ts 导出 + tests/mcp-tools.test.ts
+- [x] **U4** MCP 管理器 + CLI /mcp（src/mcp/manager.ts `McpManager`：loadConfig(~/.flare/mcp.json) / connect / disconnect / getAllTools；cli/index.ts /mcp 命令 list/connect/disconnect + 重建 Agent 注入工具 + /help 同步 + 测试）
+- [x] **U5** server 协议扩展：startHostServer 支持 `mcp` 配置（启动连接 MCP servers，工具并入 profile/host 工具）+ 新增 `mcp_status` 请求（宿主查看已连接 MCP 服务/工具数）+ `flare server --mcp <config.json>` + host-protocol.md + 协议测试（mock server 配置 + mcp_status 往返）
+- [x] **U6** 文档收尾：README Changelog + docs/mcp.md（MCP 集成指南）+ 版本号 0.5.5 + 全量回归
 
-> 本轮里程碑目标：flare 引擎可连接外部 MCP 服务器（stdio），MCP 工具经桥接进入 Agent 工具集（CLI /mcp + server --mcp），零 agent.ts 改动、零新依赖。
+> 本轮里程碑完成：flare 引擎可连接外部 MCP 服务器（stdio），MCP 工具经桥接进入 Agent 工具集（CLI /mcp + server --mcp），161 测试全绿（6 提交 U0-U6）；零 agent.ts 改动、零新依赖。
 
 ## 调研结论（2026-08-09 第四轮夜间）
 
@@ -158,6 +158,7 @@
 
 | 轮次 | 时间 | 完成 | 构建/测试 | 备注 |
 |------|------|------|-----------|------|
+| U0-U6 | 2026-08-09 夜间 | MCP 协议支持：零依赖 stdio MCP 客户端（initialize/tools/list/tools/call）+ 工具桥（createMcpTools）+ McpManager + ~/.flare/mcp.json + CLI /mcp + server --mcp/mcp_status | tsc 0 错 / 161 全绿 | 第五轮夜间里程碑（6 提交 U0-U6）；mock server fixture 离线测试；零 agent.ts 改动；版本 0.5.5 |
 | U0 | 2026-08-09 夜间 | 调研确定方向（MCP 协议支持：stdio MCP client + 工具桥接，零依赖）+ 基线实测 | tsc 0 错 / 129 全绿 | 第五轮夜间里程碑；MCP stdio = NDJSON JSON-RPC 子进程管道，mock server 离线测试；零 agent.ts 改动 |
 | T0-T5 | 2026-08-09 夜间 | 记忆生命周期闭环 + server 记忆访问修复（memoryStore→store 字段错位 bug）+ create_session/remember/get_memories/delete_memory 协议 + memory_save 工具 + /forget | tsc 0 错 / 129 全绿 | 第四轮夜间里程碑（5 提交 T0-T5）；协议测试改临时隔离库 + 数据往返断言（防再空过）；冒烟实测全部真实生效；版本 0.5.4 |
 | S0-S5 | 2026-08-09 夜间 | server 协议完善：version 版本协商 + delete_session 会话清理 + get_usage 用量统计 + MemoryStore.deleteSession | tsc 0 错 / 107 全绿 | 第三轮夜间里程碑（5 提交 S0-S5）；version 测试断言 engine 与 package.json 一致 |
