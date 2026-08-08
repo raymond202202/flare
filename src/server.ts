@@ -16,7 +16,7 @@
 
 import { createInterface } from 'node:readline'
 import { createRequire } from 'node:module'
-import { Agent, createProvider, profileToConfig, McpManager, type ExpertProfile, type ToolDefinition, type Tool, type ToolResult, type McpServerConfig } from './index.js'
+import { Agent, createProvider, profileToConfig, McpManager, estimateMessagesTokens, type ExpertProfile, type ToolDefinition, type Tool, type ToolResult, type McpServerConfig } from './index.js'
 
 // 从 package.json 读取引擎版本（不硬编码；宿主 version 协商用）
 // 注意：编译产物 dist/server.js 位于 dist/ 下，package.json 在项目根（../package.json）
@@ -225,6 +225,19 @@ export function startHostServer(opts: HostServerOptions) {
             ? await (agent as any).store.getUsageStats()
             : { promptTokens: 0, completionTokens: 0, totalTokens: 0, sessionCount: 0 }
           reply({ type: 'usage', stats })
+          break
+        }
+        case 'context_status': {
+          // 宿主查看会话上下文占用（v0.5.6）：消息数 + 估算 tokens（只读，不触发生成）
+          const sessionId = String(req.sessionId || 'default')
+          const agent = getAgent(sessionId)
+          const messages = agent.getMessages()
+          reply({
+            type: 'context_status',
+            sessionId,
+            messageCount: messages.length,
+            estimatedTokens: estimateMessagesTokens(messages),
+          })
           break
         }
         case 'remember': {

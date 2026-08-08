@@ -3,7 +3,7 @@
 > 供非 Node 宿主（如 Qt 应用）调用 flare 引擎的本地协议。
 > 传输：stdin/stdout · JSON Lines（每行一个 JSON 对象）
 > 实现：`src/server.ts`（`flare server` 命令）
-> 请求类型：chat / cancel / set_context / list_sessions / get_messages / get_usage / ping / version / create_session / delete_session / remember / get_memories / delete_memory / tool_result / mcp_status
+> 请求类型：chat / cancel / set_context / list_sessions / get_messages / get_usage / context_status / ping / version / create_session / delete_session / remember / get_memories / delete_memory / tool_result / mcp_status
 
 ## 启动
 
@@ -103,7 +103,20 @@ flare server --profile <expert-profile-file> --storage <db-path> [--mcp <mcp-con
 - 宿主展示用量统计（成本监控）、AI 面板显示 token 消耗时使用
 - 与 get_messages 一样只读，不触发生成
 
-### 10. create_session — 显式创建会话（宿主会话管理）
+### 10. context_status — 读取会话上下文占用（v0.5.6，只读，不生成）
+
+```json
+{"type":"context_status","sessionId":"s1"}
+```
+
+响应：`{"type":"context_status","sessionId":"s1","messageCount":31,"estimatedTokens":2143}`
+
+- `messageCount`：当前会话上下文中的消息数（含 system 提示；会话为空时至少 1）
+- `estimatedTokens`：上下文估算 token 数（CJK 1 字符≈1 / 非 CJK 4 字符≈1 / 消息结构 +4 / tool_calls +3 / 图片≈85，启发式非精确）
+- 宿主 AI 面板显示\"上下文占用/成本预估\"、接近上限提醒时使用；只读，不触发生成
+- 无 `sessionId` 时默认会话 `default`；同会话多次调用随对话增长而增大
+
+### 11. create_session — 显式创建会话（宿主会话管理）
 
 ```json
 {"type":"create_session","sessionId":"s1","title":"网络调试"}
@@ -114,7 +127,7 @@ flare server --profile <expert-profile-file> --storage <db-path> [--mcp <mcp-con
 - 幂等：会话已存在则更新标题（UPSERT），不报错
 - 宿主管理会话列表、预建命名会话时使用（会话也可由 chat 首次写入时自动创建）
 
-### 11. remember — 保存持久记忆（v0.5.4 记忆生命周期）
+### 12. remember — 保存持久记忆（v0.5.4 记忆生命周期）
 
 ```json
 {"type":"remember","content":"用户偏好深色主题","kind":"preference"}
@@ -126,7 +139,7 @@ flare server --profile <expert-profile-file> --storage <db-path> [--mcp <mcp-con
 - `kind`：记忆类型（可选，默认 `note`；注意不能叫 `type`——那是请求判别符）
 - 宿主 AI 面板"记住"按钮、用户偏好写入时使用；记忆跨会话长期生效
 
-### 12. get_memories — 读取记忆（列出或搜索，只读不生成）
+### 13. get_memories — 读取记忆（列出或搜索，只读不生成）
 
 ```json
 {"type":"get_memories"}                          // 列出全部（默认 50 条）
@@ -140,7 +153,7 @@ flare server --profile <expert-profile-file> --storage <db-path> [--mcp <mcp-con
 - `limit`：可选，默认 50，上限 100
 - 宿主面板展示/管理记忆时使用
 
-### 13. delete_memory — 删除记忆（隐私管理）
+### 14. delete_memory — 删除记忆（隐私管理）
 
 ```json
 {"type":"delete_memory","id":3}                    // 按 id 删单条
@@ -153,7 +166,7 @@ flare server --profile <expert-profile-file> --storage <db-path> [--mcp <mcp-con
 - 同时给 `id` 和 `content` 时优先按 `id`
 - FTS 检索索引由 DELETE 触发器联动清理（删除后 get_memories 搜索不再命中）
 
-### 14. tool_result — 宿主回传工具执行结果（响应 tool_execute）
+### 15. tool_result — 宿主回传工具执行结果（响应 tool_execute）
 
 ```json
 {"type":"tool_result","id":"t_1","result":{"success":true,"output":"...","error":null}}
@@ -161,7 +174,7 @@ flare server --profile <expert-profile-file> --storage <db-path> [--mcp <mcp-con
 
 `result` 必须为 flare 的 ToolResult 对象：`{ success: boolean, output: string, error?: string, denied?: boolean, alternative?: boolean }`
 
-### 15. mcp_status — 查看 MCP 服务器连接状态（v0.5.5）
+### 16. mcp_status — 查看 MCP 服务器连接状态（v0.5.5）
 
 ```json
 {"type":"mcp_status"}

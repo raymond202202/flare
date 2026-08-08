@@ -217,6 +217,26 @@ describe('flare host server 协议', () => {
     expect(typeof msgs[0].stats.sessionCount).toBe('number')
   })
 
+  it('context_status → 消息数 + 估算 tokens（v0.5.6：上下文占用只读）', async () => {
+    // 数据往返：create_session 后 context_status 必须能看到该会话的上下文
+    await request({ type: 'create_session', sessionId: 's-ctx1', title: '上下文会话' }, { expect: ['ok'] })
+    const msgs = await request({ type: 'context_status', sessionId: 's-ctx1' }, { expect: ['context_status'] })
+    expect(msgs[0].type).toBe('context_status')
+    expect(msgs[0].sessionId).toBe('s-ctx1')
+    // 会话至少含 system 提示（messageCount ≥ 1）；估算 tokens 必然 > 0
+    expect(typeof msgs[0].messageCount).toBe('number')
+    expect(msgs[0].messageCount).toBeGreaterThanOrEqual(1)
+    expect(typeof msgs[0].estimatedTokens).toBe('number')
+    expect(msgs[0].estimatedTokens).toBeGreaterThan(0)
+  })
+
+  it('context_status 默认会话（无 sessionId）→ 正常返回（default 会话）', async () => {
+    const msgs = await request({ type: 'context_status' }, { expect: ['context_status'] })
+    expect(msgs[0].type).toBe('context_status')
+    expect(msgs[0].sessionId).toBe('default')
+    expect(msgs[0].messageCount).toBeGreaterThanOrEqual(1)
+  })
+
   it('remember → 保存记忆 + get_memories 可检索到（记忆生命周期：存 → 查）', async () => {
     // 数据往返：remember 写入临时库 → get_memories 必须命中（同时证明 T1 store 字段修复）
     await request({ type: 'remember', content: '用户偏好深色主题', kind: 'preference' }, { expect: ['ok'] })
