@@ -116,6 +116,21 @@ describe('flare host server 协议', () => {
     }
   }, 45000)
 
+  it('chat 带 model 字段（本地 Ollama 主模型）→ 协议流完整（模型选择不破坏流程）', async () => {
+    // v0.5.2：chat 请求支持可选 model（如 qwen2.5:7b 本地 Ollama / deepseek-chat 远端）。
+    // 不断言具体错误（本地 Ollama 可能未启动/未拉模型），只验证协议流正常终止。
+    const msgs = await request(
+      { type: 'chat', sessionId: 's-model', input: '你好', model: 'qwen2.5:7b' },
+      { collectAll: true, timeout: 45000 }
+    )
+    expect(msgs.length).toBeGreaterThan(0)
+    const last = msgs[msgs.length - 1]
+    expect(['done', 'error', 'cancelled'].includes(last.type)).toBe(true)
+    for (const m of msgs) {
+      expect(['text', 'tool_call', 'tool_execute', 'tool_result', 'done', 'error', 'cancelled'].includes(m.type)).toBe(true)
+    }
+  }, 45000)
+
   it('set_context（无 key 会话）→ ok', async () => {
     const msgs = await request({ type: 'set_context', sessionId: 's-test', context: 'x' }, { expect: ['ok'] })
     expect(msgs[0].type).toBe('ok')
