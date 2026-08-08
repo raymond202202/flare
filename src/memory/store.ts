@@ -101,6 +101,16 @@ export class MemoryStore {
         created_at TEXT DEFAULT (datetime('now'))
       );
 
+      -- RAG（v0.5.1）：memories 中文全文检索索引（trigram tokenizer）
+      -- 默认 unicode61 tokenizer 对中文检索效果差（整段 CJK 被当一个 token）；
+      -- trigram 支持中文 3 字以上子串匹配（<3 字查询在代码里 LIKE 回退）
+      CREATE VIRTUAL TABLE IF NOT EXISTS memories_fts USING fts5(
+        content,
+        content='memories',
+        content_rowid='id',
+        tokenize='trigram'
+      );
+
       CREATE TABLE IF NOT EXISTS usage_log (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         session_id TEXT,
@@ -128,6 +138,18 @@ export class MemoryStore {
         INSERT INTO messages_fts(rowid, content) VALUES (new.id, new.content);
       END;
 
+      -- memories_fts 同步触发器（RAG）：INSERT/DELETE/UPDATE 时同步索引
+      CREATE TRIGGER IF NOT EXISTS memories_ai AFTER INSERT ON memories BEGIN
+        INSERT INTO memories_fts(rowid, content) VALUES (new.id, new.content);
+      END;
+      CREATE TRIGGER IF NOT EXISTS memories_ad AFTER DELETE ON memories BEGIN
+        INSERT INTO memories_fts(memories_fts, rowid, content) VALUES('delete', old.id, old.content);
+      END;
+      CREATE TRIGGER IF NOT EXISTS memories_au AFTER UPDATE ON memories BEGIN
+        INSERT INTO memories_fts(memories_fts, rowid, content) VALUES('delete', old.id, old.content);
+        INSERT INTO memories_fts(rowid, content) VALUES (new.id, new.content);
+      END;
+
       CREATE INDEX IF NOT EXISTS idx_messages_session 
         ON messages(session_id, created_at);
 
@@ -140,6 +162,15 @@ export class MemoryStore {
 
     // 老库迁移：检查是否有 tool_call_id / name 列
     this.migrate()
+
+    // RAG 回填：老库升级时 memories 已有数据但 memories_fts 刚创建为空 → rebuild 索引
+    try {
+      const ftsCount = (this.db.prepare('SELECT count(*) AS c FROM memories_fts').get() as any)?.c || 0
+      const memCount = (this.db.prepare('SELECT count(*) AS c FROM memories').get() as any)?.c || 0
+      if (memCount > 0 && ftsCount === 0) {
+        this.db.exec("INSERT INTO memories_fts(memories_fts) VALUES('rebuild')")
+      }
+    } catch { /* FTS 回填失败不阻塞（检索时 LIKE 回退） */ }
   }
 
   /** 老版本数据库迁移：补充缺失的列 */
@@ -275,15 +306,48 @@ export class MemoryStore {
     }
   }
 
-  /** 获取相关记忆 */
-  getRelevantMemories(query: string, limit = 5): MemoryRow[] {
+  /**
+   * 全文检索记忆（RAG，v0.5.1）
+   *
+   * 优先用 memories_fts（trigram tokenizer）做中文全文检索 + bm25 相关度排序：
+   * - 查询 ≥3 个字符：FTS 精确子串匹配
+   * - 查询 <3 个字符（如 2 字中文）：trigram 无法匹配，LIKE 回退
+   * - FTS 异常 / 无结果：LIKE 兜底（不静默失败）
+   */
+  searchMemories(query: string, limit = 5): MemoryRow[] {
+    const q = (query || '').trim()
+    if (!q) return []
+
+    // ≥3 字符：FTS trigram 检索（bm25 排序，值越小越相关）
+    if ([...q].length >= 3) {
+      try {
+        const rows = this.db.prepare(
+          `SELECT m.*, bm25(memories_fts) AS score
+           FROM memories_fts
+           JOIN memories m ON m.id = memories_fts.rowid
+           WHERE memories_fts MATCH ?
+           ORDER BY score ASC
+           LIMIT ?`
+        ).all(`"${q.replace(/"/g, '""')}"`, limit) as (MemoryRow & { score: number })[]
+        if (rows.length > 0) {
+          return rows.map(({ score, ...m }) => m)
+        }
+      } catch { /* FTS 失败 → LIKE 回退 */ }
+    }
+
+    // 短查询 / FTS 无结果：LIKE 回退
     try {
       return this.db.prepare(
-        `SELECT * FROM memories WHERE content LIKE ? ORDER BY created_at DESC LIMIT ?`
-      ).all(`%${query}%`, limit) as MemoryRow[]
+        'SELECT * FROM memories WHERE content LIKE ? ORDER BY created_at DESC LIMIT ?'
+      ).all(`%${q}%`, limit) as MemoryRow[]
     } catch {
       return []
     }
+  }
+
+  /** 获取相关记忆（RAG 增强版：FTS 全文检索 + 相关度排序） */
+  getRelevantMemories(query: string, limit = 5): MemoryRow[] {
+    return this.searchMemories(query, limit)
   }
 
   /** 获取所有记忆 */
