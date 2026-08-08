@@ -89,6 +89,10 @@ export type {
   McpServerStatus,
 } from './mcp/types.js'
 
+// ===== MCP 服务器端（v0.5.8）：flare 工具集经 MCP 标准协议暴露给外部客户端 =====
+export { MCPServer, toMcpTool, startMcpServer } from './mcp/server.js'
+export type { MCPServerOptions } from './mcp/server.js'
+
 // ===== 上下文可观测性（v0.5.6）：token 估算（宿主面板显示上下文占用/成本预估）=====
 export {
   estimateTokens,
