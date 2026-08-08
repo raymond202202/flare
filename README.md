@@ -148,6 +148,8 @@ cp .env.example ~/.flare/.env
 | `flare chat` | 交互模式 |
 | `flare chat -q "问题"` | 单次查询模式 |
 | `flare chat -q "问题" -i 图片.png` | 单次查询附带图片 |
+| `flare server [--profile --storage --mcp]` | 宿主协议服务（stdin/stdout JSON Lines，供 Qt 等宿主调用） |
+| `flare mcp-server [-t 工具名,...]` | MCP stdio 服务器：把 flare 工具集暴露给其他 AI 客户端（v0.5.8） |
 
 交互模式命令：
 
