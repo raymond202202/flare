@@ -157,6 +157,9 @@ cp .env.example ~/.flare/.env
 | `/image <路径> <问题>` | 显式看图 |
 | `/vision [3b\|7b\|default]` | 切换看图模型（3b 快速 ~4s / 7b 质量 30-60s） |
 | `/model [模型名\|default]` | 切换主模型（如 `/model qwen2.5:7b` 本地 Ollama，`/model deepseek-chat` 远端） |
+| `/mcp` | 查看 MCP 服务器状态（`~/.flare/mcp.json` 配置，v0.5.5） |
+| `/mcp connect <name>` | 连接 MCP 服务器并注入其工具（v0.5.5） |
+| `/mcp disconnect <name>` | 断开 MCP 服务器（v0.5.5） |
 | `/memory` | 查看持久记忆 |
 | `/remember` | 保存一条记忆（如: /remember 用户喜欢浅色主题） |
 | `/forget` | 删除记忆（如: /forget 浅色主题，删除包含该关键词的记忆） |
@@ -319,6 +322,16 @@ Interactive mode commands:
 ### Changelog / Release Notes
 
 > 中文条目 / Chinese entries · English summary for each version
+
+#### v0.5.5 (2026-08-09) — MCP 协议支持：连接外部 MCP 服务器 / MCP protocol support (external MCP servers)
+- 🔌 **MCP stdio 客户端（零依赖手写）**：`MCPClient`——spawn 子进程 + initialize 握手 + tools/list + tools/call + close，NDJSON JSON-RPC 行协议（不引入 @modelcontextprotocol/sdk），请求超时/错误响应/进程退出全部有兜底
+- 🧩 **MCP 工具桥**：`createMcpTools(client)` 把 MCP 工具（inputSchema）桥接为 flare `Tool[]`（execute → tools/call，isError → success:false，协议错误包装不抛出）——外部 MCP 生态（filesystem/github/数据库等）直接进入 Agent 工具集
+- 📁 **McpManager + 配置**：`~/.flare/mcp.json`（`{ "servers": [{ "name", "command", "args", "env" }] }`），`McpManager` 管理多服务器连接/断开/工具并集
+- ⌨️ **CLI `/mcp` 命令**：`/mcp` 查看状态（● 已连接 + 工具数）/ `/mcp connect <name>` 连接并注入工具 / `/mcp disconnect <name>` 断开（重建会话生效，内置工具保留）
+- 🖥️ **server `--mcp <config.json>` + `mcp_status` 请求**：宿主协议服务启动时连接外部 MCP 服务器（工具并入每个会话的 Agent 工具集，与宿主代理工具/专家工具并存），`mcp_status` 让宿主面板诊断连接状态
+- 📚 docs/mcp.md（MCP 集成指南：配置/CLI/宿主协议/自定义服务器）+ host-protocol.md 同步 + README CLI 表
+- 🧪 新增 32 项测试（client 8 + tools 6 + manager 9 + /mcp 命令 8 + server 2），共 161/161；零 agent.ts 改动
+- EN: MCP protocol support — zero-dependency stdio MCP client (NDJSON JSON-RPC), tool bridge into Agent toolset, McpManager + ~/.flare/mcp.json, CLI /mcp, server --mcp + mcp_status. External MCP servers (filesystem/github/db) now usable from flare. 161/161 tests.
 
 #### v0.5.4 (2026-08-09) — 记忆生命周期闭环 + server 记忆接口修复 / Memory lifecycle + server store fix
 - 🐛 **修复 server 记忆访问字段错位**：`(agent as any).memoryStore` → `(agent as any).store`（Agent 字段是 `private store`）——修复前 delete_session 从不真正删除（deleted 恒 false，隐私数据删不掉）、list_sessions/get_messages 恒返回空、get_usage 恒为 0（旧测试只断言形状，全部空过）；协议测试改用临时隔离库 + 数据往返断言（create_session → delete_session deleted:true/false），同类问题不再漏网
