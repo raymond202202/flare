@@ -3,7 +3,7 @@
 > 供非 Node 宿主（如 Qt 应用）调用 flare 引擎的本地协议。
 > 传输：stdin/stdout · JSON Lines（每行一个 JSON 对象）
 > 实现：`src/server.ts`（`flare server` 命令）
-> 请求类型：chat / cancel / set_context / list_sessions / get_messages / get_usage / ping / version / delete_session / tool_result
+> 请求类型：chat / cancel / set_context / list_sessions / get_messages / get_usage / ping / version / create_session / delete_session / remember / get_memories / delete_memory / tool_result
 
 ## 启动
 
@@ -97,7 +97,57 @@ flare server --profile <expert-profile-file> --storage <db-path>
 - 宿主展示用量统计（成本监控）、AI 面板显示 token 消耗时使用
 - 与 get_messages 一样只读，不触发生成
 
-### 10. tool_result — 宿主回传工具执行结果（响应 tool_execute）
+### 10. create_session — 显式创建会话（宿主会话管理）
+
+```json
+{"type":"create_session","sessionId":"s1","title":"网络调试"}
+```
+
+响应：`{"type":"ok","sessionId":"s1"}`
+
+- 幂等：会话已存在则更新标题（UPSERT），不报错
+- 宿主管理会话列表、预建命名会话时使用（会话也可由 chat 首次写入时自动创建）
+
+### 11. remember — 保存持久记忆（v0.5.4 记忆生命周期）
+
+```json
+{"type":"remember","content":"用户偏好深色主题","kind":"preference"}
+```
+
+响应：`{"type":"ok","sessionId":"default"}`
+
+- `content`：要记住的内容（必填；缺失回 error）
+- `kind`：记忆类型（可选，默认 `note`；注意不能叫 `type`——那是请求判别符）
+- 宿主 AI 面板"记住"按钮、用户偏好写入时使用；记忆跨会话长期生效
+
+### 12. get_memories — 读取记忆（列出或搜索，只读不生成）
+
+```json
+{"type":"get_memories"}                          // 列出全部（默认 50 条）
+{"type":"get_memories","query":"深色主题"}        // 全文搜索（trigram FTS，中文友好）
+{"type":"get_memories","query":"深色主题","limit":10}
+```
+
+响应：`{"type":"memories","memories":[{"id":1,"content":"...","type":"preference","created_at":"..."}]}`
+
+- `query`：可选；有值 → `searchMemories`（trigram 全文检索 + bm25 排序），无值 → 列出全部
+- `limit`：可选，默认 50，上限 100
+- 宿主面板展示/管理记忆时使用
+
+### 13. delete_memory — 删除记忆（隐私管理）
+
+```json
+{"type":"delete_memory","id":3}                    // 按 id 删单条
+{"type":"delete_memory","content":"深色主题"}       // 按内容关键词批量删
+```
+
+响应：`{"type":"ok","sessionId":"default","deleted":1}`
+
+- `deleted`：删除条数（0 = 无匹配/不存在，幂等不报错）
+- 同时给 `id` 和 `content` 时优先按 `id`
+- FTS 检索索引由 DELETE 触发器联动清理（删除后 get_memories 搜索不再命中）
+
+### 14. tool_result — 宿主回传工具执行结果（响应 tool_execute）
 
 ```json
 {"type":"tool_result","id":"t_1","result":{"success":true,"output":"...","error":null}}
@@ -118,6 +168,8 @@ flare server --profile <expert-profile-file> --storage <db-path>
 | `error` | `message` | 错误（含未配置 key 等） |
 | `sessions` | `sessions` | 会话列表 |
 | `messages` | `sessionId, messages` | 指定会话的消息历史 |
+| `memories` | `memories` | 记忆列表（get_memories 响应） |
+| `ok` | `sessionId, deleted?` | 通用确认（set_context/cancel/create_session/delete_session/remember/delete_memory） |
 | `pong` | `ts` | ping 响应（宿主健康检查） |
 | `version` | `protocol, engine` | 版本协商（协议版本 + 引擎版本） |
 | `usage` | `stats` | token 用量统计（get_usage 响应） |
