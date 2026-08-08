@@ -3,8 +3,8 @@
 > 目标：flare 是 Pulse/StorySpire 依赖的 AI Agent 引擎（TS）。任何改动必须安全（tsc 0 错 + 测试全绿才 commit）。
 > 铁律：禁止 push；禁止修改 src/core/agent.ts 的 Agent.run 核心循环。
 
-> **最新状态（v0.5.8）**：MCP 服务器端完整（MCPServer + CLI `flare mcp-server`，211/211 全绿，commits 06eae7b/5779078 未 push）。
-> 下一步候选：① 上下文 token 预算裁剪建议函数 suggestTrim（纯函数，不碰 agent.ts）；② CLI/server 接入 ConfirmationGate；③ agent.ts trimContext 裁剪（风险高暂缓）。
+> **最新状态（v0.5.9）**：MCP 服务器端完整（MCPServer + CLI `flare mcp-server` + resources/prompts 空响应兼容）+ 上下文裁剪建议 suggestTrim 纯函数；221/221 全绿（commits 06eae7b/5779078/7379a5e/d84b2ef 未 push）。
+> 下一步候选：① CLI/server 接入 ConfirmationGate（宿主弹窗流程）；② agent.ts trimContext 自动裁剪（风险高暂缓）；③ MCP 更多协议特性（resources 真实暴露/HTTP transport）。
 
 ---
 
@@ -76,5 +76,15 @@
 - **commit**：`5779078`（禁止 push）
 - **至此 MCP 增强里程碑完整**：客户端（v0.5.5）+ 服务器端核心（06eae7b）+ CLI 一键起服务器（5779078）
 - **下一步候选**：① 上下文 token 预算裁剪**建议函数** `suggestTrim`（纯函数，宿主可自行按预算裁剪上下文，不碰 agent.ts）；② CLI/server 接入 ConfirmationGate；③ agent.ts trimContext 裁剪（风险高暂缓）
+
+---
+
+### 第二轮补充（2026-08-09）——suggestTrim 上下文裁剪建议（v0.5.9）
+
+- **完成**：`src/core/context.ts` 新增 `suggestTrim(messages, budgetTokens, opts?)` 纯函数——按 token 预算建议保留哪些消息（**system 保底** + **最近优先** + **极小预算保底最新一条** + `reserveForOutput` 预留输出 + `keepSystem:false` 可关），返回 `{ keep, droppedCount, estimatedKeptTokens, estimatedDroppedTokens }`；库导出 + 类型；docs/context-observability.md"按预算裁剪上下文"章节（宿主自管理上下文的地基，零 agent.ts 改动）
+- **验证**：tsc 0 错误；**220/220 全绿**（211 + 9 新增）
+- **commit**：`7379a5e`（版本号 0.5.9）
+- **补丁**：MCPServer 增加 `resources/list` + `prompts/list` 空列表响应（Claude Desktop 等真实客户端连接时探测，返回空列表比 -32601 更兼容）；2 测试；`d84b2ef`；**221/221 全绿**
+- **下一步候选**：① CLI/server 接入 ConfirmationGate（宿主弹窗流程）；② agent.ts trimContext 自动裁剪（风险高暂缓）；③ MCP 更多协议特性（resources 真实暴露/HTTP transport）
 
 ---
