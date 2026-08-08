@@ -37,6 +37,9 @@ class Config {
     this.store.set('DEEPSEEK_API_KEY', process.env.DEEPSEEK_API_KEY || '')
     this.store.set('DEFAULT_MODEL', process.env.DEFAULT_MODEL || 'deepseek-chat')
     this.store.set('OPENAI_BASE_URL', process.env.OPENAI_BASE_URL || '')
+    // 主模型通用覆盖（v0.5.2）：不设置时按模型名自动检测（deepseek/gpt/本地 Ollama）
+    this.store.set('LLM_BASE_URL', process.env.LLM_BASE_URL || '')
+    this.store.set('LLM_API_KEY', process.env.LLM_API_KEY || '')
     // 视觉模型（看图时用本地 VLM）
     this.store.set('VISION_MODEL', process.env.VISION_MODEL || '')
     this.store.set('VISION_BASE_URL', process.env.VISION_BASE_URL || '')
