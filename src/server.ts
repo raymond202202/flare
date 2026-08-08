@@ -2,7 +2,10 @@
  * Flare 宿主协议服务（最小版）
  *
  * 供非 Node 宿主（Qt 等）通过 stdin/stdout JSON Lines 调用 flare 引擎：
- *   - chat（流式）/ cancel / set_context / list_sessions / tool_result
+ *   - chat（流式）/ cancel / set_context / list_sessions / get_messages / tool_result
+ *   - 会话管理：create_session / delete_session（含消息/用量）
+ *   - 记忆接口（v0.5.4）：remember / get_memories / delete_memory
+ *   - 诊断：ping / version / get_usage
  *   - 宿主代理工具：宿主在 chat 请求声明 tools，服务经 tool_execute 事件请宿主执行
  *
  * 用法：
@@ -207,6 +210,49 @@ export function startHostServer(opts: HostServerOptions) {
             ? await (agent as any).store.getUsageStats()
             : { promptTokens: 0, completionTokens: 0, totalTokens: 0, sessionCount: 0 }
           reply({ type: 'usage', stats })
+          break
+        }
+        case 'remember': {
+          // 宿主保存持久记忆（记忆生命周期 v0.5.4：AI 面板"记住"、用户偏好写入）
+          const sessionId = String(req.sessionId || 'default')
+          const content = String(req.content || '').trim()
+          if (!content) {
+            reply({ type: 'error', message: 'remember 需要 content 参数（要记住的内容）' })
+            break
+          }
+          const agent = getAgent(sessionId)
+          if (typeof (agent as any).store?.saveMemory === 'function') {
+            // kind 为记忆类型（如 preference/note）；注意不能用 type（请求判别符）
+            (agent as any).store.saveMemory(content, req.kind ? String(req.kind) : 'note')
+          }
+          reply({ type: 'ok', sessionId })
+          break
+        }
+        case 'get_memories': {
+          // 宿主读取记忆：query 存在 → 全文搜索；否则列出全部（只读不生成）
+          const agent = getAgent(String(req.sessionId || 'default'))
+          const q = req.query ? String(req.query).trim() : ''
+          const limit = Math.min(Math.max(Number(req.limit) || 50, 1), 100)
+          const store = (agent as any).store
+          const memories = (q && typeof store?.searchMemories === 'function')
+            ? store.searchMemories(q, limit)
+            : (typeof store?.getAllMemories === 'function')
+              ? store.getAllMemories().slice(0, limit)
+              : []
+          reply({ type: 'memories', memories })
+          break
+        }
+        case 'delete_memory': {
+          // 宿主删除记忆：id → 删单条；content → 按关键词批量删（隐私管理）
+          const agent = getAgent(String(req.sessionId || 'default'))
+          const store = (agent as any).store
+          let deleted = 0
+          if (typeof store?.deleteMemory === 'function' && req.id !== undefined && req.id !== null) {
+            deleted = store.deleteMemory(Number(req.id)) ? 1 : 0
+          } else if (typeof store?.deleteMemoriesByContent === 'function' && req.content) {
+            deleted = store.deleteMemoriesByContent(String(req.content))
+          }
+          reply({ type: 'ok', sessionId: String(req.sessionId || 'default'), deleted })
           break
         }
         case 'tool_result': {

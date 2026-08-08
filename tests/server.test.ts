@@ -216,4 +216,46 @@ describe('flare host server 协议', () => {
     expect(typeof msgs[0].stats.totalTokens).toBe('number')
     expect(typeof msgs[0].stats.sessionCount).toBe('number')
   })
+
+  it('remember → 保存记忆 + get_memories 可检索到（记忆生命周期：存 → 查）', async () => {
+    // 数据往返：remember 写入临时库 → get_memories 必须命中（同时证明 T1 store 字段修复）
+    await request({ type: 'remember', content: '用户偏好深色主题', kind: 'preference' }, { expect: ['ok'] })
+    const list = await request({ type: 'get_memories' }, { expect: ['memories'] })
+    expect(list[0].type).toBe('memories')
+    expect(Array.isArray(list[0].memories)).toBe(true)
+    expect(list[0].memories.some((m: any) => m.content === '用户偏好深色主题' && m.type === 'preference')).toBe(true)
+
+    const search = await request({ type: 'get_memories', query: '深色主题' }, { expect: ['memories'] })
+    expect(search[0].memories.some((m: any) => m.content === '用户偏好深色主题')).toBe(true)
+  }, 30000)
+
+  it('remember 缺 content → error（不落库）', async () => {
+    const msgs = await request({ type: 'remember' }, { expect: ['error'] })
+    expect(msgs[0].message).toContain('content')
+  }, 30000)
+
+  it('delete_memory → 按 id 删单条（deleted:1），再删 deleted:0 幂等', async () => {
+    await request({ type: 'remember', content: '待删除的记忆条目' }, { expect: ['ok'] })
+    const list = await request({ type: 'get_memories', query: '待删除的' }, { expect: ['memories'] })
+    const id = list[0].memories[0].id
+
+    const del = await request({ type: 'delete_memory', id }, { expect: ['ok'] })
+    expect(del[0].deleted).toBe(1)
+    const again = await request({ type: 'delete_memory', id }, { expect: ['ok'] })
+    expect(again[0].deleted).toBe(0)
+  }, 30000)
+
+  it('delete_memory → 按 content 关键词批量删（deleted 为条数）', async () => {
+    await request({ type: 'remember', content: '关于苹果的讨论 A' }, { expect: ['ok'] })
+    await request({ type: 'remember', content: '苹果种植技巧 B' }, { expect: ['ok'] })
+    await request({ type: 'remember', content: '香蕉的营养价值 C' }, { expect: ['ok'] })
+
+    const del = await request({ type: 'delete_memory', content: '苹果' }, { expect: ['ok'] })
+    expect(del[0].deleted).toBe(2)
+
+    const rest = await request({ type: 'get_memories' }, { expect: ['memories'] })
+    const contents = rest[0].memories.map((m: any) => m.content)
+    expect(contents).toContain('香蕉的营养价值 C')
+    expect(contents.some((c: string) => c.includes('苹果'))).toBe(false)
+  }, 30000)
 })
