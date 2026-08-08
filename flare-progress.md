@@ -1,8 +1,38 @@
 # flare 夜间调研迭代进度
 
-> 目标：调研 flare 引擎下一步迭代方向并推进（M4 已完成 = StorySpire 集成 + withConfirmation + 宿主协议；第一轮夜间已完成 RAG 里程碑 R0-R6）
+> 目标：调研 flare 引擎下一步迭代方向并推进（M4 已完成 = StorySpire 集成 + withConfirmation + 宿主协议；第一轮夜间已完成 RAG 里程碑 R0-R6；第二轮夜间已完成多模型里程碑 P0-P4）
 > 铁律：**flare 是引擎，Pulse/StorySpire（Electron 版）当前都依赖它**——任何改动必须 tsc 0 错 + 全部测试通过才 commit
 > 规则：每轮实现后 `npx tsc` 0 错 + `PATH=/usr/bin:$PATH npx vitest run` 全绿 + git commit（本地，**禁止 git push**）；每轮结束更新本文件
+
+## 调研结论（2026-08-09 第三轮夜间）
+
+### 现状盘点（读完 roadmap + README + docs/ + src/ + tests/，基线实测）
+
+- **前两轮已完成**：RAG 里程碑（memories_fts trigram + searchMemories/searchMessages + memory_search 工具 + server ping/get_messages）✅；多模型 provider 增强（resolveProviderOptions 模型路由 + CLI /model + server chat model 字段）✅
+- **测试基线实测 101 项全绿**（11 个文件：agent 4 / confirm 5 / expert 4 / memory-tool 8 / network 5 / server 9 / store 17 / story 11 / vision 19 / llm 13 / model-command 6）；`npx tsc` 0 错误；git 工作树干净；版本 v0.5.2
+- **server 协议现状（src/server.ts）**：chat/cancel/set_context/list_sessions/get_messages/ping/tool_result 已完整；**缺 version（宿主无法协商协议版本）与 delete_session（宿主无法清理会话/隐私数据）**；MemoryStore 无 deleteSession 方法（sessions/messages/usage_log 三表无删除路径）
+- **MemoryStore 表结构**：sessions + messages（FK）+ memories + usage_log + settings；FTS 触发器（messages_fts / messages_fts_trigram / memories_fts）DELETE 已联动清索引——**deleteSession 只需删 sessions 行，messages 的 DELETE 触发器自动清 FTS 索引**，实现成本低
+- **测试基础设施**：server 测试已有 spawn 子进程 + 协议流收集框架（expect 过滤防乱序），新增协议测试模板成熟
+
+### 方向选择：✅ **server 协议完善（version 版本协商 + delete_session 会话清理 + MemoryStore.deleteSession）**（本轮选定）
+
+| 候选方向 | 评估 | 结论 |
+|---------|------|------|
+| **server 协议完善（version/delete_session）** | 宿主协议是 Qt/Pulse/StorySpire 集成核心；version 让宿主协商协议版本（协议演进基础），delete_session 是会话管理/隐私清理刚需；纯外围（server.ts/store.ts/docs/tests），不碰 agent.ts；MemoryStore 表结构天然支持（DELETE 触发器联动 FTS） | ✅ 选定 |
+| MCP 协议支持 | 工作量大（网络协议 + 依赖），宿主协议刚完成，适合后续大版本规划 | 暂缓 |
+| RAG 注入（Agent 构造按主题自动注入相关记忆） | 有价值但会碰 agent.ts 构造函数（Pulse/StorySpire 依赖构造行为），风险中等 | 暂缓 |
+| 工具确认机制完善 | withConfirmation 已完成（allow_once/session/always/deny/alternative），剩余空间小 | 备选 |
+| 上下文与性能优化 | trimContext 已有（30 条 + 配对保护）；token 计数优化会碰 agent.ts，风险高 | 暂缓 |
+
+### 迭代计划（分小步，每步独立验证 commit）
+
+- [ ] **S0** 调研：确定方向（server 协议完善）+ 基线实测（tsc 0 错 / 101 全绿）+ 本文件更新
+- [ ] **S1** MemoryStore.deleteSession(sessionId)（store.ts）：删除 sessions 行（messages 由 FK + DELETE 触发器联动清 FTS 索引）+ usage_log 清理；返回是否删除成功；新增 tests/store.test.ts 用例（删除后 getMessages 为空 / FTS 不再命中 / 不存在时返回 false）
+- [ ] **S2** server 协议 `version`（server.ts）：返回 `{ type:'version', protocol:'1.0', engine:<版本> }`（宿主版本协商/健康检查升级）；host-protocol.md 文档；协议流测试
+- [ ] **S3** server 协议 `delete_session`（server.ts）：删除指定会话（含消息/用量），回 `ok`；host-protocol.md；协议流测试
+- [ ] **S4** 文档收尾：README Changelog v0.5.3 + 版本号 + host-protocol.md 完整同步 + 全量回归
+
+> 本轮里程碑完成后更新：备选后续方向（记录）：MCP 协议支持 / RAG 注入（Agent 构造按主题自动注入相关记忆）/ 上下文与性能优化（token 计数）
 
 ## 调研结论（2026-08-09 第二轮夜间）
 
