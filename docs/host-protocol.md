@@ -44,7 +44,15 @@ flare server --profile <expert-profile-file> --storage <db-path>
 {"type":"list_sessions"}
 ```
 
-### 5. ping — 宿主健康检查（进程存活探测）
+### 5. get_messages — 读取指定会话消息历史（只读，不生成）
+
+```json
+{"type":"get_messages","sessionId":"s1"}
+```
+
+响应：`{"type":"messages","sessionId":"s1","messages":[...]}`——宿主展示历史对话、会话恢复时读取。
+
+### 6. ping — 宿主健康检查（进程存活探测）
 
 ```json
 {"type":"ping"}
@@ -52,7 +60,7 @@ flare server --profile <expert-profile-file> --storage <db-path>
 
 响应：`{"type":"pong","ts":<毫秒时间戳>}`——不依赖任何初始化，宿主启动/断线重连前可先探测。
 
-### 6. tool_result — 宿主回传工具执行结果（响应 tool_execute）
+### 7. tool_result — 宿主回传工具执行结果（响应 tool_execute）
 
 ```json
 {"type":"tool_result","id":"t_1","result":{"success":true,"output":"...","error":null}}
@@ -72,6 +80,7 @@ flare server --profile <expert-profile-file> --storage <db-path>
 | `cancelled` | `sessionId` | 生成被取消 |
 | `error` | `message` | 错误（含未配置 key 等） |
 | `sessions` | `sessions` | 会话列表 |
+| `messages` | `sessionId, messages` | 指定会话的消息历史 |
 | `pong` | `ts` | ping 响应（宿主健康检查） |
 
 ## 工具执行流（宿主代理工具）
