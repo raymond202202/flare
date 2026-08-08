@@ -325,6 +325,14 @@ Interactive mode commands:
 
 > 中文条目 / Chinese entries · English summary for each version
 
+#### v0.5.8 (2026-08-09) — MCP 服务器端：flare 工具集暴露为 MCP stdio 服务器 / MCP server side (flare as MCP server)
+- 🖥️ **MCPServer（src/mcp/server.ts，零依赖手写）**：与 MCPClient 对称——把 flare 工具集（内置 6 工具，或注入专家/MCP 桥接工具）经 MCP 标准 stdio 协议暴露给外部 AI 客户端（Claude Desktop/Cursor/自研 MCP 客户端）或宿主进程复用；覆盖核心子集 `initialize`/`notifications/initialized`/`tools/list`/`tools/call`/`ping`，与 MCPClient 完全互通
+- 🔒 **安全继承**：暴露的是 flare 原生工具，危险命令黑名单/路径保护/记忆边界照常生效（e2e 验证 `rm -rf /` 仍被拦截）；未知方法 -32601、未知工具 -32602、JSON 解析错误 -32700 全部按 JSON-RPC 规范返回
+- ⏱️ **串行响应队列**：请求按到达顺序响应（慢工具不导致乱序）；工具执行异常/失败 → `isError` 标记（协议层不中断，服务器不崩）
+- 🧩 输入/输出可注入（`write`/`input`）——测试与嵌入式使用不限于 stdin/stdout；`toMcpTool` 工具定义映射 + `startMcpServer` 便捷工厂；库导出
+- 🧪 新增 14 项测试（握手/列工具/成功/失败/未知工具/未知方法/ping/parse error/通知忽略/自定义注入/串行顺序/close 幂等/toMcpTool 映射/**MCPClient↔MCPServer 真实子进程互通**），共 208/208；零 agent.ts 改动
+- EN: MCPServer — flare now also serves its tools as an MCP stdio server (initialize/tools/list/tools/call/ping, zero-dependency NDJSON JSON-RPC, fully interoperable with MCPClient). Safety inherited (dangerous-command blacklist still active), serialized responses, injectable IO. E2E test: MCPClient connects to flare-as-server. 208/208 tests.
+
 #### v0.5.7 (2026-08-09) — 工具确认机制完善：ConfirmationGate 记忆化 + 超时 / Confirmation gate: session memory + always persistence + timeout
 - 🚪 **有状态确认门 `ConfirmationGate`（src/core/confirm.ts）**：`allow_session` 记忆化（本会话内同一工具不再重复确认，按 `sessionId` 隔离）+ `always` 持久化（注入 KV store 跨会话记住，MemoryStore settings 表天然满足，官方适配器 `memoryStoreKv(store)`）+ 确认超时（默认 30s，confirmer 超时/抛错按安全默认 deny 处理，超时结果带 `timeout:true` 标记）+ 管理方法（`allowSession`/`allowAlways`/`revoke`/`isAllowed`/`listAllowed`/`resetSession`）——宿主弹窗确认一次即可，会话内放行、明确"总是允许"则持久化，超时安全兜底
 - 🔄 **`withConfirmation` 向后兼容增强**：原签名 `(tool, confirmer)` 行为不变（每次确认）；新增第三参 `(tool, confirmer, { store, sessionId, timeoutMs, timeoutDecision })` 委托 gate；`ToolResult` 新增可选 `timeout?: boolean`（仅超时拒绝时出现）

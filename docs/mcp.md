@@ -109,6 +109,40 @@ const agent2 = new Agent({ tools: [...builtinTools, ...mgr.getAllTools()] })
 mgr.closeAll()
 ```
 
+## flare 作为 MCP 服务器（v0.5.8）
+
+flare 不只可以连接外部 MCP 服务器（客户端），也可以**把自己的工具集暴露成 MCP 服务器**，
+让其他 AI 客户端（Claude Desktop / Cursor / 自研 MCP 客户端）或宿主进程直接复用 flare 工具能力。
+
+- 实现：`src/mcp/server.ts`（MCPServer，零依赖 NDJSON JSON-RPC，与 MCPClient 完全互通）
+- 覆盖 MCP 核心子集：`initialize` / `notifications/initialized` / `tools/list` / `tools/call` / `ping`
+- 请求按到达顺序串行响应（慢工具不导致响应乱序）；工具失败 → `isError` 标记（协议层不中断）
+
+```ts
+import { MCPServer, readFileTool, writeFileTool, terminalTool } from 'flare-agent'
+
+// 默认暴露内置工具集（read_file/write_file/search_files/terminal/memory_search/memory_save）
+const server = new MCPServer()
+server.start()   // 监听 stdin，处理请求直到 EOF
+
+// 也可注入自定义工具集（专家工具 / MCP 桥接工具）
+const custom = new MCPServer({ tools: [readFileTool, writeFileTool, terminalTool] })
+custom.start()
+```
+
+其他 MCP 客户端连接方式（以 flare 官方 MCPClient 为例）：
+
+```ts
+const client = new MCPClient({ command: 'node', args: ['your-mcp-server-entry.js'] })
+await client.initialize()
+const tools = await client.listTools()            // flare 内置 6 工具
+await client.callTool('read_file', { path: 'a.txt' })
+```
+
+> ⚠️ 安全：暴露的是 flare **原生工具**，危险命令黑名单 / 路径保护 / 记忆边界照常生效
+> （e2e 测试验证 `rm -rf /` 仍被安全策略拦截）。谁连接了服务器谁就获得这些工具能力，
+> 仅对可信客户端开放（stdio 服务器由启动它的进程控制）。
+
 ## 自定义 MCP 服务器（测试/开发）
 
 flare 的 MCP 客户端只依赖 MCP 核心子集（`initialize` / `notifications/initialized` / `tools/list` / `tools/call`）。
