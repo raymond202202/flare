@@ -6,6 +6,8 @@ import { spawn, type ChildProcess } from 'node:child_process'
 import { createInterface, type Interface } from 'node:readline'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
+import os from 'node:os'
+import { mkdtempSync, rmSync } from 'node:fs'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const CLI = path.join(__dirname, '..', 'dist', 'cli', 'index.js')
@@ -13,6 +15,7 @@ const CLI = path.join(__dirname, '..', 'dist', 'cli', 'index.js')
 let child: ChildProcess
 let rl: Interface
 let nextId = 0
+let tempDir: string
 
 /** 协议事件类型（chat 流式收集用） */
 const CHAT_EVENTS = ['text', 'tool_call', 'tool_execute', 'tool_result', 'done', 'error', 'cancelled']
@@ -62,15 +65,18 @@ function request(msg: any, opts: RequestOpts = {}): Promise<any[]> {
 }
 
 beforeAll(async () => {
+  // 隔离测试库：协议测试全用临时库（不污染 ~/.flare/flare.db），数据往返断言确定
+  tempDir = mkdtempSync(path.join(os.tmpdir(), 'flare-server-test-'))
   // 不设 DEEPSEEK_API_KEY（真实"未配置"状态），验证协议错误路径
   const env: Record<string, string> = { ...process.env } as Record<string, string>
   delete env.DEEPSEEK_API_KEY
-  child = spawn(process.execPath, [CLI, 'server'], { env, stdio: ['pipe', 'pipe', 'pipe'] })
+  child = spawn(process.execPath, [CLI, 'server', '--storage', path.join(tempDir, 'test.db')], { env, stdio: ['pipe', 'pipe', 'pipe'] })
   rl = createInterface({ input: child.stdout! })
 })
 
 afterAll(() => {
   child.kill()
+  rmSync(tempDir, { recursive: true, force: true })
 })
 
 describe('flare host server 协议', () => {
@@ -141,10 +147,13 @@ describe('flare host server 协议', () => {
     expect(msgs[0].type).toBe('ok')
   })
 
-  it('list_sessions → sessions 数组', async () => {
+  it('list_sessions → sessions 数组（含显式创建的会话，T1 修复后真实读库）', async () => {
+    await request({ type: 'create_session', sessionId: 's-list1', title: '列表会话' }, { expect: ['ok'] })
     const msgs = await request({ type: 'list_sessions' }, { expect: ['sessions'] })
     expect(msgs[0].type).toBe('sessions')
     expect(Array.isArray(msgs[0].sessions)).toBe(true)
+    // 数据往返：create_session 写入的会话必须出现在列表里（证明 store 字段修复生效）
+    expect(msgs[0].sessions.some((s: any) => s.id === 's-list1')).toBe(true)
   })
 
   it('ping → pong（宿主健康检查）', async () => {
@@ -153,11 +162,13 @@ describe('flare host server 协议', () => {
     expect(typeof msgs[0].ts).toBe('number')
   })
 
-  it('get_messages → messages 数组（只读历史，不生成）', async () => {
-    const msgs = await request({ type: 'get_messages', sessionId: 's-hist' }, { expect: ['messages'] })
+  it('get_messages → messages 数组（只读历史；显式创建的空会话返回空数组）', async () => {
+    await request({ type: 'create_session', sessionId: 's-hist2' }, { expect: ['ok'] })
+    const msgs = await request({ type: 'get_messages', sessionId: 's-hist2' }, { expect: ['messages'] })
     expect(msgs[0].type).toBe('messages')
     expect(Array.isArray(msgs[0].messages)).toBe(true)
-    expect(msgs[0].sessionId).toBe('s-hist')
+    expect(msgs[0].messages.length).toBe(0)
+    expect(msgs[0].sessionId).toBe('s-hist2')
   })
 
   it('version → 协议版本 + 引擎版本（宿主版本协商）', async () => {
@@ -172,11 +183,28 @@ describe('flare host server 协议', () => {
     expect(msgs[0].engine).toBe(pkg.version)
   })
 
-  it('delete_session → ok（含 deleted 标志；不存在返回 deleted:false）', async () => {
-    const msgs = await request({ type: 'delete_session', sessionId: 's-gone' }, { expect: ['ok'] })
+  it('create_session → ok（显式建会话；宿主会话管理用）', async () => {
+    const msgs = await request({ type: 'create_session', sessionId: 's-new', title: '面板会话' }, { expect: ['ok'] })
     expect(msgs[0].type).toBe('ok')
-    expect(msgs[0].sessionId).toBe('s-gone')
-    expect(typeof msgs[0].deleted).toBe('boolean')
+    expect(msgs[0].sessionId).toBe('s-new')
+  })
+
+  it('create_session 幂等（已存在则更新标题，不报错）', async () => {
+    const msgs = await request({ type: 'create_session', sessionId: 's-new', title: '更新标题' }, { expect: ['ok'] })
+    expect(msgs[0].type).toBe('ok')
+    expect(msgs[0].sessionId).toBe('s-new')
+  })
+
+  it('delete_session → 真实删除（T1 修复：先建会话再删 deleted:true；再删 deleted:false 幂等）', async () => {
+    // 修复前 memoryStore 字段错位：deleteSession 从不执行，deleted 恒 false（隐私数据删不掉）
+    await request({ type: 'create_session', sessionId: 's-del2' }, { expect: ['ok'] })
+    const msgs = await request({ type: 'delete_session', sessionId: 's-del2' }, { expect: ['ok'] })
+    expect(msgs[0].type).toBe('ok')
+    expect(msgs[0].sessionId).toBe('s-del2')
+    expect(msgs[0].deleted).toBe(true)
+    // 幂等：已删除的会话再删 → deleted:false（不报错）
+    const again = await request({ type: 'delete_session', sessionId: 's-del2' }, { expect: ['ok'] })
+    expect(again[0].deleted).toBe(false)
   })
 
   it('get_usage → usage 统计（token 用量，只读不生成）', async () => {

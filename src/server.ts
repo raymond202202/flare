@@ -152,11 +152,22 @@ export function startHostServer(opts: HostServerOptions) {
           const agent = getAgent(sessionId)
           // Agent 内部 sessionId 可能带 namespace 前缀，用它删除才一致
           const sid = (agent as any).config?.sessionId || sessionId
-          const deleted = (typeof (agent as any).memoryStore?.deleteSession === 'function')
-            ? await (agent as any).memoryStore.deleteSession(sid)
+          const deleted = (typeof (agent as any).store?.deleteSession === 'function')
+            ? await (agent as any).store.deleteSession(sid)
             : false
           agents.delete(sessionId)
           reply({ type: 'ok', sessionId, deleted })
+          break
+        }
+        case 'create_session': {
+          // 宿主显式创建会话（带标题；UPSERT 幂等——已存在则更新标题）
+          const sessionId = String(req.sessionId || 'default')
+          const agent = getAgent(sessionId)
+          const title = req.title ? String(req.title) : '新会话'
+          if (typeof (agent as any).store?.updateSessionTitle === 'function') {
+            (agent as any).store.updateSessionTitle((agent as any).config?.sessionId || sessionId, title)
+          }
+          reply({ type: 'ok', sessionId })
           break
         }
         case 'set_context': {
@@ -171,8 +182,8 @@ export function startHostServer(opts: HostServerOptions) {
         case 'list_sessions': {
           const sessionId = String(req.sessionId || 'default')
           const agent = getAgent(sessionId)
-          const sessions = (typeof (agent as any).memoryStore?.getAllSessions === 'function')
-            ? await (agent as any).memoryStore.getAllSessions()
+          const sessions = (typeof (agent as any).store?.getAllSessions === 'function')
+            ? await (agent as any).store.getAllSessions()
             : []
           reply({ type: 'sessions', sessions })
           break
@@ -183,8 +194,8 @@ export function startHostServer(opts: HostServerOptions) {
           const agent = getAgent(sessionId)
           // Agent 内部 sessionId 可能带 namespace 前缀，用它查询才一致
           const sid = (agent as any).config?.sessionId || sessionId
-          const messages = (typeof (agent as any).memoryStore?.getMessages === 'function')
-            ? await (agent as any).memoryStore.getMessages(sid)
+          const messages = (typeof (agent as any).store?.getMessages === 'function')
+            ? await (agent as any).store.getMessages(sid)
             : []
           reply({ type: 'messages', sessionId, messages })
           break
@@ -192,8 +203,8 @@ export function startHostServer(opts: HostServerOptions) {
         case 'get_usage': {
           // 宿主读取 token 用量统计（同 get_messages 模式，只读不生成）
           const agent = getAgent(String(req.sessionId || 'default'))
-          const stats = (typeof (agent as any).memoryStore?.getUsageStats === 'function')
-            ? await (agent as any).memoryStore.getUsageStats()
+          const stats = (typeof (agent as any).store?.getUsageStats === 'function')
+            ? await (agent as any).store.getUsageStats()
             : { promptTokens: 0, completionTokens: 0, totalTokens: 0, sessionCount: 0 }
           reply({ type: 'usage', stats })
           break
