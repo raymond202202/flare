@@ -309,6 +309,13 @@ Interactive mode commands:
 
 > 中文条目 / Chinese entries · English summary for each version
 
+#### v0.5.1 (2026-08-09) — 记忆检索增强（RAG）/ Memory retrieval (RAG)
+- 🧠 **memories_fts trigram 全文检索**：`MemoryStore.searchMemories(query)` 中文 3 字以上子串匹配 + bm25 相关度排序（默认 unicode61 tokenizer 中文检索差，trigram 解决）；`getRelevantMemories` 同步升级；老库自动回填索引
+- 💬 **历史消息检索**：新增 `messages_fts_trigram`（不动老表）+ `searchMessages(keyword)` 按主题找回旧对话（含 sessionId/role/时间）
+- 🔎 **memory_search 工具**：AI 可主动检索记忆与历史消息（`createMemorySearchTool(store)` 宿主可绑定独立库，如 `~/.pulse/pulse-ai.db`）；已加入内置工具集，CLI 默认可用
+- 🧪 新增 19 项测试（FTS 检索/排序/2 字回退/触发器/老库回填/工具），共 79/79
+- EN: Memory retrieval (RAG) — trigram FTS for Chinese, memories + messages search, memory_search tool. 79/79 tests.
+
 #### v0.5.0 (2026-08-02) — 写作工具集 + StorySpire 专家模板（M4）/ Writing tools + StorySpire expert profile (M4)
 - ✨ **写作工具集 `src/tools/story.ts`**：5 个标准写作工具定义（story_get_story / story_get_chapter / story_list_chapters / story_create_chapter / story_update_chapter），宿主应用注入执行器对接真实数据（同 Pulse pulse_* 模式）
 - 🧑‍🏫 **写作专家模板 `examples/storyspire/expert.ts`**：品牌话术"我是 story 助手，是集成到 storyspire 里的 flare 写作专家" + 写作提示词（起草/续写/润色/大纲）
