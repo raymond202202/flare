@@ -64,6 +64,47 @@ const agent = new Agent({
 - 已加入**内置工具集**：CLI / 不传 tools 的 Agent 默认可用（绑定全局库 `~/.flare/flare.db`）
 - 宿主可用 `createMemorySearchTool(store)` 绑定独立库，检索范围隔离
 
+---
+
+## 记忆生命周期（v0.5.4 闭环）
+
+RAG 里程碑补齐了"检索"；v0.5.4 补上"保存"与"删除"，记忆从只读/只增变为完整生命周期：
+
+### 4. memory_save 工具（AI 保存）
+
+让 AI 在用户**明确要求记住**时真正落库（此前 AI 只能口头答应、无法持久化）：
+
+```ts
+import { Agent, createMemorySaveTool, MemoryStore } from 'flare-agent'
+
+const store = new MemoryStore('~/.pulse/pulse-ai.db')
+const agent = new Agent({
+  tools: [createMemorySaveTool(store)],   // 绑定宿主自己的库
+})
+```
+
+- 参数：`{ content, type? }`（content 必填，缺失回 error）
+- 约束：工具 description 明确"仅当用户明确要求记住时使用，不自作主张保存"——与系统提示一致
+- 已加入**内置工具集**（`memorySaveTool`，绑定全局库）
+- 与 memory_search 配合即完整闭环：用户说"记住 X" → AI 调 memory_save 落库 → 后续会话 memory_search 命中
+
+### 5. 记忆删除（用户 / 宿主可删）
+
+- `MemoryStore.deleteMemory(id)`：按 id 删单条，返回是否删除（幂等）
+- `MemoryStore.deleteMemoriesByContent(keyword)`：按内容 LIKE 匹配批量删，返回条数
+- FTS 索引由 memories 的 DELETE 触发器联动清理（删除后 searchMemories 不再命中）
+- CLI：`/forget <关键词>` 删除包含该关键词的记忆
+
+### 6. 宿主协议记忆接口（server）
+
+| 请求 | 说明 |
+|------|------|
+| `remember` | 保存记忆 `{ content, kind? }`（kind 为类型如 preference/note；不能用 `type`——那是请求判别符） |
+| `get_memories` | 列出或搜索 `{ query?, limit? }`（有 query → trigram 全文搜索） |
+| `delete_memory` | 删除 `{ id }`（单条）或 `{ content }`（按关键词批量），回 `deleted` 条数 |
+
+详见 `docs/host-protocol.md` 第 11-13 节。
+
 ## 迁移与兼容
 
 - **老库自动回填**：`MemoryStore` 打开时检测到 memories/messages 有数据但 trigram FTS 表为空
@@ -74,12 +115,19 @@ const agent = new Agent({
 
 ## 测试
 
-新增 19 项（`tests/store.test.ts` + `tests/memory-tool.test.ts`）：
+v0.5.1 新增 19 项（`tests/store.test.ts` + `tests/memory-tool.test.ts`）：
 
 - FTS 中文命中（3 字以上）/ bm25 排序 / 2 字 LIKE 回退 / 无结果兜底 / 空查询
 - 触发器同步（插入即入索引、删除即出索引）
 - 老库回填（先有数据再建 FTS 可检索）
 - memory_search 工具：记忆 / 消息 / both / 无结果 / 缺参 / limit / 默认工具 / 内置集
+
+v0.5.4 新增 16 项（记忆生命周期）：
+
+- deleteMemory / deleteMemoriesByContent：删除即出索引、幂等、不影响其他记忆、批量计数
+- memory_save 工具：落库 / 缺参 / 空白 / 存后可搜 / 默认工具 / 内置集
+- CLI /forget：关键词删除 / 无匹配 / 无参数 / /help 同步
+- server 协议（tests/server.test.ts 另有 6 项）：remember / get_memories / delete_memory 数据往返
 
 ## 后续候选
 
