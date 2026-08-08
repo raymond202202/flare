@@ -3,6 +3,7 @@
 > 供非 Node 宿主（如 Qt 应用）调用 flare 引擎的本地协议。
 > 传输：stdin/stdout · JSON Lines（每行一个 JSON 对象）
 > 实现：`src/server.ts`（`flare server` 命令）
+> 请求类型：chat / cancel / set_context / list_sessions / get_messages / ping / version / delete_session / tool_result
 
 ## 启动
 
@@ -61,7 +62,31 @@ flare server --profile <expert-profile-file> --storage <db-path>
 
 响应：`{"type":"pong","ts":<毫秒时间戳>}`——不依赖任何初始化，宿主启动/断线重连前可先探测。
 
-### 7. tool_result — 宿主回传工具执行结果（响应 tool_execute）
+### 7. version — 版本协商（协议版本 + 引擎版本）
+
+```json
+{"type":"version"}
+```
+
+响应：`{"type":"version","protocol":"1.0","engine":"0.5.3"}`
+
+- `protocol`：宿主协议版本（协议演进时递增，与引擎版本独立）
+- `engine`：flare 引擎版本（package.json）
+- 宿主启动时探测：校验协议版本兼容性、展示引擎版本；协议演进时宿主可据此提示升级
+
+### 8. delete_session — 清理会话（含消息/用量，隐私数据清除）
+
+```json
+{"type":"delete_session","sessionId":"s1"}
+```
+
+响应：`{"type":"ok","sessionId":"s1","deleted":true}`
+
+- 删除指定会话的全部消息与 token 用量记录（FTS 检索索引联动清理）
+- `deleted`：是否真的删除了会话记录（会话不存在时为 `false`，幂等不报错）
+- 宿主管理会话列表、用户主动清除历史/隐私数据时使用
+
+### 9. tool_result — 宿主回传工具执行结果（响应 tool_execute）
 
 ```json
 {"type":"tool_result","id":"t_1","result":{"success":true,"output":"...","error":null}}
@@ -83,6 +108,7 @@ flare server --profile <expert-profile-file> --storage <db-path>
 | `sessions` | `sessions` | 会话列表 |
 | `messages` | `sessionId, messages` | 指定会话的消息历史 |
 | `pong` | `ts` | ping 响应（宿主健康检查） |
+| `version` | `protocol, engine` | 版本协商（协议版本 + 引擎版本） |
 
 ## 工具执行流（宿主代理工具）
 

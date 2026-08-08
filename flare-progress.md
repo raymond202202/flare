@@ -30,7 +30,9 @@
 - [x] **S1** MemoryStore.deleteSession(sessionId)（store.ts）：删除 sessions 行（messages 由 FK + DELETE 触发器联动清 FTS 索引）+ usage_log 清理；返回是否删除成功；新增 tests/store.test.ts 用例（删除后 getMessages 为空 / FTS 不再命中 / 不存在时返回 false）
 - [x] **S2** server 协议 `version`（server.ts）：返回 `{ type:'version', protocol:'1.0', engine:<版本> }`（宿主版本协商/健康检查升级）；host-protocol.md 文档；协议流测试
 - [x] **S3** server 协议 `delete_session`（server.ts）：删除指定会话（含消息/用量），回 `ok`；host-protocol.md；协议流测试
-- [ ] **S4** 文档收尾：README Changelog v0.5.3 + 版本号 + host-protocol.md 完整同步 + 全量回归
+- [x] **S4** 文档收尾：README Changelog v0.5.3 + 版本号 + host-protocol.md 完整同步 + 全量回归
+
+> 本轮里程碑完成：server 协议完善（version 版本协商 + delete_session 会话清理 + MemoryStore.deleteSession），106 测试全绿（4 提交 S0-S4）。
 
 > 本轮里程碑完成后更新：备选后续方向（记录）：MCP 协议支持 / RAG 注入（Agent 构造按主题自动注入相关记忆）/ 上下文与性能优化（token 计数）
 
