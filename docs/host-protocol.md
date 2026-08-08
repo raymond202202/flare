@@ -3,7 +3,7 @@
 > 供非 Node 宿主（如 Qt 应用）调用 flare 引擎的本地协议。
 > 传输：stdin/stdout · JSON Lines（每行一个 JSON 对象）
 > 实现：`src/server.ts`（`flare server` 命令）
-> 请求类型：chat / cancel / set_context / list_sessions / get_messages / ping / version / delete_session / tool_result
+> 请求类型：chat / cancel / set_context / list_sessions / get_messages / get_usage / ping / version / delete_session / tool_result
 
 ## 启动
 
@@ -86,7 +86,18 @@ flare server --profile <expert-profile-file> --storage <db-path>
 - `deleted`：是否真的删除了会话记录（会话不存在时为 `false`，幂等不报错）
 - 宿主管理会话列表、用户主动清除历史/隐私数据时使用
 
-### 9. tool_result — 宿主回传工具执行结果（响应 tool_execute）
+### 9. get_usage — 读取 token 用量统计（只读，不生成）
+
+```json
+{"type":"get_usage"}
+```
+
+响应：`{"type":"usage","stats":{"promptTokens":123,"completionTokens":456,"totalTokens":579,"sessionCount":3}}`
+
+- 宿主展示用量统计（成本监控）、AI 面板显示 token 消耗时使用
+- 与 get_messages 一样只读，不触发生成
+
+### 10. tool_result — 宿主回传工具执行结果（响应 tool_execute）
 
 ```json
 {"type":"tool_result","id":"t_1","result":{"success":true,"output":"...","error":null}}
@@ -109,6 +120,7 @@ flare server --profile <expert-profile-file> --storage <db-path>
 | `messages` | `sessionId, messages` | 指定会话的消息历史 |
 | `pong` | `ts` | ping 响应（宿主健康检查） |
 | `version` | `protocol, engine` | 版本协商（协议版本 + 引擎版本） |
+| `usage` | `stats` | token 用量统计（get_usage 响应） |
 
 ## 工具执行流（宿主代理工具）
 

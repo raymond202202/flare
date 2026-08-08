@@ -317,10 +317,11 @@ Interactive mode commands:
 #### v0.5.3 (2026-08-09) — 宿主协议完善：版本协商 + 会话清理 / Host protocol: version + delete_session
 - 🖥️ **server `version` 请求**：返回 `{ protocol, engine }`——宿主启动时协商协议版本（`HOST_PROTOCOL_VERSION`，与引擎版本独立）、读取引擎版本（package.json，不硬编码）
 - 🗑️ **server `delete_session` 请求**：宿主清理会话（含消息/token 用量/FTS 索引联动删除），回 `ok` + `deleted` 标志（幂等，会话不存在返回 `false`）
+- 📊 **server `get_usage` 请求**：宿主读取 token 用量统计（`{ promptTokens, completionTokens, totalTokens, sessionCount }`，只读不生成）——成本监控/AI 面板显示用量
 - 🗄️ **MemoryStore.deleteSession(sessionId)**：事务原子删除（messages → usage_log → sessions），返回是否删除成功
 - 📚 host-protocol.md 协议文档完整同步（请求/响应表）
-- 🧪 新增 5 项测试（store 3 + server 2），共 106/106
-- EN: Host protocol now supports version negotiation (protocol + engine version) and delete_session (privacy cleanup). MemoryStore.deleteSession with FTS index cleanup. 106/106 tests.
+- 🧪 新增 6 项测试（store 3 + server 3），共 107/107
+- EN: Host protocol now supports version negotiation (protocol + engine version), delete_session (privacy cleanup) and get_usage (token stats). MemoryStore.deleteSession with FTS index cleanup. 107/107 tests.
 
 #### v0.5.2 (2026-08-09) — 多模型 provider 增强：本地 Ollama 主模型 / Multi-model provider (local Ollama main model)
 - 🧭 **模型路由（LLM 模型自动检测）**：模型名含 `:`（Ollama 命名，如 `qwen2.5:7b`/`llama3.1:8b`/`deepseek-r1:7b`）自动走本地 Ollama（`http://localhost:11434/v1`，apiKey `ollama`）——文本对话也可 0 成本/隐私/离线跑本地模型；deepseek/gpt 自动检测保持；claude 明确报错保持；新增 `LLM_BASE_URL` / `LLM_API_KEY` 通用覆盖；`createProvider({ model })` 支持指定主模型

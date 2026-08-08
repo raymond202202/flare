@@ -189,6 +189,15 @@ export function startHostServer(opts: HostServerOptions) {
           reply({ type: 'messages', sessionId, messages })
           break
         }
+        case 'get_usage': {
+          // 宿主读取 token 用量统计（同 get_messages 模式，只读不生成）
+          const agent = getAgent(String(req.sessionId || 'default'))
+          const stats = (typeof (agent as any).memoryStore?.getUsageStats === 'function')
+            ? await (agent as any).memoryStore.getUsageStats()
+            : { promptTokens: 0, completionTokens: 0, totalTokens: 0, sessionCount: 0 }
+          reply({ type: 'usage', stats })
+          break
+        }
         case 'tool_result': {
           const pendingTool = pending.get(String(req.id))
           if (pendingTool) {
