@@ -8,10 +8,11 @@
  */
 
 import { Command } from 'commander'
-import { Agent, getMemoryStore, config } from '../index.js'
+import { Agent, createProvider, getMemoryStore, config } from '../index.js'
 import chalk from 'chalk'
 import { execSync } from 'child_process'
 import { createRequire } from 'module'
+import { pathToFileURL } from 'node:url'
 import { LineInput } from './line-input.js'
 import { R, O, A, Y, D, createFlameState, updateFlame, renderFlameFrame, flameBreathColor } from './flame-banner.js'
 
@@ -29,7 +30,14 @@ async function startInteractive() {
 
   const store = getMemoryStore()
   const sessionId = store.createSession('CLI 会话')
-  const agent = new Agent({ sessionId })
+  // 主模型：settings main_model（/model 切换）优先，否则默认（.env DEFAULT_MODEL → 自动路由）
+  const makeAgent = () => {
+    const savedModel = store.getSetting('main_model') || undefined
+    return savedModel
+      ? new Agent({ sessionId, llm: createProvider({ model: savedModel }) })
+      : new Agent({ sessionId })
+  }
+  let agent = makeAgent()
   const isUnix = process.platform !== 'win32'
 
   // ===== 常驻火焰动画 =====
@@ -181,7 +189,11 @@ async function startInteractive() {
     agentOutput = ''
     agentOutput += O(`🔥 flare> ${cmd}`) + '\n\n'
     pendingText = ''
-    const result = await handleSlashCommand(cmd, store, (s) => { agentOutput += s + '\n' })
+    const result = await handleSlashCommand(cmd, store, (s) => { agentOutput += s + '\n' }, () => {
+      // /model 切换后重建 Agent（同 sessionId，历史从记忆库恢复），使新模型立即生效
+      agent = makeAgent()
+      agentOutput += chalk.gray('  （会话已按新模型重建，历史从记忆库恢复）') + '\n'
+    })
     agentRunning = false
     renderFrame()
     return result
@@ -269,10 +281,12 @@ function parseImageCommand(cmd: string): { text: string; attachments: string[] }
   return { text: rest.slice(sp + 1).trim(), attachments: [rest.slice(0, sp)] }
 }
 
-async function handleSlashCommand(
+export async function handleSlashCommand(
   cmd: string,
   store: ReturnType<typeof getMemoryStore>,
-  output: (s: string) => void = console.log
+  output: (s: string) => void = console.log,
+  /** /model 切换后回调（宿主/CLI 重建 Agent 使新模型生效） */
+  onModelSwitch?: (model: string) => void
 ): Promise<'exit' | 'continue'> {
   const lower = cmd.toLowerCase()
   // /remember 带内容，必须用前缀匹配（switch 精确匹配会永远"未知命令"）
@@ -311,6 +325,28 @@ async function handleSlashCommand(
     return 'continue'
   }
 
+  // /model 切换主模型（本地 Ollama / 远端；持久化 settings main_model，模式同 /vision）
+  if (lower === '/model' || lower.startsWith('/model ')) {
+    // 裸 /model（无参数）→ 显示当前；/model <name> → 切换；/model default → 回默认
+    const arg = cmd.replace(/^\/model(?:\s+|$)/, '').trim()
+    const current = store.getSetting('main_model') || config.get('DEFAULT_MODEL') || 'deepseek-chat'
+    if (!arg) {
+      output(chalk.cyan(`\n🤖 当前主模型: ${current}`))
+      output('  /model <模型名> - 切换主模型（本地 Ollama 如 /model qwen2.5:7b | 远端如 /model deepseek-chat）')
+      output('  /model default  - 回默认（.env 的 DEFAULT_MODEL）')
+    } else if (arg === 'default' || arg === 'reset') {
+      store.setSetting('main_model', '')
+      onModelSwitch?.('')
+      output(chalk.green(`\n✅ 已恢复默认主模型（${config.get('DEFAULT_MODEL') || 'deepseek-chat'}）`))
+    } else {
+      store.setSetting('main_model', arg)
+      onModelSwitch?.(arg)
+      const isLocal = arg.includes(':')
+      output(chalk.green(`\n✅ 主模型已切换: ${arg}${isLocal ? '（本地 Ollama）' : ''}`))
+    }
+    return 'continue'
+  }
+
   switch (lower) {
     case '/help':
       output(chalk.cyan('\n可用命令:'))
@@ -323,6 +359,7 @@ async function handleSlashCommand(
       output('  /clear       - 清屏')
       output('  /image       - 显式看图（如: /image ~/Pictures/a.png 这张图里有什么）')
       output('  /vision      - 切换看图模型（/vision 3b 快速 | /vision 7b 质量）')
+      output('  /model       - 切换主模型（/model qwen2.5:7b 本地 Ollama | /model deepseek-chat 远端）')
       output('  /pause       - 暂停动画（屏幕静止，可选中复制输出）')
       output('  /resume      - 恢复动画')
       output(chalk.gray('  💡 对话里直接发图片路径也会自动识别（如: 看看这张图 xxx.png）'))
@@ -397,7 +434,11 @@ async function handleSlashCommand(
 async function runQuery(query: string, maxIterations?: number, attachments?: string[]) {
   const store = getMemoryStore()
   const sessionId = store.createSession('单次查询')
-  const agent = new Agent({ sessionId, maxIterations })
+  // 单次查询同样尊重 /model 保存的主模型（settings main_model）
+  const savedModel = store.getSetting('main_model') || undefined
+  const agent = savedModel
+    ? new Agent({ sessionId, maxIterations, llm: createProvider({ model: savedModel }) })
+    : new Agent({ sessionId, maxIterations })
 
   console.error(Y('⚡ Flare 思考中...'))
 
@@ -498,5 +539,12 @@ export function main() {
   program.parse(process.argv)
 }
 
-// 直接运行入口
-main()
+// 直接运行入口：仅 CLI 场景执行（bin/flare 包装 / node dist / tsx dev）
+// 作为库被 import（测试、宿主应用）时不自动启动 CLI（避免 commander 解析测试进程 argv）
+const entry = process.argv[1] || ''
+const isCliEntry =
+  import.meta.url === pathToFileURL(entry).href ||
+  entry.endsWith('bin/flare') ||
+  entry.endsWith('cli/index.js') ||
+  entry.endsWith('cli/index.ts')
+if (isCliEntry) main()
