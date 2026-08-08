@@ -15,12 +15,15 @@ export {
   createProvider,
   createVisionProvider,
   OpenAIProvider,
+  resolveProviderOptions,
   type LLMProvider,
   type LLMResponse,
   type Message,
   type MessageRole,
   type ToolCall,
   type ToolDefinition,
+  type ProviderOptions,
+  type ResolvedProviderOptions,
 } from './core/llm.js'
 
 // ===== 多模态 / 图片识别（v0.4.0）=====

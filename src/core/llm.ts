@@ -195,6 +195,76 @@ export interface LLMProvider {
   chatStream(messages: Message[], tools?: ToolDefinition[]): AsyncGenerator<string, void, unknown>
 }
 
+/** 创建 provider 的可选参数（模型 / 端点 / 密钥） */
+export interface ProviderOptions {
+  apiKey?: string
+  baseURL?: string
+  model?: string
+}
+
+/** resolveProviderOptions 的解析结果（全部落定） */
+export interface ResolvedProviderOptions {
+  model: string
+  baseURL: string
+  apiKey: string
+}
+
+/**
+ * 模型 → provider 配置推导（纯函数，可单测，无网络）
+ *
+ * 优先级（从高到低）：
+ * 1. 显式传参 options.baseURL / options.apiKey
+ * 2. 环境配置 LLM_BASE_URL / LLM_API_KEY（主模型通用覆盖，v0.5.2）
+ * 3. 旧配置 OPENAI_BASE_URL（兼容，仅 baseURL）
+ * 4. 按模型名自动检测端点：
+ *    - 模型名含 ':'（Ollama 命名，如 qwen2.5:7b / llama3.1:8b / deepseek-r1:7b）
+ *      → 本地 Ollama OpenAI 兼容端点（http://localhost:11434/v1，apiKey 'ollama'）
+ *    - deepseek 系列 → DeepSeek API
+ *    - gpt / o1 / o3 / chatgpt 系列 → OpenAI API
+ *    - claude 系列 → 明确报错（Anthropic 原生 API 非 OpenAI 兼容格式）
+ * 5. apiKey 按模型名回退：deepseek → DEEPSEEK_API_KEY；否则 OPENAI_API_KEY
+ */
+export function resolveProviderOptions(options: ProviderOptions = {}): ResolvedProviderOptions {
+  const model = options.model || config.get('DEFAULT_MODEL') || 'gpt-4o'
+  const baseURL = options.baseURL || config.get('LLM_BASE_URL') || config.get('OPENAI_BASE_URL') || ''
+  let apiKey = options.apiKey || config.get('LLM_API_KEY') || ''
+
+  let resolvedBase = baseURL
+  if (!resolvedBase) {
+    if (model.includes(':')) {
+      // Ollama 本地模型：本地 OpenAI 兼容端点，文本/图片均不出本机
+      resolvedBase = 'http://localhost:11434/v1'
+    } else if (model.includes('deepseek')) {
+      resolvedBase = 'https://api.deepseek.com/v1'
+    } else if (model.includes('gpt') || model.includes('o1') || model.includes('o3') || model.includes('chatgpt')) {
+      resolvedBase = 'https://api.openai.com/v1'
+    } else if (model.includes('claude')) {
+      // Anthropic 原生 API 不是 OpenAI 兼容格式，需要代理或 Anthropic SDK
+      // 这里给出明确错误而不是静默用 OpenAI URL 导致 401
+      throw new Error(
+        `模型「${model}」是 Claude 系列。当前版本 Flare 通过 OpenAI 兼容 API 调用模型，` +
+        `尚不支持 Anthropic 原生 API。请使用 DeepSeek (deepseek-chat)、OpenAI (gpt-4o) 或本地 Ollama (如 qwen2.5:7b) 模型。`
+      )
+    }
+  }
+
+  if (!apiKey) {
+    if (model.includes(':')) {
+      apiKey = 'ollama'
+    } else if (model.includes('deepseek')) {
+      apiKey = config.get('DEEPSEEK_API_KEY') || ''
+    } else {
+      apiKey = config.get('OPENAI_API_KEY') || ''
+    }
+  }
+
+  return {
+    model,
+    baseURL: resolvedBase || 'https://api.openai.com/v1',
+    apiKey,
+  }
+}
+
 /**
  * OpenAI 兼容的 LLM 提供者
  * 支持：OpenAI、DeepSeek、OpenRouter 等所有 OpenAI 兼容 API
@@ -203,36 +273,14 @@ export class OpenAIProvider implements LLMProvider {
   private client: OpenAI
   private model: string
 
-  constructor(options?: { apiKey?: string; baseURL?: string; model?: string }) {
-    const model = options?.model || config.get('DEFAULT_MODEL') || 'gpt-4o'
-    let baseURL = options?.baseURL || config.get('OPENAI_BASE_URL') || ''
-
-    // 自动检测模型对应的 baseURL
-    if (!baseURL) {
-      if (model.includes('deepseek')) {
-        baseURL = 'https://api.deepseek.com/v1'
-      } else if (model.includes('gpt') || model.includes('o1') || model.includes('o3') || model.includes('chatgpt')) {
-        baseURL = 'https://api.openai.com/v1'
-      } else if (model.includes('claude')) {
-        // Anthropic 原生 API 不是 OpenAI 兼容格式，需要代理或 Anthropic SDK
-        // 这里给出明确错误而不是静默用 OpenAI URL 导致 401
-        throw new Error(
-          `模型「${model}」是 Claude 系列。当前版本 Flare 通过 OpenAI 兼容 API 调用模型，` +
-          `尚不支持 Anthropic 原生 API。请使用 DeepSeek (deepseek-chat) 或 OpenAI (gpt-4o) 模型。`
-        )
-      }
-    }
-
-    const apiKey = options?.apiKey || (() => {
-      if (model.includes('deepseek')) return config.get('DEEPSEEK_API_KEY') || ''
-      return config.get('OPENAI_API_KEY') || ''
-    })()
-
+  constructor(options?: ProviderOptions) {
+    // 模型路由：显式参数 > LLM_* 配置 > 旧 OPENAI_BASE_URL > 按模型名自动检测（含 Ollama 本地模型）
+    const resolved = resolveProviderOptions(options)
     this.client = new OpenAI({
-      apiKey,
-      baseURL: baseURL || 'https://api.openai.com/v1',
+      apiKey: resolved.apiKey,
+      baseURL: resolved.baseURL,
     })
-    this.model = model
+    this.model = resolved.model
   }
 
   async chat(messages: Message[], tools?: ToolDefinition[]): Promise<LLMResponse> {
@@ -303,9 +351,13 @@ export class OpenAIProvider implements LLMProvider {
 
 /**
  * 创建默认 LLM 提供者
+ *
+ * 可传 options 覆盖模型/端点/密钥（v0.5.2）：
+ *   createProvider()                          → 按 DEFAULT_MODEL 自动路由（deepseek/gpt/Ollama）
+ *   createProvider({ model: 'qwen2.5:7b' })   → 本地 Ollama 主模型（0 成本/隐私/离线）
  */
-export function createProvider(): LLMProvider {
-  return new OpenAIProvider()
+export function createProvider(options?: ProviderOptions): LLMProvider {
+  return new OpenAIProvider(options)
 }
 
 /**
