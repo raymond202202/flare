@@ -325,6 +325,13 @@ Interactive mode commands:
 
 > 中文条目 / Chinese entries · English summary for each version
 
+#### v0.5.7 (2026-08-09) — 工具确认机制完善：ConfirmationGate 记忆化 + 超时 / Confirmation gate: session memory + always persistence + timeout
+- 🚪 **有状态确认门 `ConfirmationGate`（src/core/confirm.ts）**：`allow_session` 记忆化（本会话内同一工具不再重复确认，按 `sessionId` 隔离）+ `always` 持久化（注入 KV store 跨会话记住，MemoryStore settings 表天然满足，官方适配器 `memoryStoreKv(store)`）+ 确认超时（默认 30s，confirmer 超时/抛错按安全默认 deny 处理，超时结果带 `timeout:true` 标记）+ 管理方法（`allowSession`/`allowAlways`/`revoke`/`isAllowed`/`listAllowed`/`resetSession`）——宿主弹窗确认一次即可，会话内放行、明确"总是允许"则持久化，超时安全兜底
+- 🔄 **`withConfirmation` 向后兼容增强**：原签名 `(tool, confirmer)` 行为不变（每次确认）；新增第三参 `(tool, confirmer, { store, sessionId, timeoutMs, timeoutDecision })` 委托 gate；`ToolResult` 新增可选 `timeout?: boolean`（仅超时拒绝时出现）
+- 📚 docs/confirmation.md（决策规则/管理放行名单/持久化安全提示/向后兼容）+ README 同步 + 版本号 0.5.7
+- 🧪 新增 14 项测试（记忆化 9 + 超时 4 + MemoryStore 集成 1），共 194/194；零 agent.ts 改动
+- EN: ConfirmationGate — allow_session session-memory (per sessionId), always persistence (KV store, memoryStoreKv adapter for MemoryStore settings), confirmation timeout (safety deny + timeout flag), revoke/list/reset management. withConfirmation stays backward-compatible with optional 3rd arg. 194/194 tests.
+
 #### v0.5.6 (2026-08-09) — 上下文可观测性：token 估算 + context_status + /context / Context observability (token estimation)
 - 🧮 **token 估算纯函数（src/core/context.ts，零依赖）**：`estimateTokens(text)`——CJK 1 字符≈1 token、非 CJK 4 字符≈1 token（贴近 OpenAI cl100k 启发式）；`estimateMessagesTokens(messages)`——消息结构 +4、tool_calls +3、图片 ≈85 token/张；`@flare/core` 导出（宿主可直接用于成本预估/上下文管理）
 - 🖥️ **server 协议 `context_status`**：只读返回 `{ messageCount, estimatedTokens }`（用 Agent 的 public getMessages()，零 agent.ts 改动）——宿主 AI 面板显示上下文占用/接近上限提醒；host-protocol.md 同步

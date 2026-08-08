@@ -108,9 +108,16 @@ export { config } from './core/config.js'
 export type { ExpertProfile } from './types.js'
 export { profileToConfig } from './types.js'
 
-// ===== 工具确认机制（withConfirmation）=====
-export { withConfirmation, isDenied } from './core/confirm.js'
-export type { ConfirmDecision, Confirmer } from './core/confirm.js'
+// ===== 工具确认机制（withConfirmation / ConfirmationGate）=====
+export { withConfirmation, isDenied, ConfirmationGate } from './core/confirm.js'
+export type {
+  ConfirmDecision,
+  Confirmer,
+  ConfirmationGateOptions,
+  ConfirmKeyValueStore,
+  WithConfirmationOptions,
+} from './core/confirm.js'
+export { memoryStoreKv } from './core/confirm.js'
 
 // ===== 宿主协议服务（Qt 等非 Node 宿主）=====
 export { startHostServer } from './server.js'
