@@ -27,11 +27,13 @@
 
 ### 迭代计划（分小步，每步独立验证 commit）
 
-- [ ] **C0** 调研：确定方向（上下文可观测性）+ 基线实测（tsc 0 错 / 161 全绿）+ 本文件更新
-- [ ] **C1** token 估算模块（src/core/context.ts）：纯函数 `estimateTokens(text)`（CJK 1 字符≈1 token、非 CJK 4 字符≈1 token）+ `estimateMessagesTokens(messages)`（消息结构 +4、tool_calls +3、图片 ≈85/张）；src/index.ts 导出；tests/context.test.ts（空串/中文/英文/混合/结构开销/相对排序）
-- [ ] **C2** server 协议 `context_status`（server.ts）：返回 `{ type:'context_status', sessionId, messageCount, estimatedTokens }`（只读，用 agent.getMessages()，不触发生成）；host-protocol.md 文档；协议流测试（create_session → context_status → messageCount≥1 / estimatedTokens>0 / sessionId 往返）
-- [ ] **C3** CLI `/context` 命令（cli/index.ts）：handleSlashCommand 增加可选 `contextInfo` hook（返回消息数 + 估算 tokens；未提供则提示不可用）；交互模式注入真实实现（agent.getMessages()）；/help 同步；tests/context-command.test.ts
-- [ ] **C4** 文档收尾：版本号 0.5.6 + README Changelog + README CLI 表 /context + host-protocol.md 同步 + docs/context-observability.md + 全量回归
+- [x] **C0** 调研：确定方向（上下文可观测性）+ 基线实测（tsc 0 错 / 161 全绿）+ 本文件更新
+- [x] **C1** token 估算模块（src/core/context.ts）：纯函数 `estimateTokens(text)`（CJK 1 字符≈1 token、非 CJK 4 字符≈1 token）+ `estimateMessagesTokens(messages)`（消息结构 +4、tool_calls +3、图片 ≈85/张）；src/index.ts 导出；tests/context.test.ts（空串/中文/英文/混合/结构开销/相对排序）
+- [x] **C2** server 协议 `context_status`（server.ts）：返回 `{ type:'context_status', sessionId, messageCount, estimatedTokens }`（只读，用 agent.getMessages()，不触发生成）；host-protocol.md 文档；协议流测试（create_session → context_status → messageCount≥1 / estimatedTokens>0 / sessionId 往返）
+- [x] **C3** CLI `/context` 命令（cli/index.ts）：handleSlashCommand 增加可选 `contextInfo` hook（返回消息数 + 估算 tokens；未提供则提示不可用）；交互模式注入真实实现（agent.getMessages()）；/help 同步；tests/context-command.test.ts
+- [x] **C4** 文档收尾：版本号 0.5.6 + README Changelog + README CLI 表 /context + host-protocol.md 同步 + docs/context-observability.md + 全量回归
+
+> 本轮里程碑完成：上下文可观测性——token 估算纯函数（estimateTokens/estimateMessagesTokens）+ server context_status（只读上下文占用）+ CLI /context；180 测试全绿（4 提交 C0-C4）；零 agent.ts 改动、零新依赖。
 
 > 本轮里程碑完成后更新：备选后续方向（记录）：工具确认机制完善（allow_session/always 记忆化 + 超时）/ MCP resources 支持 / RAG 注入（Agent 构造按主题注入记忆）
 
@@ -189,6 +191,7 @@
 
 | 轮次 | 时间 | 完成 | 构建/测试 | 备注 |
 |------|------|------|-----------|------|
+| C0-C4 | 2026-08-09 夜间 | 上下文可观测性：token 估算纯函数（estimateTokens/estimateMessagesTokens，CJK 1字≈1/非CJK 4字符≈1/结构+4/tool_calls+3/图片≈85）+ server context_status（只读消息数+估算tokens）+ CLI /context + docs/context-observability.md | tsc 0 错 / 180 全绿 | 第六轮夜间里程碑（4 提交 C0-C4）；零 agent.ts 改动（用 public getMessages()）；零新依赖；版本 0.5.6 |
 | U0-U6 | 2026-08-09 夜间 | MCP 协议支持：零依赖 stdio MCP 客户端（initialize/tools/list/tools/call）+ 工具桥（createMcpTools）+ McpManager + ~/.flare/mcp.json + CLI /mcp + server --mcp/mcp_status | tsc 0 错 / 161 全绿 | 第五轮夜间里程碑（6 提交 U0-U6）；mock server fixture 离线测试；零 agent.ts 改动；版本 0.5.5 |
 | U0 | 2026-08-09 夜间 | 调研确定方向（MCP 协议支持：stdio MCP client + 工具桥接，零依赖）+ 基线实测 | tsc 0 错 / 129 全绿 | 第五轮夜间里程碑；MCP stdio = NDJSON JSON-RPC 子进程管道，mock server 离线测试；零 agent.ts 改动 |
 | T0-T5 | 2026-08-09 夜间 | 记忆生命周期闭环 + server 记忆访问修复（memoryStore→store 字段错位 bug）+ create_session/remember/get_memories/delete_memory 协议 + memory_save 工具 + /forget | tsc 0 错 / 129 全绿 | 第四轮夜间里程碑（5 提交 T0-T5）；协议测试改临时隔离库 + 数据往返断言（防再空过）；冒烟实测全部真实生效；版本 0.5.4 |
