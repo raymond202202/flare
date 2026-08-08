@@ -114,7 +114,7 @@ describe('MCPServer（stdio NDJSON JSON-RPC，零依赖）', () => {
 
   it('未知方法 → JSON-RPC error -32601', async () => {
     const h = createHarness()
-    h.send({ jsonrpc: '2.0', id: 6, method: 'resources/list', params: {} })
+    h.send({ jsonrpc: '2.0', id: 6, method: 'bogus/method', params: {} })
     await h.flush()
     const res = h.last()
     expect(res.error.code).toBe(-32601)
@@ -183,6 +183,17 @@ describe('MCPServer（stdio NDJSON JSON-RPC，零依赖）', () => {
     h.send({ jsonrpc: '2.0', id: 10, method: 'ping', params: {} })
     await h.flush()
     expect(h.writes.length).toBe(0)
+  })
+
+  it('resources/list 与 prompts/list：返回空列表（真实客户端探测兼容）', async () => {
+    const h = createHarness()
+    h.send({ jsonrpc: '2.0', id: 11, method: 'resources/list', params: {} })
+    h.send({ jsonrpc: '2.0', id: 12, method: 'prompts/list', params: {} })
+    await h.flush()
+    const resps = h.responses()
+    expect(resps[0].result).toEqual({ resources: [] })
+    expect(resps[1].result).toEqual({ prompts: [] })
+    h.server.close()
   })
 
   it('toMcpTool：flare Tool → MCP 工具定义（名称/描述/schema 映射）', () => {
