@@ -1,8 +1,39 @@
 # flare 夜间调研迭代进度
 
-> 目标：调研 flare 引擎下一步迭代方向并推进（M4 已完成 = StorySpire 集成 + withConfirmation + 宿主协议；第一轮夜间已完成 RAG 里程碑 R0-R6；第二轮夜间已完成多模型里程碑 P0-P4；第三轮夜间已完成 server 协议里程碑 S0-S5；第四轮夜间已完成记忆生命周期闭环里程碑 T0-T5；第五轮夜间已完成 MCP 协议支持里程碑 U0-U6）
+> 目标：调研 flare 引擎下一步迭代方向并推进（M4 已完成 = StorySpire 集成 + withConfirmation + 宿主协议；第一轮夜间已完成 RAG 里程碑 R0-R6；第二轮夜间已完成多模型里程碑 P0-P4；第三轮夜间已完成 server 协议里程碑 S0-S5；第四轮夜间已完成记忆生命周期闭环里程碑 T0-T5；第五轮夜间已完成 MCP 协议支持里程碑 U0-U6；第六轮夜间已完成上下文可观测性里程碑 C0-C4）
 > 铁律：**flare 是引擎，Pulse/StorySpire（Electron 版）当前都依赖它**——任何改动必须 tsc 0 错 + 全部测试通过才 commit
 > 规则：每轮实现后 `npx tsc` 0 错 + `PATH=/usr/bin:$PATH npx vitest run` 全绿 + git commit（本地，**禁止 git push**）；每轮结束更新本文件
+
+## 调研结论（2026-08-09 第六轮夜间）
+
+### 现状盘点（读完 roadmap + README + docs/ + src/ + tests/，基线实测）
+
+- **前五轮已完成**：RAG ✅；多模型（Ollama 路由 + /model + server model 字段）✅；server 协议（version/delete_session/get_usage/create_session/remember/get_memories/delete_memory）✅；记忆生命周期闭环 ✅；MCP 协议支持（stdio client + 工具桥 + McpManager + CLI /mcp + server --mcp/mcp_status）✅
+- **测试基线实测 161 项全绿**（15 文件）；`npx tsc` 0 错误；git 工作树干净；版本 v0.5.5
+- **上下文现状（src/core/agent.ts）**：`trimContext()` 保留最近 30 条（hardcoded）；`getMessages()` 是 public（可无侵入读取）；token 用量只记 API 返回的 usage（logUsage），**无上下文占用估算/暴露**——宿主（Pulse/StorySpire 面板）看不到当前会话上下文占了多少、接近多满；CLI 也无查看命令
+- **server 协议现状**：chat/cancel/set_context/list_sessions/get_messages/get_usage/ping/version/create_session/delete_session/remember/get_memories/delete_memory/tool_result/mcp_status 已完整；**缺上下文只读接口**（宿主面板无法显示上下文占用/成本预估）
+- **工具确认机制现状**：`withConfirmation`（src/core/confirm.ts）只做"每次调用都问 confirmer"；**allow_session / always 语义未实现**（文档宣称记住决策，但引擎不记忆——语义得由宿主 confirmer 自己实现）；无超时（confirmer 不 resolve 则 Agent 悬挂）；CLI/server 均未使用（纯库能力）——这是下一轮候选
+- **环境事实**：Node v22；零外部依赖约束友好（package.json 仅 openai/better-sqlite3/chalk/commander/dotenv/ora/readline）；token 估算可做纯函数（无网络无依赖，离线确定性单测）
+
+### 方向选择：✅ **上下文可观测性（token 估算 + server context_status + CLI /context）**（本轮选定）
+
+| 候选方向 | 评估 | 结论 |
+|---------|------|------|
+| **上下文可观测性（token 估算 + context_status + /context）** | 呼应"上下文与性能优化"（已暂缓 5 轮）的**安全外围切片**：新增 src/core/context.ts 纯函数 estimateTokens/estimateMessagesTokens（可单测）+ server 新请求 context_status（只读，用 public getMessages()）+ CLI /context 命令；**零 agent.ts 改动**（不碰 trimContext/Agent.run）；宿主面板可显示上下文占用与成本预估，是未来上下文优化（按 token 预算裁剪）的地基 | ✅ 选定 |
+| 工具确认机制完善（allow_session/always 记忆化 + 超时） | 发现真实语义缺口：withConfirmation 文档宣称 allow_session/always 但引擎不记忆决策；无超时可能悬挂；纯外围（confirm.ts + 测试） | 备选（下轮） |
+| MCP 资源/提示词（resources/prompts）支持 | 延续 U 轮，工作量大（新协议面），价值中等 | 暂缓 |
+| RAG 注入（Agent 构造按主题注入记忆） | 会碰 agent.ts 构造函数（Pulse/StorySpire 依赖构造行为），风险中等 | 暂缓 |
+| server 协议补 get_config / set_model | 小项，价值低 | 暂缓 |
+
+### 迭代计划（分小步，每步独立验证 commit）
+
+- [ ] **C0** 调研：确定方向（上下文可观测性）+ 基线实测（tsc 0 错 / 161 全绿）+ 本文件更新
+- [ ] **C1** token 估算模块（src/core/context.ts）：纯函数 `estimateTokens(text)`（CJK 1 字符≈1 token、非 CJK 4 字符≈1 token）+ `estimateMessagesTokens(messages)`（消息结构 +4、tool_calls +3、图片 ≈85/张）；src/index.ts 导出；tests/context.test.ts（空串/中文/英文/混合/结构开销/相对排序）
+- [ ] **C2** server 协议 `context_status`（server.ts）：返回 `{ type:'context_status', sessionId, messageCount, estimatedTokens }`（只读，用 agent.getMessages()，不触发生成）；host-protocol.md 文档；协议流测试（create_session → context_status → messageCount≥1 / estimatedTokens>0 / sessionId 往返）
+- [ ] **C3** CLI `/context` 命令（cli/index.ts）：handleSlashCommand 增加可选 `contextInfo` hook（返回消息数 + 估算 tokens；未提供则提示不可用）；交互模式注入真实实现（agent.getMessages()）；/help 同步；tests/context-command.test.ts
+- [ ] **C4** 文档收尾：版本号 0.5.6 + README Changelog + README CLI 表 /context + host-protocol.md 同步 + docs/context-observability.md + 全量回归
+
+> 本轮里程碑完成后更新：备选后续方向（记录）：工具确认机制完善（allow_session/always 记忆化 + 超时）/ MCP resources 支持 / RAG 注入（Agent 构造按主题注入记忆）
 
 ## 调研结论（2026-08-09 第五轮夜间）
 
