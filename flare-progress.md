@@ -1,8 +1,41 @@
 # flare 夜间调研迭代进度
 
-> 目标：调研 flare 引擎下一步迭代方向并推进（M4 已完成 = StorySpire 集成 + withConfirmation + 宿主协议；第一轮夜间已完成 RAG 里程碑 R0-R6；第二轮夜间已完成多模型里程碑 P0-P4；第三轮夜间已完成 server 协议里程碑 S0-S5）
+> 目标：调研 flare 引擎下一步迭代方向并推进（M4 已完成 = StorySpire 集成 + withConfirmation + 宿主协议；第一轮夜间已完成 RAG 里程碑 R0-R6；第二轮夜间已完成多模型里程碑 P0-P4；第三轮夜间已完成 server 协议里程碑 S0-S5；第四轮夜间已完成记忆生命周期闭环里程碑 T0-T5；第五轮夜间进行 MCP 协议支持里程碑 U0-U6）
 > 铁律：**flare 是引擎，Pulse/StorySpire（Electron 版）当前都依赖它**——任何改动必须 tsc 0 错 + 全部测试通过才 commit
 > 规则：每轮实现后 `npx tsc` 0 错 + `PATH=/usr/bin:$PATH npx vitest run` 全绿 + git commit（本地，**禁止 git push**）；每轮结束更新本文件
+
+## 调研结论（2026-08-09 第五轮夜间）
+
+### 现状盘点（读完 roadmap + README + docs/ + src/ + tests/，基线实测）
+
+- **前四轮已完成**：RAG（trigram FTS + memory_search/memory_save 工具）✅；多模型（Ollama 路由 + /model + server model 字段）✅；server 协议（version/delete_session/get_usage/create_session/remember/get_memories/delete_memory）✅；记忆生命周期闭环（deleteMemory/deleteMemoriesByContent + /forget + server 记忆接口 + memoryStore→store 字段错位 bug 修复）✅
+- **测试基线实测 129 项全绿**（11 文件）；`npx tsc` 0 错误；git 工作树干净；版本 v0.5.4
+- **工具系统现状**：内置 read_file/write_file/search_files/terminal（含危险命令黑名单/受保护路径/原子写入）+ network（M3）+ story（M4）+ memory_search/memory_save + withConfirmation；工具注入走 `config.tools`（Agent 构造已支持，P0-2 的 joinPath/黑名单等安全机制齐全）
+- **server 协议现状（src/server.ts）**：chat（含 model/tools 字段）/cancel/set_context/list_sessions/get_messages/get_usage/ping/version/create_session/delete_session/remember/get_memories/delete_memory/tool_result 已完整；协议测试用 spawn 子进程 + 临时隔离库 + 数据往返断言（防空过）
+- **LLM 层**：resolveProviderOptions 纯函数路由（Ollama 冒号检测 / LLM_* 覆盖 / claude 明确报错）；createProvider 可传参注入
+- **环境事实**：Node v22；零外部依赖约束友好（package.json 仅 openai/better-sqlite3/chalk/commander/dotenv/ora/readline）；MCP stdio 传输是 NDJSON JSON-RPC（子进程 stdin/stdout 管道），**可零依赖手写客户端 + mock server 离线测试**（不引入 @modelcontextprotocol/sdk，不依赖网络）
+
+### 方向选择：✅ **MCP 协议支持（stdio MCP client + 工具桥接，零依赖）**（本轮选定）
+
+| 候选方向 | 评估 | 结论 |
+|---------|------|------|
+| **MCP 协议支持** | 引擎能力增长点：连接外部 MCP 服务器（filesystem/github/数据库等）让 flare 进入 MCP 生态，Pulse/StorySpire AI 面板后续直接受益；纯外围（新模块 src/mcp/ + 工具桥 src/tools/mcp.ts + CLI /mcp + 配置 ~/.flare/mcp.json + server --mcp，**零 agent.ts 改动**，工具经已有 config.tools 注入）；零新依赖（MCP stdio = NDJSON JSON-RPC 子进程管道，手写客户端 + mock server fixture 离线确定性测试）；已被暂缓 3 轮，宿主协议成熟后正是时候 | ✅ 选定 |
+| RAG 注入（Agent 构造按主题自动注入相关记忆） | 有价值但会碰 agent.ts 构造函数（Pulse/StorySpire 依赖构造行为），风险中等 | 暂缓 |
+| 上下文与性能优化（token 计数） | token 计数优化会碰 agent.ts，风险高；纯计数器价值有限 | 暂缓 |
+| 工具确认机制完善 | withConfirmation 已完成（allow_once/session/always/deny/alternative），剩余空间小 | 备选 |
+| M5 发布与文档（npm 发布/集成指南） | 偏运营收尾，等用户明早验收后一并做（涉及发布决策） | 暂缓 |
+
+### 迭代计划（分小步，每步独立验证 commit）
+
+- [x] **U0** 调研：确定方向（MCP 协议支持）+ 基线实测（tsc 0 错 / 129 全绿）+ 本文件更新
+- [ ] **U1** MCP 客户端（src/mcp/types.ts + src/mcp/client.ts）：`MCPClient`——spawn 子进程 + initialize 握手（JSON-RPC）+ tools/list + tools/call + close；NDJSON 行协议（零依赖手写）；请求超时/错误响应处理；导出供测试
+- [ ] **U2** mock MCP server（tests/fixtures/mcp-mock-server.mjs：NDJSON JSON-RPC 响应 initialize/tools/list/tools/call）+ tests/mcp-client.test.ts（握手 / 列工具 / 调用工具 / 错误响应 / 超时 / close 清理）
+- [ ] **U3** MCP 工具桥（src/tools/mcp.ts）：`createMcpTools(client)` → flare `Tool[]`（inputSchema → parameters 映射；execute → tools/call → 提取 text 内容；isError → success:false）+ src/index.ts 导出 + tests/mcp-tools.test.ts
+- [ ] **U4** MCP 管理器 + CLI /mcp（src/mcp/manager.ts `McpManager`：loadConfig(~/.flare/mcp.json) / connect / disconnect / getAllTools；cli/index.ts /mcp 命令 list/connect/disconnect + 重建 Agent 注入工具 + /help 同步 + 测试）
+- [ ] **U5** server 协议扩展：startHostServer 支持 `mcp` 配置（启动连接 MCP servers，工具并入 profile/host 工具）+ 新增 `mcp_status` 请求（宿主查看已连接 MCP 服务/工具数）+ `flare server --mcp <config.json>` + host-protocol.md + 协议测试（mock server 配置 + mcp_status 往返）
+- [ ] **U6** 文档收尾：README Changelog + docs/mcp.md（MCP 集成指南）+ 版本号 0.5.5 + 全量回归
+
+> 本轮里程碑目标：flare 引擎可连接外部 MCP 服务器（stdio），MCP 工具经桥接进入 Agent 工具集（CLI /mcp + server --mcp），零 agent.ts 改动、零新依赖。
 
 ## 调研结论（2026-08-09 第四轮夜间）
 
@@ -125,6 +158,7 @@
 
 | 轮次 | 时间 | 完成 | 构建/测试 | 备注 |
 |------|------|------|-----------|------|
+| U0 | 2026-08-09 夜间 | 调研确定方向（MCP 协议支持：stdio MCP client + 工具桥接，零依赖）+ 基线实测 | tsc 0 错 / 129 全绿 | 第五轮夜间里程碑；MCP stdio = NDJSON JSON-RPC 子进程管道，mock server 离线测试；零 agent.ts 改动 |
 | T0-T5 | 2026-08-09 夜间 | 记忆生命周期闭环 + server 记忆访问修复（memoryStore→store 字段错位 bug）+ create_session/remember/get_memories/delete_memory 协议 + memory_save 工具 + /forget | tsc 0 错 / 129 全绿 | 第四轮夜间里程碑（5 提交 T0-T5）；协议测试改临时隔离库 + 数据往返断言（防再空过）；冒烟实测全部真实生效；版本 0.5.4 |
 | S0-S5 | 2026-08-09 夜间 | server 协议完善：version 版本协商 + delete_session 会话清理 + get_usage 用量统计 + MemoryStore.deleteSession | tsc 0 错 / 107 全绿 | 第三轮夜间里程碑（5 提交 S0-S5）；version 测试断言 engine 与 package.json 一致 |
 | R0-R6 | 2026-08-09 凌晨 | RAG 里程碑（记忆检索增强）+ server ping/get_messages | tsc 0 错 / 81 全绿 | trigram FTS 中文检索 + memory_search 工具 + 宿主协议补充 |
