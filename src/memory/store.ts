@@ -248,6 +248,24 @@ export class MemoryStore {
     `).run(sessionId, title)
   }
 
+  /**
+   * 删除会话（含消息、用量记录）
+   *
+   * 会话清理：宿主管理会话列表 / 清除隐私数据时使用。
+   * - 删除顺序：messages（DELETE 触发器自动清 messages_fts / messages_fts_trigram 索引）→ usage_log → sessions
+   * - 事务原子删除：任一失败整体回滚，不残留半删状态
+   * - 返回是否真的删除了会话记录（会话不存在返回 false）
+   */
+  deleteSession(sessionId: string): boolean {
+    const del = this.db.transaction((sid: string) => {
+      this.db.prepare('DELETE FROM messages WHERE session_id = ?').run(sid)
+      this.db.prepare('DELETE FROM usage_log WHERE session_id = ?').run(sid)
+      const res = this.db.prepare('DELETE FROM sessions WHERE id = ?').run(sid)
+      return res.changes > 0
+    })
+    return del(sessionId)
+  }
+
   /** 保存消息到会话 */
   saveMessage(sessionId: string, message: Message) {
     // 自动创建会话（幂等）：外部应用传固定 sessionId（如 pulse-ai）时，

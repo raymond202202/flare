@@ -232,3 +232,45 @@ describe('MemoryStore 记忆检索增强（RAG, v0.5.1）', () => {
     expect(hits[0].content).toContain('林澈')
   })
 })
+
+describe('MemoryStore.deleteSession', () => {
+  it('删除会话：消息 / 用量记录一并清除，FTS 索引联动清理', () => {
+    const sid = store.createSession('待删除会话')
+    store.saveMessage(sid, { role: 'user', content: '龙族故事设定：主角叫林澈' })
+    store.saveMessage(sid, { role: 'assistant', content: '好，记住了' })
+    store.logUsage(sid, 10, 20, 'deepseek-chat')
+
+    // 删除前 FTS 可命中
+    expect(store.searchMessages('龙族故事').length).toBeGreaterThan(0)
+    expect(store.getUsageStats().sessionCount).toBe(1)
+
+    const ok = store.deleteSession(sid)
+    expect(ok).toBe(true)
+
+    // 会话记录 / 消息 / 用量全部清除
+    expect(store.getAllSessions().some(s => s.id === sid)).toBe(false)
+    expect(store.getMessages(sid)).toEqual([])
+    expect(store.getUsageStats().sessionCount).toBe(0)
+    // FTS 触发器已联动清索引，不再命中已删消息
+    expect(store.searchMessages('龙族故事').some(h => h.sessionId === sid)).toBe(false)
+  })
+
+  it('删除不存在的会话返回 false（幂等，不抛错）', () => {
+    expect(store.deleteSession('no_such_session')).toBe(false)
+  })
+
+  it('删除一个会话不影响其他会话', () => {
+    const keep = store.createSession('保留会话')
+    store.saveMessage(keep, { role: 'user', content: '天气怎么样' })
+    const drop = store.createSession('丢弃会话')
+    store.saveMessage(drop, { role: 'user', content: '待删除内容' })
+
+    expect(store.deleteSession(drop)).toBe(true)
+
+    const sessions = store.getAllSessions()
+    expect(sessions).toHaveLength(1)
+    expect(sessions[0].id).toBe(keep)
+    expect(store.getMessages(keep)).toHaveLength(1)
+    expect(store.searchMessages('待删除内容')).toEqual([])
+  })
+})
