@@ -121,3 +121,78 @@ describe('MemoryStore', () => {
     expect(colNames).toContain('name')
   })
 })
+
+describe('MemoryStore 记忆检索增强（RAG, v0.5.1）', () => {
+  it('searchMemories：trigram FTS 命中中文 3 字以上子串（bm25 排序）', () => {
+    store.saveMemory('用户喜欢浅色主题，偏好深色模式', 'preference')
+    store.saveMemory('flutter 是一个神奇的框架，用于跨平台开发', 'note')
+    store.saveMemory('用户是 flare 引擎项目负责人', 'note')
+
+    const hits = store.searchMemories('神奇的框架')
+    expect(hits.length).toBeGreaterThan(0)
+    expect(hits[0].content).toContain('神奇的框架')
+  })
+
+  it('searchMemories：FTS 结果按相关度排序（精确命中优先于部分命中）', () => {
+    store.saveMemory('用户喜欢浅色主题', 'preference')
+    store.saveMemory('浅色主题的护眼设置建议', 'note')
+    store.saveMemory('今天天气不错', 'note')
+
+    const hits = store.searchMemories('浅色主题')
+    expect(hits.length).toBeGreaterThanOrEqual(2)
+    // 第一个命中应该包含完整查询词（bm25 相关度更高）
+    expect(hits[0].content).toContain('浅色主题')
+  })
+
+  it('searchMemories：2 字中文查询 LIKE 回退（trigram 需 3 字符）', () => {
+    store.saveMemory('用户喜欢浅色主题', 'preference')
+    store.saveMemory('flutter 框架', 'note')
+
+    const hits = store.searchMemories('主题')
+    expect(hits.length).toBeGreaterThan(0)
+    expect(hits[0].content).toContain('主题')
+  })
+
+  it('searchMemories：FTS 无结果时 LIKE 兜底', () => {
+    store.saveMemory('今天天气不错，适合出门散步', 'note')
+
+    // FTS 命中不到（查询词在 trigram 索引外或特殊字符），LIKE 兜底
+    const hits = store.searchMemories('天气')
+    expect(hits.length).toBeGreaterThan(0)
+  })
+
+  it('searchMemories：空查询返回空', () => {
+    store.saveMemory('任意记忆内容', 'note')
+    expect(store.searchMemories('')).toEqual([])
+    expect(store.searchMemories('   ')).toEqual([])
+  })
+
+  it('memories_fts 触发器：插入即入索引，删除即出索引', () => {
+    const sid = store.createSession('fts-trigger')
+    store.saveMessage(sid, { role: 'user', content: '占位消息' })
+    store.saveMemory('触发器测试：龙族设定', 'note')
+    expect(store.searchMemories('龙族设定').length).toBeGreaterThan(0)
+
+    // 删除记忆 → FTS 同步删除
+    const memId = (store.getAllMemories().find(m => m.content.includes('龙族设定')) as any).id
+    store['db'].prepare('DELETE FROM memories WHERE id = ?').run(memId)
+    expect(store.searchMemories('龙族设定').length).toBe(0)
+  })
+
+  it('老库回填：先有 memories 数据再建 FTS 也能检索', () => {
+    // 模拟老库：直接建 memories 表（不带 FTS）+ 插入数据，然后重建 store
+    store['db'].exec('DROP TABLE IF EXISTS memories_fts')
+    store['db'].exec('DROP TRIGGER IF EXISTS memories_ai')
+    store['db'].exec('DROP TRIGGER IF EXISTS memories_ad')
+    store['db'].exec('DROP TRIGGER IF EXISTS memories_au')
+    store['db'].prepare('INSERT INTO memories (content) VALUES (?)').run('回填测试：旧记忆数据')
+
+    store.close()
+    store = new MemoryStore(join(tempDir, 'test.db'))
+
+    // 新库 init 时 FTS 建表 + 回填，老数据可检索
+    const hits = store.searchMemories('回填测试')
+    expect(hits.length).toBeGreaterThan(0)
+    expect(hits[0].content).toContain('回填测试')
+  })
+})
