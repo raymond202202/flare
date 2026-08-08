@@ -1,8 +1,43 @@
 # flare 夜间调研迭代进度
 
-> 目标：调研 flare 引擎下一步迭代方向并推进（M4 已完成 = StorySpire 集成 + withConfirmation + 宿主协议；第一轮夜间已完成 RAG 里程碑 R0-R6；第二轮夜间已完成多模型里程碑 P0-P4）
+> 目标：调研 flare 引擎下一步迭代方向并推进（M4 已完成 = StorySpire 集成 + withConfirmation + 宿主协议；第一轮夜间已完成 RAG 里程碑 R0-R6；第二轮夜间已完成多模型里程碑 P0-P4；第三轮夜间已完成 server 协议里程碑 S0-S5）
 > 铁律：**flare 是引擎，Pulse/StorySpire（Electron 版）当前都依赖它**——任何改动必须 tsc 0 错 + 全部测试通过才 commit
 > 规则：每轮实现后 `npx tsc` 0 错 + `PATH=/usr/bin:$PATH npx vitest run` 全绿 + git commit（本地，**禁止 git push**）；每轮结束更新本文件
+
+## 调研结论（2026-08-09 第四轮夜间）
+
+### 现状盘点（读完 roadmap + README + docs/ + src/ + tests/，基线实测）
+
+- **前三轮已完成**：RAG（trigram FTS + memory_search 工具）✅；多模型（Ollama 路由 + /model + server model）✅；server 协议（version/delete_session/get_usage）✅
+- **测试基线实测 107 项全绿**（11 文件）；`npx tsc` 0 错误；git 工作树干净；版本 v0.5.3
+- **🐛 发现真实 bug（server.ts 记忆访问字段错位）**：server.ts 用 `(agent as any).memoryStore` 访问 Agent 的 store，但 Agent 字段是 `private store`（agent.ts:95）——`memoryStore` 恒为 undefined，导致 4 个 handler **静默失效**：
+  - `delete_session`：`deleteSession` 从不真正执行（deleted 恒 false，隐私数据删不掉）
+  - `list_sessions` / `get_messages`：恒返回空数组（getAllSessions/getMessages 未调用）
+  - `get_usage`：恒返回 0 统计
+  - 现有测试只断言响应形状（数组/数字/boolean），全部空过——**测试盲区**：协议层缺少数据往返断言
+- **记忆系统缺口（RAG 只做了一半）**：AI 只能"搜"记忆（memory_search），不能"存"（用户说"记住X"时 AI 无法真正落库）；用户只能"加"不能"删"（无 /forget、MemoryStore 无 deleteMemory、server 无 delete_memory）——记忆生命周期（增/查/删）不闭环
+- **server 协议现状**：chat/cancel/set_context/list_sessions/get_messages/get_usage/ping/version/delete_session/tool_result 已完整；无 create_session（宿主无法显式建会话）、无记忆接口（remember/get_memories/delete_memory）
+
+### 方向选择：✅ **记忆生命周期闭环 + server 记忆访问修复**（本轮选定）
+
+| 候选方向 | 评估 | 结论 |
+|---------|------|------|
+| **记忆生命周期闭环 + server 修复** | 修复真实 bug（memoryStore→store 字段错位，4 handler 静默失效——高价值）；补齐 RAG 缺口（AI 能搜不能存、用户只能加不能删）；server 增加记忆接口（宿主面板记忆管理）；纯外围（store.ts/tools/cli/server.ts/docs/tests），零 agent.ts 改动 | ✅ 选定 |
+| MCP 协议支持 | 工作量大（网络协议 + 依赖），宿主协议刚完成，适合后续大版本规划 | 暂缓 |
+| RAG 注入（Agent 构造按主题自动注入相关记忆） | 有价值但会碰 agent.ts 构造函数（Pulse/StorySpire 依赖构造行为），风险中等 | 暂缓 |
+| 工具确认机制完善 | withConfirmation 已完成（allow_once/session/always/deny/alternative），剩余空间小 | 备选 |
+| 上下文与性能优化 | trimContext 已有（30 条 + 配对保护）；token 计数优化会碰 agent.ts，风险高 | 暂缓 |
+
+### 迭代计划（分小步，每步独立验证 commit）
+
+- [ ] **T0** 调研：确定方向（记忆生命周期闭环 + server 修复）+ 基线实测（tsc 0 错 / 107 全绿）+ 本文件更新
+- [ ] **T1** server 修复（server.ts）：`(agent as any).memoryStore` → `(agent as any).store`（4 处，delete_session/list_sessions/get_messages/get_usage 恢复真实数据）+ 新增 `create_session` 请求（宿主显式建会话，updateSessionTitle UPSERT 幂等）+ 确定性协议测试（create_session → delete_session deleted:true/false 往返，不再空过）
+- [ ] **T2** MemoryStore 删除（store.ts）：`deleteMemory(id)` 按 id 删单条（FTS 触发器联动清索引）+ `deleteMemoriesByContent(query)` 按内容 LIKE 匹配批量删（返回条数）；tests/store.test.ts（删除后 searchMemories 不再命中 / 不存在返回 false / 不影响其他记忆）
+- [ ] **T3** memory_save 工具 + CLI /forget（tools/memory.ts + tools/index.ts + cli/index.ts）：`createMemorySaveTool(store)`（AI 可真正落库用户要求记住的内容，description 约束"仅用户明确要求时保存"）+ 默认 `memorySaveTool` 加入内置工具集；CLI `/forget <关键词>`（deleteMemoriesByContent）+ /help 同步；测试（工具 schema/保存/参数校验/内置集 + /forget 命令）
+- [ ] **T4** server 记忆接口（server.ts）：`remember`（保存记忆）/ `get_memories`（列出或按 query 搜索）/ `delete_memory`（按 id 或 content 删除）+ host-protocol.md + 协议流测试（数据往返：remember → get_memories 命中 → delete_memory 消失，顺带证明 T1 修复）
+- [ ] **T5** 文档收尾：版本号 0.5.4 + README Changelog + docs/memory-rag.md 补记忆生命周期 + 全量回归
+
+> 里程碑完成后更新：备选后续方向（记录）：MCP 协议支持 / RAG 注入（Agent 构造按主题自动注入相关记忆）/ 上下文与性能优化（token 计数）
 
 ## 调研结论（2026-08-09 第三轮夜间）
 
