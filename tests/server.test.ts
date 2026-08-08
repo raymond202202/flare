@@ -14,11 +14,11 @@ let child: ChildProcess
 let rl: Interface
 let nextId = 0
 
-function request(msg: any): Promise<any[]> {
+function request(msg: any, timeoutMs = 45000): Promise<any[]> {
   return new Promise((resolve, reject) => {
     const id = ++nextId
     const msgs: any[] = []
-    const timer = setTimeout(() => { cleanup(); reject(new Error(`超时（请求 ${JSON.stringify(msg).slice(0,80)}）`)) }, 8000)
+    const timer = setTimeout(() => { cleanup(); reject(new Error(`超时（请求 ${JSON.stringify(msg).slice(0,80)}）`)) }, timeoutMs)
     const handler = (line: string) => {
       try {
         const parsed = JSON.parse(line)
@@ -70,7 +70,9 @@ describe('flare host server 协议', () => {
   it('chat（可能 fallback 本地模型）→ 协议流完整（事件 + 以 done/error 结束）', async () => {
     // 环境无 DEEPSEEK_API_KEY 时，引擎可能 fallback 到本地 Ollama（用户机器有）→ 不断言具体错误
     // 只验证协议：收到事件流且以 done / error 终止，不挂死
-    const msgs = await request({ type: 'chat', sessionId: 's-test', input: '你好' })
+    // 注意：子进程 config.ts 会重新加载 ~/.flare/.env（dotenv），可能注入真实 key 走远端 API，
+    // 远端网络慢时超过 vitest 默认 5s —— 显式放宽该测试超时（45s）
+    const msgs = await request({ type: 'chat', sessionId: 's-test', input: '你好' }, 45000)
     expect(msgs.length).toBeGreaterThan(0)
     const last = msgs[msgs.length - 1]
     expect(['done', 'error', 'cancelled'].includes(last.type)).toBe(true)
@@ -78,7 +80,7 @@ describe('flare host server 协议', () => {
     for (const m of msgs) {
       expect(['text', 'tool_call', 'tool_execute', 'tool_result', 'done', 'error', 'cancelled'].includes(m.type)).toBe(true)
     }
-  })
+  }, 45000)
 
   it('set_context（无 key 会话）→ ok', async () => {
     const msgs = await request({ type: 'set_context', sessionId: 's-test', context: 'x' })

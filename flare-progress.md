@@ -4,16 +4,45 @@
 > 铁律：**flare 是引擎，Pulse/StorySpire（Electron 版）当前都依赖它**——任何改动必须 tsc 0 错 + 全部测试通过才 commit
 > 规则：每轮实现后 `npx tsc` 0 错 + `PATH=/usr/bin:$PATH npx vitest run` 全绿 + git commit（本地，**禁止 git push**）；每轮结束更新本文件
 
-## 迭代方向（第一轮先调研 roadmap 后定，候选）
+## 调研结论（2026-08-09 第一轮）
 
-- [ ] 方向调研：读 ~/Desktop/flare-engine-roadmap.md + 现状（M5 候选：MCP 协议/记忆检索增强/多模型 provider/工具确认完善/性能）
-- [ ] 选定方向后的迭代项（第一轮调研后补充）
+### 现状盘点（读完 roadmap + README + docs/ + src/ + tests/）
+
+- **M1-M4 已完成**：引擎库化（src/index.ts 导出 Agent/createProvider/Tool/MemoryStore/ExpertProfile）、Expert Profile 机制（工具注入/独立存储/品牌话术）、Pulse 网络专家（networkTools：http_request/url_parse/response_analyze）、StorySpire 写作专家（storyTools 5 个 + 模板）、withConfirmation 确认机制、宿主协议（src/server.ts：stdin/stdout JSON Lines，chat/cancel/set_context/list_sessions/tool_result）
+- **测试 60 项全绿**（8 个文件）：agent 4 / confirm 5 / expert 4 / network 5 / server 6 / store 6 / story 11 / vision 19
+- **记忆系统现状**：SQLite + FTS5，但存在明显短板：
+  1. `getRelevantMemories` 只用 `LIKE '%query%'` 简单匹配，无相关度排序、无 FTS 利用
+  2. `messages_fts` 用默认 tokenizer（unicode61）——**实测中文检索效果差**（搜"框架"匹配不到"flutter 是一个神奇的框架"），中文被整段当一个 token 或切分错位
+  3. Agent 构造时只注入 `getAllMemories().slice(0,5)`（最近 5 条），不做相关性筛选
+  4. 历史消息（messages 表）无关键词检索 API——宿主应用/工具无法按主题找回旧对话
+- **技术验证**：better-sqlite3（SQLite 3.53.4）**支持 trigram tokenizer**，中文 3 字以上子串匹配正常（实测 `神奇` 2 字需 LIKE 回退，`神奇的框架` 3 字 FTS 命中）——RAG 增强路径可行
+
+### 方向选择：✅ **记忆检索增强（RAG）**（本轮选定）
+
+| 候选方向 | 评估 | 结论 |
+|---------|------|------|
+| **记忆检索增强（RAG）** | 记忆是引擎核心能力；中文 FTS 短板实测确认；trigram 路径已验证；对 Pulse（历史调试结论）/StorySpire（按主题找回章节/设定）价值直接；纯外围改动（memory/store.ts + tools/）不碰 Agent.run | ✅ 选定 |
+| MCP 协议支持 | 工作量大（网络协议 + 依赖），宿主协议刚完成（server.ts），适合后续大版本规划 | 暂缓 |
+| 多模型 provider 增强（本地 Ollama 切换） | 已有 vision provider 走 Ollama；可扩展主模型切换，价值中 | 备选 |
+| 工具确认机制完善 | withConfirmation 已完成，剩余空间小 | 备选 |
+| server 协议完善 | 基本完整，可加 ping/version 等小项 | 备选 |
+| 上下文与性能优化 | trimContext 已有，token 计数可优化，风险中 | 备选 |
+
+### 迭代计划（分小步，每步独立验证 commit）
+
+- [x] **R0** 调研：读 roadmap/README/docs/tests/src + 技术验证（trigram）+ 修复 server 测试超时稳定性（dotenv 重新加载真实 key 走远端 API，放宽 chat 测试超时 45s）
+- [ ] **R1** MemoryStore 记忆检索升级：新建 `memories_fts`（trigram tokenizer）+ 触发器同步；`getRelevantMemories` 改 FTS 检索 + LIKE 回退（<3 字）+ 相关度排序；导出 `searchMemories`；新增测试
+- [ ] **R2** 历史消息检索：新建 `messages_fts_trigram`（trigram，不动老表）+ 触发器；新增 `searchMessages(keyword, limit)` API（按主题找回旧对话）；新增测试
+- [ ] **R3** 记忆检索工具：新增 `memory_search` 工具（AI 主动检索记忆/历史消息，注入 Agent 工具集），工具 schema + 执行器 + 测试
+- [ ] **R4** 文档与收尾：README Changelog + docs/ 记忆检索说明 + 全量回归 + 版本号（0.5.1）
+
+> 备选后续方向（记录）：MCP 协议支持 / 多模型 provider 增强（Ollama 主模型切换）/ server 协议补充（ping/version/delete_session）
 
 ## 迭代记录
 
 | 轮次 | 时间 | 完成 | 构建/测试 | 备注 |
 |------|------|------|-----------|------|
-| - | - | 调研待开始 | - | - |
+| R0 | 2026-08-09 凌晨 | 调研确定方向（记忆检索增强 RAG）；修复 server 测试超时稳定性 | tsc 0 错 / 60 全绿 | chat 测试放宽超时 45s（子进程重载 ~/.flare/.env 注入真实 key 走远端 API） |
 
 ## 命令
 
