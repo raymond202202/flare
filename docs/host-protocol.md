@@ -3,16 +3,22 @@
 > 供非 Node 宿主（如 Qt 应用）调用 flare 引擎的本地协议。
 > 传输：stdin/stdout · JSON Lines（每行一个 JSON 对象）
 > 实现：`src/server.ts`（`flare server` 命令）
-> 请求类型：chat / cancel / set_context / list_sessions / get_messages / get_usage / ping / version / create_session / delete_session / remember / get_memories / delete_memory / tool_result
+> 请求类型：chat / cancel / set_context / list_sessions / get_messages / get_usage / ping / version / create_session / delete_session / remember / get_memories / delete_memory / tool_result / mcp_status
 
 ## 启动
 
 ```bash
-flare server --profile <expert-profile-file> --storage <db-path>
+flare server --profile <expert-profile-file> --storage <db-path> [--mcp <mcp-config.json>]
 ```
 
 - `--profile`：ExpertProfile JSON 文件（name/identity/systemPrompt/tools）
 - `--storage`：记忆库路径（默认 `~/.flare-data/`）
+- `--mcp`（可选，v0.5.5）：MCP 服务器配置 JSON——`{ "servers": [{ "name", "command", "args", "env" }] }`。
+  启动时连接各 MCP 服务器（stdio），其工具并入每个会话的 Agent 工具集（与宿主代理工具/专家工具并存）；
+  连接失败不阻塞服务（`mcp_status` 可见错误）。例：
+  ```json
+  { "servers": [{ "name": "fs", "command": "npx", "args": ["-y", "@modelcontextprotocol/server-filesystem", "/tmp"] }] }
+  ```
 - 环境变量注入 API key（如 `DEEPSEEK_API_KEY=...`），与现有 Agent 一致
 
 ## 请求（宿主 → 服务，stdin 每行一个）
@@ -155,6 +161,17 @@ flare server --profile <expert-profile-file> --storage <db-path>
 
 `result` 必须为 flare 的 ToolResult 对象：`{ success: boolean, output: string, error?: string, denied?: boolean, alternative?: boolean }`
 
+### 15. mcp_status — 查看 MCP 服务器连接状态（v0.5.5）
+
+```json
+{"type":"mcp_status"}
+```
+
+响应：`{"type":"mcp_status","servers":[{"name":"fs","connected":true,"toolCount":8},{"name":"db","connected":false,"toolCount":0,"error":"..."}]}`
+
+- 列出 `--mcp` 配置的每个服务器：`connected`（是否连接成功）、`toolCount`（桥接的工具数）、`error`（连接失败原因，可选）
+- 宿主 AI 面板展示/诊断外部 MCP 工具时使用；连接是启动时后台完成的，本请求会等待其落定
+
 ## 响应（服务 → 宿主，stdout 每行一个）
 
 | type | 字段 | 说明 |
@@ -173,6 +190,7 @@ flare server --profile <expert-profile-file> --storage <db-path>
 | `pong` | `ts` | ping 响应（宿主健康检查） |
 | `version` | `protocol, engine` | 版本协商（协议版本 + 引擎版本） |
 | `usage` | `stats` | token 用量统计（get_usage 响应） |
+| `mcp_status` | `servers` | MCP 服务器连接状态（mcp_status 响应，v0.5.5） |
 
 ## 工具执行流（宿主代理工具）
 

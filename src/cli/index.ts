@@ -616,17 +616,25 @@ export function main() {
     .option('-p, --profile <path>', 'ExpertProfile JSON 文件路径（可选）')
     .option('-s, --storage <path>', '记忆库路径（默认 ~/.flare-data/）')
     .option('-n, --namespace <name>', '会话命名空间（记忆库隔离）')
-    .action(async (options: { profile?: string; storage?: string; namespace?: string }) => {
+    .option('-m, --mcp <path>', 'MCP 服务器配置 JSON 文件路径（可选，v0.5.5；连接外部 MCP 服务器并入工具集）')
+    .action(async (options: { profile?: string; storage?: string; namespace?: string; mcp?: string }) => {
       const { startHostServer } = await import('../server.js')
       const fs = await import('fs/promises')
       let profile: Record<string, unknown> = {}
       if (options.profile) {
         profile = JSON.parse(await fs.readFile(options.profile, 'utf-8'))
       }
+      // --mcp <config.json>：{ "servers": [{ "name", "command", "args" }] }，连接失败不阻塞服务
+      let mcp: unknown[] = []
+      if (options.mcp) {
+        const raw = JSON.parse(await fs.readFile(options.mcp, 'utf-8'))
+        mcp = Array.isArray(raw?.servers) ? raw.servers : []
+      }
       startHostServer({
         profile: profile as any,
         storage: options.storage,
         namespace: options.namespace,
+        ...(mcp.length > 0 ? { mcp: mcp as any } : {}),
       })
     })
 
