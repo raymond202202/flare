@@ -63,6 +63,14 @@ export {
   getStoryToolDefinitions,
 } from './tools/story.js'
 
+// ===== 记忆检索工具（RAG，v0.5.1）=====
+export {
+  memorySearchTool,
+  createMemorySearchTool,
+  type MemorySearchScope,
+  type MemorySearchArgs,
+} from './tools/memory.js'
+
 // ===== 记忆系统 =====
 export { MemoryStore, getMemoryStore, serializeContent, deserializeContent } from './memory/store.js'
 
