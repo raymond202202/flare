@@ -77,6 +77,8 @@ export {
 // ===== MCP 协议支持（v0.5.5）：外部 MCP 服务器工具桥接 =====
 export { MCPClient } from './mcp/client.js'
 export type { MCPClientOptions } from './mcp/client.js'
+export { McpManager, loadMcpConfig } from './mcp/manager.js'
+export type { McpManagerOptions } from './mcp/manager.js'
 export { createMcpTools } from './tools/mcp.js'
 export type {
   McpServerConfig,

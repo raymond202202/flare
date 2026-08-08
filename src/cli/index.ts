@@ -8,7 +8,7 @@
  */
 
 import { Command } from 'commander'
-import { Agent, createProvider, getMemoryStore, config } from '../index.js'
+import { Agent, createProvider, getMemoryStore, config, tools, McpManager, type AgentConfig, type McpServerStatus } from '../index.js'
 import chalk from 'chalk'
 import { execSync } from 'child_process'
 import { createRequire } from 'module'
@@ -30,12 +30,17 @@ async function startInteractive() {
 
   const store = getMemoryStore()
   const sessionId = store.createSession('CLI 会话')
+  // MCP 管理器（v0.5.5）：~/.flare/mcp.json 配置外部 MCP 服务器，/mcp connect 注入工具
+  const mcpManager = new McpManager()
   // 主模型：settings main_model（/model 切换）优先，否则默认（.env DEFAULT_MODEL → 自动路由）
+  // MCP 工具：已连接的服务器工具并入内置工具集（重建 Agent 时生效）
   const makeAgent = () => {
     const savedModel = store.getSetting('main_model') || undefined
-    return savedModel
-      ? new Agent({ sessionId, llm: createProvider({ model: savedModel }) })
-      : new Agent({ sessionId })
+    const mcpTools = mcpManager.getAllTools()
+    const cfg: AgentConfig = { sessionId }
+    if (savedModel) cfg.llm = createProvider({ model: savedModel })
+    if (mcpTools.length > 0) cfg.tools = [...tools, ...mcpTools]
+    return new Agent(cfg)
   }
   let agent = makeAgent()
   const isUnix = process.platform !== 'win32'
@@ -193,6 +198,19 @@ async function startInteractive() {
       // /model 切换后重建 Agent（同 sessionId，历史从记忆库恢复），使新模型立即生效
       agent = makeAgent()
       agentOutput += chalk.gray('  （会话已按新模型重建，历史从记忆库恢复）') + '\n'
+    }, {
+      // /mcp 命令（v0.5.5）：连接/断开外部 MCP 服务器
+      list: () => mcpManager.status(),
+      connect: async (name) => {
+        const mcpTools = await mcpManager.connect(name)
+        return `已连接 ${name}（${mcpTools.length} 个 MCP 工具）`
+      },
+      disconnect: (name) => mcpManager.disconnect(name),
+      onChanged: () => {
+        // 工具集变化后重建 Agent（同 sessionId，历史从记忆库恢复），使 MCP 工具立即生效
+        agent = makeAgent()
+        agentOutput += chalk.gray('  （会话已按新工具集重建，历史从记忆库恢复）') + '\n'
+      },
     })
     agentRunning = false
     renderFrame()
@@ -281,12 +299,26 @@ function parseImageCommand(cmd: string): { text: string; attachments: string[] }
   return { text: rest.slice(sp + 1).trim(), attachments: [rest.slice(0, sp)] }
 }
 
+/** /mcp 命令回调（CLI 注入真实实现；测试注入 fake） */
+export interface McpCommandHooks {
+  /** 列出配置的 MCP 服务器状态 */
+  list(): McpServerStatus[]
+  /** 连接指定服务器，返回摘要（如 \"已连接 xxx（N 个 MCP 工具）\"） */
+  connect(name: string): Promise<string>
+  /** 断开指定服务器（返回是否真的断开了） */
+  disconnect(name: string): boolean
+  /** 工具集变化后重建 Agent（使新工具立即生效） */
+  onChanged(): void
+}
+
 export async function handleSlashCommand(
   cmd: string,
   store: ReturnType<typeof getMemoryStore>,
   output: (s: string) => void = console.log,
   /** /model 切换后回调（宿主/CLI 重建 Agent 使新模型生效） */
-  onModelSwitch?: (model: string) => void
+  onModelSwitch?: (model: string) => void,
+  /** /mcp 命令回调（v0.5.5，外部 MCP 服务器管理） */
+  mcp?: McpCommandHooks
 ): Promise<'exit' | 'continue'> {
   const lower = cmd.toLowerCase()
   // /remember 带内容，必须用前缀匹配（switch 精确匹配会永远"未知命令"）
@@ -361,6 +393,55 @@ export async function handleSlashCommand(
     return 'continue'
   }
 
+  // /mcp 管理外部 MCP 服务器（v0.5.5）：/mcp 状态 | /mcp connect <name> | /mcp disconnect <name>
+  if (lower === '/mcp' || lower.startsWith('/mcp ')) {
+    const arg = cmd.replace(/^\/mcp(?:\s+|$)/, '').trim()
+    if (!mcp) {
+      output(chalk.yellow('\n  MCP 未启用（当前环境未提供 MCP 管理器）'))
+      return 'continue'
+    }
+    const [sub, ...rest] = arg ? arg.split(/\s+/) : []
+    if (!sub) {
+      const st = mcp.list()
+      if (st.length === 0) {
+        output(chalk.yellow('\n  未配置 MCP 服务器（~/.flare/mcp.json 的 servers 列表）'))
+      } else {
+        for (const s of st) {
+          const mark = s.connected ? chalk.green('●') : chalk.gray('○')
+          const toolsInfo = s.connected ? chalk.gray(`（${s.toolCount} 个工具）`) : ''
+          const err = s.error ? chalk.red(` [${s.error}]`) : ''
+          output(`  ${mark} ${s.name}${toolsInfo}${err}`)
+        }
+      }
+      output(chalk.gray('\n  /mcp connect <name> 连接 | /mcp disconnect <name> 断开'))
+      return 'continue'
+    }
+    if (sub === 'connect' && rest.length > 0) {
+      const name = rest.join(' ')
+      try {
+        const summary = await mcp.connect(name)
+        output(chalk.green(`\n  ✅ ${summary}`))
+        mcp.onChanged()
+      } catch (e: any) {
+        output(chalk.red(`\n  ❌ ${e?.message || e}`))
+      }
+      return 'continue'
+    }
+    if (sub === 'disconnect' && rest.length > 0) {
+      const name = rest.join(' ')
+      const ok = mcp.disconnect(name)
+      if (ok) {
+        output(chalk.green(`\n  已断开 ${name}`))
+        mcp.onChanged()
+      } else {
+        output(chalk.yellow(`\n  ${name} 未连接`))
+      }
+      return 'continue'
+    }
+    output(chalk.yellow('\n  用法: /mcp | /mcp connect <name> | /mcp disconnect <name>'))
+    return 'continue'
+  }
+
   switch (lower) {
     case '/help':
       output(chalk.cyan('\n可用命令:'))
@@ -375,6 +456,9 @@ export async function handleSlashCommand(
       output('  /image       - 显式看图（如: /image ~/Pictures/a.png 这张图里有什么）')
       output('  /vision      - 切换看图模型（/vision 3b 快速 | /vision 7b 质量）')
       output('  /model       - 切换主模型（/model qwen2.5:7b 本地 Ollama | /model deepseek-chat 远端）')
+      output('  /mcp         - 查看 MCP 服务器状态（~/.flare/mcp.json 配置）')
+      output('  /mcp connect <name> - 连接 MCP 服务器并注入其工具')
+      output('  /mcp disconnect <name> - 断开 MCP 服务器')
       output('  /pause       - 暂停动画（屏幕静止，可选中复制输出）')
       output('  /resume      - 恢复动画')
       output(chalk.gray('  💡 对话里直接发图片路径也会自动识别（如: 看看这张图 xxx.png）'))
