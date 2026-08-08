@@ -67,10 +67,17 @@ describe('flare host server 协议', () => {
     expect(msgs[0].message).toContain('JSON 解析失败')
   })
 
-  it('chat（无 key）→ error 未配置密钥', async () => {
+  it('chat（可能 fallback 本地模型）→ 协议流完整（事件 + 以 done/error 结束）', async () => {
+    // 环境无 DEEPSEEK_API_KEY 时，引擎可能 fallback 到本地 Ollama（用户机器有）→ 不断言具体错误
+    // 只验证协议：收到事件流且以 done / error 终止，不挂死
     const msgs = await request({ type: 'chat', sessionId: 's-test', input: '你好' })
-    expect(msgs[0].type).toBe('error')
-    expect(msgs[0].message).toContain('API 密钥')
+    expect(msgs.length).toBeGreaterThan(0)
+    const last = msgs[msgs.length - 1]
+    expect(['done', 'error', 'cancelled'].includes(last.type)).toBe(true)
+    // 事件类型合法
+    for (const m of msgs) {
+      expect(['text', 'tool_call', 'tool_execute', 'tool_result', 'done', 'error', 'cancelled'].includes(m.type)).toBe(true)
+    }
   })
 
   it('set_context（无 key 会话）→ ok', async () => {
