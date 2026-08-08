@@ -131,6 +131,8 @@ cp .env.example ~/.flare/.env
 | `ANTHROPIC_API_KEY` | Anthropic API 密钥 | — |
 | `DEFAULT_MODEL` | 默认模型 | `deepseek-chat` |
 | `OPENAI_BASE_URL` | 自定义 API 地址 | 自动检测 |
+| `LLM_BASE_URL` | 主模型 API 地址覆盖（不设时按模型名自动检测：deepseek/gpt/本地 Ollama） | 自动检测 |
+| `LLM_API_KEY` | 主模型 API 密钥覆盖 | 自动检测 |
 | `VISION_MODEL` | 视觉模型（看图时用，可 /vision 切换） | `qwen2.5vl:3b` |
 | `VISION_BASE_URL` | 视觉模型 API 地址（本地 Ollama） | `http://localhost:11434/v1` |
 | `VISION_API_KEY` | 视觉模型 API 密钥 | `ollama` |
@@ -152,6 +154,7 @@ cp .env.example ~/.flare/.env
 | `/help` | 显示帮助 |
 | `/image <路径> <问题>` | 显式看图 |
 | `/vision [3b\|7b\|default]` | 切换看图模型（3b 快速 ~4s / 7b 质量 30-60s） |
+| `/model [模型名\|default]` | 切换主模型（如 `/model qwen2.5:7b` 本地 Ollama，`/model deepseek-chat` 远端） |
 | `/memory` | 查看持久记忆 |
 | `/sessions` | 查看最近会话 |
 | `/clear` | 清屏 |
@@ -285,6 +288,8 @@ cp .env.example ~/.flare/.env
 | `ANTHROPIC_API_KEY` | Anthropic API key | — |
 | `DEFAULT_MODEL` | Default model | `deepseek-chat` |
 | `OPENAI_BASE_URL` | Custom API endpoint | Auto-detect |
+| `LLM_BASE_URL` | Main model API endpoint override (auto-detect: deepseek/gpt/local Ollama) | Auto-detect |
+| `LLM_API_KEY` | Main model API key override | Auto-detect |
 | `FLARE_HOME` | Data directory | `~/.flare` |
 
 ### CLI Commands
@@ -308,6 +313,12 @@ Interactive mode commands:
 ### Changelog / Release Notes
 
 > 中文条目 / Chinese entries · English summary for each version
+
+#### v0.5.2 (2026-08-09) — 多模型 provider 增强：本地 Ollama 主模型 / Multi-model provider (local Ollama main model)
+- 🧭 **模型路由（LLM 模型自动检测）**：模型名含 `:`（Ollama 命名，如 `qwen2.5:7b`/`llama3.1:8b`/`deepseek-r1:7b`）自动走本地 Ollama（`http://localhost:11434/v1`，apiKey `ollama`）——文本对话也可 0 成本/隐私/离线跑本地模型；deepseek/gpt 自动检测保持；claude 明确报错保持；新增 `LLM_BASE_URL` / `LLM_API_KEY` 通用覆盖；`createProvider({ model })` 支持指定主模型
+- 🔄 **CLI `/model` 命令**：运行时切换主模型（`/model qwen2.5:7b` 本地 Ollama / `/model deepseek-chat` 远端 / `/model` 查看 / `/model default` 回默认），持久化 settings 表，切换后自动重建会话使新模型立即生效；单次查询同样生效
+- 🧪 新增 19 项测试（模型路由 13 + /model 命令 6），共 100/100
+- EN: Multi-model provider — auto-route Ollama local models (name with `:`), LLM_BASE_URL/LLM_API_KEY overrides, CLI /model runtime switch persisted in settings. 100/100 tests.
 
 #### v0.5.1 (2026-08-09) — 记忆检索增强（RAG）/ Memory retrieval (RAG)
 - 🧠 **memories_fts trigram 全文检索**：`MemoryStore.searchMemories(query)` 中文 3 字以上子串匹配 + bm25 相关度排序（默认 unicode61 tokenizer 中文检索差，trigram 解决）；`getRelevantMemories` 同步升级；老库自动回填索引
