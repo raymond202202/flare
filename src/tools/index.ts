@@ -19,6 +19,8 @@ export interface ToolResult {
   denied?: boolean
   /** 用户要求替代方案 */
   alternative?: boolean
+  /** 确认超时（confirmer 未在时限内决策，已按安全默认处理） */
+  timeout?: boolean
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
