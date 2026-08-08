@@ -1,0 +1,194 @@
+/**
+ * MCP (Model Context Protocol) stdio 客户端（v0.5.5，零依赖手写）
+ *
+ * 传输：JSON-RPC 2.0 over stdio——每行一个 JSON（NDJSON）。
+ * 流程：spawn 子进程 → initialize 握手 → notifications/initialized → tools/list → tools/call → close。
+ *
+ * 覆盖 MCP 核心子集（工具互通所需）：
+ *   initialize / notifications/initialized / tools/list / tools/call
+ *
+ * 设计：
+ * - 零依赖：不引入 @modelcontextprotocol/sdk，直接手写 NDJSON 行协议
+ *   （MCP stdio 传输规范就是 newline-delimited JSON-RPC）
+ * - 每个请求带超时（默认 15s），服务器不响应不悬挂
+ * - 子进程退出 / close 时拒绝所有 pending 请求
+ *
+ * 用法：
+ *   const client = new MCPClient({ command: 'npx', args: ['-y', '@modelcontextprotocol/server-filesystem', '/tmp'] })
+ *   await client.initialize()
+ *   const tools = await client.listTools()
+ *   const res = await client.callTool('read_file', { path: '/tmp/a.txt' })
+ *   client.close()
+ */
+
+import { spawn, type ChildProcess } from 'node:child_process'
+import { createInterface, type Interface } from 'node:readline'
+import { createRequire } from 'node:module'
+import type { McpTool, McpCallResult } from './types.js'
+
+const require = createRequire(import.meta.url)
+const pkg = require('../../package.json') as { version: string }
+
+/** 客户端声明的 MCP 协议版本（服务器可返回自己的版本，客户端兼容接受） */
+export const MCP_PROTOCOL_VERSION = '2025-03-26'
+const DEFAULT_TIMEOUT_MS = 15000
+
+interface PendingRequest {
+  resolve: (result: any) => void
+  reject: (err: Error) => void
+  timer: NodeJS.Timeout
+}
+
+export interface MCPClientOptions {
+  /** 启动命令（如 npx / node / python） */
+  command: string
+  /** 命令参数 */
+  args?: string[]
+  /** 附加环境变量（合并到 process.env） */
+  env?: Record<string, string>
+  /** 单请求超时（毫秒），默认 15s（测试可调小） */
+  timeoutMs?: number
+}
+
+export class MCPClient {
+  private child: ChildProcess
+  private rl: Interface
+  private nextId = 1
+  private pending = new Map<number, PendingRequest>()
+  private protocolVersion = MCP_PROTOCOL_VERSION
+  private serverInfo: { name?: string; version?: string } | null = null
+  private capabilities: Record<string, unknown> = {}
+  private closed = false
+  private timeoutMs: number
+
+  constructor(opts: MCPClientOptions) {
+    this.timeoutMs = opts.timeoutMs || DEFAULT_TIMEOUT_MS
+    this.child = spawn(opts.command, opts.args || [], {
+      env: opts.env ? { ...process.env, ...opts.env } : process.env,
+      stdio: ['pipe', 'pipe', 'pipe'],
+    })
+    this.rl = createInterface({ input: this.child.stdout! })
+    this.rl.on('line', (line) => this.handleLine(line))
+    // stderr 是服务器日志通道（不阻塞）；DEBUG 时可在外层监听
+    this.child.stderr!.on('data', () => { /* 忽略服务器日志 */ })
+    this.child.on('exit', () => {
+      // 服务器进程退出：拒绝所有 pending（避免悬挂）
+      this.closed = true
+      for (const [, p] of this.pending) {
+        clearTimeout(p.timer)
+        p.reject(new Error('MCP 服务器进程已退出'))
+      }
+      this.pending.clear()
+    })
+    this.child.on('error', () => {
+      // spawn 失败（命令不存在等）：拒绝 pending
+      this.closed = true
+      for (const [, p] of this.pending) {
+        clearTimeout(p.timer)
+        p.reject(new Error(`MCP 服务器启动失败: ${opts.command}`))
+      }
+      this.pending.clear()
+    })
+  }
+
+  /** 处理服务器返回的一行（匹配 pending 请求；通知类消息无 id 忽略） */
+  private handleLine(line: string) {
+    if (!line.trim()) return
+    let msg: any
+    try {
+      msg = JSON.parse(line)
+    } catch {
+      return
+    }
+    if (msg && msg.id !== undefined && this.pending.has(msg.id)) {
+      const p = this.pending.get(msg.id)!
+      this.pending.delete(msg.id)
+      clearTimeout(p.timer)
+      if (msg.error) {
+        p.reject(new Error(`MCP 错误: ${msg.error.message || JSON.stringify(msg.error)}`))
+      } else {
+        p.resolve(msg.result)
+      }
+    }
+  }
+
+  /** 发送 JSON-RPC 请求（带超时），返回 result */
+  private request<T = any>(method: string, params?: any): Promise<T> {
+    if (this.closed) {
+      return Promise.reject(new Error('MCP 客户端已关闭'))
+    }
+    const id = this.nextId++
+    return new Promise<T>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        this.pending.delete(id)
+        reject(new Error(`MCP 请求超时: ${method}`))
+      }, this.timeoutMs)
+      this.pending.set(id, { resolve, reject, timer })
+      this.child.stdin!.write(
+        JSON.stringify({ jsonrpc: '2.0', id, method, ...(params !== undefined ? { params } : {}) }) + '\n'
+      )
+    })
+  }
+
+  /**
+   * initialize 握手：协商协议版本、读取服务器信息与能力。
+   * 成功后发送 notifications/initialized 通知（无 id）。
+   */
+  async initialize(): Promise<{ protocolVersion: string; serverInfo: { name?: string; version?: string } | null; capabilities: Record<string, unknown> }> {
+    const res = await this.request<any>('initialize', {
+      protocolVersion: MCP_PROTOCOL_VERSION,
+      capabilities: {},
+      clientInfo: { name: 'flare', version: pkg.version },
+    })
+    this.protocolVersion = res?.protocolVersion || MCP_PROTOCOL_VERSION
+    this.serverInfo = res?.serverInfo || null
+    this.capabilities = res?.capabilities || {}
+    // 通知服务器初始化完成（无 id 的通知，服务器忽略响应）
+    if (!this.closed) {
+      this.child.stdin!.write(JSON.stringify({ jsonrpc: '2.0', method: 'notifications/initialized' }) + '\n')
+    }
+    return { protocolVersion: this.protocolVersion, serverInfo: this.serverInfo, capabilities: this.capabilities }
+  }
+
+  /** 列出服务器可用工具（tools/list） */
+  async listTools(): Promise<McpTool[]> {
+    const res = await this.request<any>('tools/list', {})
+    return Array.isArray(res?.tools) ? (res.tools as McpTool[]) : []
+  }
+
+  /** 调用服务器工具（tools/call）；工具级失败以 isError 标记返回（协议层错误则 reject） */
+  async callTool(name: string, args?: Record<string, any>): Promise<McpCallResult> {
+    const res = await this.request<any>('tools/call', { name, arguments: args || {} })
+    return {
+      content: Array.isArray(res?.content) ? res.content : [],
+      isError: !!res?.isError,
+      structuredContent: res?.structuredContent,
+    }
+  }
+
+  /** 服务器名称（initialize 后可用） */
+  get serverName(): string | null {
+    return this.serverInfo?.name || null
+  }
+
+  get isClosed(): boolean {
+    return this.closed
+  }
+
+  /** 关闭连接：结束子进程、拒绝 pending */
+  close() {
+    if (this.closed) return
+    this.closed = true
+    for (const [, p] of this.pending) {
+      clearTimeout(p.timer)
+      p.reject(new Error('MCP 客户端已关闭'))
+    }
+    this.pending.clear()
+    try {
+      this.rl.close()
+    } catch { /* 忽略 */ }
+    try {
+      this.child.kill()
+    } catch { /* 忽略 */ }
+  }
+}

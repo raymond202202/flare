@@ -74,6 +74,19 @@ export {
   type MemorySearchArgs,
 } from './tools/memory.js'
 
+// ===== MCP 协议支持（v0.5.5）：外部 MCP 服务器工具桥接 =====
+export { MCPClient } from './mcp/client.js'
+export type { MCPClientOptions } from './mcp/client.js'
+export { createMcpTools } from './tools/mcp.js'
+export type {
+  McpServerConfig,
+  McpConfigFile,
+  McpTool,
+  McpContentItem,
+  McpCallResult,
+  McpServerStatus,
+} from './mcp/types.js'
+
 // ===== 记忆系统 =====
 export { MemoryStore, getMemoryStore, serializeContent, deserializeContent } from './memory/store.js'
 
