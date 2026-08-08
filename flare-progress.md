@@ -88,6 +88,7 @@
 
 | 轮次 | 时间 | 完成 | 构建/测试 | 备注 |
 |------|------|------|-----------|------|
+| S0-S5 | 2026-08-09 夜间 | server 协议完善：version 版本协商 + delete_session 会话清理 + get_usage 用量统计 + MemoryStore.deleteSession | tsc 0 错 / 107 全绿 | 第三轮夜间里程碑（5 提交 S0-S5）；version 测试断言 engine 与 package.json 一致 |
 | R0-R6 | 2026-08-09 凌晨 | RAG 里程碑（记忆检索增强）+ server ping/get_messages | tsc 0 错 / 81 全绿 | trigram FTS 中文检索 + memory_search 工具 + 宿主协议补充 |
 | P0 | 2026-08-09 夜间 | 调研确定方向（多模型 provider 增强：Ollama 主模型切换）+ 基线实测 | tsc 0 错 / 81 全绿 | 复用 /vision + settings 模式；模型路由做成纯函数单测 |
 | P1 | 2026-08-09 夜间 | LLM 模型路由：resolveProviderOptions 纯函数（Ollama 冒号检测/LLM_* 覆盖/兼容保留）+ createProvider 支持传参 | tsc 0 错 / 94 全绿 | +13 测试（tests/llm.test.ts，无网络）；.env.example 同步 |

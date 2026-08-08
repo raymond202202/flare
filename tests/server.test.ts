@@ -167,6 +167,9 @@ describe('flare host server 协议', () => {
     expect(msgs[0].protocol.length).toBeGreaterThan(0)
     expect(typeof msgs[0].engine).toBe('string')
     expect(msgs[0].engine).toMatch(/^\d+\.\d+\.\d+/)
+    // engine 版本必须与 package.json 一致（不硬编码路径验证）
+    const pkg = JSON.parse(require('node:fs').readFileSync(path.join(__dirname, '..', 'package.json'), 'utf-8'))
+    expect(msgs[0].engine).toBe(pkg.version)
   })
 
   it('delete_session → ok（含 deleted 标志；不存在返回 deleted:false）', async () => {
