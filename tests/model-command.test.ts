@@ -77,3 +77,40 @@ describe('/model 命令', () => {
     expect(store.getSetting('main_model')).toBeNull()
   })
 })
+
+describe('/forget 命令（记忆删除，v0.5.4）', () => {
+  it('/forget <关键词> → 删除匹配记忆 + 提示条数', async () => {
+    store.saveMemory('用户喜欢浅色主题', 'note')
+    store.saveMemory('关于浅色主题的配色讨论', 'note')
+    store.saveMemory('香蕉的营养', 'note')
+
+    const lines: string[] = []
+    const r = await handleSlashCommand('/forget 浅色主题', store, (s) => lines.push(s))
+    expect(r).toBe('continue')
+    expect(lines.join('\n')).toContain('已删除 2 条记忆')
+    expect(store.getAllMemories()).toHaveLength(1)
+    expect(store.getAllMemories()[0].content).toBe('香蕉的营养')
+  })
+
+  it('/forget 无匹配 → 友好提示，不误删', async () => {
+    store.saveMemory('唯一记忆', 'note')
+    const lines: string[] = []
+    await handleSlashCommand('/forget 不存在的词', store, (s) => lines.push(s))
+    expect(lines.join('\n')).toContain('未找到')
+    expect(store.getAllMemories()).toHaveLength(1)
+  })
+
+  it('/forget 无参数 → 用法提示，不删任何记忆', async () => {
+    store.saveMemory('保留记忆', 'note')
+    const lines: string[] = []
+    await handleSlashCommand('/forget', store, (s) => lines.push(s))
+    expect(lines.join('\n')).toContain('用法')
+    expect(store.getAllMemories()).toHaveLength(1)
+  })
+
+  it('/help 包含 /forget 说明', async () => {
+    const lines: string[] = []
+    await handleSlashCommand('/help', store, (s) => lines.push(s))
+    expect(lines.join('\n')).toContain('/forget')
+  })
+})
