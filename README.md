@@ -75,6 +75,8 @@ src/
 | `write_file` | 写入/覆盖文件 | path, content |
 | `search_files` | 搜索文件内容或文件名 | pattern, path?, maxResults? |
 | `terminal` | 执行终端命令 | command, timeout? |
+| `memory_search` | 检索持久记忆/历史消息（RAG） | query, scope?, limit? |
+| `memory_save` | 保存持久记忆（用户明确要求记住时） | content, type? |
 
 #### 🧠 记忆系统
 
@@ -156,6 +158,8 @@ cp .env.example ~/.flare/.env
 | `/vision [3b\|7b\|default]` | 切换看图模型（3b 快速 ~4s / 7b 质量 30-60s） |
 | `/model [模型名\|default]` | 切换主模型（如 `/model qwen2.5:7b` 本地 Ollama，`/model deepseek-chat` 远端） |
 | `/memory` | 查看持久记忆 |
+| `/remember` | 保存一条记忆（如: /remember 用户喜欢浅色主题） |
+| `/forget` | 删除记忆（如: /forget 浅色主题，删除包含该关键词的记忆） |
 | `/sessions` | 查看最近会话 |
 | `/clear` | 清屏 |
 | `/exit` | 退出 |
@@ -306,6 +310,8 @@ Interactive mode commands:
 |---------|----------|
 | `/help` | Show help |
 | `/memory` | View persistent memories |
+| `/remember` | Save a memory (e.g. /remember user likes light theme) |
+| `/forget` | Delete memories by keyword (e.g. /forget light theme) |
 | `/sessions` | View recent sessions |
 | `/clear` | Clear screen |
 | `/exit` | Exit |
@@ -313,6 +319,16 @@ Interactive mode commands:
 ### Changelog / Release Notes
 
 > 中文条目 / Chinese entries · English summary for each version
+
+#### v0.5.4 (2026-08-09) — 记忆生命周期闭环 + server 记忆接口修复 / Memory lifecycle + server store fix
+- 🐛 **修复 server 记忆访问字段错位**：`(agent as any).memoryStore` → `(agent as any).store`（Agent 字段是 `private store`）——修复前 delete_session 从不真正删除（deleted 恒 false，隐私数据删不掉）、list_sessions/get_messages 恒返回空、get_usage 恒为 0（旧测试只断言形状，全部空过）；协议测试改用临时隔离库 + 数据往返断言（create_session → delete_session deleted:true/false），同类问题不再漏网
+- 🆕 **server `create_session` 请求**：宿主显式建会话（带标题，UPSERT 幂等）
+- 💾 **memory_save 工具**：AI 能真正落库用户明确要求记住的内容（`createMemorySaveTool(store)` 宿主可绑定独立库；已加入内置工具集，description 约束"仅用户明确要求时保存"）——RAG 里程碑补齐"只读不写"缺口
+- 🗑️ **记忆删除**：`MemoryStore.deleteMemory(id)` 单条删除 + `deleteMemoriesByContent(关键词)` 批量删除（FTS 触发器联动清索引）；CLI `/forget <关键词>` 命令
+- 🖥️ **server 记忆接口**：`remember`（保存）/ `get_memories`（列出或 trigram 搜索）/ `delete_memory`（按 id 或关键词）——宿主面板记忆管理/隐私清理
+- 📚 host-protocol.md 完整同步（create_session/remember/get_memories/delete_memory + 响应表）+ docs/memory-rag.md 记忆生命周期
+- 🧪 新增 22 项测试（store 6 + memory-tool 6 + /forget 4 + server 6），共 129/129
+- EN: Memory lifecycle closed loop — memory_save tool (AI can persist), /forget + deleteMemory (users can remove), server remember/get_memories/delete_memory, create_session. Critical fix: server store field mismatch made delete_session/list_sessions/get_messages/get_usage silently no-op. 129/129 tests.
 
 #### v0.5.3 (2026-08-09) — 宿主协议完善：版本协商 + 会话清理 / Host protocol: version + delete_session
 - 🖥️ **server `version` 请求**：返回 `{ protocol, engine }`——宿主启动时协商协议版本（`HOST_PROTOCOL_VERSION`，与引擎版本独立）、读取引擎版本（package.json，不硬编码）
