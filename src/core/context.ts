@@ -73,3 +73,80 @@ export function estimateMessagesTokens(messages: Message[]): number {
   }
   return total
 }
+
+/**
+ * 上下文裁剪建议（v0.5.9，纯函数）
+ *
+ * 给定消息列表与 token 预算，建议保留哪些消息——供宿主（Pulse/StorySpire 面板）
+ * 自行按预算管理上下文，不修改 Agent 内部状态（零 agent.ts 改动）。
+ *
+ * 策略（贴近 Hermes 的保留式裁剪）：
+ *   - system 消息保底（首条 role=system 始终保留，AI 需要系统提示）
+ *   - 其余消息按"最近优先"从尾部向前收集，直到估算 tokens 接近预算
+ *   - 预算极小时仍保底保留最近一条（AI 必须能看到用户最新输入才能回复）
+ *   - reserveForOutput：为模型输出预留的 token 预算（keep 部分最多 budget - reserve）
+ */
+export interface TrimSuggestion {
+  /** 建议保留的消息（保持原顺序；system 在前） */
+  keep: Message[]
+  /** 被丢弃的消息数 */
+  droppedCount: number
+  /** 保留部分的估算 tokens */
+  estimatedKeptTokens: number
+  /** 丢弃部分的估算 tokens（≈ 总量 - 保留量，不为负） */
+  estimatedDroppedTokens: number
+}
+
+export interface SuggestTrimOptions {
+  /** 为模型输出预留的 token 数（默认 0）：保留部分最多 budgetTokens - reserve */
+  reserveForOutput?: number
+  /** 是否保底 system 消息（默认 true；首条 role=system 始终保留） */
+  keepSystem?: boolean
+}
+
+export function suggestTrim(messages: Message[], budgetTokens: number, options: SuggestTrimOptions = {}): TrimSuggestion {
+  if (!messages || messages.length === 0) {
+    return { keep: [], droppedCount: 0, estimatedKeptTokens: 0, estimatedDroppedTokens: 0 }
+  }
+  const reserve = Math.max(0, options.reserveForOutput ?? 0)
+  const budget = Math.max(0, budgetTokens - reserve)
+
+  // 分离 system（保底）与其余消息
+  const system: Message[] = []
+  let rest: Message[]
+  if (options.keepSystem !== false && messages[0]?.role === 'system') {
+    system.push(messages[0])
+    rest = messages.slice(1)
+  } else {
+    rest = messages
+  }
+  const systemTokens = estimateMessagesTokens(system)
+
+  // 从最新消息向前收集（保持原顺序）
+  const keepRest: Message[] = []
+  let used = systemTokens
+  for (let i = rest.length - 1; i >= 0; i--) {
+    const m = rest[i]
+    const t = estimateMessagesTokens([m])
+    if (used + t > budget) {
+      // 放不下：若一条都还没保留，保底保留最近一条（AI 必须看到用户最新输入）
+      if (keepRest.length === 0) {
+        keepRest.unshift(m)
+        used += t
+      }
+      break
+    }
+    keepRest.unshift(m)
+    used += t
+  }
+
+  const keep = [...system, ...keepRest]
+  const keptTokens = estimateMessagesTokens(keep)
+  const totalTokens = estimateMessagesTokens(messages)
+  return {
+    keep,
+    droppedCount: messages.length - keep.length,
+    estimatedKeptTokens: keptTokens,
+    estimatedDroppedTokens: Math.max(0, totalTokens - keptTokens),
+  }
+}

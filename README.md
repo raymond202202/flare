@@ -327,6 +327,13 @@ Interactive mode commands:
 
 > 中文条目 / Chinese entries · English summary for each version
 
+#### v0.5.9 (2026-08-09) — 上下文裁剪建议：suggestTrim 纯函数 / Context trim suggestion (suggestTrim)
+- ✂️ **`suggestTrim(messages, budgetTokens, opts?)`（src/core/context.ts，纯函数）**：按 token 预算给出"保留哪些消息"的建议——**system 保底**（首条 role=system 始终保留，AI 需要系统提示）+ **最近优先**（从最新消息向前收集直到接近预算）+ **预算极小保底最新一条**（AI 必须能看到用户最新输入才能回复）+ `reserveForOutput`（为模型输出预留 tokens）+ `keepSystem:false` 可关；返回 `{ keep, droppedCount, estimatedKeptTokens, estimatedDroppedTokens }`
+- 🧩 **宿主自管理上下文的地基**：Pulse/StorySpire 面板可自行按预算裁剪再发给引擎（不修改 Agent 内部状态，零 agent.ts 改动）；库导出 `suggestTrim` + 类型
+- 📚 docs/context-observability.md 新增"按预算裁剪上下文"章节（宿主用法示例）+ README Changelog + 版本号 0.5.9
+- 🧪 新增 9 项测试（空输入/预算充足全保留/最近优先/system 保底/极小预算保底/reserve 预留/keepSystem 关闭/统计一致性/负预算健壮），共 220/220；零 agent.ts 改动
+- EN: suggestTrim — pure function suggesting which messages to keep within a token budget (system kept, newest-first, minimum-1 newest fallback, reserveForOutput). Lets hosts manage context without touching Agent internals. 220/220 tests.
+
 #### v0.5.8 (2026-08-09) — MCP 服务器端：flare 工具集暴露为 MCP stdio 服务器 / MCP server side (flare as MCP server)
 - 🖥️ **MCPServer（src/mcp/server.ts，零依赖手写）**：与 MCPClient 对称——把 flare 工具集（内置 6 工具，或注入专家/MCP 桥接工具）经 MCP 标准 stdio 协议暴露给外部 AI 客户端（Claude Desktop/Cursor/自研 MCP 客户端）或宿主进程复用；覆盖核心子集 `initialize`/`notifications/initialized`/`tools/list`/`tools/call`/`ping`，与 MCPClient 完全互通
 - 🔒 **安全继承**：暴露的是 flare 原生工具，危险命令黑名单/路径保护/记忆边界照常生效（e2e 验证 `rm -rf /` 仍被拦截）；未知方法 -32601、未知工具 -32602、JSON 解析错误 -32700 全部按 JSON-RPC 规范返回

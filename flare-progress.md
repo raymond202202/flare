@@ -3,8 +3,8 @@
 > 目标：flare 是 Pulse/StorySpire 依赖的 AI Agent 引擎（TS）。任何改动必须安全（tsc 0 错 + 测试全绿才 commit）。
 > 铁律：禁止 push；禁止修改 src/core/agent.ts 的 Agent.run 核心循环。
 
-> **最新状态（v0.5.8）**：MCP 服务器端已完成（MCPServer，208/208 全绿，commit 06eae7b 未 push）。
-> 下一步候选：① CLI `flare mcp-server` 命令（MCP 服务器端收尾）；② CLI/server 接入 ConfirmationGate；③ 上下文 token 预算裁剪（agent.ts trimContext，风险高暂缓）。
+> **最新状态（v0.5.8）**：MCP 服务器端完整（MCPServer + CLI `flare mcp-server`，211/211 全绿，commits 06eae7b/5779078 未 push）。
+> 下一步候选：① 上下文 token 预算裁剪建议函数 suggestTrim（纯函数，不碰 agent.ts）；② CLI/server 接入 ConfirmationGate；③ agent.ts trimContext 裁剪（风险高暂缓）。
 
 ---
 
@@ -66,5 +66,15 @@
 - **验证**：npx tsc 0 错误；PATH=/usr/bin:$PATH npx vitest run **208/208 全绿**（194 基线 + 14 新增，含 **MCPClient↔MCPServer 真实子进程互通 e2e**——tsx fixture 起 flare 服务器，官方客户端握手/列工具/调工具全通）；零 agent.ts 改动
 - **commit**：`06eae7b`（禁止 push，待用户明早验收）
 - **下一步候选**：① CLI `flare mcp-server` 命令（MCP 服务器端收尾，让 CLI 一键起服务器）；② CLI/server 接入 ConfirmationGate（宿主弹窗流程）；③ 上下文 token 预算裁剪（agent.ts trimContext，风险高暂缓）
+
+---
+
+### 第二轮补充（2026-08-09）——CLI `flare mcp-server` 命令（v0.5.8 收尾）
+
+- **完成**：`src/cli/index.ts` 新增 `flare mcp-server [-t 工具名,...]` 子命令——一键把 flare 内置工具集（或 `-t` 过滤子集）暴露为 MCP stdio 服务器（常驻监听 stdin）；README CLI 命令表同步（含 `flare server` 补列）
+- **验证**：npx tsc 0 错误（build dist）；**211/211 全绿**（208 + 3 新增 CLI e2e：spawn dist CLI + 官方 MCPClient 真实连接——默认 6 工具 / -t 过滤 / 危险命令拦截继承）
+- **commit**：`5779078`（禁止 push）
+- **至此 MCP 增强里程碑完整**：客户端（v0.5.5）+ 服务器端核心（06eae7b）+ CLI 一键起服务器（5779078）
+- **下一步候选**：① 上下文 token 预算裁剪**建议函数** `suggestTrim`（纯函数，宿主可自行按预算裁剪上下文，不碰 agent.ts）；② CLI/server 接入 ConfirmationGate；③ agent.ts trimContext 裁剪（风险高暂缓）
 
 ---
