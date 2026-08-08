@@ -274,3 +274,59 @@ describe('MemoryStore.deleteSession', () => {
     expect(store.searchMessages('待删除内容')).toEqual([])
   })
 })
+
+describe('MemoryStore 记忆删除（v0.5.4）', () => {
+  it('deleteMemory：按 id 删除单条，FTS 索引联动清理（searchMemories 不再命中）', () => {
+    store.saveMemory('用户喜欢浅色主题', 'preference')
+    const rows = store.searchMemories('浅色主题')
+    expect(rows.length).toBeGreaterThan(0)
+    const id = rows[0].id
+
+    expect(store.deleteMemory(id)).toBe(true)
+    expect(store.getAllMemories()).toHaveLength(0)
+    expect(store.searchMemories('浅色主题')).toEqual([])
+  })
+
+  it('deleteMemory：不存在的 id 返回 false（幂等，不抛错）', () => {
+    expect(store.deleteMemory(99999)).toBe(false)
+  })
+
+  it('deleteMemory：删除一条不影响其他记忆', () => {
+    store.saveMemory('要删除的记忆内容', 'note')
+    store.saveMemory('保留的记忆内容', 'note')
+
+    const rows = store.searchMemories('要删除的')
+    expect(store.deleteMemory(rows[0].id)).toBe(true)
+
+    const rest = store.getAllMemories()
+    expect(rest).toHaveLength(1)
+    expect(rest[0].content).toBe('保留的记忆内容')
+  })
+
+  it('deleteMemoriesByContent：按关键词批量删除，返回条数', () => {
+    store.saveMemory('关于苹果的讨论', 'note')
+    store.saveMemory('苹果种植技巧', 'note')
+    store.saveMemory('香蕉的营养价值', 'note')
+
+    const n = store.deleteMemoriesByContent('苹果')
+    expect(n).toBe(2)
+    expect(store.getAllMemories()).toHaveLength(1)
+    expect(store.getAllMemories()[0].content).toBe('香蕉的营养价值')
+  })
+
+  it('deleteMemoriesByContent：无匹配返回 0；空关键词返回 0（不误删）', () => {
+    store.saveMemory('唯一记忆', 'note')
+    expect(store.deleteMemoriesByContent('不存在的词')).toBe(0)
+    expect(store.deleteMemoriesByContent('')).toBe(0)
+    expect(store.deleteMemoriesByContent('  ')).toBe(0)
+    expect(store.getAllMemories()).toHaveLength(1)
+  })
+
+  it('deleteMemoriesByContent：删除后 searchMemories 不再命中（FTS 索引联动）', () => {
+    store.saveMemory('flutter 网络请求超时排查记录', 'note')
+    expect(store.searchMemories('网络请求超时').length).toBeGreaterThan(0)
+
+    store.deleteMemoriesByContent('网络请求超时')
+    expect(store.searchMemories('网络请求超时')).toEqual([])
+  })
+})
