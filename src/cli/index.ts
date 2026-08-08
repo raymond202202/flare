@@ -666,6 +666,24 @@ export function main() {
       })
     })
 
+  program
+    .command('mcp-server')
+    .description('MCP stdio 服务器：把 flare 工具集暴露给其他 AI 客户端（v0.5.8，见 docs/mcp.md）')
+    .option('-t, --tools <names>', '要暴露的工具（逗号分隔，默认全部内置工具）')
+    .action(async (options: { tools?: string }) => {
+      const { MCPServer, tools: builtinTools } = await import('../index.js')
+      const names = options.tools
+        ? options.tools.split(',').map((s) => s.trim()).filter(Boolean)
+        : undefined
+      const selected = names
+        ? builtinTools.filter((t) => names.includes(t.definition.function.name))
+        : builtinTools
+      // 常驻监听 stdin（MCP 客户端经 stdio 连接），直到 EOF 退出
+      const server = new MCPServer({ tools: selected })
+      server.start()
+      // 保持进程存活：stdin 未关闭前不退出（start 已注册监听；无需额外动作）
+    })
+
   // 默认命令（无参数时进入交互模式）
   program.action(() => {
     startInteractive()
