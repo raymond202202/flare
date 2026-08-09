@@ -647,7 +647,9 @@ export function main() {
     .option('-m, --mcp <path>', 'MCP 服务器配置 JSON 文件路径（可选，v0.5.5；连接外部 MCP 服务器并入工具集）')
     .option('-c, --confirm-tools <names>', '需要用户确认的工具名（逗号分隔；默认 memory_save，传空串关闭确认门，v0.6.1）')
     .option('--confirm-timeout <ms>', '确认超时毫秒（默认 30000；宿主未在时限内回 confirm_result 按拒绝处理，v0.6.1）')
-    .action(async (options: { profile?: string; storage?: string; namespace?: string; mcp?: string; confirmTools?: string; confirmTimeout?: string }) => {
+    .option('--max-tokens <n>', '默认最大输出 token 数（chat 请求未指定时应用，v0.6.5）')
+    .option('--temperature <n>', '默认采样温度 0~2（chat 请求未指定时应用，v0.6.5）')
+    .action(async (options: { profile?: string; storage?: string; namespace?: string; mcp?: string; confirmTools?: string; confirmTimeout?: string; maxTokens?: string; temperature?: string }) => {
       const { startHostServer } = await import('../server.js')
       const fs = await import('fs/promises')
       let profile: Record<string, unknown> = {}
@@ -671,6 +673,8 @@ export function main() {
         ...(mcp.length > 0 ? { mcp: mcp as any } : {}),
         ...(confirmTools !== undefined ? { confirmTools } : {}),
         ...(options.confirmTimeout ? { confirmTimeoutMs: Number(options.confirmTimeout) } : {}),
+        ...(options.maxTokens !== undefined ? { defaultMaxTokens: Number(options.maxTokens) } : {}),
+        ...(options.temperature !== undefined ? { defaultTemperature: Number(options.temperature) } : {}),
       })
     })
 

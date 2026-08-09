@@ -58,6 +58,10 @@ export interface HostServerOptions {
   confirmTools?: string[]
   /** 确认超时毫秒（v0.6.1，默认 30000）：宿主未在时限内回 confirm_result 按安全默认（deny）处理 */
   confirmTimeoutMs?: number
+  /** 默认最大输出 token 数（v0.6.5）：chat 请求未指定 maxTokens 时应用（CLI --max-tokens） */
+  defaultMaxTokens?: number
+  /** 默认采样温度 0~2（v0.6.5）：chat 请求未指定 temperature 时应用（CLI --temperature） */
+  defaultTemperature?: number
 }
 
 /** 默认需确认的工具（v0.6.1）：AI 写持久记忆前经确认门（宿主弹窗"AI 想记住…"，用户知情授权） */
@@ -247,6 +251,27 @@ export function startHostServer(opts: HostServerOptions) {
               break
             }
             llmOpts = { ...llmOpts, temperature: v }
+          }
+          // v0.6.5：chat 未指定采样参数时应用 server 级默认（CLI --max-tokens/--temperature）
+          // 注意：请求只带一个参数时另一个不用默认补（请求优先，行为可预期）
+          if (!llmOpts && (opts.defaultMaxTokens !== undefined || opts.defaultTemperature !== undefined)) {
+            llmOpts = {}
+            if (opts.defaultMaxTokens !== undefined) {
+              const v = Number(opts.defaultMaxTokens)
+              if (!Number.isInteger(v) || v <= 0) {
+                reply({ type: 'error', message: 'server 默认 maxTokens 必须是正整数（最大输出 token 数）' })
+                break
+              }
+              llmOpts = { ...llmOpts, maxTokens: v }
+            }
+            if (opts.defaultTemperature !== undefined) {
+              const v = Number(opts.defaultTemperature)
+              if (!Number.isFinite(v) || v < 0 || v > 2) {
+                reply({ type: 'error', message: 'server 默认 temperature 必须是 0~2 的数值' })
+                break
+              }
+              llmOpts = { ...llmOpts, temperature: v }
+            }
           }
           const agent = getAgent(sessionId, req.tools, req.model ? String(req.model) : undefined, llmOpts)
           if (req.context && typeof agent.setContext === 'function') {
