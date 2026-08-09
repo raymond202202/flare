@@ -235,6 +235,43 @@ const p = await client.getPrompt('summarize', { topic: 'flare' })  // v0.6.2：�
 const comp = await client.completePrompt('summarize', 'topic', 'flare') // v0.6.11：参数补全候选
 ```
 
+#### roots 协议（v0.6.12）：客户端暴露根目录 + 服务器主动请求
+
+MCP **roots** 是客户端暴露给服务器的命名空间/根目录（如项目目录、工作区），
+方向与 resources 相反（resources 是服务器暴露给客户端）。flare 两端都支持：
+
+**客户端侧（flare 作为 MCP 客户端）**——`MCPClient` 配置 `roots` 后：
+- `initialize` 声明 `capabilities.roots`（`{ listChanged: true }`；未配置 roots 不声明，缺省兼容）
+- 服务器主动发 `roots/list` 请求 → 客户端**自动响应**注入的 roots（未知方法回 `-32601`，连接不断）
+- `notifyRootsChanged()` 发 `notifications/roots/list_changed` 通知（roots 变化时告知服务器）
+
+```ts
+const client = new MCPClient({
+  command: 'node', args: ['your-mcp-server-entry.js'],
+  roots: [
+    { uri: 'file:///home/user/projects', name: 'projects' },
+    { uri: 'memory://workspace' },
+  ],
+})
+await client.initialize()
+// 连接的服务器可 requestRoots() 查询到上述两个根目录
+client.notifyRootsChanged()   // roots 变化时通知服务器
+```
+
+**服务器侧（flare 作为 MCP 服务器）**——`MCPServer` 新增**主动请求能力**
+（v0.6.12 起服务器可向客户端发请求，为未来 sampling 等服务器→客户端请求打基础）：
+
+```ts
+const server = new MCPServer({ tools: builtinTools })
+server.start()
+// 请求客户端暴露的 roots（带超时，默认 15s；MCPServerOptions.requestTimeoutMs 可配）
+const roots = await server.requestRoots(5000)   // [{ uri: 'file:///...', name: 'projects' }, ...]
+```
+
+- 客户端回 error / 超时 / 服务器已关闭 → reject（不悬挂）；响应缺 roots 或非数组 → 容错返回 `[]`
+- **注意**：HTTP transport（`startMcpHttpServer`）是"一请求一响应"同步子集，无服务器→客户端
+  通道，故不提供 `requestRoots`（stdio 专属）；MCPHttpClient 因无 SSE 长连接也不声明 roots 能力
+
 > ⚠️ 安全：暴露的是 flare **原生工具**，危险命令黑名单 / 路径保护 / 记忆边界照常生效
 > （e2e 测试验证 `rm -rf /` 仍被安全策略拦截）。谁连接了服务器谁就获得这些工具能力，
 > 仅对可信客户端开放（stdio 服务器由启动它的进程控制；HTTP 服务器默认只监听 127.0.0.1）。

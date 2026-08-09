@@ -2,6 +2,8 @@ import { describe, it, expect } from 'vitest'
 import { Readable } from 'node:stream'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
+import { tmpdir } from 'node:os'
+import { readFileSync } from 'node:fs'
 import { MCPServer, toMcpTool } from '../src/mcp/server.js'
 import { MCPClient } from '../src/mcp/client.js'
 import { readFileTool, type Tool } from '../src/tools/index.js'
@@ -13,6 +15,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url))
 const TSK_CLI = fileURLToPath(new URL('../node_modules/tsx/dist/cli.mjs', import.meta.url))
 const FLARE_SERVER_FIXTURE = join(__dirname, 'fixtures', 'mcp-flare-server.ts')
 const FLARE_SERVER_PROMPTS_FIXTURE = join(__dirname, 'fixtures', 'mcp-flare-server-prompts.ts')
+const FLARE_SERVER_ROOTS_FIXTURE = join(__dirname, 'fixtures', 'mcp-flare-server-roots.ts')
 
 /** 测试用工具：回显 / 慢（模拟慢工具验证串行响应） */
 const echoTool: Tool = {
@@ -43,16 +46,36 @@ const slowTool: Tool = {
 }
 
 /** 进程内测试台：注入 input/write，模拟 MCP 客户端逐行发请求 */
-function createHarness(customTools?: Tool[], customResources?: McpResource[], customPrompts?: McpPrompt[]) {
+function createHarness(customTools?: Tool[], customResources?: McpResource[], customPrompts?: McpPrompt[], requestTimeoutMs?: number) {
   const writes: string[] = []
   const input = new Readable({ read() {} })
-  const server = new MCPServer({ tools: customTools, resources: customResources, prompts: customPrompts, write: (l) => writes.push(l), input })
+  const server = new MCPServer({
+    tools: customTools,
+    resources: customResources,
+    prompts: customPrompts,
+    write: (l) => writes.push(l),
+    input,
+    ...(requestTimeoutMs ? { requestTimeoutMs } : {}),
+  })
   server.start()
   const send = (obj: unknown) => { input.push(JSON.stringify(obj) + '\n') }
   const flush = () => new Promise<void>((r) => setTimeout(r, 30))
   const responses = () => writes.map((w) => JSON.parse(w))
   const last = () => responses()[responses().length - 1]
   return { server, send, flush, responses, last, writes, input }
+}
+
+/** 轮询等待 JSON 文件出现（e2e fixture 写结果用），超时抛错 */
+async function waitForFile(path: string, timeoutMs = 6000): Promise<any> {
+  const deadline = Date.now() + timeoutMs
+  while (Date.now() < deadline) {
+    try {
+      const content = readFileSync(path, 'utf-8')
+      if (content.trim()) return JSON.parse(content)
+    } catch { /* 文件未就绪 */ }
+    await new Promise((r) => setTimeout(r, 50))
+  }
+  throw new Error(`等待文件超时: ${path}`)
 }
 
 describe('MCPServer（stdio NDJSON JSON-RPC，零依赖）', () => {
@@ -568,6 +591,84 @@ describe('MCPServer ↔ MCPClient 端到端互通（真实子进程 stdio）', (
       expect(init.capabilities).toHaveProperty('tools')
       const prompts = await client.listPrompts()
       expect(prompts).toEqual([])
+    } finally {
+      client.close()
+    }
+  })
+})
+
+describe('MCPServer roots（v0.6.12：服务器→客户端主动请求）', () => {
+  it('requestRoots：发起 roots/list 请求并解析客户端响应', async () => {
+    const h = createHarness()
+    const p = h.server.requestRoots()
+    await h.flush()
+    // 服务器向客户端写出一条 roots/list 请求（带自增 id）
+    const req = h.last()
+    expect(req.jsonrpc).toBe('2.0')
+    expect(req.method).toBe('roots/list')
+    expect(req.id).toBeGreaterThan(0)
+    // 模拟客户端响应注入的 roots
+    h.send({ jsonrpc: '2.0', id: req.id, result: { roots: [{ uri: 'file:///home/user/projects', name: 'projects' }] } })
+    const roots = await p
+    expect(roots).toEqual([{ uri: 'file:///home/user/projects', name: 'projects' }])
+    h.server.close()
+  })
+
+  it('requestRoots：客户端回 error → reject 带错误信息（协议错误不悬挂）', async () => {
+    const h = createHarness()
+    const p = h.server.requestRoots()
+    await h.flush()
+    const req = h.last()
+    h.send({ jsonrpc: '2.0', id: req.id, error: { code: -32601, message: 'Method not found: roots/list' } })
+    await expect(p).rejects.toThrow(/MCP 错误/)
+    h.server.close()
+  })
+
+  it('requestRoots：客户端响应缺 roots/非数组 → 容错返回 []（与客户端宽松解析一致）', async () => {
+    const h = createHarness()
+    const p = h.server.requestRoots()
+    await h.flush()
+    const req = h.last()
+    h.send({ jsonrpc: '2.0', id: req.id, result: {} })
+    await expect(p).resolves.toEqual([])
+    h.server.close()
+  })
+
+  it('requestRoots：超时 reject（不悬挂），服务器随后仍正常处理请求', async () => {
+    const h = createHarness(undefined, undefined, undefined, 150) // 150ms 请求超时
+    const p = h.server.requestRoots()
+    await expect(p).rejects.toThrow(/超时/)
+    // 超时后服务器仍可用（ping 正常）
+    h.send({ jsonrpc: '2.0', id: 1, method: 'ping', params: {} })
+    await h.flush()
+    expect(h.last().result).toEqual({})
+    h.server.close()
+  })
+
+  it('requestRoots：服务器已关闭 → reject', async () => {
+    const h = createHarness()
+    h.server.close()
+    await expect(h.server.requestRoots()).rejects.toThrow(/已关闭/)
+  })
+
+  it('roots 真实互通 e2e：MCPServer requestRoots ↔ MCPClient（带 roots 注入）', async () => {
+    // fixture 起真实 MCPServer 子进程，握手后主动 requestRoots，结果写 ROOTS_RESULT_FILE
+    const resultFile = join(tmpdir(), `flare-roots-e2e-${Date.now()}-${Math.floor(Math.random() * 1e6)}.json`)
+    const client = new MCPClient({
+      command: process.execPath,
+      args: [TSK_CLI, FLARE_SERVER_ROOTS_FIXTURE],
+      env: { ROOTS_RESULT_FILE: resultFile },
+      timeoutMs: 8000,
+      roots: [{ uri: 'file:///home/user/projects', name: 'projects' }, { uri: 'memory://workspace' }],
+    })
+    try {
+      await client.initialize()
+      const res = await waitForFile(resultFile)
+      expect(res.ok).toBe(true)
+      expect(res.roots).toEqual([
+        { uri: 'file:///home/user/projects', name: 'projects' },
+        { uri: 'memory://workspace' },
+      ])
     } finally {
       client.close()
     }

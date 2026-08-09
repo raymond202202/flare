@@ -336,6 +336,28 @@ Interactive mode commands:
 
 > 中文条目 / Chinese entries · English summary for each version
 
+#### v0.6.12 (2026-08-10) — MCP roots 协议闭环：客户端暴露根目录 + 服务器主动请求 / MCP roots round-trip (client exposure + server-initiated request)
+- 🧩 **MCP roots 协议（src/mcp/types.ts + client.ts + server.ts）**：roots 是客户端暴露给服务器的命名空间/
+  根目录（方向与 resources 相反）——`MCPClient` 新增 `roots` 选项：配置后 `initialize` 声明
+  `capabilities.roots`（`{ listChanged: true }`；未配置不声明，缺省兼容）+ 服务器主动发 `roots/list` 请求时
+  **自动响应**注入的 roots（未知方法回 `-32601`，连接不断）+ `notifyRootsChanged()` 发
+  `notifications/roots/list_changed` 通知（roots 变化告知服务器）
+- 🧩 **MCPServer 新增主动请求能力 `requestRoots(timeoutMs?)`**：v0.6.12 起服务器可向客户端发请求
+  （为未来 sampling 等服务器→客户端请求打基础）——发 `roots/list` 等待客户端响应（带超时，默认 15s，
+  `MCPServerOptions.requestTimeoutMs` 可配）；客户端回 error / 超时 / 服务器已关闭 → reject（不悬挂）；
+  响应缺 roots 或非数组 → 容错返回 `[]`（与客户端宽松解析一致）；`McpRoot`/`McpRootsResult` 类型库导出
+- 📌 **传输差异（文档记录）**：HTTP transport（startMcpHttpServer）是"一请求一响应"同步子集，无服务器→
+  客户端通道，故不提供 `requestRoots`（stdio 专属）；MCPHttpClient 无 SSE 长连接也不声明 roots 能力
+- 📚 docs/mcp.md roots 协议章节 + README Changelog + 版本号 0.6.12
+- 🧪 新增 11 项测试：MCPServer requestRoots 5（发起+解析客户端响应 / 客户端 error reject / 响应非数组容错
+  [] / 超时 reject 后服务器仍可用 / 已关闭 reject）+ roots 真实互通 e2e（真实 MCPServer 子进程 requestRoots ↔
+  真实 MCPClient 带 roots 注入）+ MCPClient 5（配置 roots 声明+getter / 未配置不声明 / 服务器 roots/list
+  请求自动响应 / notifyRootsChanged 通知 / close 后不抛错）；共 412/412；零 agent.ts 改动
+- EN: MCP roots round-trip — `MCPClient` exposes configured roots (declares `capabilities.roots`, answers
+  server-initiated `roots/list`, sends `notifications/roots/list_changed` via `notifyRootsChanged()`), and
+  `MCPServer` gains its first server→client request `requestRoots()` (timeout-safe, tolerant parsing),
+  verified end-to-end over real stdio subprocesses; stdio-only (HTTP transport has no server→client channel).
+
 #### v0.6.11 (2026-08-10) — MCP 参数补全 completion/complete + server 协议 tools 工具清单 / MCP completion capability + tool listing over the host protocol
 - 🧩 **MCP `completion/complete` 协议特性（src/mcp/server.ts + client.ts + http-client.ts）**：prompt 新增可选
   `complete(argumentName, value)` 回调——客户端交互式输入参数时（如宿主面板提示词表单）向服务器请求候选值；
