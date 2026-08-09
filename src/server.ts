@@ -206,6 +206,22 @@ export function startHostServer(opts: HostServerOptions) {
           reply({ type: 'sessions', sessions })
           break
         }
+        case 'recent_sessions': {
+          // 最近会话列表 + 预览（v0.6.0）：首条 user 消息作标题/预览，宿主会话面板展示用（只读不生成）
+          const agent = getAgent(String(req.sessionId || 'default'))
+          const limit = Math.min(Math.max(Number(req.limit) || 10, 1), 50)
+          const rows = (typeof (agent as any).store?.getRecentSessions === 'function')
+            ? (agent as any).store.getRecentSessions(limit)
+            : []
+          const sessions = rows.map((r: any) => ({
+            id: r.id,
+            title: r.title || '',
+            updatedAt: r.updated_at || '',
+            preview: (r.first_user_msg || '').replace(/\s+/g, ' ').trim().slice(0, 120),
+          }))
+          reply({ type: 'recent_sessions', sessions })
+          break
+        }
         case 'get_messages': {
           // 宿主读取指定会话的消息历史（同 list_sessions 模式，只读不生成）
           const sessionId = String(req.sessionId || 'default')
