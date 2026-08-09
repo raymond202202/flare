@@ -645,7 +645,9 @@ export function main() {
     .option('-s, --storage <path>', '记忆库路径（默认 ~/.flare-data/）')
     .option('-n, --namespace <name>', '会话命名空间（记忆库隔离）')
     .option('-m, --mcp <path>', 'MCP 服务器配置 JSON 文件路径（可选，v0.5.5；连接外部 MCP 服务器并入工具集）')
-    .action(async (options: { profile?: string; storage?: string; namespace?: string; mcp?: string }) => {
+    .option('-c, --confirm-tools <names>', '需要用户确认的工具名（逗号分隔；默认 memory_save，传空串关闭确认门，v0.6.1）')
+    .option('--confirm-timeout <ms>', '确认超时毫秒（默认 30000；宿主未在时限内回 confirm_result 按拒绝处理，v0.6.1）')
+    .action(async (options: { profile?: string; storage?: string; namespace?: string; mcp?: string; confirmTools?: string; confirmTimeout?: string }) => {
       const { startHostServer } = await import('../server.js')
       const fs = await import('fs/promises')
       let profile: Record<string, unknown> = {}
@@ -658,11 +660,17 @@ export function main() {
         const raw = JSON.parse(await fs.readFile(options.mcp, 'utf-8'))
         mcp = Array.isArray(raw?.servers) ? raw.servers : []
       }
+      // --confirm-tools：逗号分隔名单（默认 memory_save；空串 = 关闭确认门）
+      const confirmTools = options.confirmTools !== undefined
+        ? options.confirmTools.split(',').map((s) => s.trim()).filter(Boolean)
+        : undefined
       startHostServer({
         profile: profile as any,
         storage: options.storage,
         namespace: options.namespace,
         ...(mcp.length > 0 ? { mcp: mcp as any } : {}),
+        ...(confirmTools !== undefined ? { confirmTools } : {}),
+        ...(options.confirmTimeout ? { confirmTimeoutMs: Number(options.confirmTimeout) } : {}),
       })
     })
 

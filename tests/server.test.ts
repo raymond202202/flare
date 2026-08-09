@@ -345,4 +345,39 @@ describe('flare host server 协议', () => {
       rmSync(dir, { recursive: true, force: true })
     }
   }, 30000)
+
+  it('confirm_result 缺 id → error（v0.6.1 确认门协议校验）', async () => {
+    const msgs = await request({ type: 'confirm_result', decision: 'allow_once' }, { expect: ['error'] })
+    expect(msgs[0].message).toContain('id')
+  })
+
+  it('confirm_result 非法 decision → error（合法值提示）', async () => {
+    const msgs = await request({ type: 'confirm_result', id: 'c_x', decision: 'maybe' }, { expect: ['error'] })
+    expect(msgs[0].message).toContain('decision')
+    expect(msgs[0].message).toContain('allow_once')
+  })
+
+  it('confirm_result 未知 id → 静默忽略（服务不崩、不回 error，后续请求正常）', async () => {
+    // 无挂起确认时回未知 id：静默（不污染事件流）；随后 ping 必须正常到达（服务未崩）
+    const msgs = await new Promise<any[]>((resolve, reject) => {
+      const timer = setTimeout(() => { cleanup(); reject(new Error('超时（confirm_result 未知 id 后服务无响应）')) }, 8000)
+      let sawError = false
+      const handler = (line: string) => {
+        try {
+          const parsed = JSON.parse(line)
+          if (parsed.type === 'error') sawError = true
+          if (parsed.type === 'pong') {
+            cleanup()
+            resolve([{ ...parsed, sawError }])
+          }
+        } catch { /* 非 JSON 行忽略 */ }
+      }
+      const cleanup = () => { clearTimeout(timer); rl.removeListener('line', handler) }
+      rl.on('line', handler)
+      child.stdin!.write(JSON.stringify({ type: 'confirm_result', id: 'c_nonexist', decision: 'deny' }) + '\n')
+      child.stdin!.write(JSON.stringify({ type: 'ping' }) + '\n')
+    })
+    expect(msgs[0].type).toBe('pong')
+    expect((msgs[0] as any).sawError).toBe(false)
+  }, 15000)
 })
