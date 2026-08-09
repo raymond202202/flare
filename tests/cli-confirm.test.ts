@@ -248,6 +248,37 @@ describe('/allow 命令', () => {
     },
   })
 
+  /** 完整 hooks（v0.6.10：含显式放行 + 范围明细，与 CLI 注入点同构） */
+  const makeFullHooks = (gate: ConfirmationGate): AllowGateHooks => ({
+    list: () => CLI_CONFIRM_TOOLS.filter((t) => gate.isAllowed(t)),
+    revoke: (name) => {
+      if (gate.isAllowed(name)) {
+        gate.revoke(name)
+        return true
+      }
+      return false
+    },
+    allow: (name, mode) => {
+      if (mode === 'always') gate.allowAlways(name)
+      else gate.allowSession(name)
+      return true
+    },
+    listDetailed: () => {
+      const always = new Set(gate.listAlwaysAllowed(CLI_CONFIRM_TOOLS))
+      const session = new Set(gate.listAllowed())
+      const names = new Set([...always, ...session])
+      return [...names].map((name) => ({
+        name,
+        scope: (always.has(name) && session.has(name) ? 'both' : always.has(name) ? 'always' : 'session') as 'session' | 'always' | 'both',
+      }))
+    },
+  })
+
+  const run = (cmd: string, hooks?: AllowGateHooks) => {
+    const lines: string[] = []
+    return handleSlashCommand(cmd, store, (s) => lines.push(s), undefined, undefined, undefined, hooks).then((r) => ({ r, lines }))
+  }
+
   it('/allow（无 hooks）→ 提示确认门未启用', async () => {
     const lines: string[] = []
     const r = await handleSlashCommand('/allow', store, (s) => lines.push(s))
@@ -261,8 +292,7 @@ describe('/allow 命令', () => {
       confirmer: async () => 'deny',
     })
     gate.allowSession('memory_save')
-    const lines: string[] = []
-    await handleSlashCommand('/allow', store, (s) => lines.push(s), undefined, undefined, undefined, makeHooks(gate))
+    const { lines } = await run('/allow', makeHooks(gate))
     const out = lines.join('\n')
     expect(out).toContain('已放行的确认工具')
     expect(out).toContain('memory_save')
@@ -273,9 +303,126 @@ describe('/allow 命令', () => {
       sessionId: 's', store: memoryStoreKv(store),
       confirmer: async () => 'deny',
     })
-    const lines: string[] = []
-    await handleSlashCommand('/allow', store, (s) => lines.push(s), undefined, undefined, undefined, makeHooks(gate))
+    const { lines } = await run('/allow', makeHooks(gate))
     expect(lines.join('\n')).toContain('每次都会请求确认')
+  })
+
+  it('/allow 有 listDetailed → 标注范围（会话级 / 持久化 / 两者）', async () => {
+    const gate = new ConfirmationGate({
+      sessionId: 's', store: memoryStoreKv(store),
+      confirmer: async () => 'deny',
+    })
+    gate.allowSession('memory_save') // 会话级
+    gate.allowAlways('memory_save') // 持久化（本会话也放行 → 两者）
+    const { lines } = await run('/allow', makeFullHooks(gate))
+    const out = lines.join('\n')
+    expect(out).toContain('memory_save')
+    expect(out).toContain('（会话+持久化）')
+    // 新会话（新 gate 实例）：持久化放行仍在 → 标注跨会话持久化
+    const gate2 = new ConfirmationGate({
+      sessionId: 'other', store: memoryStoreKv(store),
+      confirmer: async () => 'deny',
+    })
+    const { lines: lines2 } = await run('/allow', makeFullHooks(gate2))
+    const out2 = lines2.join('\n')
+    expect(out2).toContain('memory_save')
+    expect(out2).toContain('（跨会话持久化）')
+    expect(out2).not.toContain('（会话+持久化）')
+  })
+
+  it('/allow 无 listDetailed（旧 hooks）→ 回退 list() 不标注范围', async () => {
+    const gate = new ConfirmationGate({
+      sessionId: 's', store: memoryStoreKv(store),
+      confirmer: async () => 'deny',
+    })
+    gate.allowAlways('memory_save')
+    const { lines } = await run('/allow', makeHooks(gate))
+    const out = lines.join('\n')
+    expect(out).toContain('memory_save')
+    expect(out).not.toContain('（跨会话持久化）')
+    expect(out).not.toContain('（本会话）')
+  })
+
+  it('/allow add <工具名>（缺省 mode）→ 会话级放行，不写持久化', async () => {
+    const gate = new ConfirmationGate({
+      sessionId: 's', store: memoryStoreKv(store),
+      confirmer: async () => 'deny',
+    })
+    const { lines } = await run('/allow add memory_save', makeFullHooks(gate))
+    expect(lines.join('\n')).toContain('已放行 memory_save')
+    expect(gate.isAllowed('memory_save')).toBe(true)
+    expect(gate.listAllowed()).toEqual(['memory_save']) // 会话级
+    expect(store.getSetting('confirm.always.memory_save')).toBeFalsy() // 未持久化
+  })
+
+  it('/allow add <工具名> session → 会话级放行', async () => {
+    const gate = new ConfirmationGate({
+      sessionId: 's', store: memoryStoreKv(store),
+      confirmer: async () => 'deny',
+    })
+    const { lines } = await run('/allow add memory_save session', makeFullHooks(gate))
+    expect(lines.join('\n')).toContain('已放行 memory_save')
+    expect(gate.listAllowed()).toEqual(['memory_save'])
+    expect(store.getSetting('confirm.always.memory_save')).toBeFalsy()
+  })
+
+  it('/allow add <工具名> always → 持久化放行（settings 表写入，跨会话生效）', async () => {
+    const gate = new ConfirmationGate({
+      sessionId: 's', store: memoryStoreKv(store),
+      confirmer: async () => 'deny',
+    })
+    const { lines } = await run('/allow add memory_save always', makeFullHooks(gate))
+    expect(lines.join('\n')).toContain('跨会话持久化')
+    expect(gate.isAllowed('memory_save')).toBe(true)
+    expect(store.getSetting('confirm.always.memory_save')).toBe('1')
+    // 新实例（新会话）也放行
+    const gate2 = new ConfirmationGate({
+      sessionId: 'other', store: memoryStoreKv(store),
+      confirmer: async () => 'deny',
+    })
+    expect(gate2.isAllowed('memory_save')).toBe(true)
+  })
+
+  it('/allow add 缺工具名 → 用法提示', async () => {
+    const gate = new ConfirmationGate({
+      sessionId: 's', store: memoryStoreKv(store),
+      confirmer: async () => 'deny',
+    })
+    const { lines } = await run('/allow add', makeFullHooks(gate))
+    expect(lines.join('\n')).toContain('用法: /allow add')
+  })
+
+  it('/allow add 非法模式 → 报错不放行', async () => {
+    const gate = new ConfirmationGate({
+      sessionId: 's', store: memoryStoreKv(store),
+      confirmer: async () => 'deny',
+    })
+    const { lines } = await run('/allow add memory_save forever', makeFullHooks(gate))
+    const out = lines.join('\n')
+    expect(out).toContain('非法模式')
+    expect(gate.isAllowed('memory_save')).toBe(false)
+  })
+
+  it('/allow add 无 allow 回调（旧 hooks）→ 提示不支持', async () => {
+    const gate = new ConfirmationGate({
+      sessionId: 's', store: memoryStoreKv(store),
+      confirmer: async () => 'deny',
+    })
+    const { lines } = await run('/allow add memory_save', makeHooks(gate))
+    expect(lines.join('\n')).toContain('不支持显式放行')
+  })
+
+  it('/allow add 后 revoke → 恢复每次确认（会话级 + 持久化都清）', async () => {
+    const gate = new ConfirmationGate({
+      sessionId: 's', store: memoryStoreKv(store),
+      confirmer: async () => 'deny',
+    })
+    await run('/allow add memory_save always', makeFullHooks(gate))
+    expect(gate.isAllowed('memory_save')).toBe(true)
+    const { lines } = await run('/allow revoke memory_save', makeFullHooks(gate))
+    expect(lines.join('\n')).toContain('已撤销 memory_save')
+    expect(gate.isAllowed('memory_save')).toBe(false)
+    expect(store.getSetting('confirm.always.memory_save')).toBeFalsy()
   })
 
   it('/allow revoke 已放行工具 → 撤销成功', async () => {
@@ -288,7 +435,7 @@ describe('/allow 命令', () => {
     await handleSlashCommand('/allow revoke memory_save', store, (s) => lines.push(s), undefined, undefined, undefined, makeHooks(gate))
     expect(lines.join('\n')).toContain('已撤销 memory_save')
     expect(gate.isAllowed('memory_save')).toBe(false)
-    // 持久化也已清除（新实例查询；MemoryStore setSetting 空串 = 删除键）
+    // 持久化也已清除（MemoryStore setSetting 空串 = 删除键）
     expect(store.getSetting('confirm.always.memory_save')).toBeFalsy()
   })
 
@@ -312,9 +459,11 @@ describe('/allow 命令', () => {
     expect(lines.join('\n')).toContain('用法: /allow')
   })
 
-  it('/help 包含 /allow 说明', async () => {
+  it('/help 包含 /allow 说明（含 add）', async () => {
     const lines: string[] = []
     await handleSlashCommand('/help', store, (s) => lines.push(s))
-    expect(lines.join('\n')).toContain('/allow')
+    const out = lines.join('\n')
+    expect(out).toContain('/allow')
+    expect(out).toContain('/allow add')
   })
 })
