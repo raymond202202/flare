@@ -272,7 +272,7 @@ await mgr.connect('remote')                  // 自动选 HTTP transport
 new Agent({ ..., tools: mgr.getAllTools() })
 ```
 
-#### CLI `flare mcp call` / `flare mcp status`（v0.6.6）：一键调用/查看 MCP 工具
+#### CLI `flare mcp call` / `flare mcp status` / `flare mcp resources`（v0.6.6/v0.6.10）：一键调用/查看 MCP 工具
 
 不启动交互模式直接调用 MCP 服务器工具（stdio 或 HTTP 均可）：
 
@@ -289,6 +289,13 @@ flare mcp status [--config ./mcp.json]
 
 # 调超时（毫秒）
 flare mcp call remote ping --url http://127.0.0.1:8931/mcp --timeout 30000
+
+# 查看服务器暴露的资源（v0.6.10：元数据 uri/name/description/mimeType）
+flare mcp resources remote --url http://127.0.0.1:8931/mcp
+flare mcp resources local-fs [--config ./mcp.json]
+
+# 读取资源内容（--read <uri>）
+flare mcp resources remote --read file:///tmp/a.txt --url http://127.0.0.1:8931/mcp
 ```
 
 - 工具参数为 JSON 对象（缺省 `{}`）；工具级失败（isError）/ 协议错误 / 未配置服务器 → 退出码 1 + 明确错误信息
