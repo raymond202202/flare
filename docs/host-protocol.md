@@ -3,7 +3,7 @@
 > 供非 Node 宿主（如 Qt 应用）调用 flare 引擎的本地协议。
 > 传输：stdin/stdout · JSON Lines（每行一个 JSON 对象）
 > 实现：`src/server.ts`（`flare server` 命令）
-> 请求类型：chat / cancel / set_context / list_sessions / recent_sessions / get_messages / get_usage / context_status / ping / version / create_session / delete_session / remember / get_memories / delete_memory / tool_result / confirm_result / confirm_status / confirm_revoke / mcp_status
+> 请求类型：chat / cancel / set_context / list_sessions / recent_sessions / get_messages / get_usage / context_status / ping / version / create_session / delete_session / remember / get_memories / delete_memory / tool_result / confirm_result / confirm_status / confirm_revoke / models / mcp_status
 
 ## 启动
 
@@ -261,6 +261,20 @@ flare server --profile <expert-profile-file> --storage <db-path> [--mcp <mcp-con
 - `tool` 与 `resetSession` 至少其一，否则回 `error`（含用法提示）
 - 响应：`{"type":"ok","sessionId","tool"?,"resetSession"?}`；无放行记录时幂等 ok（服务不崩、状态不变）
 
+### 20. models — 查询可切换模型（v0.6.9，只读）
+
+```json
+{"type":"models"}
+```
+
+响应：`{"type":"models","configured":{"main":{"model":"deepseek-chat","baseURL":"https://api.deepseek.com/v1","hasApiKey":true,"provider":"deepseek"},"vision":null},"ollama":{"ok":true,"models":[{"name":"qwen2.5:7b","size":4700000000,"modifiedAt":"2026-08-01T00:00:00Z"}]}}`
+
+- `configured.main`：当前主模型端点信息（`DEFAULT_MODEL` 解析）——`model` / `baseURL`（解析后端点）/ `hasApiKey`（密钥是否已配置）/ `provider`（`ollama` | `deepseek` | `openai` | `other`）
+- `configured.vision`：视觉模型（`VISION_MODEL` 配置；未配置为 `null`）
+- `ollama`：本地 Ollama 已拉取模型列表（复用 `listOllamaModels`）——宿主面板"可切换模型"数据源
+- 降级安全：Ollama 未启动/不可达 → `ollama.ok:false` + `error`（服务不崩、其余字段照常）；主模型为 Claude 系列（不支持）→ `configured.main.error` 明确报错，不抛异常
+- 只读查询：不触发生成、不创建会话
+
 ## 响应（服务 → 宿主，stdout 每行一个）
 
 | type | 字段 | 说明 |
@@ -283,6 +297,7 @@ flare server --profile <expert-profile-file> --storage <db-path> [--mcp <mcp-con
 | `usage` | `stats` | token 用量统计（get_usage 响应） |
 | `mcp_status` | `servers` | MCP 服务器连接状态（mcp_status 响应，v0.5.5） |
 | `confirm_status` | `sessionId, confirmTools, allowedTools, sessionAllowed, alwaysAllowed` | 确认门状态（confirm_status 响应，v0.6.8） |
+| `models` | `configured, ollama` | 可切换模型（models 响应，v0.6.9） |
 
 ## 工具执行流（宿主代理工具）
 

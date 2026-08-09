@@ -331,6 +331,24 @@ Interactive mode commands:
 
 > 中文条目 / Chinese entries · English summary for each version
 
+#### v0.6.9 (2026-08-10) — server 协议 models 接口：可切换模型查询 / Model availability over the host protocol
+- 🎛️ **server 协议新增 `models` 请求（src/server.ts）**：宿主面板查询可切换模型（只读、不触发生成、不创建会话）——
+  `configured.main` 当前主模型端点信息（`model` / `baseURL` 解析后端点 / `hasApiKey` 密钥是否配置 /
+  `provider` 推断 ollama|deepseek|openai|other）、`configured.vision` 视觉模型（`VISION_MODEL` 配置，未配置 null）、
+  `ollama` 本地 Ollama 已拉取模型列表（复用 `listOllamaModels`）——宿主"可切换模型"下拉的数据源
+- 🔍 **纯逻辑可测（src/server.ts 导出）**：`detectProvider(model)` 模型名 → provider 类型推断（与
+  `resolveProviderOptions` 自动检测规则一致）；`collectModelInfo(fetchImpl?)` 收集 configured + ollama（fetch 可注入
+  mock）——库导出
+- 🛡️ **降级安全**：Ollama 未启动/不可达 → `ollama.ok:false` + `error`（服务不崩、其余字段照常）；主模型为 Claude 系列
+  （不支持）→ `configured.main.error` 明确报错不抛异常；全程零 agent.ts 改动
+- 📚 docs/host-protocol.md §20 + 响应表 + 请求类型列表 + README Changelog + 版本号 0.6.9
+- 🧪 新增 10 项测试（tests/server-models.test.ts）：detectProvider 4（ollama 冒号命名/deepseek/gpt·o1·o3/other）+
+  collectModelInfo 5（Ollama 可达解析/视觉模型配置/不可达 ok:false/HTTP 500/Claude 主模型 error 不抛）+ server e2e 1
+  （真实子进程 models 响应结构完整、Ollama 不可达不崩），共 362/362；零 agent.ts 改动
+- EN: New host-protocol request `models` returns the configured main/vision model endpoints (model, resolved baseURL,
+  hasApiKey, provider) plus the local Ollama model list — read-only, degrades gracefully when Ollama is unreachable;
+  detectProvider/collectModelInfo exported and unit-tested; 362/362 tests.
+
 #### v0.6.8 (2026-08-10) — server 协议确认门管理：confirm_status / confirm_revoke / Confirmation-gate management over the host protocol
 - 🎛️ **server 协议新增 `confirm_status` / `confirm_revoke`（src/server.ts）**：宿主随时查询/撤销确认门放行——
   `confirm_status {sessionId}` 返回确认名单配置（`confirmTools`）+ 放行名单（`allowedTools` 完整合并 /
