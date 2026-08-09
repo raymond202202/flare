@@ -23,6 +23,16 @@
     add 后 revoke 双清），tsc 0 错误，零 agent.ts 改动
   - **冒烟实测**：真实 PTY 交互 CLI——`/allow add memory_save always` → 「已放行 memory_save（跨会话持久化）」、
     `/allow` 列表标注 `memory_save（会话+持久化）`、`/allow add bad xyz` → 非法模式提示、`/allow revoke` → 恢复确认
+- **P23 server 协议 confirm_allow**（commit `fc5942f`）：
+  - `confirm_allow {tool, mode?}` → 宿主面板显式放行确认工具（无需等 AI 触发 confirm 事件）：mode 缺省 `session`
+    本会话放行 / `always` 跨会话持久化；缺 tool / 非法 mode 回 error（含用法提示）
+  - 与 `confirm_status`（查询）/ `confirm_revoke`（撤销）组成确认门管理闭环；复用 getGate 的
+    `allowSession/allowAlways`；`mode=always` 当前会话内也放行（allowedTools 可见），持久化部分由 alwaysAllowed 体现
+  - docs/host-protocol.md §21 + 确认门管理章节 + 响应表 + 请求类型列表 + README Changelog 0.6.10 补充
+  - **377/377 全绿**（373 + 4 新增 server e2e：缺 tool error / 非法 mode error / 缺省 mode session 放行 status 可见 /
+    mode=always 持久化 + revoke 撤销），tsc 0 错误，零 agent.ts 改动
+  - **冒烟实测**：真实 server 子进程——confirm_allow 缺省 mode ok(session) / mode=always ok / 非法 mode error 清晰 /
+    confirm_status 闭环（sessionAllowed+alwaysAllowed 可见） / revoke 后名单清空
 - **下一步候选**：① agent.ts trimContext 自动裁剪（风险高仍暂缓）；② 其他安全的外围增强
   （MCP 更多协议特性、server 协议其他管理接口、CLI 更多交互增强等）
 
