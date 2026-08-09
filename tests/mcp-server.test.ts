@@ -387,6 +387,97 @@ describe('MCPServer（stdio NDJSON JSON-RPC，零依赖）', () => {
     withoutPrompts.server.close()
   })
 
+  it('completion/complete：按 prompt 补全回调返回候选值（ref/prompt）', async () => {
+    const prompts: McpPrompt[] = [
+      {
+        name: 'topic',
+        arguments: [{ name: 'name', description: '主题名' }],
+        render: (args) => [{ role: 'user', content: { type: 'text', text: `topic: ${args.name}` } }],
+        complete: (argName, value) => {
+          if (argName === 'name') {
+            const all = ['flare 引擎', 'Pulse', 'StorySpire', 'MCP 协议']
+            return all.filter(v => v.includes(value))
+          }
+          return []
+        },
+      },
+    ]
+    const h = createHarness(undefined, undefined, prompts)
+    h.send({ jsonrpc: '2.0', id: 1, method: 'completion/complete', params: { ref: { type: 'ref/prompt', name: 'topic' }, argument: { name: 'name', value: 'flare' } } })
+    await h.flush()
+    const res = h.last()
+    expect(res.result.completion).toEqual({ values: ['flare 引擎'], total: 1, hasMore: false })
+    h.server.close()
+  })
+
+  it('completion/complete：异步 complete 回调 + 空匹配返回空候选', async () => {
+    const prompts: McpPrompt[] = [
+      {
+        name: 'async',
+        render: () => [],
+        complete: async (_argName, value) => (value === 'x' ? ['x1', 'x2'] : []),
+      },
+    ]
+    const h = createHarness(undefined, undefined, prompts)
+    h.send({ jsonrpc: '2.0', id: 1, method: 'completion/complete', params: { ref: { type: 'ref/prompt', name: 'async' }, argument: { name: 'a', value: 'x' } } })
+    await h.flush()
+    expect(h.last().result.completion.values).toEqual(['x1', 'x2'])
+    h.send({ jsonrpc: '2.0', id: 2, method: 'completion/complete', params: { ref: { type: 'ref/prompt', name: 'async' }, argument: { name: 'a', value: 'zzz' } } })
+    await h.flush()
+    expect(h.last().result.completion.values).toEqual([])
+    h.server.close()
+  })
+
+  it('completion/complete：ref/resource 按已暴露资源 uri 前缀建议', async () => {
+    const resources: McpResource[] = [
+      { uri: 'flare://note/alpha', name: 'alpha', read: () => 'a' },
+      { uri: 'flare://note/beta', name: 'beta', read: () => 'b' },
+    ]
+    const h = createHarness(undefined, resources)
+    h.send({ jsonrpc: '2.0', id: 1, method: 'completion/complete', params: { ref: { type: 'ref/resource', uri: 'flare://' }, argument: { name: 'uri', value: 'flare://note/' } } })
+    await h.flush()
+    expect(h.last().result.completion.values).toEqual(['flare://note/alpha', 'flare://note/beta'])
+    h.server.close()
+  })
+
+  it('completion/complete：无补全回调的 prompt → 空候选；未知 prompt → -32602；缺 ref → -32602', async () => {
+    const prompts: McpPrompt[] = [{ name: 'plain', render: () => [] }]
+    const h = createHarness(undefined, undefined, prompts)
+    // 无 complete 回调：空候选（不报错）
+    h.send({ jsonrpc: '2.0', id: 1, method: 'completion/complete', params: { ref: { type: 'ref/prompt', name: 'plain' }, argument: { name: 'a', value: '' } } })
+    await h.flush()
+    expect(h.last().result.completion.values).toEqual([])
+    // 未知 prompt：-32602
+    h.send({ jsonrpc: '2.0', id: 2, method: 'completion/complete', params: { ref: { type: 'ref/prompt', name: 'nonexist' }, argument: { name: 'a', value: '' } } })
+    await h.flush()
+    expect(h.last().error.code).toBe(-32602)
+    // 缺 ref：-32602
+    h.send({ jsonrpc: '2.0', id: 3, method: 'completion/complete', params: { argument: { name: 'a', value: '' } } })
+    await h.flush()
+    expect(h.last().error.code).toBe(-32602)
+    h.server.close()
+  })
+
+  it('initialize：有 complete 回调或资源时 capabilities 声明 completions（缺省不声明）', async () => {
+    const withComplete = createHarness(undefined, undefined, [{ name: 'g', render: () => [], complete: () => ['x'] }])
+    withComplete.send({ jsonrpc: '2.0', id: 1, method: 'initialize', params: {} })
+    await withComplete.flush()
+    expect(withComplete.last().result.capabilities).toHaveProperty('completions')
+    withComplete.server.close()
+
+    const withResource = createHarness(undefined, [{ uri: 'flare://a', name: 'a', read: () => 'a' }])
+    withResource.send({ jsonrpc: '2.0', id: 2, method: 'initialize', params: {} })
+    await withResource.flush()
+    expect(withResource.last().result.capabilities).toHaveProperty('completions')
+    withResource.server.close()
+
+    const without = createHarness(undefined, undefined, [{ name: 'g', render: () => [] }])
+    without.send({ jsonrpc: '2.0', id: 3, method: 'initialize', params: {} })
+    await without.flush()
+    expect(without.last().result.capabilities).not.toHaveProperty('completions')
+    without.server.close()
+  })
+
   it('toMcpTool：flare Tool → MCP 工具定义（名称/描述/schema 映射）', () => {
     const mcp = toMcpTool(readFileTool)
     expect(mcp.name).toBe('read_file')
@@ -453,6 +544,14 @@ describe('MCPServer ↔ MCPClient 端到端互通（真实子进程 stdio）', (
 
       // 未知 name → 协议错误（-32602）经客户端 reject
       await expect(client.getPrompt('nonexist')).rejects.toThrow(/未知提示词|Unknown prompt/)
+
+      // v0.6.11：completion/complete 消费闭环——capabilities 声明 + 候选值 + 未知 prompt reject
+      expect(init.capabilities).toHaveProperty('completions')
+      const comp = await client.completePrompt('summarize', 'topic', 'flare')
+      expect(comp.values).toEqual(['flare 引擎'])
+      const empty = await client.completePrompt('summarize', 'topic', '不存在')
+      expect(empty.values).toEqual([])
+      await expect(client.completePrompt('nonexist', 'topic', 'x')).rejects.toThrow(/未知提示词|Unknown prompt/)
     } finally {
       client.close()
     }

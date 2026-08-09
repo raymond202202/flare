@@ -96,6 +96,7 @@ export type {
   McpPromptMessage,
   McpPromptInfo,
   McpPromptResult,
+  McpCompletionResult,
 } from './mcp/types.js'
 
 // ===== MCP 服务器端（v0.5.8）：flare 工具集经 MCP 标准协议暴露给外部客户端 =====
@@ -152,5 +153,5 @@ export type {
 export { memoryStoreKv } from './core/confirm.js'
 
 // ===== 宿主协议服务（Qt 等非 Node 宿主）=====
-export { startHostServer, wrapConfirmTools, DEFAULT_CONFIRM_TOOLS, collectModelInfo, detectProvider } from './server.js'
-export type { HostServerOptions, ModelEndpointInfo, ModelInfoResponse } from './server.js'
+export { startHostServer, wrapConfirmTools, DEFAULT_CONFIRM_TOOLS, collectModelInfo, detectProvider, describeTools } from './server.js'
+export type { HostServerOptions, ModelEndpointInfo, ModelInfoResponse, ToolMeta, ToolSourceSets } from './server.js'

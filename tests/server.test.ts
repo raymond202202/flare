@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url'
 import path from 'node:path'
 import os from 'node:os'
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { DEFAULT_CONFIRM_TOOLS } from '../src/server.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const CLI = path.join(__dirname, '..', 'dist', 'cli', 'index.js')
@@ -518,6 +519,54 @@ describe('flare host server 协议', () => {
     const st2 = await request({ type: 'confirm_status', sessionId: sid }, { expect: ['confirm_status'] })
     expect(st2[0].allowedTools).toEqual([])
     expect(st2[0].alwaysAllowed).toEqual([])
+  })
+
+  it('tools 请求：默认返回内置工具清单 + 确认名单回显 + memory_save 确认标注（v0.6.11）', async () => {
+    const msgs = await request({ type: 'tools' }, { expect: ['tools'] })
+    expect(msgs[0].type).toBe('tools')
+    expect(msgs[0].sessionId).toBe('default')
+    // 确认名单配置回显（宿主可据此展示"哪些写回类工具需确认"）
+    expect(msgs[0].confirmTools).toEqual(DEFAULT_CONFIRM_TOOLS)
+    // 内置工具集（含 read_file 等）；每个工具带 name/description/confirmed/source
+    const tools: any[] = msgs[0].tools
+    expect(Array.isArray(tools)).toBe(true)
+    const names = tools.map((t: any) => t.name)
+    expect(names).toContain('read_file')
+    expect(names).toContain('memory_save')
+    const save = tools.find((t: any) => t.name === 'memory_save')
+    expect(save.confirmed).toBe(true)
+    expect(save.source).toBe('builtin')
+    expect(save.description).toBeTruthy()
+    // 非确认工具不标注
+    const read = tools.find((t: any) => t.name === 'read_file')
+    expect(read.confirmed).toBe(false)
+  })
+
+  it('tools 请求指定 sessionId：返回该会话 Agent 工具清单（含确认名单）', async () => {
+    const msgs = await request({ type: 'tools', sessionId: 's-tools-1' }, { expect: ['tools'] })
+    expect(msgs[0].sessionId).toBe('s-tools-1')
+    const names = msgs[0].tools.map((t: any) => t.name)
+    expect(names).toContain('memory_save')
+    expect(msgs[0].confirmTools).toEqual(DEFAULT_CONFIRM_TOOLS)
+  })
+
+  it('tools 请求 chat 带宿主代理工具后：反映该会话工具集（含 host 来源标注）', async () => {
+    const sid = 's-tools-host'
+    // chat 不触发（无 API key 时 error 流），但 Agent 已按宿主工具构建——tools 查询应反映宿主工具
+    await request(
+      {
+        type: 'chat',
+        sessionId: sid,
+        input: 'hi',
+        tools: [{ type: 'function', function: { name: 'host_echo', description: '宿主回显工具', parameters: { type: 'object' } } }],
+      },
+      { expect: ['done', 'error', 'cancelled'], collectAll: true, timeout: 20000 }
+    ).catch(() => {}) // 无 API key 可能 error：不关心生成结果，只关心会话工具集记录
+    const msgs = await request({ type: 'tools', sessionId: sid }, { expect: ['tools'] })
+    const names = msgs[0].tools.map((t: any) => t.name)
+    expect(names).toContain('host_echo')
+    const host = msgs[0].tools.find((t: any) => t.name === 'host_echo')
+    expect(host.source).toBe('host')
   })
 
   it('chat 带非法 maxTokens → error（v0.6.3 采样参数校验，不触发生成）', async () => {

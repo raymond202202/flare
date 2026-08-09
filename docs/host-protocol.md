@@ -3,7 +3,7 @@
 > 供非 Node 宿主（如 Qt 应用）调用 flare 引擎的本地协议。
 > 传输：stdin/stdout · JSON Lines（每行一个 JSON 对象）
 > 实现：`src/server.ts`（`flare server` 命令）
-> 请求类型：chat / cancel / set_context / list_sessions / recent_sessions / get_messages / get_usage / context_status / ping / version / create_session / delete_session / remember / get_memories / delete_memory / tool_result / confirm_result / confirm_status / confirm_revoke / confirm_allow / models / mcp_status
+> 请求类型：chat / cancel / set_context / list_sessions / recent_sessions / get_messages / get_usage / context_status / ping / version / create_session / delete_session / remember / get_memories / delete_memory / tool_result / confirm_result / confirm_status / confirm_revoke / confirm_allow / models / tools / mcp_status
 
 ## 启动
 
@@ -288,6 +288,22 @@ flare server --profile <expert-profile-file> --storage <db-path> [--mcp <mcp-con
 - 降级安全：Ollama 未启动/不可达 → `ollama.ok:false` + `error`（服务不崩、其余字段照常）；主模型为 Claude 系列（不支持）→ `configured.main.error` 明确报错，不抛异常
 - 只读查询：不触发生成、不创建会话
 
+### 22. tools — 查询当前会话 Agent 可用工具清单（v0.6.11，只读）
+
+```json
+{"type":"tools"}
+{"type":"tools","sessionId":"s1"}
+```
+
+响应：`{"type":"tools","sessionId":"s1","tools":[{"name":"memory_save","description":"保存一条持久记忆","parameters":{...},"confirmed":true,"source":"builtin"},{"name":"host_echo","description":"宿主回显工具","confirmed":false,"source":"host"}],"confirmTools":["memory_save"]}`
+
+- `tools`：该会话 Agent 当前工具集（chat 带宿主工具后即反映；未 chat 过则默认内置工具集）——每项：
+  - `name` / `description` / `parameters`（JSON Schema，缺省不带）：工具定义
+  - `confirmed`：是否经确认门（命中 `confirmTools` 名单）——宿主面板"写回类工具需确认"标注
+  - `source`：来源——`host`（宿主代理工具）/ `profile`（专家配置）/ `mcp`（外部 MCP 服务器）/ `builtin`（内置回退）
+- `confirmTools`：当前确认名单配置（宿主可据此展示"哪些写回类工具需确认"）
+- 只读查询：不触发生成、不创建会话（与 `models`/`context_status` 同级）
+
 ## 响应（服务 → 宿主，stdout 每行一个）
 
 | type | 字段 | 说明 |
@@ -311,6 +327,7 @@ flare server --profile <expert-profile-file> --storage <db-path> [--mcp <mcp-con
 | `mcp_status` | `servers` | MCP 服务器连接状态（mcp_status 响应，v0.5.5） |
 | `confirm_status` | `sessionId, confirmTools, allowedTools, sessionAllowed, alwaysAllowed` | 确认门状态（confirm_status 响应，v0.6.8） |
 | `models` | `configured, ollama` | 可切换模型（models 响应，v0.6.9） |
+| `tools` | `sessionId, tools, confirmTools` | Agent 工具清单（tools 响应，v0.6.11） |
 
 ## 工具执行流（宿主代理工具）
 

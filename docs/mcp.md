@@ -191,6 +191,38 @@ server.start()
   未知 name → `-32602`；`render()` 抛错 → `-32603`（服务器不崩）
 - 不注入提示词时行为不变：`prompts/list` 返回空列表（v0.5.9 兼容）
 
+#### 参数补全（v0.6.11）：completion/complete
+
+prompt 可提供**可选 `complete` 回调**——客户端交互式输入参数时（如宿主面板的提示词表单），
+经 MCP 标准 `completion/complete` 向服务器请求候选值（能力 `capabilities.completions`）：
+
+```ts
+const server = new MCPServer({
+  prompts: [
+    {
+      name: 'summarize',
+      arguments: [{ name: 'topic', description: '主题', required: true }],
+      render: (args) => [{ role: 'user', content: { type: 'text', text: `总结 ${args.topic}` } }],
+      // 参数补全：按参数名 + 当前输入值返回候选（可异步）
+      complete: (argName, value) => {
+        if (argName === 'topic') {
+          const all = ['flare 引擎', 'Pulse', 'StorySpire', 'MCP 协议']
+          return all.filter(v => v.includes(value))
+        }
+        return []
+      },
+    },
+  ],
+})
+```
+
+- 任一 prompt 提供 `complete` 回调（或注入了资源）→ `initialize` 声明 `completions`（缺省不声明）
+- `completion/complete` 请求 `{ ref: { type: 'ref/prompt', name }, argument: { name, value } }`
+  → 响应 `{ completion: { values, total, hasMore } }`；无回调的 prompt → 空候选（不报错）
+- `ref: { type: 'ref/resource', uri }` → 按已暴露资源 uri 前缀给出候选（资源模板补全）
+- 未知 prompt / 缺 ref → `-32602`；回调抛错 → `-32603`（服务器不崩）
+- 客户端消费（stdio/HTTP 同构）：`completePrompt(name, argumentName, value)` → `{ values }`
+
 其他 MCP 客户端连接方式（以 flare 官方 MCPClient 为例）：
 
 ```ts
@@ -200,6 +232,7 @@ const tools = await client.listTools()            // flare 内置 6 工具
 await client.callTool('read_file', { path: 'a.txt' })
 const prompts = await client.listPrompts()        // v0.6.2：提示词清单（name/description/arguments）
 const p = await client.getPrompt('summarize', { topic: 'flare' })  // v0.6.2：渲染消息序列
+const comp = await client.completePrompt('summarize', 'topic', 'flare') // v0.6.11：参数补全候选
 ```
 
 > ⚠️ 安全：暴露的是 flare **原生工具**，危险命令黑名单 / 路径保护 / 记忆边界照常生效

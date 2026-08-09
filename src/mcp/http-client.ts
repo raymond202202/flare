@@ -25,7 +25,7 @@
 import { request as httpRequest } from 'node:http'
 import { request as httpsRequest } from 'node:https'
 import { createRequire } from 'node:module'
-import type { McpTool, McpCallResult, McpPromptInfo, McpPromptResult, McpResourceInfo, McpResourceContents } from './types.js'
+import type { McpTool, McpCallResult, McpPromptInfo, McpPromptResult, McpResourceInfo, McpResourceContents, McpCompletionResult } from './types.js'
 
 const require = createRequire(import.meta.url)
 const pkg = require('../../package.json') as { version: string }
@@ -182,6 +182,16 @@ export class MCPHttpClient {
   /** 获取并渲染提示词（prompts/get，v0.6.2）：按 arguments 补全模板返回消息序列；未知 name 协议错误则 reject */
   async getPrompt(name: string, args?: Record<string, string>): Promise<McpPromptResult> {
     return this.request<McpPromptResult>('prompts/get', { name, ...(args ? { arguments: args } : {}) })
+  }
+
+  /** 请求参数补全候选值（completion/complete，v0.6.11）：按 prompt 名 + 参数名 + 当前输入值返回建议；未知 prompt 协议错误则 reject */
+  async completePrompt(name: string, argumentName: string, value: string): Promise<McpCompletionResult> {
+    const res = await this.request<any>('completion/complete', {
+      ref: { type: 'ref/prompt', name },
+      argument: { name: argumentName, value },
+    })
+    const completion = res?.completion || {}
+    return { values: Array.isArray(completion.values) ? completion.values : [], total: completion.total, hasMore: completion.hasMore }
   }
 
   /** 列出服务器可用资源（resources/list，v0.6.6）：元数据（uri/name/description/mimeType），内容经 readResource */

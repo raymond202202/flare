@@ -111,6 +111,8 @@ export interface McpPrompt {
   arguments?: McpPromptArgument[]
   /** 渲染提示词内容（按客户端传入的 arguments 填充模板；返回消息列表，支持异步） */
   render(args: Record<string, string>): McpPromptMessage[] | Promise<McpPromptMessage[]>
+  /** 参数补全（v0.6.11）：按参数名 + 当前输入值返回候选值（completion/complete 用）；缺省无补全能力 */
+  complete?(argumentName: string, value: string): string[] | Promise<string[]>
 }
 
 /** MCP prompts/list 响应项（客户端视角：元数据，不含渲染函数） */
@@ -124,4 +126,14 @@ export interface McpPromptInfo {
 export interface McpPromptResult {
   description?: string
   messages: McpPromptMessage[]
+}
+
+/** MCP completion/complete 响应（v0.6.11）：prompt 参数补全候选值 */
+export interface McpCompletionResult {
+  /** 补全候选值（无补全能力时为空数组） */
+  values: string[]
+  /** 候选总数（可选；用于分页提示） */
+  total?: number
+  /** 是否还有更多（可选；默认 false） */
+  hasMore?: boolean
 }

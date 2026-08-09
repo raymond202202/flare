@@ -24,7 +24,7 @@
 import { createInterface, type Interface } from 'node:readline'
 import { createRequire } from 'node:module'
 import { tools, type Tool, type ToolResult } from '../tools/index.js'
-import type { McpContentItem, McpPrompt, McpPromptMessage, McpResource, McpResourceContents, McpTool } from './types.js'
+import type { McpCompletionResult, McpContentItem, McpPrompt, McpPromptMessage, McpResource, McpResourceContents, McpTool } from './types.js'
 import { MCP_PROTOCOL_VERSION } from './client.js'
 
 const require = createRequire(import.meta.url)
@@ -144,13 +144,15 @@ export class MCPServer {
   private async dispatch(method: string, params: any): Promise<any> {
     switch (method) {
       case 'initialize':
-        // 握手：协商协议版本、声明能力（tools / 可选 resources / 可选 prompts）、返回服务器信息
+        // 握手：协商协议版本、声明能力（tools / 可选 resources / 可选 prompts / 可选 completions）、返回服务器信息
         return {
           protocolVersion: MCP_PROTOCOL_VERSION,
           capabilities: {
             tools: {},
             ...(this.resourceList.length > 0 ? { resources: {} } : {}),
             ...(this.promptList.length > 0 ? { prompts: {} } : {}),
+            // v0.6.11：至少一个 prompt 提供补全回调时声明 completions 能力（completion/complete）
+            ...(this.hasCompletions ? { completions: {} } : {}),
           },
           serverInfo: this.serverInfo,
         }
@@ -181,6 +183,9 @@ export class MCPServer {
         }
       case 'prompts/get':
         return this.getPrompt(params)
+      case 'completion/complete':
+        // v0.6.11：prompt 参数补全候选值（客户端交互式输入时提供建议）
+        return this.complete(params)
       case 'ping':
         // JSON-RPC 标准健康检查
         return {}
@@ -227,6 +232,42 @@ export class MCPServer {
       ...(prompt.description ? { description: prompt.description } : {}),
       messages,
     }
+  }
+
+  /** 是否有补全能力（v0.6.11）：任一 prompt 提供 complete 回调，或暴露了资源（uri 前缀建议） */
+  private get hasCompletions(): boolean {
+    return this.promptList.some(p => typeof p.complete === 'function') || this.resourceList.length > 0
+  }
+
+  /**
+   * 参数补全（completion/complete，v0.6.11）：返回候选值供客户端交互式输入建议。
+   * - ref/ref-prompt：查 prompt.complete(argumentName, value) 回调（无回调 → 空候选）
+   * - ref/ref-resource：按已暴露资源 uri 前缀建议（资源 uri 模板补全）
+   * 未知 prompt / 未知 ref 类型 → -32602；回调异常 → -32603（服务器不崩）。
+   */
+  private async complete(params: any): Promise<{ completion: McpCompletionResult }> {
+    const ref = params?.ref
+    const refType = ref?.type === 'ref/resource' ? 'ref/resource' : 'ref/prompt'
+    const name = String(ref?.name ?? ref?.uri ?? '')
+    const argumentName = String(params?.argument?.name || '')
+    const value = String(params?.argument?.value ?? '')
+    if (!name) {
+      throw Object.assign(new Error('completion/complete 需要 ref（ref/prompt 的 name 或 ref/resource 的 uri）'), { code: -32602 })
+    }
+    let values: string[]
+    if (refType === 'ref/resource') {
+      // 资源 uri 补全：已暴露资源中 uri 以当前输入为前缀的建议
+      values = this.resourceList.map(r => r.uri).filter(uri => uri.startsWith(value))
+    } else {
+      const prompt = this.promptList.find(p => p.name === name)
+      if (!prompt) {
+        throw Object.assign(new Error(`Unknown prompt: ${name}`), { code: -32602 })
+      }
+      values = typeof prompt.complete === 'function'
+        ? await prompt.complete(argumentName, value)
+        : []
+    }
+    return { completion: { values, total: values.length, hasMore: false } }
   }
 
   /** 执行 flare 工具并包装为 MCP 调用结果；工具级失败 → isError（协议层不抛） */
