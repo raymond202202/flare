@@ -80,6 +80,7 @@ export type { MCPClientOptions } from './mcp/client.js'
 export { McpManager, loadMcpConfig } from './mcp/manager.js'
 export type { McpManagerOptions } from './mcp/manager.js'
 export { createMcpTools } from './tools/mcp.js'
+export type { McpToolClient } from './tools/mcp.js'
 export type {
   McpServerConfig,
   McpConfigFile,

@@ -1,8 +1,8 @@
 /**
- * McpManager 测试（v0.5.5）
+ * McpManager 测试（v0.5.5；v0.6.6 起覆盖 HTTP transport）
  *
  * 配置加载（~/.flare/mcp.json 语义）+ connect/disconnect + 工具并集 + 错误记录。
- * 用 mock MCP server fixture（本地子进程，无网络）。
+ * 用 mock MCP server fixture（本地子进程，无网络）+ in-process HTTP 服务器（startMcpHttpServer）。
  */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
@@ -11,19 +11,35 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { dirname } from 'node:path'
 import { McpManager, loadMcpConfig } from '../src/mcp/manager.js'
+import { startMcpHttpServer, type McpHttpServerHandle } from '../src/mcp/http.js'
+import type { Tool } from '../src/tools/index.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const MOCK_SERVER = join(__dirname, 'fixtures', 'mcp-mock-server.mjs')
 
+const echoTool: Tool = {
+  definition: {
+    type: 'function',
+    function: {
+      name: 'echo',
+      description: '回显输入文本',
+      parameters: { type: 'object', properties: { text: { type: 'string' } } },
+    },
+  },
+  execute: async (args) => ({ success: true, output: String(args.text || '') }),
+}
+
 let dir: string
 let configPath: string
+const httpHandles: McpHttpServerHandle[] = []
 
 beforeEach(() => {
   dir = mkdtempSync(join(tmpdir(), 'flare-mcp-mgr-test-'))
   configPath = join(dir, 'mcp.json')
 })
 
-afterEach(() => {
+afterEach(async () => {
+  for (const h of httpHandles.splice(0)) await h.close()
   rmSync(dir, { recursive: true, force: true })
 })
 
@@ -106,6 +122,73 @@ describe('McpManager', () => {
     mgr.setConfig([{ name: 'mock', command: process.execPath, args: [MOCK_SERVER] }])
     const tools = await mgr.connect('mock')
     expect(tools.length).toBe(3)
+    mgr.closeAll()
+  })
+
+  it('connect HTTP transport（配置 url）→ 工具桥接 + 真实执行 + 状态连接', async () => {
+    const h = await startMcpHttpServer({ tools: [echoTool] })
+    httpHandles.push(h)
+    writeFileSync(configPath, JSON.stringify({ servers: [{ name: 'remote', url: h.url }] }))
+    const mgr = new McpManager({ configPath })
+    const tools = await mgr.connect('remote')
+    expect(tools.length).toBe(1)
+    expect(tools[0].definition.function.name).toBe('echo')
+    // 桥接工具经 HTTP transport 真实执行到 in-process 服务器
+    const res = await tools[0].execute({ text: 'via http' })
+    expect(res.success).toBe(true)
+    expect(res.output).toBe('via http')
+    const st = mgr.status()
+    expect(st[0].connected).toBe(true)
+    expect(st[0].toolCount).toBe(1)
+    expect(st[0].error).toBeUndefined()
+    mgr.closeAll()
+  })
+
+  it('connect HTTP 不可达（url 无服务器监听）→ 抛错 + 状态记录错误（服务不崩溃）', async () => {
+    // 先起服务器拿端口，再关掉 → 端口无人监听（连接拒绝）
+    const h = await startMcpHttpServer({ tools: [echoTool] })
+    const url = h.url
+    await h.close()
+    writeFileSync(configPath, JSON.stringify({ servers: [{ name: 'dead', url }] }))
+    const mgr = new McpManager({ configPath, httpTimeoutMs: 1000 })
+    await expect(mgr.connect('dead')).rejects.toThrow()
+    const st = mgr.status()
+    expect(st[0].connected).toBe(false)
+    expect(st[0].error).toBeTruthy()
+    expect(mgr.getAllTools().length).toBe(0)
+    mgr.closeAll()
+  })
+
+  it('connect 配置既无 url 也无 command → 抛错（清晰提示）', async () => {
+    writeFileSync(configPath, JSON.stringify({ servers: [{ name: 'empty', args: [] }] }))
+    const mgr = new McpManager({ configPath })
+    await expect(mgr.connect('empty')).rejects.toThrow(/配置无效/)
+    mgr.closeAll()
+  })
+
+  it('disconnect HTTP 服务器：工具移除 + 状态断开', async () => {
+    const h = await startMcpHttpServer({ tools: [echoTool] })
+    httpHandles.push(h)
+    writeFileSync(configPath, JSON.stringify({ servers: [{ name: 'remote', url: h.url }] }))
+    const mgr = new McpManager({ configPath })
+    await mgr.connect('remote')
+    expect(mgr.disconnect('remote')).toBe(true)
+    expect(mgr.getAllTools().length).toBe(0)
+    expect(mgr.status()[0].connected).toBe(false)
+    // 幂等：再次断开返回 false
+    expect(mgr.disconnect('remote')).toBe(false)
+    mgr.closeAll()
+  })
+
+  it('配置同时有 url 与 command → url 优先（HTTP transport）', async () => {
+    const h = await startMcpHttpServer({ tools: [echoTool] })
+    httpHandles.push(h)
+    writeFileSync(configPath, JSON.stringify({ servers: [{ name: 'both', url: h.url, command: 'should-not-spawn', args: [] }] }))
+    const mgr = new McpManager({ configPath })
+    const tools = await mgr.connect('both')
+    expect(tools[0].definition.function.name).toBe('echo')
+    const res = await tools[0].execute({ text: 'url wins' })
+    expect(res.output).toBe('url wins')
     mgr.closeAll()
   })
 })

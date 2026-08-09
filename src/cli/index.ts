@@ -708,6 +708,67 @@ export function main() {
     })
 
   program
+    .command('mcp')
+    .description('MCP 服务器工具调用（v0.6.6）')
+    .command('call <server> <tool> [jsonArgs]')
+    .description('调用 MCP 服务器工具（stdio 或 HTTP transport；服务器名查 ~/.flare/mcp.json 配置，--url 直连 HTTP 端点）')
+    .option('--url <url>', '直接连 HTTP transport 端点（如 http://127.0.0.1:8931/mcp），跳过配置查找')
+    .option('--config <path>', 'MCP 配置文件路径（默认 ~/.flare/mcp.json）')
+    .option('--timeout <ms>', '单请求超时毫秒（默认 15000）')
+    .action(async (server: string, tool: string, jsonArgs: string | undefined, options: { url?: string; config?: string; timeout?: string }) => {
+      try {
+        const { MCPClient, MCPHttpClient, McpManager } = await import('../index.js')
+        const timeoutMs = options.timeout ? Number(options.timeout) : 15000
+        // 工具参数：jsonArgs 为 JSON 对象（可选，默认 {}）
+        let args: Record<string, any> = {}
+        if (jsonArgs !== undefined) {
+          try {
+            args = JSON.parse(jsonArgs)
+          } catch (e: any) {
+            throw new Error(`工具参数不是合法 JSON: ${e?.message || e}`)
+          }
+          if (args === null || typeof args !== 'object' || Array.isArray(args)) {
+            throw new Error('工具参数必须是 JSON 对象（如 {"text":"hi"}）')
+          }
+        }
+        // 连接客户端：--url 直连 HTTP；否则查配置（配了 url 走 HTTP，command 走 stdio）
+        let client: InstanceType<typeof MCPClient> | InstanceType<typeof MCPHttpClient>
+        let label = server
+        if (options.url) {
+          client = new MCPHttpClient({ url: options.url, timeoutMs })
+          label = `${server}（${options.url}）`
+        } else {
+          const mgr = new McpManager({ configPath: options.config })
+          const cfg = mgr.servers.find((s) => s.name === server)
+          if (!cfg) {
+            throw new Error(`未配置 MCP 服务器: ${server}（~/.flare/mcp.json 的 servers 列表，或 --url 直连 HTTP 端点）`)
+          }
+          if (!cfg.url && !cfg.command) {
+            throw new Error(`MCP 服务器 ${server} 配置无效：需提供 command（stdio）或 url（HTTP transport）`)
+          }
+          client = cfg.url
+            ? new MCPHttpClient({ url: cfg.url, timeoutMs: cfg.timeoutMs || timeoutMs })
+            : new MCPClient({ command: cfg.command as string, args: cfg.args, env: cfg.env, timeoutMs })
+          if (cfg.url) label = `${server}（${cfg.url}）`
+        }
+        await client.initialize()
+        const res = await client.callTool(tool, args)
+        const text = Array.isArray(res.content)
+          ? res.content.filter((c) => c.type === 'text' && typeof c.text === 'string').map((c) => c.text).join('\n')
+          : ''
+        client.close()
+        if (res.isError) {
+          console.error(chalk.red(`❌ 工具 ${tool} 执行失败: ${text || '（无错误信息）'}`))
+          process.exit(1)
+        }
+        console.log(text || `（工具 ${tool} 无文本输出）`)
+      } catch (e: any) {
+        console.error(chalk.red(`❌ ${e?.message || e}`))
+        process.exit(1)
+      }
+    })
+
+  program
     .command('models')
     .description('查看可用模型：配置的主/视觉模型 + 本地 Ollama 已拉取模型（v0.6.0）')
     .action(async () => {

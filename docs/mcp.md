@@ -244,6 +244,51 @@ client.close()
 - 服务器返回 JSON-RPC error → `reject`（与 stdio 客户端一致）；HTTP 非 200 / 无响应体 → `reject`（含状态码与原因）
 - 单请求超时默认 15s（`MCPHttpClient({ timeoutMs })` 可调）；`close()` 后拒绝后续请求
 
+#### McpManager 接入（v0.6.6）：配置 `url` 即走 HTTP
+
+`McpManager`（CLI 交互 `/mcp`、`flare server --mcp` 共用）现在同时支持 stdio 与 HTTP transport 服务器——
+`~/.flare/mcp.json` 的 servers 列表项配置 `url`（HTTP 端点）即可直连，无需 spawn 子进程：
+
+```json
+{
+  "servers": [
+    { "name": "local-fs", "command": "npx", "args": ["-y", "@modelcontextprotocol/server-filesystem", "/tmp"] },
+    { "name": "remote", "url": "http://127.0.0.1:8931/mcp" }
+  ]
+}
+```
+
+- 配了 `url` → `MCPHttpClient` 直连（HTTP transport）；否则按 `command` → stdio spawn（行为不变）
+- 同时配了 `url` 与 `command` → `url` 优先；既无 `url` 也无 `command` → connect 抛清晰错误
+- `timeoutMs` 可单独覆盖单服务器超时；`McpManager({ httpTimeoutMs })` 全局默认 15s
+- `createMcpTools` 参数放宽为 `McpToolClient` 接口——stdio/HTTP 客户端都满足，工具桥传输无关
+
+```ts
+import { McpManager } from 'flare-agent'
+const mgr = new McpManager()                 // 读 ~/.flare/mcp.json（含 url 服务器）
+await mgr.connect('remote')                  // 自动选 HTTP transport
+new Agent({ ..., tools: mgr.getAllTools() })
+```
+
+#### CLI `flare mcp call`（v0.6.6）：一键调用 MCP 工具
+
+不启动交互模式直接调用 MCP 服务器工具（stdio 或 HTTP 均可）：
+
+```bash
+# HTTP transport 直连（跳过配置查找）
+flare mcp call remote read_file '{"path":"/tmp/a.txt"}' --url http://127.0.0.1:8931/mcp
+
+# 按配置调用（url → HTTP；command → stdio；--config 可指定配置文件）
+flare mcp call local-fs read_file '{"path":"/tmp/a.txt"}'          # 默认 ~/.flare/mcp.json
+flare mcp call mock add_numbers '{"a":2,"b":3}' --config ./mcp.json
+
+# 调超时（毫秒）
+flare mcp call remote ping --url http://127.0.0.1:8931/mcp --timeout 30000
+```
+
+- 工具参数为 JSON 对象（缺省 `{}`）；工具级失败（isError）/ 协议错误 / 未配置服务器 → 退出码 1 + 明确错误信息
+- 便捷用途：冒烟验证 MCP 服务器、调试远端 HTTP 端点、脚本里调用 MCP 工具
+
 ## 自定义 MCP 服务器（测试/开发）
 
 flare 的 MCP 客户端只依赖 MCP 核心子集（`initialize` / `notifications/initialized` / `tools/list` / `tools/call`）。
@@ -256,5 +301,5 @@ flare 的 MCP 客户端只依赖 MCP 核心子集（`initialize` / `notification
 ## 协议版本
 
 - MCP 协议版本：`2025-03-26`（initialize 时协商，服务器返回自己的版本则兼容接受）
-- flare 引擎版本：`0.5.5`（`clientInfo.version`，读取 package.json 不硬编码）
+- flare 引擎版本：`0.6.6`（`clientInfo.version`，读取 package.json 不硬编码）
 - 请求超时：默认 15s（`MCPClient({ timeoutMs })` 可调）

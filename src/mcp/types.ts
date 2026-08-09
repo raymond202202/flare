@@ -12,12 +12,16 @@
 export interface McpServerConfig {
   /** 服务器名称（CLI /mcp connect <name> 用） */
   name: string
-  /** 启动命令（如 npx、node、python） */
-  command: string
+  /** 启动命令（stdio transport；与 url 二选一，v0.6.6 起可选——配了 url 则走 HTTP） */
+  command?: string
   /** 命令参数（如 ["-y", "@modelcontextprotocol/server-filesystem", "/tmp"]） */
   args?: string[]
   /** 附加环境变量（合并到 process.env） */
   env?: Record<string, string>
+  /** HTTP transport 端点（如 http://127.0.0.1:8931/mcp，v0.6.6）：配了 url 用 MCPHttpClient 直连，否则 stdio spawn */
+  url?: string
+  /** 单请求超时毫秒（HTTP transport 用，默认 15s；McpManager({ httpTimeoutMs }) 可全局覆盖） */
+  timeoutMs?: number
   /** 是否默认连接（CLI 启动时自动连接；预留） */
   default?: boolean
 }

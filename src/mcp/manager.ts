@@ -1,15 +1,17 @@
 /**
- * MCP 管理器（v0.5.5）
+ * MCP 管理器（v0.5.5；v0.6.6 起支持 HTTP transport 服务器）
  *
  * 管理多个 MCP 服务器连接：
- * - 配置：~/.flare/mcp.json（或自定义路径）——`{ "servers": [{ "name", "command", "args", "env" }] }`
- * - connect(name)：spawn + initialize 握手 + 桥接工具；disconnect(name)：关闭并移除
+ * - 配置：~/.flare/mcp.json（或自定义路径）——`{ "servers": [{ "name", "command", "args", "env" | "url" }] }`
+ *   配了 `url`（HTTP 端点，如 http://127.0.0.1:8931/mcp）走 MCPHttpClient 直连；
+ *   否则按 `command` spawn stdio 子进程（MCPClient）
+ * - connect(name)：连接 + initialize 握手 + 桥接工具；disconnect(name)：关闭并移除
  * - getAllTools()：已连接服务器的工具并集（注入 Agent config.tools）
  * - status()：连接状态列表（CLI /mcp、server mcp_status 用）
  *
  * 用法：
  *   const mgr = new McpManager()                          // 读 ~/.flare/mcp.json
- *   await mgr.connect('filesystem')                       // 连接并桥接工具
+ *   await mgr.connect('filesystem')                       // 连接并桥接工具（stdio 或 HTTP）
  *   new Agent({ ..., tools: mgr.getAllTools() })          // 注入 Agent
  */
 
@@ -17,24 +19,31 @@ import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { homedir } from 'node:os'
 import { MCPClient } from './client.js'
+import { MCPHttpClient } from './http-client.js'
 import { createMcpTools } from '../tools/mcp.js'
 import type { McpServerConfig, McpServerStatus } from './types.js'
 import type { Tool } from '../tools/index.js'
 
+const DEFAULT_HTTP_TIMEOUT_MS = 15000
+
 export interface McpManagerOptions {
   /** 配置文件路径（默认 ~/.flare/mcp.json；空串表示不读文件） */
   configPath?: string
+  /** HTTP transport 服务器单请求超时（毫秒，默认 15s；服务器配置 timeoutMs 可单独覆盖） */
+  httpTimeoutMs?: number
 }
 
 export class McpManager {
   private configPath: string
+  private httpTimeoutMs: number
   private config: McpServerConfig[] = []
-  private clients = new Map<string, MCPClient>()
+  private clients = new Map<string, MCPClient | MCPHttpClient>()
   private tools = new Map<string, Tool[]>()
   private errors = new Map<string, string>()
 
   constructor(opts: McpManagerOptions = {}) {
     this.configPath = opts.configPath || join(homedir(), '.flare', 'mcp.json')
+    this.httpTimeoutMs = opts.httpTimeoutMs || DEFAULT_HTTP_TIMEOUT_MS
     if (this.configPath) {
       this.config = loadMcpConfig(this.configPath)
     }
@@ -77,8 +86,14 @@ export class McpManager {
     if (!cfg) {
       throw new Error(`未配置 MCP 服务器: ${name}（~/.flare/mcp.json 的 servers 列表）`)
     }
+    if (!cfg.url && !cfg.command) {
+      throw new Error(`MCP 服务器 ${name} 配置无效：需提供 command（stdio）或 url（HTTP transport）`)
+    }
     this.errors.delete(name)
-    const client = new MCPClient({ command: cfg.command, args: cfg.args, env: cfg.env })
+    // v0.6.6：配了 url 走 HTTP transport（MCPHttpClient），否则 stdio spawn（MCPClient）
+    const client: MCPClient | MCPHttpClient = cfg.url
+      ? new MCPHttpClient({ url: cfg.url, timeoutMs: cfg.timeoutMs || this.httpTimeoutMs })
+      : new MCPClient({ command: cfg.command as string, args: cfg.args, env: cfg.env })
     try {
       await client.initialize()
       const tools = await createMcpTools(client)
