@@ -115,4 +115,27 @@ describe('CLI flare mcp call', () => {
     expect(code).toBe(1)
     expect(stderr).toMatch(/MCP 错误|未知工具/)
   }, 20000)
+
+  it('mcp status：列出配置服务器（名称 + 传输类型 + 端点/命令）', async () => {
+    const cfgPath = join(dir, 'mcp.json')
+    writeFileSync(cfgPath, JSON.stringify({
+      servers: [
+        { name: 'remote', url: 'http://127.0.0.1:8931/mcp' },
+        { name: 'mock', command: process.execPath, args: [MOCK_SERVER] },
+      ],
+    }))
+    const { code, stdout } = await runCli(['mcp', 'status', '--config', cfgPath])
+    expect(code).toBe(0)
+    expect(stdout).toMatch(/remote/)
+    expect(stdout).toMatch(/HTTP/)
+    expect(stdout).toMatch(/mock/)
+    expect(stdout).toMatch(/stdio/)
+    expect(stdout).toMatch(/127\.0\.0\.1:8931/)
+  }, 20000)
+
+  it('mcp status：无配置 → 未配置提示（退出码 0）', async () => {
+    const { code, stdout } = await runCli(['mcp', 'status', '--config', join(dir, 'missing.json')])
+    expect(code).toBe(0)
+    expect(stdout).toMatch(/未配置 MCP 服务器/)
+  }, 20000)
 })

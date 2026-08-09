@@ -151,6 +151,7 @@ cp .env.example ~/.flare/.env
 | `flare server [--profile --storage --mcp --confirm-tools --confirm-timeout --max-tokens --temperature]` | 宿主协议服务（stdin/stdout JSON Lines，供 Qt 等宿主调用；v0.6.1 起写回类工具经确认门；v0.6.5 起 --max-tokens/--temperature 设 chat 默认采样参数） |
 | `flare mcp-server [-t 工具名,...]` | MCP stdio 服务器：把 flare 工具集暴露给其他 AI 客户端（v0.5.8） |
 | `flare mcp call <服务器> <工具> [JSON参数]` | 调用 MCP 服务器工具（stdio 或 HTTP transport；服务器名查 `~/.flare/mcp.json`，`--url` 直连 HTTP 端点，v0.6.6） |
+| `flare mcp status` | 查看配置的 MCP 服务器（名称 + 传输类型 + 端点/命令，v0.6.6） |
 
 交互模式命令：
 
@@ -330,10 +331,10 @@ Interactive mode commands:
 
 #### v0.6.6 (2026-08-09) — MCP HTTP 接入 McpManager + CLI `flare mcp call` / MCP HTTP wired into McpManager + `flare mcp call`
 - 🔌 **McpManager 支持 HTTP transport 服务器（src/mcp/manager.ts + src/mcp/types.ts）**：`McpServerConfig` 新增 `url`（HTTP 端点）与 `timeoutMs`（可选）——配了 `url` 走 `MCPHttpClient` 直连，否则按 `command` stdio spawn；`McpManager({ httpTimeoutMs })` 全局超时可配；`createMcpTools` 参数放宽为 `McpToolClient` 接口（stdio/HTTP 传输无关）；配置同时有 url 与 command 时 url 优先；既无 url 也无 command 抛清晰错误；CLI 交互 `/mcp`、`flare server --mcp` 自动继承
-- 🎯 **CLI `flare mcp call <服务器> <工具> [JSON参数]`（src/cli/index.ts）**：一键调用 MCP 服务器工具——服务器名查 `~/.flare/mcp.json` 配置（url → HTTP / command → stdio），`--url` 直连 HTTP 端点跳过配置，`--config <path>` 指定配置，`--timeout <ms>` 调超时；参数为 JSON 对象（缺省 `{}`）；工具级失败/协议错误/未配置服务器 → 退出码 1 + 明确错误信息
+- 🎯 **CLI `flare mcp call <服务器> <工具> [JSON参数]` + `flare mcp status`（src/cli/index.ts）**：一键调用 MCP 服务器工具——服务器名查 `~/.flare/mcp.json` 配置（url → HTTP / command → stdio），`--url` 直连 HTTP 端点跳过配置，`--config <path>` 指定配置，`--timeout <ms>` 调超时；参数为 JSON 对象（缺省 `{}`）；工具级失败/协议错误/未配置服务器 → 退出码 1 + 明确错误信息；`mcp status` 列出配置服务器（名称 + 传输类型 + 端点/命令）
 - 📚 docs/mcp.md McpManager HTTP 接入 + CLI mcp call 章节 + README CLI 表/Changelog + 版本号 0.6.6
-- 🧪 新增 12 项测试（McpManager×HTTP 5：配置 url 连接桥接+真实执行/HTTP 不可达错误记录/无 url 无 command 报错/disconnect/url 优先 + CLI mcp call e2e 7：--url 直连/配置 url/配置 command stdio/无参数兜底/未配置服务器/非法 JSON/未知工具），共 311/311；零 agent.ts 改动
-- EN: McpServerConfig gains `url` so McpManager connects to HTTP-transport servers via MCPHttpClient (stdio still via command); new `flare mcp call <server> <tool> [json]` CLI to invoke MCP tools over either transport; 311/311 tests.
+- 🧪 新增 14 项测试（McpManager×HTTP 5：配置 url 连接桥接+真实执行/HTTP 不可达错误记录/无 url 无 command 报错/disconnect/url 优先 + CLI mcp call/status e2e 9：--url 直连/配置 url/配置 command stdio/无参数兜底/未配置服务器/非法 JSON/未知工具/status 列表/status 空配置），共 313/313；零 agent.ts 改动
+- EN: McpServerConfig gains `url` so McpManager connects to HTTP-transport servers via MCPHttpClient (stdio still via command); new `flare mcp call <server> <tool> [json]` CLI to invoke MCP tools over either transport, plus `flare mcp status`; 313/313 tests.
 
 #### v0.6.5 (2026-08-09) — server 默认采样参数 / Server default sampling params (--max-tokens/--temperature)
 - 🎛️ **`flare server --max-tokens <n> --temperature <n>`（src/cli/index.ts + src/server.ts）**：server 级默认采样参数——chat 请求未指定 `maxTokens`/`temperature` 时应用（CLI 一次配置，宿主免每请求传参）；请求带参数则请求优先（可覆盖默认）；默认值非法回 error 不触发生成；`HostServerOptions.defaultMaxTokens/defaultTemperature` 库可用

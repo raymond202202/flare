@@ -270,7 +270,7 @@ await mgr.connect('remote')                  // 自动选 HTTP transport
 new Agent({ ..., tools: mgr.getAllTools() })
 ```
 
-#### CLI `flare mcp call`（v0.6.6）：一键调用 MCP 工具
+#### CLI `flare mcp call` / `flare mcp status`（v0.6.6）：一键调用/查看 MCP 工具
 
 不启动交互模式直接调用 MCP 服务器工具（stdio 或 HTTP 均可）：
 
@@ -281,6 +281,9 @@ flare mcp call remote read_file '{"path":"/tmp/a.txt"}' --url http://127.0.0.1:8
 # 按配置调用（url → HTTP；command → stdio；--config 可指定配置文件）
 flare mcp call local-fs read_file '{"path":"/tmp/a.txt"}'          # 默认 ~/.flare/mcp.json
 flare mcp call mock add_numbers '{"a":2,"b":3}' --config ./mcp.json
+
+# 查看配置的服务器（名称 + 传输类型 + 端点/命令）
+flare mcp status [--config ./mcp.json]
 
 # 调超时（毫秒）
 flare mcp call remote ping --url http://127.0.0.1:8931/mcp --timeout 30000
