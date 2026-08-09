@@ -327,6 +327,16 @@ Interactive mode commands:
 
 > 中文条目 / Chinese entries · English summary for each version
 
+#### v0.6.0 (2026-08-09) — 宿主会话/模型可观测性增强 / Host session & model observability
+- **协议 `recent_sessions`（src/server.ts）**：会话列表 + 首条 user 消息预览（`preview`，最多 120 字符）——
+  `{"type":"recent_sessions","limit":5}`，宿主会话面板展示"最近会话 + 预览"用；`limit` 默认 10 上限 50；复用
+  `MemoryStore.getRecentSessions`（此前仅 CLI /sessions 使用）；`docs/host-protocol.md` 4.1 节同步
+- **`flare models` 命令（src/cli/index.ts）**：查看可用模型——配置的主模型（settings 优先）/ 视觉模型（含解析端点）
+  + 本地 Ollama 已拉取模型列表（`/api/tags`，大小/时间；Ollama 不可达/超时友好降级不报错）
+- **库导出 `listOllamaModels` / `formatModelSize`（src/core/models.ts）**：宿主可查询本地可用模型（面板展示可切换项）；
+  零依赖（Node 18+ 全局 fetch），`fetchImpl` 可注入（测试/宿主替换）
+- 测试：221 基线 + 4（recent_sessions 协议/store）+ 7（models）= **232/232 全绿**，tsc 0 错误，零 agent.ts 改动
+
 #### v0.5.9 (2026-08-09) — 上下文裁剪建议：suggestTrim 纯函数 / Context trim suggestion (suggestTrim)
 - ✂️ **`suggestTrim(messages, budgetTokens, opts?)`（src/core/context.ts，纯函数）**：按 token 预算给出"保留哪些消息"的建议——**system 保底**（首条 role=system 始终保留，AI 需要系统提示）+ **最近优先**（从最新消息向前收集直到接近预算）+ **预算极小保底最新一条**（AI 必须能看到用户最新输入才能回复）+ `reserveForOutput`（为模型输出预留 tokens）+ `keepSystem:false` 可关；返回 `{ keep, droppedCount, estimatedKeptTokens, estimatedDroppedTokens }`
 - 🧩 **宿主自管理上下文的地基**：Pulse/StorySpire 面板可自行按预算裁剪再发给引擎（不修改 Agent 内部状态，零 agent.ts 改动）；库导出 `suggestTrim` + 类型

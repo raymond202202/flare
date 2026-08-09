@@ -104,6 +104,17 @@ export {
 } from './core/context.js'
 export type { TrimSuggestion, SuggestTrimOptions } from './core/context.js'
 
+// ===== 模型可观测性（v0.6.0）：本地 Ollama 模型列表查询（flare models 命令 / 宿主面板）=====
+export {
+  listOllamaModels,
+  formatModelSize,
+  OLLAMA_DEFAULT_BASE,
+} from './core/models.js'
+export type {
+  OllamaModelInfo,
+  OllamaModelsResult,
+} from './core/models.js'
+
 // ===== 记忆系统 =====
 export { MemoryStore, getMemoryStore, serializeContent, deserializeContent } from './memory/store.js'
 
