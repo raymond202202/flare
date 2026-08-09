@@ -27,6 +27,9 @@ import {
   getMemoryStore,
   ConfirmationGate,
   memoryStoreKv,
+  resolveProviderOptions,
+  listOllamaModels,
+  config,
   tools as builtinTools,
   type ExpertProfile,
   type ToolDefinition,
@@ -34,6 +37,7 @@ import {
   type ToolResult,
   type McpServerConfig,
   type ConfirmDecision,
+  type OllamaModelsResult,
 } from './index.js'
 
 // 从 package.json 读取引擎版本（不硬编码；宿主 version 协商用）
@@ -79,6 +83,64 @@ export function wrapConfirmTools(tools: Tool[], gate: ConfirmationGate, confirmT
   if (!confirmTools || confirmTools.length === 0) return tools
   const set = new Set(confirmTools)
   return tools.map(t => (set.has(t.definition.function.name) ? gate.wrap(t) : t))
+}
+
+/**
+ * 推断模型 provider 类型（v0.6.9，纯函数可单测）：模型名 → ollama / deepseek / openai / other。
+ * 与 resolveProviderOptions 的自动检测规则一致（含 ':' 的 Ollama 命名 / deepseek 系列 / gpt·o1·o3·chatgpt 系列）。
+ */
+export function detectProvider(model: string): 'ollama' | 'deepseek' | 'openai' | 'other' {
+  if (model.includes(':')) return 'ollama'
+  if (model.includes('deepseek')) return 'deepseek'
+  if (model.includes('gpt') || model.includes('o1') || model.includes('o3') || model.includes('chatgpt')) return 'openai'
+  return 'other'
+}
+
+/** 单个模型的端点信息（models 响应 configured 项，v0.6.9） */
+export interface ModelEndpointInfo {
+  model: string
+  baseURL: string
+  hasApiKey: boolean
+  provider: 'ollama' | 'deepseek' | 'openai' | 'other'
+  /** 解析失败原因（如 Claude 系列明确报错）；此时不抛错，接口仍返回其余字段 */
+  error?: string
+}
+
+/** models 请求的响应体（v0.6.9）：configured 当前配置 + ollama 本地模型列表 */
+export interface ModelInfoResponse {
+  configured: {
+    /** 当前主模型（DEFAULT_MODEL 或环境配置解析） */
+    main: ModelEndpointInfo
+    /** 视觉模型（未配置时 null） */
+    vision: ModelEndpointInfo | null
+  }
+  ollama: OllamaModelsResult
+}
+
+/**
+ * 收集模型信息（v0.6.9，纯逻辑可单测；供 server 协议 models 请求使用）：
+ * - configured：当前配置的主/视觉模型端点信息（resolveProviderOptions 解析 + provider 推断 + apiKey 是否存在）
+ * - ollama：本地 Ollama 已拉取模型列表（listOllamaModels；Ollama 不可达返回 ok:false + error，不抛错）
+ * fetchImpl 可注入（测试 mock）；默认全局 fetch。
+ */
+export async function collectModelInfo(fetchImpl: typeof fetch = fetch): Promise<ModelInfoResponse> {
+  const resolveOne = (model?: string): ModelEndpointInfo => {
+    const name = model || config.get('DEFAULT_MODEL') || 'gpt-4o'
+    try {
+      const r = resolveProviderOptions(model ? { model } : {})
+      return { model: r.model, baseURL: r.baseURL, hasApiKey: Boolean(r.apiKey), provider: detectProvider(r.model) }
+    } catch (e: any) {
+      return { model: name, baseURL: '', hasApiKey: false, provider: detectProvider(name), error: e?.message || String(e) }
+    }
+  }
+  const visionModel = config.get('VISION_MODEL')
+  return {
+    configured: {
+      main: resolveOne(),
+      vision: visionModel ? resolveOne(visionModel) : null,
+    },
+    ollama: await listOllamaModels(undefined, undefined, fetchImpl),
+  }
 }
 
 interface PendingTool {
@@ -539,6 +601,11 @@ export function startHostServer(opts: HostServerOptions) {
           }
           // 无 gate = 无放行记录：幂等 ok（服务不崩、状态不变）
           reply({ type: 'ok', sessionId, ...(tool ? { tool } : {}), ...(resetSession ? { resetSession: true } : {}) })
+          break
+        }
+        case 'models': {
+          // 宿主查询可切换模型（v0.6.9）：当前配置主/视觉模型端点信息 + 本地 Ollama 模型列表（只读，不触发生成）
+          reply({ type: 'models', ...(await collectModelInfo()) })
           break
         }
         case 'mcp_status': {

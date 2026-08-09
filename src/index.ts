@@ -152,5 +152,5 @@ export type {
 export { memoryStoreKv } from './core/confirm.js'
 
 // ===== 宿主协议服务（Qt 等非 Node 宿主）=====
-export { startHostServer, wrapConfirmTools, DEFAULT_CONFIRM_TOOLS } from './server.js'
-export type { HostServerOptions } from './server.js'
+export { startHostServer, wrapConfirmTools, DEFAULT_CONFIRM_TOOLS, collectModelInfo, detectProvider } from './server.js'
+export type { HostServerOptions, ModelEndpointInfo, ModelInfoResponse } from './server.js'
