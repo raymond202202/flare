@@ -139,3 +139,54 @@ describe('CLI flare mcp call', () => {
     expect(stdout).toMatch(/未配置 MCP 服务器/)
   }, 20000)
 })
+
+describe('CLI flare mcp resources（v0.6.10）', () => {
+  /** 带 resources 的 HTTP MCP 服务器 */
+  async function startResServer() {
+    return startMcpHttpServer({
+      tools: [echoTool],
+      resources: [
+        {
+          uri: 'flare://notes/hello',
+          name: 'hello-note',
+          description: '一条示例笔记',
+          mimeType: 'text/plain',
+          read: () => '你好，这是资源内容',
+        },
+      ],
+    })
+  }
+
+  it('列出资源元数据（uri + 名称 + 描述 + mimeType）', async () => {
+    const h = await startResServer()
+    handles.push(h)
+    const { code, stdout } = await runCli(['mcp', 'resources', 'remote', '--url', h.url])
+    expect(code).toBe(0)
+    expect(stdout).toMatch(/flare:\/\/notes\/hello/)
+    expect(stdout).toMatch(/hello-note/)
+    expect(stdout).toMatch(/一条示例笔记/)
+    expect(stdout).toMatch(/text\/plain/)
+  }, 20000)
+
+  it('--read <uri> 读取资源内容', async () => {
+    const h = await startResServer()
+    handles.push(h)
+    const { code, stdout } = await runCli(['mcp', 'resources', 'remote', '--read', 'flare://notes/hello', '--url', h.url])
+    expect(code).toBe(0)
+    expect(stdout.trim()).toContain('你好，这是资源内容')
+  }, 20000)
+
+  it('--read 未知 uri → 退出码 1 + 协议错误', async () => {
+    const h = await startResServer()
+    handles.push(h)
+    const { code, stderr } = await runCli(['mcp', 'resources', 'remote', '--read', 'flare://nope', '--url', h.url])
+    expect(code).toBe(1)
+    expect(stderr).toMatch(/MCP 错误|未知资源|not found/i)
+  }, 20000)
+
+  it('未配置服务器 → 退出码 1 + 错误提示', async () => {
+    const { code, stderr } = await runCli(['mcp', 'resources', 'nope', '--config', join(dir, 'missing.json')])
+    expect(code).toBe(1)
+    expect(stderr).toMatch(/未配置 MCP 服务器/)
+  }, 20000)
+})

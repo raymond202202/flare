@@ -1026,6 +1026,69 @@ export function main() {
       }
     })
 
+  mcpCmd
+    .command('resources <server>')
+    .description('查看 MCP 服务器暴露的资源（resources/list；--read <uri> 读取内容，v0.6.10）')
+    .option('--url <url>', '直接连 HTTP transport 端点（如 http://127.0.0.1:8931/mcp），跳过配置查找')
+    .option('--config <path>', 'MCP 配置文件路径（默认 ~/.flare/mcp.json）')
+    .option('--timeout <ms>', '单请求超时毫秒（默认 15000）')
+    .option('--read <uri>', '读取指定资源内容（替代列出元数据）')
+    .action(async (server: string, options: { url?: string; config?: string; timeout?: string; read?: string }) => {
+      try {
+        const { MCPClient, MCPHttpClient, McpManager } = await import('../index.js')
+        const timeoutMs = options.timeout ? Number(options.timeout) : 15000
+        // 连接客户端：--url 直连 HTTP；否则查配置（配了 url 走 HTTP，command 走 stdio）——与 mcp call 同构
+        let client: InstanceType<typeof MCPClient> | InstanceType<typeof MCPHttpClient>
+        let label = server
+        if (options.url) {
+          client = new MCPHttpClient({ url: options.url, timeoutMs })
+          label = `${server}（${options.url}）`
+        } else {
+          const mgr = new McpManager({ configPath: options.config })
+          const cfg = mgr.servers.find((s) => s.name === server)
+          if (!cfg) {
+            throw new Error(`未配置 MCP 服务器: ${server}（~/.flare/mcp.json 的 servers 列表，或 --url 直连 HTTP 端点）`)
+          }
+          if (!cfg.url && !cfg.command) {
+            throw new Error(`MCP 服务器 ${server} 配置无效：需提供 command（stdio）或 url（HTTP transport）`)
+          }
+          client = cfg.url
+            ? new MCPHttpClient({ url: cfg.url, timeoutMs: cfg.timeoutMs || timeoutMs })
+            : new MCPClient({ command: cfg.command as string, args: cfg.args, env: cfg.env, timeoutMs })
+          if (cfg.url) label = `${server}（${cfg.url}）`
+        }
+        await client.initialize()
+        if (options.read) {
+          const contents = await client.readResource(options.read)
+          client.close()
+          if (contents.length === 0) {
+            console.log(`（资源 ${options.read} 无内容）`)
+            return
+          }
+          for (const c of contents) {
+            console.log(c.text)
+          }
+          return
+        }
+        const resources = await client.listResources()
+        client.close()
+        if (resources.length === 0) {
+          console.log(chalk.gray(`服务器 ${label} 未暴露任何资源（resources/list 为空）`))
+          return
+        }
+        const lines = resources.map((r) => {
+          const meta = [r.name, r.mimeType].filter(Boolean).join(' · ')
+          return `  ${chalk.green(r.uri)}${meta ? chalk.gray(`  ${meta}`) : ''}${r.description ? `\n    ${chalk.gray(r.description)}` : ''}`
+        })
+        console.log(chalk.cyan(`服务器 ${label} 的资源（${resources.length}）:`))
+        console.log(lines.join('\n'))
+        console.log(chalk.gray('  提示: flare mcp resources <服务器> --read <uri> 读取资源内容'))
+      } catch (e: any) {
+        console.error(chalk.red(`❌ ${e?.message || e}`))
+        process.exit(1)
+      }
+    })
+
   program
     .command('models')
     .description('查看可用模型：配置的主/视觉模型 + 本地 Ollama 已拉取模型（v0.6.0）')

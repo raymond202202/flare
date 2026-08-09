@@ -152,6 +152,7 @@ cp .env.example ~/.flare/.env
 | `flare mcp-server [-t 工具名,...]` | MCP stdio 服务器：把 flare 工具集暴露给其他 AI 客户端（v0.5.8） |
 | `flare mcp call <服务器> <工具> [JSON参数]` | 调用 MCP 服务器工具（stdio 或 HTTP transport；服务器名查 `~/.flare/mcp.json`，`--url` 直连 HTTP 端点，v0.6.6） |
 | `flare mcp status` | 查看配置的 MCP 服务器（名称 + 传输类型 + 端点/命令，v0.6.6） |
+| `flare mcp resources <服务器> [--read <uri>]` | 查看/读取 MCP 服务器暴露的资源（v0.6.10） |
 
 交互模式命令：
 
@@ -344,15 +345,21 @@ Interactive mode commands:
   `session` / `always` 跨会话持久化；缺 tool / 非法 mode 回 error 含提示）——与 `confirm_status`（查询）/
   `confirm_revoke`（撤销）组成确认门管理闭环；`mode=always` 当前会话内也放行（allowedTools 可见），持久化部分
   由 alwaysAllowed 体现
-- 📚 docs/confirmation.md CLI 章节 + docs/host-protocol.md §21 + 确认门管理章节 + 响应表 + README CLI 表/Changelog + 版本号 0.6.10
-- 🧪 新增 13 项测试（tests/cli-confirm.test.ts 9 + tests/server.test.ts 4）：/allow 范围标注（会话级/持久化/两者+
-  新会话持久化）/ 无 listDetailed 回退旧行为 / add 缺省 session 不写持久化 / add session / add always 持久化+跨实例生效 /
-  add 缺参 / 非法模式 / 无 allow 回调 / add 后 revoke 双清 + confirm_allow 缺 tool error / 非法 mode error / 缺省 mode
-  session 放行 status 可见 / mode=always 持久化+revoke 撤销；共 377/377；零 agent.ts 改动
+- 🎛️ **CLI `flare mcp resources <服务器> [--read <uri>]`（src/cli/index.ts）**：查看 MCP 服务器暴露的资源（复用
+  `listResources`/`readResource`，stdio/HTTP 均可，`--url`/`--config`/`--timeout` 同 mcp call）——与 mcp call/status
+  组成完整命令组；未暴露资源友好提示、未知 uri 协议错误退出码 1
+- 📚 docs/confirmation.md CLI 章节 + docs/host-protocol.md §21 + 确认门管理章节 + 响应表 + docs/mcp.md CLI 章节 +
+  README CLI 表/Changelog + 版本号 0.6.10
+- 🧪 新增 17 项测试（tests/cli-confirm.test.ts 9 + tests/server.test.ts 4 + tests/mcp-cli-call.test.ts 4）：/allow 范围标注
+  （会话级/持久化/两者+新会话持久化）/ 无 listDetailed 回退旧行为 / add 缺省 session 不写持久化 / add session / add always
+  持久化+跨实例生效 / add 缺参 / 非法模式 / 无 allow 回调 / add 后 revoke 双清 + confirm_allow 缺 tool error / 非法 mode
+  error / 缺省 mode session 放行 status 可见 / mode=always 持久化+revoke 撤销 + mcp resources 列表元数据 / --read 读取 /
+  未知 uri 退出码 1 / 未配置服务器退出码 1；共 381/381；零 agent.ts 改动
 - EN: Interactive CLI `/allow add <tool> [session|always]` explicitly grants a confirm tool without waiting for a prompt
   (session-scoped by default, `always` persists to the global store); `/allow` listing annotates scope (session/persisted/
   both) via new optional AllowGateHooks.allow/listDetailed with backward-compatible fallback; host protocol gains
-  `confirm_allow` completing the gate-management trio with confirm_status/confirm_revoke; 377/377 tests.
+  `confirm_allow` completing the gate-management trio with confirm_status/confirm_revoke; new `flare mcp resources`
+  CLI lists/reads server resources over stdio or HTTP; 381/381 tests.
 
 #### v0.6.9 (2026-08-10) — server 协议 models 接口：可切换模型查询 / Model availability over the host protocol
 - 🎛️ **server 协议新增 `models` 请求（src/server.ts）**：宿主面板查询可切换模型（只读、不触发生成、不创建会话）——
