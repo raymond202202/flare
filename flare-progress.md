@@ -6,6 +6,25 @@
 > **最新状态（v0.5.9）**：MCP 服务器端完整（MCPServer + CLI `flare mcp-server` + resources/prompts 空响应兼容）+ 上下文裁剪建议 suggestTrim 纯函数；221/221 全绿（commits 06eae7b/5779078/7379a5e/d84b2ef 未 push）。
 > 下一步候选：① CLI/server 接入 ConfirmationGate（宿主弹窗流程）；② agent.ts trimContext 自动裁剪（风险高暂缓）；③ MCP 更多协议特性（resources 真实暴露/HTTP transport）。
 
+### 2026-08-09 第三轮实施（v0.6.0）——N1/N2/N3 完成
+
+- **N1 协议 recent_sessions**（commit `d7d27c1`）：`src/server.ts` 新增 `recent_sessions` 请求——
+  会话列表 + 首条 user 消息预览（`preview` 折叠空白、截断 120 字符），`limit` 默认 10 上限 50；
+  复用 `MemoryStore.getRecentSessions`（此前仅 CLI /sessions 用）；docs/host-protocol.md §4.1 + 响应表同步；
+  store.test.ts +2、server.test.ts +2（225/225 全绿）
+- **N2 flare models 命令**（commit `955a897`）：`src/core/models.ts` 新增 `listOllamaModels`（/api/tags 查询，
+  AbortController 超时、Ollama 不可达返回 ok:false 不抛错、fetchImpl 可注入）+ `formatModelSize`；CLI `flare models`
+  输出配置主/视觉模型（含解析端点）+ 本地 Ollama 已拉取模型列表；库导出 + README CLI 表/Changelog + v0.6.0 版本号；
+  tests/models.test.ts 7 项（mock fetch：正常解析/尾斜杠/HTTP500/连接拒绝/超时 abort/大小格式化/CLI e2e 不可达不崩）；
+  **冒烟实测**：本机 Ollama 列出 qwen2.5:7b-64k / qwen2.5vl:3b / qwen2.5vl:7b / qwen2.5:7b（232/232 全绿）
+- **N3 memory_search 长消息折叠**（commit `6ba3a2d`）：`src/tools/memory.ts` 新增 `foldItem`（空白折叠 +
+  150 字截断 + … 标记），memories 与 messages 统一折叠（此前 memories 无截断、messages 200 字）；
+  memory-tool.test.ts +1（长记忆/长消息不输出完整原文、含折叠标记、单行长度受限）（233/233 全绿）
+- **验证**：每步 tsc 0 错误 + 全量 vitest 全绿（225 → 232 → 233）；三步均零 agent.ts 改动
+- **commit 汇总**：`d7d27c1` / `955a897` / `6ba3a2d`（均禁止 push，待用户明早验收）
+- **下一步候选**：① N4 文档收尾核对（README/版本/协议文档一致性检查）；② server 协议 chat 参数透传
+  （maxTokens/temperature，需评估）；③ agent.ts trimContext 自动裁剪（风险高，仍暂缓）
+
 ---
 
 ## 第一轮：调研（2026-08-09）
@@ -107,12 +126,12 @@
 - **确定方向**：**server 协议完善（宿主会话/模型可观测性增强）** —— 纯外围（src/server.ts + src/cli + docs + tests），
   零 agent.ts 改动，Pulse/StorySpire 宿主直接受益
 - **迭代计划（小步骤）**：
-  - [ ] **N1** 协议 `recent_sessions`（会话列表 + 首条 user 消息预览，复用 getRecentSessions）
+  - [x] **N1** 协议 `recent_sessions`（会话列表 + 首条 user 消息预览，复用 getRecentSessions）
         → host-protocol.md 文档 + server.test.ts 2-3 项测试
-  - [ ] **N2** `flare models` CLI 命令（列出默认/视觉模型 + 本地 Ollama 已拉取模型，Ollama 不可达不报错）
+  - [x] **N2** `flare models` CLI 命令（列出默认/视觉模型 + 本地 Ollama 已拉取模型，Ollama 不可达不报错）
         → cli 测试（mock 或跳过网络）
-  - [ ] **N3**（可选）memory_search 长消息折叠（tools/memory.ts 截断优化）
-  - [ ] **N4** README Changelog + 版本号 v0.6.0 + 文档收尾
+  - [x] **N3**（可选）memory_search 长消息折叠（tools/memory.ts 截断优化）
+  - [x] **N4** README Changelog + 版本号 v0.6.0 + 文档收尾（随 N2 完成）
 
 ---
 
