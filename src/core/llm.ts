@@ -195,11 +195,15 @@ export interface LLMProvider {
   chatStream(messages: Message[], tools?: ToolDefinition[]): AsyncGenerator<string, void, unknown>
 }
 
-/** 创建 provider 的可选参数（模型 / 端点 / 密钥） */
+/** 创建 provider 的可选参数（模型 / 端点 / 密钥 / 采样控制） */
 export interface ProviderOptions {
   apiKey?: string
   baseURL?: string
   model?: string
+  /** 最大输出 token 数（v0.6.3）：透传到 API 请求体 max_tokens；缺省不传（用服务端默认） */
+  maxTokens?: number
+  /** 采样温度 0~2（v0.6.3）：透传到 API 请求体 temperature；缺省不传（用服务端默认） */
+  temperature?: number
 }
 
 /** resolveProviderOptions 的解析结果（全部落定） */
@@ -272,6 +276,8 @@ export function resolveProviderOptions(options: ProviderOptions = {}): ResolvedP
 export class OpenAIProvider implements LLMProvider {
   private client: OpenAI
   private model: string
+  private maxTokens?: number
+  private temperature?: number
 
   constructor(options?: ProviderOptions) {
     // 模型路由：显式参数 > LLM_* 配置 > 旧 OPENAI_BASE_URL > 按模型名自动检测（含 Ollama 本地模型）
@@ -281,6 +287,9 @@ export class OpenAIProvider implements LLMProvider {
       baseURL: resolved.baseURL,
     })
     this.model = resolved.model
+    // 采样控制（v0.6.3）：仅显式传入时透传到 API 请求体（max_tokens / temperature）；缺省不传保持服务端默认
+    this.maxTokens = options?.maxTokens
+    this.temperature = options?.temperature
   }
 
   async chat(messages: Message[], tools?: ToolDefinition[]): Promise<LLMResponse> {
@@ -295,6 +304,8 @@ export class OpenAIProvider implements LLMProvider {
           messages: messages as any,
           tools: tools as any,
           stream: false,
+          ...(this.maxTokens !== undefined ? { max_tokens: this.maxTokens } : {}),
+          ...(this.temperature !== undefined ? { temperature: this.temperature } : {}),
         })
 
         const choice = response.choices[0]
@@ -338,6 +349,8 @@ export class OpenAIProvider implements LLMProvider {
       tools: tools as any,
       stream: true,
       stream_options: { include_usage: true },
+      ...(this.maxTokens !== undefined ? { max_tokens: this.maxTokens } : {}),
+      ...(this.temperature !== undefined ? { temperature: this.temperature } : {}),
     })
 
     for await (const chunk of stream) {

@@ -327,6 +327,13 @@ Interactive mode commands:
 
 > 中文条目 / Chinese entries · English summary for each version
 
+#### v0.6.3 (2026-08-09) — chat 采样参数透传 / Sampling control passthrough (maxTokens + temperature)
+- 🎛️ **server 协议 chat 新增 `maxTokens` / `temperature`（src/server.ts）**：宿主每请求可指定最大输出 token 数与采样温度——透传到 LLM 请求体（`max_tokens` / `temperature`）；非法值（maxTokens 非正整数、temperature 超出 0~2）直接回 error 不触发生成；同一会话采样参数变化自动重建 Agent（与切换 model 同机制，历史从记忆库恢复）
+- 🔌 **`ProviderOptions` 扩展（src/core/llm.ts）**：`maxTokens` / `temperature` 可选字段，`OpenAIProvider.chat`/`chatStream` 请求体透传（仅显式传入时携带，缺省不传保持服务端默认）；库导出类型自动覆盖
+- 📚 docs/host-protocol.md chat 请求参数表 + README Changelog + 版本号 0.6.3
+- 🧪 新增 10 项测试（provider 请求体透传 5：chat/chatStream/缺省不传/temperature 0 不丢失 + server 协议 5：非法 maxTokens/temperature 回 error、合法值流程完整），共 272/272；零 agent.ts 改动
+- EN: chat protocol now accepts maxTokens/temperature and passes them to the LLM request body (max_tokens/temperature) — invalid values error out before generation; ProviderOptions extended; 272/272 tests.
+
 #### v0.6.2 (2026-08-09) — MCP prompts 真实暴露 / Real MCP prompts (prompts/list + prompts/get)
 - 📜 **MCPServer `prompts` 选项（src/mcp/server.ts）**：注入提示词模板（name/description/arguments/render 支持异步）——
   `prompts/list` 返回真实元数据（客户端探测清单）、`prompts/get` 按客户端 arguments 渲染消息序列
