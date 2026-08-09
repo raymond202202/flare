@@ -10,13 +10,22 @@
  *   const client = new MCPClient({ command: 'npx', args: [...] })
  *   await client.initialize()
  *   const tools = await createMcpTools(client)   // → flare Tool[]，可注入 Agent config.tools
+ *
+ * v0.6.6：client 参数放宽为 McpToolClient 接口——stdio MCPClient 与 HTTP MCPHttpClient
+ * （接口完全一致）都满足，传输无关（McpManager 按服务器配置自动选传输）。
  */
 
 import type { Tool } from './index.js'
-import type { MCPClient } from '../mcp/client.js'
+import type { McpTool, McpCallResult } from '../mcp/types.js'
+
+/** 工具桥依赖的最小客户端接口（stdio MCPClient 与 HTTP MCPHttpClient 都满足） */
+export interface McpToolClient {
+  listTools(): Promise<McpTool[]>
+  callTool(name: string, args?: Record<string, any>): Promise<McpCallResult>
+}
 
 /** 从 MCP 服务器创建 flare 工具（拉取 tools/list 并逐个桥接） */
-export async function createMcpTools(client: MCPClient): Promise<Tool[]> {
+export async function createMcpTools(client: McpToolClient): Promise<Tool[]> {
   const defs = await client.listTools()
   return defs.map(def => ({
     definition: {
