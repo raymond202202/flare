@@ -107,6 +107,8 @@ gate.resetSession()              // 清空会话级放行（不影响 always）
 - **默认名单** `CLI_CONFIRM_TOOLS = ['memory_save']`（与 server 端 `DEFAULT_CONFIRM_TOOLS` 一致）；
   交互模式始终显式传工具集（内置 + MCP）再包装，避免 Agent 回退内置工具绕过确认门；
 - **/allow 命令**：`/allow` 查看已放行的确认工具（v0.6.10 起标注范围：`（本会话）` 会话级 / `（跨会话持久化）` always / `（会话+持久化）` 两者）；`/allow add <工具名> [session|always]` 显式放行（默认 session 本会话；always 跨会话持久化到 settings 表，无需等 AI 触发确认）；`/allow revoke <工具名>` 撤销放行（恢复每次确认）；
+- **/tools 命令（v0.6.11）**：`/tools` 查看当前 Agent 可用工具清单（内置 + MCP），每项标注来源与
+  `⚠需确认`（命中确认名单的写回类工具，执行前会弹窗确认）——与 `/allow` 呼应：先看清单哪些需确认，再决定是否放行；
 - **可复用纯函数**（库导出）：`parseConfirmAnswer(ans)`（输入→决策）/ `formatConfirmPrompt(toolName, args)`
   （确认 UI 文案）/ `terminalConfirmer({ toolName, args, ask, onPause?, onResume?, onFeedback? })`
   （可注入读行实现与暂停/恢复/反馈回调的终端确认流程）——其他宿主可复用同样的终端确认体验。

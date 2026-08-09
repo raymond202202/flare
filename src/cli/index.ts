@@ -8,7 +8,7 @@
  */
 
 import { Command } from 'commander'
-import { Agent, createProvider, getMemoryStore, config, tools, McpManager, estimateMessagesTokens, ConfirmationGate, memoryStoreKv, wrapConfirmTools, type AgentConfig, type McpServerStatus, type ConfirmDecision } from '../index.js'
+import { Agent, createProvider, getMemoryStore, config, tools, McpManager, estimateMessagesTokens, ConfirmationGate, memoryStoreKv, wrapConfirmTools, describeTools, type AgentConfig, type McpServerStatus, type ConfirmDecision } from '../index.js'
 import chalk from 'chalk'
 import { execSync } from 'child_process'
 import { createRequire } from 'module'
@@ -272,6 +272,12 @@ async function startInteractive() {
           scope: (always.has(name) && session.has(name) ? 'both' : always.has(name) ? 'always' : 'session') as 'session' | 'always' | 'both',
         }))
       },
+    }, () => {
+      // /tools 命令（v0.6.11）：当前 Agent 可用工具清单（内置 + MCP；含确认门标注 + 来源）
+      const mcpTools = mcpManager.getAllTools()
+      const mcpNames = new Set(mcpTools.map((t) => t.definition.function.name))
+      const allTools = [...tools, ...mcpTools]
+      return describeTools(allTools, CLI_CONFIRM_TOOLS, { mcp: mcpNames })
     })
     agentRunning = false
     renderFrame()
@@ -470,6 +476,9 @@ export interface McpCommandHooks {
 /** /context 命令回调（v0.5.6）：返回当前会话上下文占用；null 表示不可用 */
 export type ContextInfoGetter = () => { messageCount: number; estimatedTokens: number } | null
 
+/** /tools 命令回调（v0.6.11）：返回当前 Agent 可用工具清单元数据；null 表示不可用 */
+export type ToolsInfoGetter = () => import('../index.js').ToolMeta[] | null
+
 export async function handleSlashCommand(
   cmd: string,
   store: ReturnType<typeof getMemoryStore>,
@@ -481,7 +490,9 @@ export async function handleSlashCommand(
   /** /context 命令回调（v0.5.6，读取当前会话上下文占用） */
   contextInfo?: ContextInfoGetter,
   /** /allow 命令回调（v0.6.7，确认门放行名单管理） */
-  allowGate?: AllowGateHooks
+  allowGate?: AllowGateHooks,
+  /** /tools 命令回调（v0.6.11，当前 Agent 可用工具清单） */
+  toolsInfo?: ToolsInfoGetter
 ): Promise<'exit' | 'continue'> {
   const lower = cmd.toLowerCase()
   // /remember 带内容，必须用前缀匹配（switch 精确匹配会永远"未知命令"）
@@ -699,6 +710,28 @@ export async function handleSlashCommand(
     return 'continue'
   }
 
+  // /tools 查看当前 Agent 可用工具清单（v0.6.11：名称/描述/来源 + 确认门标注）
+  if (lower === '/tools') {
+    if (!toolsInfo) {
+      output(chalk.yellow('\n  工具清单不可用（当前环境未提供 Agent 工具集）'))
+      return 'continue'
+    }
+    const metas = toolsInfo()
+    if (!metas || metas.length === 0) {
+      output(chalk.yellow('\n  当前没有可用工具'))
+      return 'continue'
+    }
+    const sourceLabel = (s: string) => (s === 'host' ? '宿主' : s === 'profile' ? '专家' : s === 'mcp' ? 'MCP' : '内置')
+    output(chalk.cyan(`\n🔧 当前可用工具（${metas.length}）:`))
+    for (const t of metas) {
+      const flag = t.confirmed ? chalk.yellow(' ⚠需确认') : ''
+      output(`  ${chalk.green(t.name)}${flag} ${chalk.gray(`· ${sourceLabel(t.source)}`)}`)
+      if (t.description) output(`    ${chalk.gray(t.description)}`)
+    }
+    output(chalk.gray('  ⚠需确认 = 写回类工具，执行前会弹窗确认（/allow 管理放行）'))
+    return 'continue'
+  }
+
   switch (lower) {
     case '/help':
       output(chalk.cyan('\n可用命令:'))
@@ -721,6 +754,7 @@ export async function handleSlashCommand(
       output('  /allow     - 查看已放行的确认工具（AI 写回类工具执行前会请求确认）')
       output('  /allow add <工具名> [session|always] - 显式放行（默认本会话；always 跨会话持久化）')
       output('  /allow revoke <工具名> - 撤销放行（恢复每次确认）')
+      output('  /tools     - 查看当前可用工具清单（含确认门标注与来源，v0.6.11）')
       output('  /pause       - 暂停动画（屏幕静止，可选中复制输出）')
       output('  /resume      - 恢复动画')
       output(chalk.gray('  💡 对话里直接发图片路径也会自动识别（如: 看看这张图 xxx.png）'))
