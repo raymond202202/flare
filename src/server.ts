@@ -22,6 +22,7 @@ import {
   profileToConfig,
   McpManager,
   estimateMessagesTokens,
+  suggestTrim,
   MemoryStore,
   getMemoryStore,
   ConfirmationGate,
@@ -366,14 +367,40 @@ export function startHostServer(opts: HostServerOptions) {
         }
         case 'context_status': {
           // 宿主查看会话上下文占用（v0.5.6）：消息数 + 估算 tokens（只读，不触发生成）
+          // v0.6.4：可选 budgetTokens → 附裁剪建议（suggestTrim 纯函数；宿主可据此自行按预算裁剪上下文）
           const sessionId = String(req.sessionId || 'default')
           const agent = getAgent(sessionId)
           const messages = agent.getMessages()
+          const estimatedTokens = estimateMessagesTokens(messages)
+          let suggestion: Record<string, unknown> | undefined
+          if (req.budgetTokens !== undefined && req.budgetTokens !== null) {
+            const budget = Number(req.budgetTokens)
+            if (!Number.isInteger(budget) || budget <= 0) {
+              reply({ type: 'error', message: 'context_status 的 budgetTokens 必须是正整数（上下文 token 预算）' })
+              break
+            }
+            const reserve = (req.reserveForOutput === undefined || req.reserveForOutput === null)
+              ? 0
+              : Number(req.reserveForOutput)
+            if (!Number.isFinite(reserve) || reserve < 0) {
+              reply({ type: 'error', message: 'context_status 的 reserveForOutput 必须是非负数值' })
+              break
+            }
+            const trim = suggestTrim(messages, budget, { reserveForOutput: reserve })
+            suggestion = {
+              // 建议保留的消息在原上下文中的索引（system 在前；宿主按索引裁剪后回 set_context 即可生效）
+              keepIndexes: trim.keep.map((m) => messages.indexOf(m)),
+              droppedCount: trim.droppedCount,
+              estimatedKeptTokens: trim.estimatedKeptTokens,
+              estimatedDroppedTokens: trim.estimatedDroppedTokens,
+            }
+          }
           reply({
             type: 'context_status',
             sessionId,
             messageCount: messages.length,
-            estimatedTokens: estimateMessagesTokens(messages),
+            estimatedTokens,
+            ...(suggestion ? { suggestion } : {}),
           })
           break
         }

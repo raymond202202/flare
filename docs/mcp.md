@@ -225,6 +225,25 @@ await h.close()
 - 非 POST / 错误路径 → `404`；默认仅监听 `127.0.0.1`（安全默认），`port: 0` = 随机端口
 - CLI 一键起 HTTP 服务器：`flare mcp-server --http --port 8931`（stdio 仍为默认传输）
 
+#### HTTP 客户端（v0.6.4）：MCPHttpClient
+
+与 stdio `MCPClient` 接口完全一致（`initialize` / `listTools` / `callTool` / `listPrompts` / `getPrompt` / `ping` / `close`），
+可互换使用——本地子进程服务器用 stdio，远端/HTTP 服务器用 HTTP（`src/mcp/http-client.ts`，零依赖 node:http）：
+
+```ts
+import { MCPHttpClient } from 'flare-agent'
+
+const client = new MCPHttpClient({ url: 'http://127.0.0.1:8931/mcp' })
+await client.initialize()
+const tools = await client.listTools()
+const res = await client.callTool('read_file', { path: '/tmp/a.txt' })
+client.close()
+```
+
+- 每个请求独立 HTTP 往返（MCP streamable HTTP 同步子集）；`initialize` 后自动发 `notifications/initialized` 通知（202 空体）
+- 服务器返回 JSON-RPC error → `reject`（与 stdio 客户端一致）；HTTP 非 200 / 无响应体 → `reject`（含状态码与原因）
+- 单请求超时默认 15s（`MCPHttpClient({ timeoutMs })` 可调）；`close()` 后拒绝后续请求
+
 ## 自定义 MCP 服务器（测试/开发）
 
 flare 的 MCP 客户端只依赖 MCP 核心子集（`initialize` / `notifications/initialized` / `tools/list` / `tools/call`）。
