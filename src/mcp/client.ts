@@ -24,7 +24,7 @@
 import { spawn, type ChildProcess } from 'node:child_process'
 import { createInterface, type Interface } from 'node:readline'
 import { createRequire } from 'node:module'
-import type { McpTool, McpCallResult, McpPromptInfo, McpPromptResult, McpResourceInfo, McpResourceContents, McpCompletionResult } from './types.js'
+import type { McpTool, McpCallResult, McpPromptInfo, McpPromptResult, McpResourceInfo, McpResourceContents, McpCompletionResult, McpRoot } from './types.js'
 
 const require = createRequire(import.meta.url)
 const pkg = require('../../package.json') as { version: string }
@@ -48,6 +48,9 @@ export interface MCPClientOptions {
   env?: Record<string, string>
   /** 单请求超时（毫秒），默认 15s（测试可调小） */
   timeoutMs?: number
+  /** 客户端 roots（v0.6.12 roots 协议）：暴露给服务器的命名空间/根目录；配置后 initialize 声明 capabilities.roots，
+   *  服务器可发 roots/list 请求查询（响应注入的 roots），roots 变化时可发 notifications/roots/list_changed 通知 */
+  roots?: McpRoot[]
 }
 
 export class MCPClient {
@@ -60,9 +63,11 @@ export class MCPClient {
   private capabilities: Record<string, unknown> = {}
   private closed = false
   private timeoutMs: number
+  private readonly rootsList: McpRoot[]
 
   constructor(opts: MCPClientOptions) {
     this.timeoutMs = opts.timeoutMs || DEFAULT_TIMEOUT_MS
+    this.rootsList = opts.roots || []
     this.child = spawn(opts.command, opts.args || [], {
       env: opts.env ? { ...process.env, ...opts.env } : process.env,
       stdio: ['pipe', 'pipe', 'pipe'],
@@ -91,7 +96,7 @@ export class MCPClient {
     })
   }
 
-  /** 处理服务器返回的一行（匹配 pending 请求；通知类消息无 id 忽略） */
+  /** 处理服务器返回的一行（匹配 pending 请求；服务器主动发来的请求 → handleServerRequest；通知类消息无 id 忽略） */
   private handleLine(line: string) {
     if (!line.trim()) return
     let msg: any
@@ -109,7 +114,27 @@ export class MCPClient {
       } else {
         p.resolve(msg.result)
       }
+    } else if (msg && msg.id !== undefined && typeof msg.method === 'string') {
+      // v0.6.12：服务器主动发来的请求（如 roots/list）——不是对 flare 请求的响应
+      void this.handleServerRequest(msg)
     }
+  }
+
+  /**
+   * 处理服务器发来的请求（v0.6.12，roots 协议方向）：目前支持 roots/list（返回注入的 roots），
+   * 未知方法回 -32601（协议错误，不中断连接）。
+   */
+  private async handleServerRequest(msg: any): Promise<void> {
+    if (this.closed) return
+    let resp: any
+    if (msg.method === 'roots/list') {
+      resp = { jsonrpc: '2.0', id: msg.id, result: { roots: this.rootsList } }
+    } else {
+      resp = { jsonrpc: '2.0', id: msg.id, error: { code: -32601, message: `Method not found: ${msg.method}` } }
+    }
+    try {
+      this.child.stdin!.write(JSON.stringify(resp) + '\n')
+    } catch { /* 写入失败（子进程已退出）不致命 */ }
   }
 
   /** 发送 JSON-RPC 请求（带超时），返回 result */
@@ -137,7 +162,10 @@ export class MCPClient {
   async initialize(): Promise<{ protocolVersion: string; serverInfo: { name?: string; version?: string } | null; capabilities: Record<string, unknown> }> {
     const res = await this.request<any>('initialize', {
       protocolVersion: MCP_PROTOCOL_VERSION,
-      capabilities: {},
+      // v0.6.12：配置了 roots 时声明客户端 roots 能力（服务器可发 roots/list 查询；缺省不声明）
+      capabilities: {
+        ...(this.rootsList.length > 0 ? { roots: { listChanged: true } } : {}),
+      },
       clientInfo: { name: 'flare', version: pkg.version },
     })
     this.protocolVersion = res?.protocolVersion || MCP_PROTOCOL_VERSION
@@ -202,6 +230,21 @@ export class MCPClient {
   /** 服务器名称（initialize 后可用） */
   get serverName(): string | null {
     return this.serverInfo?.name || null
+  }
+
+  /** 当前暴露的 roots（v0.6.12） */
+  get roots(): McpRoot[] {
+    return this.rootsList
+  }
+
+  /** 通知服务器 roots 已变化（v0.6.12）：发 notifications/roots/list_changed 通知（无 id，服务器无需响应） */
+  notifyRootsChanged(): void {
+    if (this.closed) return
+    try {
+      this.child.stdin!.write(
+        JSON.stringify({ jsonrpc: '2.0', method: 'notifications/roots/list_changed' }) + '\n'
+      )
+    } catch { /* 写入失败（子进程已退出）不致命 */ }
   }
 
   get isClosed(): boolean {

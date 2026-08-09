@@ -137,3 +137,16 @@ export interface McpCompletionResult {
   /** 是否还有更多（可选；默认 false） */
   hasMore?: boolean
 }
+
+/** MCP root（v0.6.12 roots 协议）：客户端暴露给服务器的命名空间/根目录（如项目目录、工作区） */
+export interface McpRoot {
+  /** 根目录 URI（如 file:///home/user/projects、memory://workspace） */
+  uri: string
+  /** 可选显示名称 */
+  name?: string
+}
+
+/** MCP roots/list 响应（服务器视角 v0.6.12）：客户端暴露的根目录列表 */
+export interface McpRootsResult {
+  roots: McpRoot[]
+}

@@ -24,7 +24,7 @@
 import { createInterface, type Interface } from 'node:readline'
 import { createRequire } from 'node:module'
 import { tools, type Tool, type ToolResult } from '../tools/index.js'
-import type { McpCompletionResult, McpContentItem, McpPrompt, McpPromptMessage, McpResource, McpResourceContents, McpTool } from './types.js'
+import type { McpCompletionResult, McpContentItem, McpPrompt, McpPromptMessage, McpResource, McpResourceContents, McpRoot, McpTool } from './types.js'
 import { MCP_PROTOCOL_VERSION } from './client.js'
 
 const require = createRequire(import.meta.url)
@@ -44,6 +44,8 @@ export interface MCPServerOptions {
   write?: (line: string) => void
   /** 输入流（默认 process.stdin；测试/嵌入式可注入） */
   input?: NodeJS.ReadableStream
+  /** 服务器→客户端请求超时毫秒（v0.6.12 requestRoots 用，默认 15s） */
+  requestTimeoutMs?: number
 }
 
 /** flare Tool → MCP 工具定义（tools/list 响应项） */
@@ -67,6 +69,10 @@ export class MCPServer {
   private closed = false
   /** 串行响应队列：请求按到达顺序处理，避免慢工具导致响应乱序 */
   private queue: Promise<void> = Promise.resolve()
+  /** 服务器→客户端请求的 pending 响应（v0.6.12 requestRoots 用）：客户端回响应行时按 id 匹配 */
+  private pending = new Map<number, { resolve: (result: any) => void; reject: (err: Error) => void; timer: NodeJS.Timeout }>()
+  private nextRequestId = 1
+  private readonly requestTimeoutMs: number
 
   constructor(opts: MCPServerOptions = {}) {
     this.toolList = opts.tools ?? tools
@@ -75,6 +81,7 @@ export class MCPServer {
     this.serverInfo = opts.serverInfo ?? { name: 'flare', version: pkg.version }
     this.write = opts.write ?? ((line) => process.stdout.write(line + '\n'))
     this.input = opts.input ?? process.stdin
+    this.requestTimeoutMs = opts.requestTimeoutMs || 15000
   }
 
   /** 开始监听输入流（幂等：重复调用不重复监听） */
@@ -84,10 +91,16 @@ export class MCPServer {
     this.rl.on('line', (line) => this.handleLine(line))
   }
 
-  /** 关闭服务器（停止监听；未完成的请求仍会尽力响应） */
+  /** 关闭服务器（停止监听；未完成的请求仍会尽力响应；pending 的服务器→客户端请求被拒绝） */
   close(): void {
     if (this.closed) return
     this.closed = true
+    // v0.6.12：拒绝未完成的服务器→客户端请求（如 requestRoots），避免悬挂
+    for (const [, p] of this.pending) {
+      clearTimeout(p.timer)
+      p.reject(new Error('MCP 服务器已关闭'))
+    }
+    this.pending.clear()
     try {
       this.rl?.close()
     } catch { /* 忽略 */ }
@@ -98,7 +111,7 @@ export class MCPServer {
     return this.closed
   }
 
-  /** 处理一行输入：JSON 解析失败回 parse error；通知（无 id）忽略；请求入队串行 */
+  /** 处理一行输入：JSON 解析失败回 parse error；客户端对服务器请求的响应 → 匹配 pending；通知（无 id）忽略；请求入队串行 */
   private handleLine(line: string): void {
     if (!line.trim()) return
     let msg: any
@@ -106,6 +119,18 @@ export class MCPServer {
       msg = JSON.parse(line)
     } catch {
       this.safeWrite({ jsonrpc: '2.0', id: null, error: { code: -32700, message: 'Parse error' } })
+      return
+    }
+    // v0.6.12：客户端对服务器主动请求（requestRoots）的响应行——按 id 匹配 pending，不当作新请求
+    if (msg && msg.id !== undefined && this.pending.has(msg.id)) {
+      const p = this.pending.get(msg.id)!
+      this.pending.delete(msg.id)
+      clearTimeout(p.timer)
+      if (msg.error) {
+        p.reject(new Error(`MCP 错误: ${msg.error.message || JSON.stringify(msg.error)}`))
+      } else {
+        p.resolve(msg.result)
+      }
       return
     }
     this.queue = this.queue.then(async () => {
@@ -195,6 +220,33 @@ export class MCPServer {
       default:
         throw Object.assign(new Error(`Method not found: ${method}`), { code: -32601 })
     }
+  }
+
+  /**
+   * 请求客户端暴露的 roots（v0.6.12 roots 协议）：服务器主动向客户端发 roots/list 请求，
+   * 等待客户端响应（带超时，默认 requestTimeoutMs）。支持 roots 的客户端（如 flare MCPClient 配置了 roots）
+   * 返回注入的根目录列表；客户端响应非数组容错返回 []；客户端回 error / 超时 / 服务器已关闭 → reject。
+   */
+  requestRoots(timeoutMs?: number): Promise<McpRoot[]> {
+    if (this.closed) {
+      return Promise.reject(new Error('MCP 服务器已关闭'))
+    }
+    const id = this.nextRequestId++
+    return new Promise<McpRoot[]>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        this.pending.delete(id)
+        reject(new Error(`MCP roots/list 请求超时（客户端未响应）`))
+      }, timeoutMs || this.requestTimeoutMs)
+      this.pending.set(id, {
+        resolve: (result: any) => {
+          // 容错：响应缺 roots 或非数组 → 空列表（与客户端 listTools/listResources 的宽松解析一致）
+          resolve(Array.isArray(result?.roots) ? (result.roots as McpRoot[]) : [])
+        },
+        reject,
+        timer,
+      })
+      this.safeWrite({ jsonrpc: '2.0', id, method: 'roots/list', params: {} })
+    })
   }
 
   /** 读取资源（resources/read）：未知 uri → -32602；read() 异常 → -32603（服务器不崩） */

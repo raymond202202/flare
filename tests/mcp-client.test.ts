@@ -1,10 +1,14 @@
 import { describe, it, expect } from 'vitest'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
+import { tmpdir } from 'node:os'
+import { readFileSync } from 'node:fs'
 import { MCPClient } from '../src/mcp/client.js'
+import type { McpRoot } from '../src/mcp/types.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const MOCK_SERVER = join(__dirname, 'fixtures', 'mcp-mock-server.mjs')
+const MOCK_ROOTS_SERVER = join(__dirname, 'fixtures', 'mcp-roots-server.mjs')
 
 function spawnMock(mode?: string, timeoutMs = 5000): MCPClient {
   return new MCPClient({
@@ -13,6 +17,26 @@ function spawnMock(mode?: string, timeoutMs = 5000): MCPClient {
     env: mode ? { MOCK_MODE: mode } : undefined,
     timeoutMs,
   })
+}
+
+/** 读取 JSON Lines 日志文件（fixture 事件记录） */
+function readLogLines(path: string): any[] {
+  try {
+    return readFileSync(path, 'utf-8').split('\n').filter(Boolean).map((l) => JSON.parse(l))
+  } catch {
+    return []
+  }
+}
+
+/** 轮询等待日志文件出现指定事件，超时抛错 */
+async function waitForEvent(logFile: string, event: string, timeoutMs = 6000): Promise<any> {
+  const deadline = Date.now() + timeoutMs
+  while (Date.now() < deadline) {
+    const found = readLogLines(logFile).find((e) => e.event === event)
+    if (found) return found
+    await new Promise((r) => setTimeout(r, 50))
+  }
+  throw new Error(`等待日志事件超时: ${event}`)
 }
 
 describe('MCPClient（stdio NDJSON JSON-RPC，零依赖）', () => {
@@ -146,5 +170,67 @@ describe('MCPClient（stdio NDJSON JSON-RPC，零依赖）', () => {
     await client.initialize()
     await expect(client.readResource('memory://nope')).rejects.toThrow(/未知资源/)
     client.close()
+  })
+})
+
+describe('MCPClient roots（v0.6.12：客户端暴露 roots + 响应服务器请求）', () => {
+  const ROOTS: McpRoot[] = [{ uri: 'file:///home/user/projects', name: 'projects' }, { uri: 'memory://workspace' }]
+
+  function spawnRootsMock(logFile: string, roots?: McpRoot[]): MCPClient {
+    return new MCPClient({
+      command: process.execPath,
+      args: [MOCK_ROOTS_SERVER],
+      env: { ROOTS_LOG_FILE: logFile },
+      timeoutMs: 5000,
+      ...(roots ? { roots } : {}),
+    })
+  }
+
+  it('配置 roots → initialize 声明 capabilities.roots（listChanged），可经 roots getter 读取', async () => {
+    const logFile = join(tmpdir(), `flare-roots-init-${Date.now()}-${Math.floor(Math.random() * 1e6)}.jsonl`)
+    const client = spawnRootsMock(logFile, ROOTS)
+    await client.initialize()
+    const init = await waitForEvent(logFile, 'initialize')
+    expect(init.capabilities.roots).toEqual({ listChanged: true })
+    expect(client.roots).toEqual(ROOTS)
+    client.close()
+  })
+
+  it('未配置 roots → initialize 不声明 roots 能力（缺省兼容），roots 为空列表', async () => {
+    const logFile = join(tmpdir(), `flare-roots-noinit-${Date.now()}-${Math.floor(Math.random() * 1e6)}.jsonl`)
+    const client = spawnRootsMock(logFile)
+    await client.initialize()
+    const init = await waitForEvent(logFile, 'initialize')
+    expect(init.capabilities.roots).toBeUndefined()
+    expect(client.roots).toEqual([])
+    client.close()
+  })
+
+  it('服务器发 roots/list 请求 → 客户端自动响应注入的 roots（协议闭环）', async () => {
+    const logFile = join(tmpdir(), `flare-roots-resp-${Date.now()}-${Math.floor(Math.random() * 1e6)}.jsonl`)
+    const client = spawnRootsMock(logFile, ROOTS)
+    await client.initialize()
+    const ev = await waitForEvent(logFile, 'roots-response')
+    expect(ev.response.id).toBe(900)
+    expect(ev.response.result.roots).toEqual(ROOTS)
+    client.close()
+  })
+
+  it('notifyRootsChanged：发 notifications/roots/list_changed 通知（无 id），服务器可收到', async () => {
+    const logFile = join(tmpdir(), `flare-roots-changed-${Date.now()}-${Math.floor(Math.random() * 1e6)}.jsonl`)
+    const client = spawnRootsMock(logFile, ROOTS)
+    await client.initialize()
+    client.notifyRootsChanged()
+    const ev = await waitForEvent(logFile, 'roots-changed')
+    expect(ev.event).toBe('roots-changed')
+    client.close()
+  })
+
+  it('close 后 notifyRootsChanged 不抛错（幂等安全）', async () => {
+    const logFile = join(tmpdir(), `flare-roots-closed-${Date.now()}-${Math.floor(Math.random() * 1e6)}.jsonl`)
+    const client = spawnRootsMock(logFile, ROOTS)
+    await client.initialize()
+    client.close()
+    expect(() => client.notifyRootsChanged()).not.toThrow()
   })
 })
