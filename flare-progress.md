@@ -3,8 +3,30 @@
 > 目标：flare 是 Pulse/StorySpire 依赖的 AI Agent 引擎（TS）。任何改动必须安全（tsc 0 错 + 测试全绿才 commit）。
 > 铁律：禁止 push；禁止修改 src/core/agent.ts 的 Agent.run 核心循环。
 
-> **最新状态（v0.6.8）**：server 协议确认门管理 confirm_status/confirm_revoke（宿主查询/撤销放行）；352/352 全绿（commit `14444eb`，未 push）。
+> **最新状态（v0.6.9）**：server 协议 models 接口——宿主查询可切换模型（configured 主/视觉模型端点 + Ollama 本地列表）；362/362 全绿（commit `57dd1ac`，未 push）。
 > 下一步候选：① agent.ts trimContext 自动裁剪（风险高仍暂缓）；② 其他安全的外围增强（CLI /allow 增强、MCP 更多协议特性等）。
+
+### 2026-08-10 第十一轮实施（v0.6.9）——server 协议 models 接口：可切换模型查询
+
+- **P20 server 协议 models 接口**（commit `57dd1ac`）：
+  - `models` 请求 → 宿主面板查询可切换模型（只读、不触发生成、不创建会话）：
+    `configured.main` 当前主模型端点信息（`model` / `baseURL` 解析后端点 / `hasApiKey` 密钥是否配置 /
+    `provider` 推断 ollama|deepseek|openai|other）、`configured.vision` 视觉模型（`VISION_MODEL` 配置，未配置 null）、
+    `ollama` 本地 Ollama 已拉取模型列表（复用 v0.6.0 `listOllamaModels`）——宿主"可切换模型"下拉数据源
+  - **库导出纯逻辑**：`detectProvider(model)` 模型名 → provider 类型推断（与 `resolveProviderOptions` 自动检测规则一致）；
+    `collectModelInfo(fetchImpl?)` 收集 configured + ollama（fetch 可注入 mock，单测无网络依赖）
+  - **降级安全**：Ollama 未启动/不可达 → `ollama.ok:false` + `error`（服务不崩、其余字段照常）；
+    主模型 Claude 系列（不支持）→ `configured.main.error` 明确报错不抛异常；全程零 agent.ts 改动
+  - docs/host-protocol.md §20 + 响应表 + 请求类型列表 + README Changelog + 版本号 0.6.9
+  - **362/362 全绿**（352 + 10 新增：detectProvider 4——ollama 冒号命名/deepseek/gpt·o1·o3/other；
+    collectModelInfo 5——Ollama 可达解析/视觉模型配置/不可达 ok:false/HTTP 500/Claude 主模型 error 不抛；
+    server e2e 1——真实子进程 models 响应结构完整、Ollama 不可达不崩），tsc 0 错误，零 agent.ts 改动
+  - **冒烟实测**：真实 server 子进程——models 返回 `deepseek-chat` 主模型（deepseek 端点 + hasApiKey true）、
+    `qwen2.5vl:3b` 视觉模型（ollama 端点）、ollama 真实列出 4 个本地模型（qwen2.5:7b-64k/qwen2.5vl:3b/qwen2.5vl:7b/qwen2.5:7b）
+- **下一步候选**：① agent.ts trimContext 自动裁剪（风险高仍暂缓）；② 其他安全的外围增强
+  （CLI /allow 增强、MCP 更多协议特性、server 协议其他管理接口等）
+
+---
 
 ### 2026-08-10 第十轮实施（v0.6.8）——server 协议确认门管理 confirm_status/confirm_revoke
 
