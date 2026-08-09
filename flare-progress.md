@@ -3,10 +3,10 @@
 > 目标：flare 是 Pulse/StorySpire 依赖的 AI Agent 引擎（TS）。任何改动必须安全（tsc 0 错 + 测试全绿才 commit）。
 > 铁律：禁止 push；禁止修改 src/core/agent.ts 的 Agent.run 核心循环。
 
-> **最新状态（v0.6.3）**：server 协议 chat 采样参数透传完成（maxTokens/temperature → ProviderOptions → LLM 请求体 max_tokens/temperature）；272/272 全绿（commit 784af29，未 push）。
-> 下一步候选：① MCP HTTP transport（可选）；② agent.ts trimContext 自动裁剪（风险高暂缓）；③ 其他外围增强。
+> **最新状态（v0.6.3）**：server 协议 chat 采样参数透传完成（maxTokens/temperature → ProviderOptions → LLM 请求体 max_tokens/temperature）+ MCP HTTP transport（POST /mcp 同步 JSON-RPC）；282/282 全绿（commits 784af29/aac28a6，未 push）。
+> 下一步候选：① agent.ts trimContext 自动裁剪（风险高暂缓）；② 其他外围增强（CLI server --max-tokens 默认 / context_status 预算建议等）。
 
-### 2026-08-09 第六轮实施（v0.6.3）——server 协议 chat 采样参数透传
+### 2026-08-09 第六轮实施（v0.6.3）——chat 采样参数透传 + MCP HTTP transport
 
 - **P10 chat 采样参数透传**（commit `784af29`）：
   - server 协议 chat 新增 `maxTokens`（正整数，最大输出 token 数）/ `temperature`（0~2，采样温度）——
@@ -19,8 +19,19 @@
     server 协议 5——非法 maxTokens/-5、1.5、非法 temperature/3、'abc' 回 error、合法值流程完整），tsc 0 错误，零 agent.ts 改动
   - **冒烟实测**：本机 Ollama qwen2.5:7b 真实 chat 带 `maxTokens:50, temperature:0.2`——输出被截断在 ~50 token
     （未写完 200 字短文），证明 max_tokens 真实生效，事件流 text → done 完整
-- **下一步候选**：① MCP HTTP transport（可选）；② agent.ts trimContext 自动裁剪（风险高仍暂缓）；
-  ③ 其他安全的外围增强（如 CLI --max-tokens 默认值 / 协议 context_status 含预算建议）
+- **P11 MCP HTTP transport**（commit `aac28a6`）：
+  - `src/mcp/http.ts`：`startMcpHttpServer`——零依赖 node:http，`POST /mcp` 一次请求一个 JSON-RPC 消息并回 JSON 响应
+  - MCPServer 拆出传输无关的 `handleMessage(msg): Promise<响应|null>`（stdio 的 handleLine 与 HTTP 共用同一核心，
+    删除旧 processRequest 死代码）；有 id 请求 → 200 + 响应（错误对象不抛出）、通知（无 id）→ 202 空体、
+    非法 JSON → 400 + parse error（-32700）、非 POST / 错误路径 → 404；请求串行队列（响应不乱序）
+  - 安全默认：仅监听 127.0.0.1；port 0 = 随机端口；暴露的仍是 flare 原生工具（危险命令黑名单照常生效）
+  - CLI `flare mcp-server --http [--port <port>]` 一键起 HTTP 服务器（stdio 仍为默认传输）；库导出 + docs/mcp.md HTTP 章节
+  - **282/282 全绿**（272 + 10 新增：握手 capabilities/工具列表/工具真实执行/未知工具 -32602/未知方法 -32601/
+    非法 JSON/通知 202/404/并发响应 id 不串扰/CLI --http e2e），tsc 0 错误，零 agent.ts 改动
+  - **冒烟实测**：`flare mcp-server --http --port 18999` + curl——initialize 握手（capabilities.tools + serverInfo 0.6.3）、
+    tools/list 真实内置工具、非法 JSON 回 400 parse error
+- **下一步候选**：① agent.ts trimContext 自动裁剪（风险高仍暂缓）；② 其他安全的外围增强
+  （CLI `flare server --max-tokens/--temperature` 默认值 / context_status 含 suggestTrim 预算建议 / MCPClient HTTP 消费端）
 
 ---
 
