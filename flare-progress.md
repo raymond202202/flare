@@ -3,8 +3,36 @@
 > 目标：flare 是 Pulse/StorySpire 依赖的 AI Agent 引擎（TS）。任何改动必须安全（tsc 0 错 + 测试全绿才 commit）。
 > 铁律：禁止 push；禁止修改 src/core/agent.ts 的 Agent.run 核心循环。
 
-> **最新状态（v0.6.3）**：server 协议 chat 采样参数透传完成（maxTokens/temperature → ProviderOptions → LLM 请求体 max_tokens/temperature）+ MCP HTTP transport（POST /mcp 同步 JSON-RPC）；282/282 全绿（commits 784af29/aac28a6，未 push）。
-> 下一步候选：① agent.ts trimContext 自动裁剪（风险高暂缓）；② 其他外围增强（CLI server --max-tokens 默认 / context_status 预算建议等）。
+> **最新状态（v0.6.4）**：context_status 预算建议（宿主按预算自管理上下文，suggestTrim 协议化）+ MCP HTTP 客户端（与 stdio MCPClient 接口对称的 HTTP transport 消费端，与 P11 服务器端闭环）；295/295 全绿（commit bc40e9f，未 push）。
+> 下一步候选：① agent.ts trimContext 自动裁剪（风险高仍暂缓）；② 其他外围增强（CLI server --max-tokens/--temperature 默认值 / MCP HTTP 接入 McpManager 等）。
+
+### 2026-08-09 第七轮实施（v0.6.4）——context_status 预算建议 + MCP HTTP 客户端
+
+- **P12 context_status 预算建议**（commit `bc40e9f`）：
+  - server 协议 `context_status` 可选带 `budgetTokens`（正整数）/ `reserveForOutput`（非负）——
+    响应附 `suggestion` 字段：`keepIndexes`（建议保留的消息索引，单调递增、首条必为 0 即 system 保底）、
+    `droppedCount`、`estimatedKeptTokens`/`estimatedDroppedTokens`；复用 `suggestTrim` 纯函数
+    （system 保底 + 最近优先 + 极小预算保底最新一条），非法值回 error 不触发生成
+  - 宿主按预算自管理上下文推荐流程：`context_status` 带预算取建议 → 裁剪 → `set_context` 回写
+    （零 agent.ts 改动）；docs/host-protocol.md §10.1 预算建议章节
+- **P13 MCPHttpClient（MCP HTTP 消费端）**（commit `bc40e9f`）：
+  - `src/mcp/http-client.ts`：与 stdio `MCPClient` 接口完全一致（initialize/listTools/callTool/
+    listPrompts/getPrompt/ping/close），零依赖 node:http 每请求独立 POST（streamable HTTP 同步子集）；
+    initialize 后自动发 notifications/initialized 通知（服务器回 202）；JSON-RPC error / 非 200 /
+    无响应体 → reject（含原因）；超时默认 15s（timeoutMs 可调）；close 后拒绝后续请求
+  - 与 P11 服务器端（startMcpHttpServer）对称闭环：本地子进程服务器用 stdio MCPClient、
+    远端/HTTP 服务器用 MCPHttpClient；库导出 + docs/mcp.md HTTP 客户端章节
+  - **295/295 全绿**（282 + 13 新增：server 协议 3——带预算 suggestion 结构/非法 budgetTokens
+    0·负·非整数·abc/非法 reserveForOutput + MCPHttpClient 10——握手/工具列表/执行成功与工具级失败/
+    未知工具 -32602/prompts 消费闭环/ping/服务器关闭 reject/close 后拒绝/非法 URL/404 路径），
+    tsc 0 错误，零 agent.ts 改动
+  - **冒烟实测**：startMcpHttpServer（随机端口）+ MCPHttpClient——握手 serverInfo 0.6.4、
+    tools 6 个内置工具、真实执行 memory_search、ping true；suggestTrim 裁剪正确
+- **下一步候选**：① agent.ts trimContext 自动裁剪（风险高仍暂缓）；② 其他安全的外围增强
+  （CLI `flare server --max-tokens/--temperature` 默认值 / MCP HTTP 服务器接入 McpManager /
+  CLI `flare mcp call` 走 HTTP 等）
+
+---
 
 ### 2026-08-09 第六轮实施（v0.6.3）——chat 采样参数透传 + MCP HTTP transport
 
