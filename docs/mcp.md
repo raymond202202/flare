@@ -204,7 +204,26 @@ const p = await client.getPrompt('summarize', { topic: 'flare' })  // v0.6.2：�
 
 > ⚠️ 安全：暴露的是 flare **原生工具**，危险命令黑名单 / 路径保护 / 记忆边界照常生效
 > （e2e 测试验证 `rm -rf /` 仍被安全策略拦截）。谁连接了服务器谁就获得这些工具能力，
-> 仅对可信客户端开放（stdio 服务器由启动它的进程控制）。
+> 仅对可信客户端开放（stdio 服务器由启动它的进程控制；HTTP 服务器默认只监听 127.0.0.1）。
+
+### HTTP transport（v0.6.3）：POST /mcp
+
+除 stdio 外，MCPServer 可经 **HTTP** 暴露（`src/mcp/http.ts`，零依赖 node:http）——
+streamable HTTP 的同步子集：一次 `POST /mcp` 处理一个 JSON-RPC 消息并回 JSON 响应，与 stdio 行为完全一致
+（复用 `MCPServer.handleMessage`，传输无关）：
+
+```ts
+import { startMcpHttpServer } from 'flare-agent'
+
+const h = await startMcpHttpServer({ tools: builtinTools, port: 8931 })
+// POST http://127.0.0.1:8931/mcp  {"jsonrpc":"2.0","id":1,"method":"tools/list"}
+await h.close()
+```
+
+- 有 id 的请求 → `200` + JSON-RPC 响应（错误对象不抛出，-32601/-32602/-32603 同 stdio）
+- 通知类（无 id）→ `202` 空体（无需响应）；非法 JSON → `400` + parse error（-32700）
+- 非 POST / 错误路径 → `404`；默认仅监听 `127.0.0.1`（安全默认），`port: 0` = 随机端口
+- CLI 一键起 HTTP 服务器：`flare mcp-server --http --port 8931`（stdio 仍为默认传输）
 
 ## 自定义 MCP 服务器（测试/开发）
 

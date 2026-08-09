@@ -333,6 +333,9 @@ Interactive mode commands:
 - 📚 docs/host-protocol.md chat 请求参数表 + README Changelog + 版本号 0.6.3
 - 🧪 新增 10 项测试（provider 请求体透传 5：chat/chatStream/缺省不传/temperature 0 不丢失 + server 协议 5：非法 maxTokens/temperature 回 error、合法值流程完整），共 272/272；零 agent.ts 改动
 - EN: chat protocol now accepts maxTokens/temperature and passes them to the LLM request body (max_tokens/temperature) — invalid values error out before generation; ProviderOptions extended; 272/272 tests.
+- 🌐 **MCP HTTP transport（src/mcp/http.ts）**：`startMcpHttpServer`——零依赖 node:http，`POST /mcp` 同步 JSON-RPC（与 stdio 同一 `MCPServer.handleMessage` 核心）；有 id 请求 → 200 + 响应、通知 → 202 空体、非法 JSON → 400 parse error、非 POST → 404；默认仅监听 127.0.0.1（安全默认）；CLI `flare mcp-server --http --port <port>` 一键起 HTTP 服务器；docs/mcp.md HTTP transport 章节
+- 🧪 MCP HTTP transport 10 项测试（握手/工具列表/工具真实执行/未知工具 -32602/未知方法 -32601/非法 JSON/通知 202/404/并发响应不串扰/CLI --http e2e），共 282/282；零 agent.ts 改动
+- EN: MCP HTTP transport — startMcpHttpServer (zero-dep node:http, POST /mcp synchronous JSON-RPC reusing the same MCPServer core as stdio); CLI flag --http; 282/282 tests.
 
 #### v0.6.2 (2026-08-09) — MCP prompts 真实暴露 / Real MCP prompts (prompts/list + prompts/get)
 - 📜 **MCPServer `prompts` 选项（src/mcp/server.ts）**：注入提示词模板（name/description/arguments/render 支持异步）——

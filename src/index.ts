@@ -99,6 +99,9 @@ export type {
 // ===== MCP 服务器端（v0.5.8）：flare 工具集经 MCP 标准协议暴露给外部客户端 =====
 export { MCPServer, toMcpTool, startMcpServer } from './mcp/server.js'
 export type { MCPServerOptions } from './mcp/server.js'
+// MCP HTTP transport（v0.6.3）：POST /mcp 同步 JSON-RPC，复用同一 MCPServer 核心
+export { startMcpHttpServer } from './mcp/http.js'
+export type { McpHttpServerOptions, McpHttpServerHandle } from './mcp/http.js'
 
 // ===== 上下文可观测性（v0.5.6/v0.5.9）：token 估算 + 裁剪建议（宿主面板显示上下文占用/成本预估）=====
 export {

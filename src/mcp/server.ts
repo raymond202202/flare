@@ -108,29 +108,35 @@ export class MCPServer {
       this.safeWrite({ jsonrpc: '2.0', id: null, error: { code: -32700, message: 'Parse error' } })
       return
     }
+    this.queue = this.queue.then(async () => {
+      const resp = await this.handleMessage(msg)
+      if (resp) this.safeWrite(resp)
+    })
+  }
+
+  /**
+   * 处理单个 JSON-RPC 消息（v0.6.3，传输无关）：返回响应对象（或 null——通知类消息无需响应）。
+   * stdio（handleLine）与 HTTP（src/mcp/http.ts）共用；错误 → JSON-RPC error 对象（不抛出）。
+   */
+  async handleMessage(msg: any): Promise<any> {
     if (msg === null || typeof msg !== 'object' || msg.id === undefined || msg.id === null) {
       // 通知类消息（无 id）：MCP 的 notifications/initialized 等——无需响应
-      return
+      return null
     }
     const id = msg.id
     const method = typeof msg.method === 'string' ? msg.method : ''
-    this.queue = this.queue.then(() => this.processRequest(id, method, msg.params || {}))
-  }
-
-  /** 处理单个请求并写响应（错误 → JSON-RPC error 对象） */
-  private async processRequest(id: number | string | boolean, method: string, params: any): Promise<void> {
     try {
-      const result = await this.dispatch(method, params)
-      this.safeWrite({ jsonrpc: '2.0', id, result })
+      const result = await this.dispatch(method, msg.params || {})
+      return { jsonrpc: '2.0', id, result }
     } catch (e: any) {
-      this.safeWrite({
+      return {
         jsonrpc: '2.0',
         id,
         error: {
           code: typeof e?.code === 'number' ? e.code : -32603,
           message: e?.message || String(e),
         },
-      })
+      }
     }
   }
 
