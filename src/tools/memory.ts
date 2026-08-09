@@ -26,6 +26,17 @@ export interface MemorySearchArgs {
 }
 
 /**
+ * 单条结果折叠（v0.6.0）：控制每条输出长度，防止长记忆/长消息撑爆上下文
+ * - 超长内容截断到 maxLen 并在尾部加折叠标记（保留开头，信息主体在前）
+ * - 空白折叠为单空格（历史消息常有多余换行）
+ */
+function foldItem(raw: string, maxLen = 150): string {
+  const text = raw.replace(/\s+/g, ' ').trim()
+  if (text.length <= maxLen) return text
+  return text.slice(0, maxLen) + '…'
+}
+
+/**
  * 用指定 store 创建 memory_search 工具（宿主可绑定自己的独立记忆库）
  * store 为 null 时延迟绑定全局库（模块加载不触发单例创建，避免副作用）
  */
@@ -66,7 +77,7 @@ export function createMemorySearchTool(store: MemoryStore | null): Tool {
         try {
           const mems = activeStore.searchMemories(q, max)
           if (mems.length > 0) {
-            parts.push(`【持久记忆】${mems.length} 条：\n` + mems.map(m => `- ${m.content}`).join('\n'))
+            parts.push(`【持久记忆】${mems.length} 条：\n` + mems.map(m => `- ${foldItem(m.content)}`).join('\n'))
           }
         } catch (e: any) {
           parts.push(`【持久记忆】检索失败: ${e?.message || e}`)
@@ -76,7 +87,7 @@ export function createMemorySearchTool(store: MemoryStore | null): Tool {
         try {
           const msgs = activeStore.searchMessages(q, max)
           if (msgs.length > 0) {
-            parts.push(`【历史消息】${msgs.length} 条：\n` + msgs.map(m => `- [${m.createdAt || ''} ${m.role === 'user' ? '用户' : '助手'}] ${m.content.slice(0, 200)}`).join('\n'))
+            parts.push(`【历史消息】${msgs.length} 条：\n` + msgs.map(m => `- [${m.createdAt || ''} ${m.role === 'user' ? '用户' : '助手'}] ${foldItem(m.content)}`).join('\n'))
           }
         } catch (e: any) {
           parts.push(`【历史消息】检索失败: ${e?.message || e}`)
