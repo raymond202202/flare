@@ -333,20 +333,26 @@ Interactive mode commands:
 
 > 中文条目 / Chinese entries · English summary for each version
 
-#### v0.6.10 (2026-08-10) — CLI /allow 增强：显式放行 + 范围明细 / Explicit confirmation-gate grants in the CLI
+#### v0.6.10 (2026-08-10) — CLI /allow 增强 + server confirm_allow：确认门显式放行 / Explicit confirmation-gate grants (CLI + host protocol)
 - 🎛️ **`/allow add <工具名> [session|always]`（src/cli/index.ts）**：显式放行确认工具，无需等 AI 触发确认弹窗——缺省
   `session` 本会话内不再确认；`always` 跨会话持久化（写入全局库 settings 表，新会话/新实例也放行）；非法模式/缺参/
   无 allow 回调（旧 hooks）各有清晰提示，未知子命令仍回用法
 - 🔍 **`/allow` 列出带范围标注（v0.6.10）**：`（本会话）` 会话级 / `（跨会话持久化）` always / `（会话+持久化）` 两者——
   `AllowGateHooks` 新增可选 `allow(name, mode)` / `listDetailed()`（未提供则回退旧 `list()`，向后兼容）；
   注入点用 `gate.allowSession/allowAlways` + `listAllowed/listAlwaysAllowed` 实现
-- 📚 docs/confirmation.md CLI 章节 + README CLI 表 + Changelog + 版本号 0.6.10
-- 🧪 新增 9 项测试（tests/cli-confirm.test.ts）：/allow 范围标注（会话级/持久化/两者+新会话持久化）/ 无 listDetailed
-  回退旧行为 / add 缺省 session 不写持久化 / add session / add always 持久化+跨实例生效 / add 缺参 / 非法模式 /
-  无 allow 回调 / add 后 revoke 双清；共 373/373；零 agent.ts 改动
+- 🎛️ **server 协议新增 `confirm_allow`（src/server.ts）**：宿主面板显式放行确认工具（`{tool, mode?}`，mode 缺省
+  `session` / `always` 跨会话持久化；缺 tool / 非法 mode 回 error 含提示）——与 `confirm_status`（查询）/
+  `confirm_revoke`（撤销）组成确认门管理闭环；`mode=always` 当前会话内也放行（allowedTools 可见），持久化部分
+  由 alwaysAllowed 体现
+- 📚 docs/confirmation.md CLI 章节 + docs/host-protocol.md §21 + 确认门管理章节 + 响应表 + README CLI 表/Changelog + 版本号 0.6.10
+- 🧪 新增 13 项测试（tests/cli-confirm.test.ts 9 + tests/server.test.ts 4）：/allow 范围标注（会话级/持久化/两者+
+  新会话持久化）/ 无 listDetailed 回退旧行为 / add 缺省 session 不写持久化 / add session / add always 持久化+跨实例生效 /
+  add 缺参 / 非法模式 / 无 allow 回调 / add 后 revoke 双清 + confirm_allow 缺 tool error / 非法 mode error / 缺省 mode
+  session 放行 status 可见 / mode=always 持久化+revoke 撤销；共 377/377；零 agent.ts 改动
 - EN: Interactive CLI `/allow add <tool> [session|always]` explicitly grants a confirm tool without waiting for a prompt
   (session-scoped by default, `always` persists to the global store); `/allow` listing annotates scope (session/persisted/
-  both) via new optional AllowGateHooks.allow/listDetailed with backward-compatible fallback; 373/373 tests.
+  both) via new optional AllowGateHooks.allow/listDetailed with backward-compatible fallback; host protocol gains
+  `confirm_allow` completing the gate-management trio with confirm_status/confirm_revoke; 377/377 tests.
 
 #### v0.6.9 (2026-08-10) — server 协议 models 接口：可切换模型查询 / Model availability over the host protocol
 - 🎛️ **server 协议新增 `models` 请求（src/server.ts）**：宿主面板查询可切换模型（只读、不触发生成、不创建会话）——
