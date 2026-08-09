@@ -3,8 +3,30 @@
 > 目标：flare 是 Pulse/StorySpire 依赖的 AI Agent 引擎（TS）。任何改动必须安全（tsc 0 错 + 测试全绿才 commit）。
 > 铁律：禁止 push；禁止修改 src/core/agent.ts 的 Agent.run 核心循环。
 
-> **最新状态（v0.6.5）**：context_status 预算建议 + MCP HTTP 客户端（v0.6.4）+ server 默认采样参数 `--max-tokens/--temperature`（v0.6.5）；299/299 全绿（commits bc40e9f/85415b1/6c65069，未 push）。
-> 下一步候选：① agent.ts trimContext 自动裁剪（风险高仍暂缓）；② 其他外围增强（MCP HTTP 接入 McpManager / CLI `flare mcp call` 走 HTTP 等）。
+> **最新状态（v0.6.6）**：MCP HTTP 接入 McpManager + CLI `flare mcp call`；311/311 全绿（commit `0be72bd`，未 push）。
+> 下一步候选：① agent.ts trimContext 自动裁剪（风险高仍暂缓）；② 其他安全的外围增强。
+
+### 2026-08-09 第八轮实施（v0.6.6）——MCP HTTP 接入 McpManager + CLI `flare mcp call`
+
+- **P15 MCP HTTP 接入 McpManager**（commit `0be72bd`）：
+  - `McpServerConfig` 新增 `url`（HTTP 端点）/ `timeoutMs`（可选）——配了 `url` 走 `MCPHttpClient`
+    直连（HTTP transport），否则按 `command` stdio spawn（行为不变）；url 与 command 并存 url 优先、
+    皆无抛清晰错误；`McpManager({ httpTimeoutMs })` 全局超时默认 15s
+  - `createMcpTools` 参数放宽为 `McpToolClient` 接口（stdio MCPClient / HTTP MCPHttpClient 都满足，
+    工具桥传输无关）+ 库导出类型；CLI 交互 `/mcp`、`flare server --mcp` 自动继承（零 agent.ts 改动）
+- **P16 CLI `flare mcp call`**（commit `0be72bd`）：
+  - `flare mcp call <server> <tool> [jsonArgs]`：一键调用 MCP 工具——服务器名查 `~/.flare/mcp.json`
+    （url→HTTP / command→stdio），`--url` 直连 HTTP 端点跳过配置、`--config <path>` 指定配置、
+    `--timeout <ms>` 调超时；工具参数 JSON 对象（缺省 `{}`）；工具级失败/协议错误/未配置服务器 → 退出码 1 + 明确错误
+  - docs/mcp.md McpManager 接入 + CLI mcp call 章节 + README CLI 表/Changelog + 版本号 0.6.6
+  - **311/311 全绿**（299 + 12 新增：McpManager×HTTP 5——配置 url 连接桥接+真实执行/HTTP 不可达错误记录/
+    无 url 无 command 报错/disconnect/url 优先；CLI e2e 7——--url 直连/配置 url/配置 command stdio/
+    无参数兜底/未配置服务器/非法 JSON/未知工具），tsc 0 错误，零 agent.ts 改动
+  - **冒烟实测**：`flare mcp-server --http --port 19211 -t read_file` + `flare mcp call --url` /
+    配置 url 走 HTTP——真实调用 read_file 输出文件内容；未知工具/未配置服务器退出码 1 提示清晰
+- **下一步候选**：① agent.ts trimContext 自动裁剪（风险高仍暂缓）；② 其他安全的外围增强
+
+---
 
 ### 2026-08-09 第七轮实施（v0.6.4/v0.6.5）——context_status 预算建议 + MCP HTTP 客户端 + server 默认采样参数
 
