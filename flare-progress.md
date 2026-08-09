@@ -13,7 +13,7 @@
   未知 name -32602、render 抛错 -32603 服务器不崩；注入后 initialize capabilities 声明 prompts（缺省不声明，v0.5.9 空列表兼容）；
   `McpPrompt`/`McpPromptArgument`/`McpPromptMessage` 类型库导出；docs/mcp.md 提示词暴露章节 + README Changelog + v0.6.2 版本号；
   **257/257 全绿**（251 + 6 新增测试），tsc 0 错误，零 agent.ts 改动
-- **N8 MCPClient 消费 prompts**（commit 待提交）：MCPClient 新增 `listPrompts()`（元数据）+ `getPrompt(name, args?)`（渲染，未知 name 协议错误 reject）——
+- **N8 MCPClient 消费 prompts**（commit `810c7df`）：MCPClient 新增 `listPrompts()`（元数据）+ `getPrompt(name, args?)`（渲染，未知 name 协议错误 reject）——
   与 MCPServer 暴露对称闭环；`McpPromptInfo`/`McpPromptResult` 类型库导出；mock server fixture 支持 prompts；
   新增 **prompts 真实互通 e2e**（MCPClient↔MCPServer 子进程：capabilities 声明 / listPrompts 元数据 / getPrompt 渲染 / 未知 name reject /
   无 prompts 缺省兼容返回空列表）；**262/262 全绿**（257 + 5 新增），tsc 0 错误，零 agent.ts 改动
