@@ -380,4 +380,42 @@ describe('flare host server 协议', () => {
     expect(msgs[0].type).toBe('pong')
     expect((msgs[0] as any).sawError).toBe(false)
   }, 15000)
+
+  it('chat 带非法 maxTokens → error（v0.6.3 采样参数校验，不触发生成）', async () => {
+    const msgs = await request({ type: 'chat', sessionId: 's-param', input: 'hi', maxTokens: -5 }, { expect: ['error'] })
+    expect(msgs[0].type).toBe('error')
+    expect(msgs[0].message).toContain('maxTokens')
+  })
+
+  it('chat 带非整数 maxTokens → error（必须是正整数）', async () => {
+    const msgs = await request({ type: 'chat', sessionId: 's-param2', input: 'hi', maxTokens: 1.5 }, { expect: ['error'] })
+    expect(msgs[0].type).toBe('error')
+    expect(msgs[0].message).toContain('maxTokens')
+  })
+
+  it('chat 带非法 temperature → error（0~2 范围校验）', async () => {
+    const msgs = await request({ type: 'chat', sessionId: 's-param3', input: 'hi', temperature: 3 }, { expect: ['error'] })
+    expect(msgs[0].type).toBe('error')
+    expect(msgs[0].message).toContain('temperature')
+  })
+
+  it('chat 带非数值 temperature → error', async () => {
+    const msgs = await request({ type: 'chat', sessionId: 's-param4', input: 'hi', temperature: 'abc' }, { expect: ['error'] })
+    expect(msgs[0].type).toBe('error')
+    expect(msgs[0].message).toContain('temperature')
+  })
+
+  it('chat 带合法 maxTokens/temperature → 协议流完整（采样参数透传不破坏流程）', async () => {
+    // 不断言具体错误（可能 fallback 本地 Ollama / 远端网络），只验证协议：参数被接受且事件流正常终止
+    const msgs = await request(
+      { type: 'chat', sessionId: 's-param5', input: '你好', maxTokens: 512, temperature: 0.5 },
+      { collectAll: true, timeout: 45000 }
+    )
+    expect(msgs.length).toBeGreaterThan(0)
+    const last = msgs[msgs.length - 1]
+    expect(['done', 'error', 'cancelled'].includes(last.type)).toBe(true)
+    for (const m of msgs) {
+      expect(['text', 'tool_call', 'tool_execute', 'tool_result', 'done', 'error', 'cancelled'].includes(m.type)).toBe(true)
+    }
+  }, 45000)
 })

@@ -99,14 +99,24 @@ function makeHostTools(defs: ToolDefinition[], reply: (msg: any) => void, pendin
   }))
 }
 
+/** chat 请求可透传的 LLM 采样控制（v0.6.3：maxTokens/temperature，创建 provider 时生效） */
+interface LlmChatOpts {
+  maxTokens?: number
+  temperature?: number
+}
+
+const llmOptsChanged = (a?: LlmChatOpts, b?: LlmChatOpts): boolean =>
+  (a?.maxTokens ?? undefined) !== (b?.maxTokens ?? undefined) ||
+  (a?.temperature ?? undefined) !== (b?.temperature ?? undefined)
+
 /** 启动宿主协议服务（阻塞读 stdin） */
 export function startHostServer(opts: HostServerOptions) {
   const { profile, storage, toolTimeoutMs = 30000, namespace } = opts
   // 确认门配置（v0.6.1）：名单默认写回类工具；显式传空数组 = 关闭
   const confirmTools = opts.confirmTools ?? DEFAULT_CONFIRM_TOOLS
   const confirmTimeoutMs = opts.confirmTimeoutMs ?? 30000
-  // 会话 → { agent, model }：model 变化时重建 Agent（同 sessionId，历史从记忆库恢复）
-  const agents = new Map<string, { agent: Agent; model?: string }>()
+  // 会话 → { agent, model, llmOpts }：model / 采样控制变化时重建 Agent（同 sessionId，历史从记忆库恢复）
+  const agents = new Map<string, { agent: Agent; model?: string; llmOpts?: LlmChatOpts }>()
   const cancels = new Map<string, { cancelled: boolean }>()
   const pending = new Map<string, PendingTool>()
   // 确认门（v0.6.1）：按 sessionId 缓存——allow_session 放行记忆跨模型重建保留；always 持久化到记忆库 settings 表
@@ -162,10 +172,10 @@ export function startHostServer(opts: HostServerOptions) {
     return gate
   }
 
-  const getAgent = (sessionId: string, tools?: ToolDefinition[], model?: string): Agent => {
+  const getAgent = (sessionId: string, tools?: ToolDefinition[], model?: string, llmOpts?: LlmChatOpts): Agent => {
     let entry = agents.get(sessionId)
-    // 请求带 model 且与会话当前模型不同 → 重建（新模型立即生效）
-    if (entry && model && entry.model !== model) {
+    // 请求带 model 且与会话当前模型不同 → 重建；采样控制（maxTokens/temperature）任一变化 → 重建（立即生效）
+    if (entry && ((model && entry.model !== model) || llmOptsChanged(entry.llmOpts, llmOpts))) {
       entry = undefined
     }
     if (!entry) {
@@ -173,7 +183,15 @@ export function startHostServer(opts: HostServerOptions) {
         ? makeHostTools(tools, reply, pending, toolTimeoutMs)
         : undefined
       // model 字段 → 指定主模型 provider（如本地 Ollama qwen2.5:7b）；缺省用默认路由
-      const llm = model ? createProvider({ model }) : undefined
+      // maxTokens/temperature（v0.6.3）→ 采样控制透传（需显式创建 provider；仅 model 或采样参数任一存在时）
+      const hasLlmParams = Boolean(model) || llmOpts?.maxTokens !== undefined || llmOpts?.temperature !== undefined
+      const llm = hasLlmParams
+        ? createProvider({
+            ...(model ? { model } : {}),
+            ...(llmOpts?.maxTokens !== undefined ? { maxTokens: llmOpts.maxTokens } : {}),
+            ...(llmOpts?.temperature !== undefined ? { temperature: llmOpts.temperature } : {}),
+          })
+        : undefined
       // MCP 工具（v0.5.5）：已连接的服务器工具并入工具集（与宿主代理工具/专家工具并存）
       const mcpTools = mcpManager.getAllTools()
       const mergedTools = [...(hostTools || profile.tools || []), ...mcpTools]
@@ -190,6 +208,7 @@ export function startHostServer(opts: HostServerOptions) {
           storage,
         }),
         model,
+        llmOpts,
       }
       agents.set(sessionId, entry)
     }
@@ -210,7 +229,25 @@ export function startHostServer(opts: HostServerOptions) {
         case 'chat': {
           const sessionId = String(req.sessionId || 'default')
           // model 可选：指定本次会话主模型（如 qwen2.5:7b 本地 Ollama / deepseek-chat 远端）；缺省用默认路由
-          const agent = getAgent(sessionId, req.tools, req.model ? String(req.model) : undefined)
+          // maxTokens / temperature（v0.6.3）：采样控制透传——非法值直接 error，不触发生成
+          let llmOpts: LlmChatOpts | undefined
+          if (req.maxTokens !== undefined && req.maxTokens !== null) {
+            const v = Number(req.maxTokens)
+            if (!Number.isInteger(v) || v <= 0) {
+              reply({ type: 'error', message: 'chat 的 maxTokens 必须是正整数（最大输出 token 数）' })
+              break
+            }
+            llmOpts = { ...llmOpts, maxTokens: v }
+          }
+          if (req.temperature !== undefined && req.temperature !== null) {
+            const v = Number(req.temperature)
+            if (!Number.isFinite(v) || v < 0 || v > 2) {
+              reply({ type: 'error', message: 'chat 的 temperature 必须是 0~2 的数值' })
+              break
+            }
+            llmOpts = { ...llmOpts, temperature: v }
+          }
+          const agent = getAgent(sessionId, req.tools, req.model ? String(req.model) : undefined, llmOpts)
           if (req.context && typeof agent.setContext === 'function') {
             agent.setContext(String(req.context))
           }
