@@ -161,6 +161,7 @@ cp .env.example ~/.flare/.env
 | `/image <路径> <问题>` | 显式看图 |
 | `/vision [3b\|7b\|default]` | 切换看图模型（3b 快速 ~4s / 7b 质量 30-60s） |
 | `/model [模型名\|default]` | 切换主模型（如 `/model qwen2.5:7b` 本地 Ollama，`/model deepseek-chat` 远端） |
+| `/model list` | 查看本地 Ollama 可用模型（v0.6.9） |
 | `/mcp` | 查看 MCP 服务器状态（`~/.flare/mcp.json` 配置，v0.5.5） |
 | `/mcp connect <name>` | 连接 MCP 服务器并注入其工具（v0.5.5） |
 | `/mcp disconnect <name>` | 断开 MCP 服务器（v0.5.5） |
@@ -345,9 +346,14 @@ Interactive mode commands:
 - 🧪 新增 10 项测试（tests/server-models.test.ts）：detectProvider 4（ollama 冒号命名/deepseek/gpt·o1·o3/other）+
   collectModelInfo 5（Ollama 可达解析/视觉模型配置/不可达 ok:false/HTTP 500/Claude 主模型 error 不抛）+ server e2e 1
   （真实子进程 models 响应结构完整、Ollama 不可达不崩），共 362/362；零 agent.ts 改动
+- 🎛️ **CLI 交互 `/model list`（src/cli/index.ts）**：列出本地 Ollama 可用模型（复用 `listOllamaModels`，含模型大小、
+  当前主模型标记）+ 显示当前主模型；Ollama 不可达友好提示不崩；`/help` 与裸 `/model` 帮助同步说明
+- 🧪 随 P21 再增 2 项测试（tests/model-command.test.ts：/model list 输出合法且不写 main_model / list 不当模型名），
+  共 364/364；零 agent.ts 改动
 - EN: New host-protocol request `models` returns the configured main/vision model endpoints (model, resolved baseURL,
   hasApiKey, provider) plus the local Ollama model list — read-only, degrades gracefully when Ollama is unreachable;
-  detectProvider/collectModelInfo exported and unit-tested; 362/362 tests.
+  detectProvider/collectModelInfo exported and unit-tested; interactive `/model list` shows local Ollama models;
+  364/364 tests.
 
 #### v0.6.8 (2026-08-10) — server 协议确认门管理：confirm_status / confirm_revoke / Confirmation-gate management over the host protocol
 - 🎛️ **server 协议新增 `confirm_status` / `confirm_revoke`（src/server.ts）**：宿主随时查询/撤销确认门放行——
