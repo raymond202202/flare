@@ -170,6 +170,7 @@ cp .env.example ~/.flare/.env
 | `/allow` | 查看已放行的确认工具（标注范围：本会话/跨会话持久化，v0.6.7/v0.6.10） |
 | `/allow add <工具名> [session\|always]` | 显式放行（默认本会话；always 跨会话持久化，v0.6.10） |
 | `/allow revoke <工具名>` | 撤销放行（恢复每次确认，v0.6.7） |
+| `/tools` | 查看当前 Agent 可用工具清单（含确认门标注 ⚠需确认 与来源，v0.6.11） |
 | `/memory` | 查看持久记忆 |
 | `/remember` | 保存一条记忆（如: /remember 用户喜欢浅色主题） |
 | `/forget` | 删除记忆（如: /forget 浅色主题，删除包含该关键词的记忆） |
@@ -348,16 +349,20 @@ Interactive mode commands:
   每项 `name`/`description`/`parameters` + `confirmed`（是否经确认门，命中 confirmTools 名单）+ `source`
   （host 宿主代理 / profile 专家配置 / mcp 外部 MCP / builtin 内置回退）；`confirmTools` 确认名单配置回显；
   纯函数 `describeTools` 库导出（宿主可复用）；chat 带宿主工具后 tools 查询反映该会话真实工具集
-- 📚 docs/mcp.md 参数补全章节 + docs/host-protocol.md §22 + 请求类型列表 + 响应表 + README Changelog + 版本号 0.6.11
-- 🧪 新增 13 项测试：completion/complete 服务器端 5（ref/prompt 候选 / 异步+空匹配 / ref/resource uri 前缀 /
+- 🎛️ **CLI 交互 `/tools` 命令（src/cli/index.ts）**：查看当前 Agent 可用工具清单——内置 + MCP 工具，
+  每项名称/来源（内置/MCP）+ 描述 + `⚠需确认` 标注（写回类工具执行前弹窗确认，与 /allow 呼应）——
+  复用 `describeTools` 纯函数；`handleSlashCommand` 新增可选 `toolsInfo` 回调（向后兼容，未提供提示不可用）
+- 📚 docs/mcp.md 参数补全章节 + docs/host-protocol.md §22 + 请求类型列表 + 响应表 + README CLI 表/Changelog + 版本号 0.6.11
+- 🧪 新增 17 项测试：completion/complete 服务器端 5（ref/prompt 候选 / 异步+空匹配 / ref/resource uri 前缀 /
   无回调空候选+未知 prompt+缺 ref / capabilities 声明含资源不声明）+ stdio e2e 消费闭环 + HTTP e2e 消费闭环 +
   describeTools 单测 5（元数据+确认标注 / 来源判定 / host 优先 / 空名单关闭 / 缺省字段）+ server e2e 3（默认内置
-  清单+确认标注 / 指定 sessionId / chat 带宿主工具后 host 来源）；共 397/397；零 agent.ts 改动
+  清单+确认标注 / 指定 sessionId / chat 带宿主工具后 host 来源）+ /tools 命令 4（无回调提示 / 列表+标注 / 空清单 /
+  help 含说明）；共 401/401；零 agent.ts 改动
 - EN: MCP prompts gain the standard `completion/complete` capability (optional `complete` callback per prompt,
   `ref/resource` URI-prefix suggestions, `capabilities.completions` declared when available) consumed by
   `completePrompt()` on both stdio and HTTP clients; the host protocol gains `tools` (read-only listing of the
   session's tool set with confirmation-gate annotation and source host/profile/mcp/builtin, backed by exported
-  `describeTools`); 397/397 tests.
+  `describeTools`); interactive CLI gains `/tools` (current tool list with confirm markers); 401/401 tests.
 
 #### v0.6.10 (2026-08-10) — CLI /allow 增强 + server confirm_allow：确认门显式放行 / Explicit confirmation-gate grants (CLI + host protocol)
 - 🎛️ **`/allow add <工具名> [session|always]`（src/cli/index.ts）**：显式放行确认工具，无需等 AI 触发确认弹窗——缺省

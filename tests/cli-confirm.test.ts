@@ -467,3 +467,42 @@ describe('/allow 命令', () => {
     expect(out).toContain('/allow add')
   })
 })
+
+describe('/tools 命令（v0.6.11 当前 Agent 可用工具清单）', () => {
+  it('/tools 无回调 → 提示工具清单不可用', async () => {
+    const lines: string[] = []
+    const r = await handleSlashCommand('/tools', store, (s) => lines.push(s))
+    expect(r).toBe('continue')
+    expect(lines.join('\n')).toContain('工具清单不可用')
+  })
+
+  it('/tools 列出工具：名称/来源/描述 + memory_save 需确认标注', async () => {
+    const toolsInfo = () => [
+      { name: 'memory_save', description: '保存一条持久记忆', confirmed: true, source: 'builtin' as const },
+      { name: 'read_file', description: '读取文件', confirmed: false, source: 'builtin' as const },
+      { name: 'mcp_note', description: 'MCP 笔记工具', confirmed: false, source: 'mcp' as const },
+    ]
+    const lines: string[] = []
+    const r = await handleSlashCommand('/tools', store, (s) => lines.push(s), undefined, undefined, undefined, undefined, () => toolsInfo())
+    expect(r).toBe('continue')
+    const out = lines.join('\n')
+    expect(out).toContain('当前可用工具（3）')
+    expect(out).toContain('memory_save')
+    expect(out).toContain('⚠需确认') // 确认门标注
+    expect(out).toContain('保存一条持久记忆')
+    expect(out).toContain('mcp_note')
+    expect(out).toContain('MCP') // 来源标注
+  })
+
+  it('/tools 空清单 → 提示当前没有可用工具', async () => {
+    const lines: string[] = []
+    await handleSlashCommand('/tools', store, (s) => lines.push(s), undefined, undefined, undefined, undefined, () => [])
+    expect(lines.join('\n')).toContain('当前没有可用工具')
+  })
+
+  it('/help 包含 /tools 说明', async () => {
+    const lines: string[] = []
+    await handleSlashCommand('/help', store, (s) => lines.push(s))
+    expect(lines.join('\n')).toContain('/tools')
+  })
+})
