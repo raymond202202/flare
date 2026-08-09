@@ -327,6 +327,19 @@ Interactive mode commands:
 
 > 中文条目 / Chinese entries · English summary for each version
 
+#### v0.6.2 (2026-08-09) — MCP prompts 真实暴露 / Real MCP prompts (prompts/list + prompts/get)
+- 📜 **MCPServer `prompts` 选项（src/mcp/server.ts）**：注入提示词模板（name/description/arguments/render 支持异步）——
+  `prompts/list` 返回真实元数据（客户端探测清单）、`prompts/get` 按客户端 arguments 渲染消息序列
+  `{ description?, messages: [{ role, content }] }`（未知 name -32602、render 抛错 -32603 服务器不崩）；
+  注入后 initialize capabilities 声明 `prompts`（缺省不声明，v0.5.9 空列表兼容）
+- 🧩 **`McpPrompt`/`McpPromptArgument`/`McpPromptMessage` 类型库导出**（src/index.ts）；docs/mcp.md 提示词暴露章节
+- 🧪 新增 6 项测试（prompts/list 真实元数据 / prompts/get 参数渲染+description 透传 / 异步 render / 未知 name -32602 /
+  render 抛错 -32603 不崩 / capabilities 声明与缺省），共 **257/257 全绿**，tsc 0 错误，零 agent.ts 改动
+- EN: MCPServer now exposes real prompts — inject templates with declared arguments; `prompts/list` returns
+  metadata and `prompts/get` renders messages (async render supported; unknown name -32602, render error -32603
+  without crashing). Capabilities declare prompts only when injected; empty-list compatible otherwise.
+  257/257 tests, zero agent.ts changes.
+
 #### v0.6.1 (2026-08-09) — CLI/server 接入 ConfirmationGate：宿主弹窗确认流程 / Host-prompt confirmation flow (ConfirmationGate wired into server)
 - 🚪 **server 协议 `confirm` 事件 + `confirm_result` 请求（src/server.ts）**：AI 调用需确认工具时，服务发
   `{"type":"confirm","sessionId","id","name","args"}` → 宿主弹窗让用户决策 → 宿主回

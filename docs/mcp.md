@@ -115,7 +115,8 @@ flare 不只可以连接外部 MCP 服务器（客户端），也可以**把自�
 让其他 AI 客户端（Claude Desktop / Cursor / 自研 MCP 客户端）或宿主进程直接复用 flare 工具能力。
 
 - 实现：`src/mcp/server.ts`（MCPServer，零依赖 NDJSON JSON-RPC，与 MCPClient 完全互通）
-- 覆盖 MCP 核心子集：`initialize` / `notifications/initialized` / `tools/list` / `tools/call` / `ping`
+- 覆盖 MCP 核心子集：`initialize` / `notifications/initialized` / `tools/list` / `tools/call` / `resources/list` /
+  `resources/read` / `prompts/list` / `prompts/get` / `ping`
 - 请求按到达顺序串行响应（慢工具不导致响应乱序）；工具失败 → `isError` 标记（协议层不中断）
 
 ```ts
@@ -158,6 +159,37 @@ server.start()
 - `resources/read`：调 `read()` 返回 `{ contents: [{ uri, mimeType?, text }] }`；
   未知 uri → `-32602`；`read()` 抛错 → `-32603`（服务器不崩）
 - 不注入资源时行为不变：`resources/list` 返回空列表（v0.5.9 兼容）
+
+### 提示词暴露（v0.6.2）：prompts/list 真实数据 + prompts/get 渲染
+
+MCPServer 可注入**提示词模板**（如总结、翻译等可复用指令），经 MCP 标准 `prompts/list` / `prompts/get`
+暴露给客户端——客户端先探测提示词清单，再按参数补全调用 `prompts/get` 得到渲染后的消息序列：
+
+```ts
+import { MCPServer } from 'flare-agent'
+
+const server = new MCPServer({
+  prompts: [
+    {
+      name: 'summarize',                        // 提示词唯一名称（prompts/get 定位用）
+      description: '总结会话内容',
+      arguments: [{ name: 'topic', description: '主题', required: true }], // 参数声明（列表暴露给客户端补全提示）
+      render: (args) => [                       // 按客户端传入的 arguments 渲染消息；支持异步
+        { role: 'user', content: { type: 'text', text: `请总结关于「${args.topic}」的会话` } },
+        { role: 'assistant', content: { type: 'text', text: '好的，我来总结。' } },
+      ],
+    },
+    { name: 'greet', render: () => [{ role: 'user', content: { type: 'text', text: '你好' } }] },
+  ],
+})
+server.start()
+```
+
+- 注入提示词后 `initialize` 的 `capabilities` 会声明 `prompts`（缺省不声明，兼容探测）
+- `prompts/list`：返回提示词元数据（name/description/arguments）
+- `prompts/get`：调 `render(arguments)` 返回 `{ description?, messages }`；
+  未知 name → `-32602`；`render()` 抛错 → `-32603`（服务器不崩）
+- 不注入提示词时行为不变：`prompts/list` 返回空列表（v0.5.9 兼容）
 
 其他 MCP 客户端连接方式（以 flare 官方 MCPClient 为例）：
 
