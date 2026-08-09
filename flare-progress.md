@@ -33,6 +33,15 @@
     mode=always 持久化 + revoke 撤销），tsc 0 错误，零 agent.ts 改动
   - **冒烟实测**：真实 server 子进程——confirm_allow 缺省 mode ok(session) / mode=always ok / 非法 mode error 清晰 /
     confirm_status 闭环（sessionAllowed+alwaysAllowed 可见） / revoke 后名单清空
+- **P24 CLI `flare mcp resources`**（commit `e420989`）：
+  - `flare mcp resources <服务器> [--read <uri>]` → 查看/读取 MCP 服务器暴露的资源：复用 v0.6.6 的
+    `listResources`/`readResource`（stdio/HTTP 均可），连接参数 `--url`/`--config`/`--timeout` 与 mcp call 同构——
+    与 mcp call/status 组成完整命令组；未暴露资源友好提示、未知 uri 协议错误退出码 1
+  - docs/mcp.md CLI 章节 + README CLI 表/Changelog
+  - **381/381 全绿**（377 + 4 新增 mcp-cli-call：列表元数据（uri+名称+描述+mimeType）/ --read 读取内容 / 未知 uri
+    退出码 1 / 未配置服务器退出码 1），tsc 0 错误，零 agent.ts 改动
+  - **冒烟实测**：真实 HTTP MCP 服务器（注入 resources）——`mcp resources` 列出 `flare://smoke/note  smoke-note · text/plain`
+    + 描述、`--read` 输出「冒烟内容 OK」、未知 uri `MCP 错误: Unknown resource` 退出码 1
 - **下一步候选**：① agent.ts trimContext 自动裁剪（风险高仍暂缓）；② 其他安全的外围增强
   （MCP 更多协议特性、server 协议其他管理接口、CLI 更多交互增强等）
 
