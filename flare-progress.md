@@ -3,8 +3,32 @@
 > 目标：flare 是 Pulse/StorySpire 依赖的 AI Agent 引擎（TS）。任何改动必须安全（tsc 0 错 + 测试全绿才 commit）。
 > 铁律：禁止 push；禁止修改 src/core/agent.ts 的 Agent.run 核心循环。
 
-> **最新状态（v0.6.6）**：MCP HTTP 接入 McpManager + CLI `flare mcp call`/`mcp status` + MCP resources 客户端消费；317/317 全绿（commits `0be72bd`/`3c9e54d`/`ce7291f`/`74306d0`，未 push）。
-> 下一步候选：① agent.ts trimContext 自动裁剪（风险高仍暂缓）；② 其他安全的外围增强。
+> **最新状态（v0.6.7）**：CLI 交互模式接入 ConfirmationGate（终端确认弹窗 + /allow 管理 + always 持久化）；340/340 全绿（commit `fc5763c`，未 push）。
+> 下一步候选：① agent.ts trimContext 自动裁剪（风险高仍暂缓）；② 其他安全的外围增强（server 协议确认门管理请求 confirm_status/confirm_revoke 等）。
+
+### 2026-08-09 第九轮实施（v0.6.7）——CLI 交互模式接入 ConfirmationGate
+
+- **P18 CLI 交互模式接入 ConfirmationGate**（commit `fc5763c`）：
+  - AI 调用写回类工具（`memory_save`）执行前**终端内确认弹窗**：`[y] 允许一次 / [s] 本次会话允许 /
+    [a] 总是允许 / [n] 拒绝（默认）`——确认期间暂停火焰动画 + 恢复终端回显（readline 读一行），
+    决策后反馈一行并继续 Agent 流；allow_session 会话记忆、always 持久化到全局库 settings 表
+    （跨会话记住）；ConfirmationGate 超时安全 deny 继承
+  - **防绕过**：交互模式始终显式传工具集（内置 + MCP）再 `wrapConfirmTools` 包装——避免 Agent
+    回退内置工具绕过确认门（与 server 端 v0.6.1 同机制）；默认名单 `CLI_CONFIRM_TOOLS =
+    ['memory_save']`（与 server `DEFAULT_CONFIRM_TOOLS` 一致）
+  - **/allow 命令**：查看已放行的确认工具（含 always 持久化）/ `/allow revoke <工具名>` 撤销
+    （恢复每次确认）；`handleSlashCommand` 新增可选 `allowGate` hooks（向后兼容）
+  - **可测性**：库导出纯函数 `parseConfirmAnswer`（输入→决策，空/未知安全 deny）/ `formatConfirmPrompt`
+    （确认 UI 文案，参数 JSON 截断 120 字符）/ `terminalConfirmer`（可注入 ask/onPause/onResume/onFeedback）
+  - docs/confirmation.md CLI 交互章节 + README CLI 表/Changelog + 版本号 0.6.7
+  - **340/340 全绿**（317 + 23 新增：parseConfirmAnswer 4 / formatConfirmPrompt 3 / terminalConfirmer 4 /
+    Gate×terminal 集成 5 / /allow 命令 7），tsc 0 错误，零 agent.ts 改动
+  - **冒烟实测**：本机 Ollama qwen2.5:7b 真实触发——AI 调 memory_save → 确认弹窗（含参数摘要）→
+    y →「已允许本次执行」→ 工具真实写入 → AI 回复，事件链完整；PTY 下 /allow 命令正常
+- **下一步候选**：① agent.ts trimContext 自动裁剪（风险高仍暂缓）；② 其他安全的外围增强
+  （server 协议确认门管理 confirm_status/confirm_revoke 请求、/forget 交互确认、CLI /allow 增强等）
+
+---
 
 ### 2026-08-09 第八轮实施（v0.6.6）——MCP HTTP 接入 McpManager + CLI `flare mcp call`/`mcp status` + resources 客户端消费
 
