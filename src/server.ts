@@ -507,6 +507,40 @@ export function startHostServer(opts: HostServerOptions) {
           pendingConfirm.resolve(decision as ConfirmDecision)
           break
         }
+        case 'confirm_status': {
+          // 宿主查询确认门状态（v0.6.8）：放行名单（会话级 + always 持久化）+ 当前确认名单配置（只读）
+          const sessionId = String(req.sessionId || 'default')
+          const gate = gates.get(sessionId)
+          reply({
+            type: 'confirm_status',
+            sessionId,
+            confirmTools,
+            allowedTools: gate ? gate.listAllAllowed(confirmTools) : [],
+            sessionAllowed: gate ? gate.listAllowed() : [],
+            alwaysAllowed: gate ? gate.listAlwaysAllowed(confirmTools) : [],
+          })
+          break
+        }
+        case 'confirm_revoke': {
+          // 宿主撤销确认门放行（v0.6.8）：
+          //   { tool }            → 撤销该工具（会话级 + always 持久化同步清除，恢复每次确认）
+          //   { resetSession: 1 } → 清空会话级放行（不影响 always 持久化）
+          const sessionId = String(req.sessionId || 'default')
+          const tool = req.tool === undefined || req.tool === null ? '' : String(req.tool).trim()
+          const resetSession = req.resetSession === true || req.resetSession === 1 || req.resetSession === '1'
+          if (!tool && !resetSession) {
+            reply({ type: 'error', message: 'confirm_revoke 需要 tool 参数（要撤销放行的工具名），或 resetSession: true（清空会话级放行）' })
+            break
+          }
+          const gate = gates.get(sessionId)
+          if (gate) {
+            if (resetSession) gate.resetSession()
+            if (tool) gate.revoke(tool)
+          }
+          // 无 gate = 无放行记录：幂等 ok（服务不崩、状态不变）
+          reply({ type: 'ok', sessionId, ...(tool ? { tool } : {}), ...(resetSession ? { resetSession: true } : {}) })
+          break
+        }
         case 'mcp_status': {
           // 宿主查看 MCP 服务器连接状态（v0.5.5；等待启动时的后台连接落定，保证确定性）
           await Promise.allSettled(mcpConnects)
