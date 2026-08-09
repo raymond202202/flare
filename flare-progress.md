@@ -3,10 +3,50 @@
 > 目标：flare 是 Pulse/StorySpire 依赖的 AI Agent 引擎（TS）。任何改动必须安全（tsc 0 错 + 测试全绿才 commit）。
 > 铁律：禁止 push；禁止修改 src/core/agent.ts 的 Agent.run 核心循环。
 
-> **最新状态（v0.6.10）**：确认门显式放行闭环（CLI `/allow add` + server `confirm_allow`）+ MCP CLI 命令组补全（`flare mcp resources`/`prompts`）；384/384 全绿（commit `14a22e7`，未 push）。
+> **最新状态（v0.6.11）**：MCP completion/complete 参数补全（prompts 配套协议能力）+ server 协议 `tools` 工具清单接口（确认门标注+来源）+ CLI `/tools` 命令；401/401 全绿（commits `1aff83e`/`0a85618`，未 push）。
 > 下一步候选：① agent.ts trimContext 自动裁剪（风险高仍暂缓）；② 其他安全的外围增强（MCP 更多协议特性、server 协议其他管理接口等）。
 
-### 2026-08-10 第十二轮实施（v0.6.10）——确认门显式放行（CLI /allow add + server confirm_allow）+ MCP CLI 命令组补全
+### 2026-08-10 第十三轮实施（v0.6.11）——MCP completion/complete 参数补全 + server 协议 tools 工具清单 + CLI /tools
+
+- **P26 MCP `completion/complete` 协议特性**（commit `1aff83e`）：
+  - `McpPrompt` 新增可选 `complete(argumentName, value)` 回调——客户端交互式输入参数时（如宿主面板提示词表单）
+    向服务器请求候选值；`initialize` 在任一 prompt 有回调（或注入了资源）时声明 `capabilities.completions`
+    （缺省不声明，兼容探测）
+  - `MCPServer` dispatch 新增 `completion/complete`：`ref/prompt` 按回调返回候选（支持异步）/ `ref/resource`
+    按已暴露资源 uri 前缀建议 / 无回调的 prompt 返回空候选（不报错）；未知 prompt、缺 ref → `-32602`，
+    回调抛错 → `-32603`（服务器不崩）；响应 `{ completion: { values, total, hasMore } }`——
+    stdio（MCPServer）与 HTTP（startMcpHttpServer）共用同一核心（handleMessage）
+  - **客户端消费闭环**：`MCPClient.completePrompt` / `MCPHttpClient.completePrompt(name, argumentName, value)`
+    → `{ values }`（stdio/HTTP 同构）；`McpCompletionResult` 类型库导出
+  - docs/mcp.md 参数补全章节 + README Changelog + 版本号 0.6.11
+  - **390/390 全绿**（384 + 6 新增：服务器端 5——ref/prompt 候选/异步+空匹配/ref/resource uri 前缀/
+    无回调空候选+未知 prompt+缺 ref/capabilities 声明含资源不声明 + stdio e2e 消费闭环 + HTTP e2e 消费闭环
+    计入对应文件），tsc 0 错误，零 agent.ts 改动
+  - **冒烟实测**：真实 HTTP MCP 服务器（注入 complete 回调）——capabilities.completions true、
+    completePrompt 返回候选（fl→flare）/ 空匹配空候选；真实 stdio MCPServer ref/resource 前缀候选
+- **P27 server 协议 `tools` 接口**（commit `1aff83e`）：
+  - `tools {sessionId?}` 请求 → 宿主面板查询当前会话 Agent 可用工具清单（只读、不触发生成）：
+    每项 `name`/`description`/`parameters` + `confirmed`（是否经确认门，命中 confirmTools 名单）+
+    `source`（host 宿主代理 / profile 专家配置 / mcp 外部 MCP / builtin 内置回退）；`confirmTools` 确认名单
+    配置回显；chat 带宿主工具后 tools 查询反映该会话真实工具集（getAgent 记录 toolMeta 到会话条目）
+  - **纯函数库导出**：`describeTools(tools, confirmTools, sources?)` + `ToolMeta`/`ToolSourceSets` 类型
+    （宿主可复用；来源判定 host 优先→mcp→profile→builtin）
+  - docs/host-protocol.md §22 + 请求类型列表 + 响应表 + README Changelog
+  - **397/397 全绿**（390 + describeTools 单测 5：元数据+确认标注/来源判定/host 优先/空名单关闭/缺省字段
+    + server e2e 3：默认内置清单+确认标注/指定 sessionId/chat 带宿主工具后 host 来源），tsc 0 错误，零 agent.ts 改动
+  - **冒烟实测**：真实 server 子进程——tools 返回 6 内置工具 + memory_save confirmed:true source:builtin
+    + confirmTools=['memory_save'] 回显
+- **P28 CLI 交互 `/tools` 命令**（commit `0a85618`）：
+  - `/tools` → 查看当前 Agent 可用工具清单（内置 + MCP）：每项名称/来源（内置/MCP）+ 描述 +
+    `⚠需确认` 标注（命中确认名单的写回类工具执行前弹窗确认，与 /allow 呼应——先看清单哪些需确认再决定放行）
+  - `handleSlashCommand` 新增可选 `toolsInfo` 回调（未提供提示不可用，向后兼容）；CLI 注入复用
+    `describeTools` 纯函数；`/help` 帮助行 + docs/confirmation.md CLI 章节补充
+  - **401/401 全绿**（397 + 4 新增：无回调提示/列表+确认标注+来源/空清单/help 含说明），tsc 0 错误，零 agent.ts 改动
+  - **冒烟实测**：真实 PTY 交互 CLI——/tools 列出 6 内置工具 + memory_save ⚠需确认 标注
+- **下一步候选**：① agent.ts trimContext 自动裁剪（风险高仍暂缓）；② 其他安全的外围增强
+  （MCP 更多协议特性如 roots/logging、server 协议其他管理接口、CLI 更多交互增强等）
+
+---
 
 - **P22 CLI /allow 增强**（commit `713ac14`）：
   - `/allow add <工具名> [session|always]` → 显式放行确认工具（无需等 AI 触发确认弹窗）：缺省 `session`
