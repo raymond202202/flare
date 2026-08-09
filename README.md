@@ -165,7 +165,8 @@ cp .env.example ~/.flare/.env
 | `/mcp` | 查看 MCP 服务器状态（`~/.flare/mcp.json` 配置，v0.5.5） |
 | `/mcp connect <name>` | 连接 MCP 服务器并注入其工具（v0.5.5） |
 | `/mcp disconnect <name>` | 断开 MCP 服务器（v0.5.5） |
-| `/allow` | 查看已放行的确认工具（AI 写回类工具执行前会请求确认，v0.6.7） |
+| `/allow` | 查看已放行的确认工具（标注范围：本会话/跨会话持久化，v0.6.7/v0.6.10） |
+| `/allow add <工具名> [session\|always]` | 显式放行（默认本会话；always 跨会话持久化，v0.6.10） |
 | `/allow revoke <工具名>` | 撤销放行（恢复每次确认，v0.6.7） |
 | `/memory` | 查看持久记忆 |
 | `/remember` | 保存一条记忆（如: /remember 用户喜欢浅色主题） |
@@ -331,6 +332,21 @@ Interactive mode commands:
 ### Changelog / Release Notes
 
 > 中文条目 / Chinese entries · English summary for each version
+
+#### v0.6.10 (2026-08-10) — CLI /allow 增强：显式放行 + 范围明细 / Explicit confirmation-gate grants in the CLI
+- 🎛️ **`/allow add <工具名> [session|always]`（src/cli/index.ts）**：显式放行确认工具，无需等 AI 触发确认弹窗——缺省
+  `session` 本会话内不再确认；`always` 跨会话持久化（写入全局库 settings 表，新会话/新实例也放行）；非法模式/缺参/
+  无 allow 回调（旧 hooks）各有清晰提示，未知子命令仍回用法
+- 🔍 **`/allow` 列出带范围标注（v0.6.10）**：`（本会话）` 会话级 / `（跨会话持久化）` always / `（会话+持久化）` 两者——
+  `AllowGateHooks` 新增可选 `allow(name, mode)` / `listDetailed()`（未提供则回退旧 `list()`，向后兼容）；
+  注入点用 `gate.allowSession/allowAlways` + `listAllowed/listAlwaysAllowed` 实现
+- 📚 docs/confirmation.md CLI 章节 + README CLI 表 + Changelog + 版本号 0.6.10
+- 🧪 新增 9 项测试（tests/cli-confirm.test.ts）：/allow 范围标注（会话级/持久化/两者+新会话持久化）/ 无 listDetailed
+  回退旧行为 / add 缺省 session 不写持久化 / add session / add always 持久化+跨实例生效 / add 缺参 / 非法模式 /
+  无 allow 回调 / add 后 revoke 双清；共 373/373；零 agent.ts 改动
+- EN: Interactive CLI `/allow add <tool> [session|always]` explicitly grants a confirm tool without waiting for a prompt
+  (session-scoped by default, `always` persists to the global store); `/allow` listing annotates scope (session/persisted/
+  both) via new optional AllowGateHooks.allow/listDetailed with backward-compatible fallback; 373/373 tests.
 
 #### v0.6.9 (2026-08-10) — server 协议 models 接口：可切换模型查询 / Model availability over the host protocol
 - 🎛️ **server 协议新增 `models` 请求（src/server.ts）**：宿主面板查询可切换模型（只读、不触发生成、不创建会话）——

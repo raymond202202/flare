@@ -248,7 +248,8 @@ async function startInteractive() {
       const msgs = agent.getMessages()
       return { messageCount: msgs.length, estimatedTokens: estimateMessagesTokens(msgs) }
     }, {
-      // /allow 命令（v0.6.7）：确认门放行名单管理（含 always 持久化——isAllowed 逐个查询确认名单）
+      // /allow 命令（v0.6.7；v0.6.10 新增显式放行 + 范围明细）：
+      // 确认门放行名单管理（含 always 持久化——isAllowed 逐个查询确认名单）
       list: () => CLI_CONFIRM_TOOLS.filter((t) => gate.isAllowed(t)),
       revoke: (name) => {
         if (gate.isAllowed(name)) {
@@ -256,6 +257,20 @@ async function startInteractive() {
           return true
         }
         return false
+      },
+      allow: (name, mode) => {
+        if (mode === 'always') gate.allowAlways(name)
+        else gate.allowSession(name)
+        return true
+      },
+      listDetailed: () => {
+        const always = new Set(gate.listAlwaysAllowed(CLI_CONFIRM_TOOLS))
+        const session = new Set(gate.listAllowed())
+        const names = new Set([...always, ...session])
+        return [...names].map((name) => ({
+          name,
+          scope: (always.has(name) && session.has(name) ? 'both' : always.has(name) ? 'always' : 'session') as 'session' | 'always' | 'both',
+        }))
       },
     })
     agentRunning = false
@@ -428,12 +443,16 @@ export async function terminalConfirmer(opts: TerminalConfirmOptions): Promise<C
   }
 }
 
-/** /allow 命令回调（v0.6.7）：确认门放行名单管理（列出已放行 / 撤销放行） */
+/** /allow 命令回调（v0.6.7 起；v0.6.10 新增 allow/listDetailed）：确认门放行名单管理 */
 export interface AllowGateHooks {
   /** 列出确认名单内当前被放行的工具（含 always 持久化） */
   list(): string[]
   /** 撤销放行（返回是否确实撤销了） */
   revoke(name: string): boolean
+  /** 显式放行（v0.6.10）：mode=session 本会话内放行 / always 跨会话持久化放行；返回是否成功 */
+  allow?(name: string, mode: 'session' | 'always'): boolean
+  /** 放行明细（v0.6.10）：每个放行工具的生效范围（会话级/持久化/两者）；未提供则回退 list() */
+  listDetailed?(): { name: string; scope: 'session' | 'always' | 'both' }[]
 }
 
 /** /mcp 命令回调（CLI 注入真实实现；测试注入 fake） */
@@ -621,7 +640,8 @@ export async function handleSlashCommand(
     return 'continue'
   }
 
-  // /allow 确认门放行名单管理（v0.6.7）：/allow 列出已放行 | /allow revoke <工具名> 撤销
+  // /allow 确认门放行名单管理（v0.6.7；v0.6.10 新增 /allow add 显式放行 + 明细范围标注）：
+  // /allow 列出已放行（含范围标注）| /allow add <工具名> [session|always] 显式放行 | /allow revoke <工具名> 撤销
   if (lower === '/allow' || lower.startsWith('/allow ')) {
     if (!allowGate) {
       output(chalk.yellow('\n  确认门未启用（当前环境未提供确认门）'))
@@ -630,14 +650,20 @@ export async function handleSlashCommand(
     const arg = cmd.replace(/^\/allow(?:\s+|$)/, '').trim()
     const [sub, ...rest] = arg ? arg.split(/\s+/) : []
     if (!sub) {
-      const allowed = allowGate.list()
+      const scopeLabel = (s: 'session' | 'always' | 'both') =>
+        s === 'both' ? '（会话+持久化）' : s === 'always' ? '（跨会话持久化）' : '（本会话）'
+      const detailed = allowGate.listDetailed?.() ?? null
+      const allowed = detailed ?? allowGate.list().map((n) => ({ name: n, scope: null as 'session' | 'always' | 'both' | null }))
       if (allowed.length === 0) {
         output(chalk.gray('\n  当前没有已放行的确认工具（AI 写回类工具每次都会请求确认）'))
       } else {
         output(chalk.cyan('\n✅ 已放行的确认工具:'))
-        for (const n of allowed) output(`  ${chalk.green(n)}`)
+        for (const { name, scope } of allowed) {
+          output(`  ${chalk.green(name)}${scope ? chalk.gray(scopeLabel(scope)) : ''}`)
+        }
       }
-      output(chalk.gray('  /allow revoke <工具名> 撤销放行（恢复每次确认）'))
+      output(chalk.gray('  /allow add <工具名> [session|always] - 显式放行（默认本会话）'))
+      output(chalk.gray('  /allow revoke <工具名> - 撤销放行（恢复每次确认）'))
       return 'continue'
     }
     if (sub === 'revoke' && rest.length > 0) {
@@ -648,7 +674,28 @@ export async function handleSlashCommand(
         : chalk.yellow(`\n  ${name} 未被放行`))
       return 'continue'
     }
-    output(chalk.yellow('\n  用法: /allow | /allow revoke <工具名>'))
+    if (sub === 'add') {
+      if (rest.length === 0) {
+        output(chalk.yellow('\n  用法: /allow add <工具名> [session|always]（默认 session 本会话放行；always 跨会话持久化）'))
+        return 'continue'
+      }
+      const name = rest[0]
+      const mode = (rest[1] ?? 'session').toLowerCase()
+      if (mode !== 'session' && mode !== 'always') {
+        output(chalk.yellow(`\n  非法模式「${rest[1]}」：仅支持 session（本会话）或 always（跨会话持久化）`))
+        return 'continue'
+      }
+      if (!allowGate.allow) {
+        output(chalk.yellow('\n  当前环境不支持显式放行（未提供 allow 回调）'))
+        return 'continue'
+      }
+      const ok = allowGate.allow(name, mode)
+      output(ok
+        ? chalk.green(`\n  已放行 ${name}（${mode === 'always' ? '跨会话持久化' : '本会话内不再确认'}）`)
+        : chalk.yellow(`\n  放行 ${name} 失败`))
+      return 'continue'
+    }
+    output(chalk.yellow('\n  用法: /allow | /allow add <工具名> [session|always] | /allow revoke <工具名>'))
     return 'continue'
   }
 
@@ -672,6 +719,7 @@ export async function handleSlashCommand(
       output('  /mcp connect <name> - 连接 MCP 服务器并注入其工具')
       output('  /mcp disconnect <name> - 断开 MCP 服务器')
       output('  /allow     - 查看已放行的确认工具（AI 写回类工具执行前会请求确认）')
+      output('  /allow add <工具名> [session|always] - 显式放行（默认本会话；always 跨会话持久化）')
       output('  /allow revoke <工具名> - 撤销放行（恢复每次确认）')
       output('  /pause       - 暂停动画（屏幕静止，可选中复制输出）')
       output('  /resume      - 恢复动画')
