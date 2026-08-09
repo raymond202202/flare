@@ -3,7 +3,7 @@
 > 目标：flare 是 Pulse/StorySpire 依赖的 AI Agent 引擎（TS）。任何改动必须安全（tsc 0 错 + 测试全绿才 commit）。
 > 铁律：禁止 push；禁止修改 src/core/agent.ts 的 Agent.run 核心循环。
 
-> **最新状态（v0.6.12）**：MCP roots 协议闭环（客户端暴露根目录 + 服务器主动请求 requestRoots）+ 412/412 全绿（commit `78954a5`，未 push）。
+> **最新状态（v0.6.12）**：MCP roots 协议闭环（客户端暴露根目录 + 服务器主动请求 requestRoots）+ id 空间冲突修复；413/413 全绿（commits `78954a5`/`8e566a0`，未 push）。
 > 下一步候选：① agent.ts trimContext 自动裁剪（风险高仍暂缓）；② 其他安全的外围增强（MCP 更多协议特性如 logging/sampling、server 协议其他管理接口等）。
 
 ### 2026-08-10 第十四轮实施（v0.6.12）——MCP roots 协议闭环
@@ -31,6 +31,11 @@
     零 agent.ts 改动
   - **冒烟实测**：真实 dist 产物互通——MCPClient（带 2 个 roots）连接真实 MCPServer 子进程，
     requestRoots 拿到 `file:///tmp/projects` + `memory://workspace`，版本 0.6.12，SMOKE PASS
+- **P29b id 空间冲突修复**（commit `8e566a0`）：requestRoots 发出 id=N 后客户端恰发来 id=N 的新请求
+  （请求行带 method），handleLine 的 pending 匹配会把请求行误判为 roots 响应（响应行才无 method）——
+  导致 roots promise 被错误 resolve 且该请求永远无响应（客户端超时）。修复：pending 匹配加
+  `typeof msg.method !== 'string'` 校验（client.ts + server.ts 对称）；新增防御测试（同 id ping 正常
+  分发 + 真 roots 响应仍 resolve）→ **413/413 全绿**（412 + 1）
 - **下一步候选**：① agent.ts trimContext 自动裁剪（风险高仍暂缓）；② 其他安全的外围增强
   （MCP 更多协议特性如 logging/sampling、server 协议其他管理接口、CLI 交互增强等）
 
