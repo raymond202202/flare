@@ -28,7 +28,7 @@
     回 allow_once → tool_result → done（事件流 tool_call,confirm,tool_result,text,done PASS）
 - **已知行为（非本轮引入，记录备忘）**：server 无 profile 时内置 memory_save 写全局库
   （~/.flare/flare.db）而非 --storage 指定库——与 Agent 默认一致，宿主应用应传 profile.tools 绑定独立库
-- **N6 MCP resources 真实暴露**（commit 待写）：MCPServer 新增 `resources` 选项（uri/name/description/mimeType/read 支持异步）——
+- **N6 MCP resources 真实暴露**（commit `c2fa74e`）：MCPServer 新增 `resources` 选项（uri/name/description/mimeType/read 支持异步）——
   `resources/list` 真实元数据 + `resources/read` 内容（未知 uri -32602、read 抛错 -32603 服务器不崩）；
   注入后 initialize capabilities 声明 resources（缺省不声明，v0.5.9 空列表兼容）；`McpResource`/`McpResourceContents` 类型库导出；
   docs/mcp.md 资源暴露章节 + 6 测试（**251/251 全绿**，tsc 0 错误，零 agent.ts 改动）
