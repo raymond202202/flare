@@ -148,7 +148,7 @@ cp .env.example ~/.flare/.env
 | `flare chat` | 交互模式 |
 | `flare chat -q "问题"` | 单次查询模式 |
 | `flare chat -q "问题" -i 图片.png` | 单次查询附带图片 |
-| `flare server [--profile --storage --mcp --confirm-tools --confirm-timeout]` | 宿主协议服务（stdin/stdout JSON Lines，供 Qt 等宿主调用；v0.6.1 起写回类工具经确认门） |
+| `flare server [--profile --storage --mcp --confirm-tools --confirm-timeout --max-tokens --temperature]` | 宿主协议服务（stdin/stdout JSON Lines，供 Qt 等宿主调用；v0.6.1 起写回类工具经确认门；v0.6.5 起 --max-tokens/--temperature 设 chat 默认采样参数） |
 | `flare mcp-server [-t 工具名,...]` | MCP stdio 服务器：把 flare 工具集暴露给其他 AI 客户端（v0.5.8） |
 
 交互模式命令：
@@ -326,6 +326,12 @@ Interactive mode commands:
 ### Changelog / Release Notes
 
 > 中文条目 / Chinese entries · English summary for each version
+
+#### v0.6.5 (2026-08-09) — server 默认采样参数 / Server default sampling params (--max-tokens/--temperature)
+- 🎛️ **`flare server --max-tokens <n> --temperature <n>`（src/cli/index.ts + src/server.ts）**：server 级默认采样参数——chat 请求未指定 `maxTokens`/`temperature` 时应用（CLI 一次配置，宿主免每请求传参）；请求带参数则请求优先（可覆盖默认）；默认值非法回 error 不触发生成；`HostServerOptions.defaultMaxTokens/defaultTemperature` 库可用
+- 📚 README CLI 表 + Changelog + 版本号 0.6.5
+- 🧪 新增 4 项测试（spawn 带默认参数的 server e2e：version 协商正常/chat 不带参数应用默认流程完整/非法 maxTokens 请求校验优先/合法请求参数覆盖默认），共 299/299；零 agent.ts 改动
+- EN: flare server accepts --max-tokens/--temperature as server-level sampling defaults applied when a chat request omits them (per-request values still win); HostServerOptions extended; 299/299 tests.
 
 #### v0.6.4 (2026-08-09) — context_status 预算建议 + MCP HTTP 客户端 / Budget-trim suggestion + MCP HTTP client
 - 🧮 **server 协议 `context_status` 预算建议（src/server.ts）**：请求可选带 `budgetTokens`（正整数）与 `reserveForOutput`（非负）——响应附 `suggestion` 字段（`keepIndexes` 建议保留的消息索引、`droppedCount`、`estimatedKeptTokens`/`estimatedDroppedTokens`）；复用 `suggestTrim` 纯函数（system 保底 + 最近优先），宿主按索引裁剪后回 `set_context` 即可生效（零 agent.ts 改动）；非法值回 error 不触发生成

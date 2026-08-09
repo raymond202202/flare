@@ -3,12 +3,19 @@
 > 目标：flare 是 Pulse/StorySpire 依赖的 AI Agent 引擎（TS）。任何改动必须安全（tsc 0 错 + 测试全绿才 commit）。
 > 铁律：禁止 push；禁止修改 src/core/agent.ts 的 Agent.run 核心循环。
 
-> **最新状态（v0.6.4）**：context_status 预算建议（宿主按预算自管理上下文，suggestTrim 协议化）+ MCP HTTP 客户端（与 stdio MCPClient 接口对称的 HTTP transport 消费端，与 P11 服务器端闭环）；295/295 全绿（commit bc40e9f，未 push）。
-> 下一步候选：① agent.ts trimContext 自动裁剪（风险高仍暂缓）；② 其他外围增强（CLI server --max-tokens/--temperature 默认值 / MCP HTTP 接入 McpManager 等）。
+> **最新状态（v0.6.5）**：context_status 预算建议 + MCP HTTP 客户端（v0.6.4）+ server 默认采样参数 `--max-tokens/--temperature`（v0.6.5）；299/299 全绿（commits bc40e9f/85415b1/9a58xxx，未 push）。
+> 下一步候选：① agent.ts trimContext 自动裁剪（风险高仍暂缓）；② 其他外围增强（MCP HTTP 接入 McpManager / CLI `flare mcp call` 走 HTTP 等）。
 
-### 2026-08-09 第七轮实施（v0.6.4）——context_status 预算建议 + MCP HTTP 客户端
+### 2026-08-09 第七轮实施（v0.6.4/v0.6.5）——context_status 预算建议 + MCP HTTP 客户端 + server 默认采样参数
 
-- **P12 context_status 预算建议**（commit `bc40e9f`）：
+- **P14 server 默认采样参数**（commit `9a58xxx`，v0.6.5）：
+  - `HostServerOptions.defaultMaxTokens/defaultTemperature` + CLI `flare server --max-tokens/--temperature`——
+    chat 请求未指定采样参数时应用（宿主免每请求传参）；请求带参数则请求优先（可覆盖默认）；
+    请求只带一个参数时另一个不用默认补（行为可预期）；默认值非法回 error 不触发生成
+  - docs/host-protocol.md chat 参数表 + README CLI 表/Changelog + 版本号 0.6.5
+  - **299/299 全绿**（295 + 4 新增：spawn 带默认参数 server e2e——version 协商正常/chat 不带参数
+    应用默认流程完整/非法 maxTokens 请求校验优先/合法请求参数覆盖默认），tsc 0 错误，零 agent.ts 改动
+- **P12 context_status 预算建议**（commit `bc40e9f`，v0.6.4）：
   - server 协议 `context_status` 可选带 `budgetTokens`（正整数）/ `reserveForOutput`（非负）——
     响应附 `suggestion` 字段：`keepIndexes`（建议保留的消息索引，单调递增、首条必为 0 即 system 保底）、
     `droppedCount`、`estimatedKeptTokens`/`estimatedDroppedTokens`；复用 `suggestTrim` 纯函数
