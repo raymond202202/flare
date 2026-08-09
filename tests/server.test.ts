@@ -156,6 +156,29 @@ describe('flare host server 协议', () => {
     expect(msgs[0].sessions.some((s: any) => s.id === 's-list1')).toBe(true)
   })
 
+  it('recent_sessions → 会话列表 + preview（v0.6.0：宿主会话面板用，只读不生成）', async () => {
+    // 数据往返：create_session 写入的会话必须出现在最近会话列表里
+    await request({ type: 'create_session', sessionId: 's-recent1', title: '预览会话' }, { expect: ['ok'] })
+    const msgs = await request({ type: 'recent_sessions' }, { expect: ['recent_sessions'] })
+    expect(msgs[0].type).toBe('recent_sessions')
+    expect(Array.isArray(msgs[0].sessions)).toBe(true)
+    const row = msgs[0].sessions.find((s: any) => s.id === 's-recent1')
+    expect(row).toBeTruthy()
+    // 字段契约：id/title/updatedAt/preview（preview 为字符串，空会话可为空串）
+    expect(typeof row.title).toBe('string')
+    expect(typeof row.updatedAt).toBe('string')
+    expect(typeof row.preview).toBe('string')
+  })
+
+  it('recent_sessions → limit 参数生效（上限 50，下限 1）', async () => {
+    await request({ type: 'create_session', sessionId: 's-recent2' }, { expect: ['ok'] })
+    await request({ type: 'create_session', sessionId: 's-recent3' }, { expect: ['ok'] })
+    const one = await request({ type: 'recent_sessions', limit: 1 }, { expect: ['recent_sessions'] })
+    expect(one[0].sessions.length).toBe(1)
+    const many = await request({ type: 'recent_sessions', limit: 999 }, { expect: ['recent_sessions'] })
+    expect(many[0].sessions.length).toBeLessThanOrEqual(50)
+  })
+
   it('ping → pong（宿主健康检查）', async () => {
     const msgs = await request({ type: 'ping' }, { expect: ['pong'] })
     expect(msgs[0].type).toBe('pong')

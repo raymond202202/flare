@@ -3,7 +3,7 @@
 > 供非 Node 宿主（如 Qt 应用）调用 flare 引擎的本地协议。
 > 传输：stdin/stdout · JSON Lines（每行一个 JSON 对象）
 > 实现：`src/server.ts`（`flare server` 命令）
-> 请求类型：chat / cancel / set_context / list_sessions / get_messages / get_usage / context_status / ping / version / create_session / delete_session / remember / get_memories / delete_memory / tool_result / mcp_status
+> 请求类型：chat / cancel / set_context / list_sessions / recent_sessions / get_messages / get_usage / context_status / ping / version / create_session / delete_session / remember / get_memories / delete_memory / tool_result / mcp_status
 
 ## 启动
 
@@ -51,6 +51,19 @@ flare server --profile <expert-profile-file> --storage <db-path> [--mcp <mcp-con
 ```json
 {"type":"list_sessions"}
 ```
+
+### 4.1 recent_sessions — 最近会话（含首条消息预览，v0.6.0）
+
+```json
+{"type":"recent_sessions"}                      // 最近 10 个会话（按更新时间倒序）
+{"type":"recent_sessions","limit":5}            // 指定条数（默认 10，上限 50）
+```
+
+响应：`{"type":"recent_sessions","sessions":[{"id":"s1","title":"...","updatedAt":"...","preview":"第一条用户消息..."}]}`
+
+- `preview`：该会话第一条 user 消息的前 120 字符（空白折叠）——宿主会话面板展示标题/预览用；
+  空会话 preview 为空串
+- 与 `list_sessions`（全量 + 消息数）互补：recent_sessions 面向"最近会话列表"展示场景，只读不生成
 
 ### 5. get_messages — 读取指定会话消息历史（只读，不生成）
 
@@ -197,6 +210,7 @@ flare server --profile <expert-profile-file> --storage <db-path> [--mcp <mcp-con
 | `cancelled` | `sessionId` | 生成被取消 |
 | `error` | `message` | 错误（含未配置 key 等） |
 | `sessions` | `sessions` | 会话列表 |
+| `recent_sessions` | `sessions` | 最近会话列表（含 preview，v0.6.0） |
 | `messages` | `sessionId, messages` | 指定会话的消息历史 |
 | `memories` | `memories` | 记忆列表（get_memories 响应） |
 | `ok` | `sessionId, deleted?` | 通用确认（set_context/cancel/create_session/delete_session/remember/delete_memory） |

@@ -88,3 +88,31 @@
 - **下一步候选**：① CLI/server 接入 ConfirmationGate（宿主弹窗流程）；② agent.ts trimContext 自动裁剪（风险高暂缓）；③ MCP 更多协议特性（resources 真实暴露/HTTP transport）
 
 ---
+### 第三轮（2026-08-09）——调研：server 协议会话/模型可观测性增强（v0.6.0 方向）
+
+- **现状盘点（v0.5.9，221/221 全绿）**：
+  | 方向 | 状态 |
+  |---|---|
+  | MCP 协议支持 | ✅ client v0.5.5 + server v0.5.8 + CLI mcp-server + resources/prompts compat v0.5.9 |
+  | 工具确认机制 | ✅ ConfirmationGate v0.5.7 |
+  | 上下文可观测 | ✅ estimateTokens + context_status + /context v0.5.6 + suggestTrim v0.5.9 |
+  | 记忆 RAG | ✅ trigram FTS + memory_search/save/delete 生命周期 v0.5.1/v0.5.4 |
+  | server 协议 | 🟡 大部分完成（version/delete_session/get_usage/create_session/remember/get_memories/delete_memory/context_status/mcp_status） |
+  | 多模型 provider | 🟡 resolveProviderOptions + /model 切换 v0.5.2；**缺模型列表能力** |
+- **明确缺口**：
+  1. **协议无会话预览**：`MemoryStore.getRecentSessions()`（含首条 user 消息预览）已存在且 CLI /sessions 在用，
+     但 server 协议 `list_sessions` 用 `getAllSessions()`（无预览）——Qt 宿主面板无法展示"最近会话+预览"
+  2. **无模型列表**：宿主/CLI 无法查询本地 Ollama 有哪些模型可切换（`flare models` 命令 + 协议查询都缺）
+  3. memory_search 长消息折叠（docs/memory-rag.md 后续候选，小而安全）
+- **确定方向**：**server 协议完善（宿主会话/模型可观测性增强）** —— 纯外围（src/server.ts + src/cli + docs + tests），
+  零 agent.ts 改动，Pulse/StorySpire 宿主直接受益
+- **迭代计划（小步骤）**：
+  - [ ] **N1** 协议 `recent_sessions`（会话列表 + 首条 user 消息预览，复用 getRecentSessions）
+        → host-protocol.md 文档 + server.test.ts 2-3 项测试
+  - [ ] **N2** `flare models` CLI 命令（列出默认/视觉模型 + 本地 Ollama 已拉取模型，Ollama 不可达不报错）
+        → cli 测试（mock 或跳过网络）
+  - [ ] **N3**（可选）memory_search 长消息折叠（tools/memory.ts 截断优化）
+  - [ ] **N4** README Changelog + 版本号 v0.6.0 + 文档收尾
+
+---
+

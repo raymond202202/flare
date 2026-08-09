@@ -231,6 +231,33 @@ describe('MemoryStore 记忆检索增强（RAG, v0.5.1）', () => {
     expect(hits.length).toBeGreaterThan(0)
     expect(hits[0].content).toContain('林澈')
   })
+
+  it('getRecentSessions：返回会话列表，preview = 该会话第一条 user 消息', () => {
+    const a = store.createSession('会话A')
+    const b = store.createSession('会话B')
+    // 每条会话多条消息：预览应取第一条 user 消息（不是最新一条）
+    store.saveMessage(b, { role: 'user', content: 'B 的第一条用户消息内容' })
+    store.saveMessage(b, { role: 'assistant', content: 'B 回复' })
+    store.saveMessage(b, { role: 'user', content: 'B 的第二条用户消息' })
+    store.saveMessage(a, { role: 'user', content: 'A 的第一条用户消息' })
+
+    const rows = store.getRecentSessions(10) as any[]
+    expect(rows.length).toBeGreaterThanOrEqual(2)
+    const rowA = rows.find((r: any) => r.id === a)
+    const rowB = rows.find((r: any) => r.id === b)
+    expect(rowA?.first_user_msg).toBe('A 的第一条用户消息')
+    // 预览是第一条 user 消息，不是最新一条（B 的最后一条 user 是"B 的第二条用户消息"）
+    expect(rowB?.first_user_msg).toBe('B 的第一条用户消息内容')
+  })
+
+  it('getRecentSessions：limit 限制条数；空会话预览为空', () => {
+    store.createSession('空会话')
+    const rows = store.getRecentSessions(1) as any[]
+    expect(rows.length).toBe(1)
+    // 无消息的会话：preview 字段为空（null/undefined/空串均可）
+    const empty = rows[0]
+    expect(empty.first_user_msg === null || empty.first_user_msg === undefined || empty.first_user_msg === '').toBe(true)
+  })
 })
 
 describe('MemoryStore.deleteSession', () => {
