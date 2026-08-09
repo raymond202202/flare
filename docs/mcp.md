@@ -130,6 +130,35 @@ const custom = new MCPServer({ tools: [readFileTool, writeFileTool, terminalTool
 custom.start()
 ```
 
+### 资源暴露（v0.6.1）：resources/list 真实数据 + resources/read
+
+MCPServer 可注入**资源**（如记忆、配置、状态快照），经 MCP 标准 `resources/list` / `resources/read`
+暴露给客户端（Claude Desktop 等会先探测 resources 能力）：
+
+```ts
+import { MCPServer } from 'flare-agent'
+
+const server = new MCPServer({
+  resources: [
+    {
+      uri: 'memory://preferences',          // 资源唯一标识
+      name: '用户偏好',
+      description: '用户的持久偏好记忆',
+      mimeType: 'text/plain',
+      read: () => '偏好深色主题',            // 返回内容文本；支持异步
+    },
+    { uri: 'file:///etc/hostname', name: '主机名', read: () => 'flare-host' },
+  ],
+})
+server.start()
+```
+
+- 注入资源后 `initialize` 的 `capabilities` 会声明 `resources`（缺省不声明，兼容探测）
+- `resources/list`：返回资源元数据（uri/name/description/mimeType）
+- `resources/read`：调 `read()` 返回 `{ contents: [{ uri, mimeType?, text }] }`；
+  未知 uri → `-32602`；`read()` 抛错 → `-32603`（服务器不崩）
+- 不注入资源时行为不变：`resources/list` 返回空列表（v0.5.9 兼容）
+
 其他 MCP 客户端连接方式（以 flare 官方 MCPClient 为例）：
 
 ```ts

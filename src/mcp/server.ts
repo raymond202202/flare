@@ -24,7 +24,7 @@
 import { createInterface, type Interface } from 'node:readline'
 import { createRequire } from 'node:module'
 import { tools, type Tool, type ToolResult } from '../tools/index.js'
-import type { McpContentItem, McpTool } from './types.js'
+import type { McpContentItem, McpResource, McpResourceContents, McpTool } from './types.js'
 import { MCP_PROTOCOL_VERSION } from './client.js'
 
 const require = createRequire(import.meta.url)
@@ -34,6 +34,8 @@ const pkg = require('../../package.json') as { version: string }
 export interface MCPServerOptions {
   /** flare 工具集（默认内置工具 tools：read_file/write_file/search_files/terminal/memory_search/memory_save） */
   tools?: Tool[]
+  /** MCP 资源（v0.6.1）：resources/list 真实暴露 + resources/read 读取；缺省无资源能力（空列表） */
+  resources?: McpResource[]
   /** 服务器信息（默认 name: 'flare'，version 读 package.json 不硬编码） */
   serverInfo?: { name: string; version: string }
   /** 输出函数（默认 process.stdout.write + 换行；测试可注入收集） */
@@ -54,6 +56,7 @@ export function toMcpTool(tool: Tool): McpTool {
 
 export class MCPServer {
   private readonly toolList: Tool[]
+  private readonly resourceList: McpResource[]
   private readonly serverInfo: { name: string; version: string }
   private readonly write: (line: string) => void
   private readonly input: NodeJS.ReadableStream
@@ -64,6 +67,7 @@ export class MCPServer {
 
   constructor(opts: MCPServerOptions = {}) {
     this.toolList = opts.tools ?? tools
+    this.resourceList = opts.resources ?? []
     this.serverInfo = opts.serverInfo ?? { name: 'flare', version: pkg.version }
     this.write = opts.write ?? ((line) => process.stdout.write(line + '\n'))
     this.input = opts.input ?? process.stdin
@@ -130,10 +134,13 @@ export class MCPServer {
   private async dispatch(method: string, params: any): Promise<any> {
     switch (method) {
       case 'initialize':
-        // 握手：协商协议版本、声明能力（tools）、返回服务器信息
+        // 握手：协商协议版本、声明能力（tools / 可选 resources）、返回服务器信息
         return {
           protocolVersion: MCP_PROTOCOL_VERSION,
-          capabilities: { tools: {} },
+          capabilities: {
+            tools: {},
+            ...(this.resourceList.length > 0 ? { resources: {} } : {}),
+          },
           serverInfo: this.serverInfo,
         }
       case 'tools/list':
@@ -141,8 +148,17 @@ export class MCPServer {
       case 'tools/call':
         return this.callTool(params)
       case 'resources/list':
-        // 无 resources 能力：返回空列表（真实客户端（Claude Desktop 等）连接时会探测）
-        return { resources: [] }
+        // v0.6.1：真实暴露注入的资源（元数据；内容经 resources/read 读取）
+        return {
+          resources: this.resourceList.map(r => ({
+            uri: r.uri,
+            name: r.name,
+            ...(r.description ? { description: r.description } : {}),
+            ...(r.mimeType ? { mimeType: r.mimeType } : {}),
+          })),
+        }
+      case 'resources/read':
+        return this.readResource(params)
       case 'prompts/list':
         // 无 prompts 能力：返回空列表
         return { prompts: [] }
@@ -154,6 +170,23 @@ export class MCPServer {
         return {}
       default:
         throw Object.assign(new Error(`Method not found: ${method}`), { code: -32601 })
+    }
+  }
+
+  /** 读取资源（resources/read）：未知 uri → -32602；read() 异常 → -32603（服务器不崩） */
+  private async readResource(params: any): Promise<{ contents: McpResourceContents[] }> {
+    const uri = String(params?.uri || '')
+    const resource = this.resourceList.find(r => r.uri === uri)
+    if (!resource) {
+      throw Object.assign(new Error(`Unknown resource: ${uri}`), { code: -32602 })
+    }
+    const text = await resource.read()
+    return {
+      contents: [{
+        uri: resource.uri,
+        ...(resource.mimeType ? { mimeType: resource.mimeType } : {}),
+        text: String(text),
+      }],
     }
   }
 

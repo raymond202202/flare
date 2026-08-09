@@ -57,3 +57,22 @@ export interface McpServerStatus {
   toolCount: number
   error?: string
 }
+
+/** MCP 资源（v0.6.1 resources 真实暴露）：宿主注入的资源描述 + 内容读取函数 */
+export interface McpResource {
+  /** 资源唯一标识（如 file:///etc/hosts、memory://preferences） */
+  uri: string
+  /** 资源名称（展示用） */
+  name: string
+  description?: string
+  mimeType?: string
+  /** 读取资源内容（返回纯文本；异步可注入） */
+  read(): string | Promise<string>
+}
+
+/** MCP resources/read 响应内容项（contents[] 元素） */
+export interface McpResourceContents {
+  uri: string
+  mimeType?: string
+  text: string
+}
