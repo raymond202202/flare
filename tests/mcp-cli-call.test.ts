@@ -140,8 +140,52 @@ describe('CLI flare mcp call', () => {
   }, 20000)
 })
 
+describe('CLI flare mcp prompts（v0.6.10）', () => {
+  /** 带 prompts 的 HTTP MCP 服务器 */
+  async function startPromptServer() {
+    return startMcpHttpServer({
+      tools: [echoTool],
+      prompts: [
+        {
+          name: 'greet',
+          description: '生成问候语',
+          arguments: [{ name: 'name', description: '称呼', required: true }],
+          render: async (args: any) => ([
+            { role: 'user' as const, content: { type: 'text' as const, text: `你好，${args.name}！` } },
+          ]),
+        },
+      ],
+    })
+  }
+
+  it('列出提示词元数据（名称 + 参数 + 描述）', async () => {
+    const h = await startPromptServer()
+    handles.push(h)
+    const { code, stdout } = await runCli(['mcp', 'prompts', 'remote', '--url', h.url])
+    expect(code).toBe(0)
+    expect(stdout).toMatch(/greet/)
+    expect(stdout).toMatch(/生成问候语/)
+    expect(stdout).toMatch(/name/)
+  }, 20000)
+
+  it('--get <name> 渲染提示词消息', async () => {
+    const h = await startPromptServer()
+    handles.push(h)
+    const { code, stdout } = await runCli(['mcp', 'prompts', 'remote', '--get', 'greet', '--args', '{"name":"世界"}', '--url', h.url])
+    expect(code).toBe(0)
+    expect(stdout).toContain('你好，世界！')
+  }, 20000)
+
+  it('--get 未知提示词 → 退出码 1 + 协议错误', async () => {
+    const h = await startPromptServer()
+    handles.push(h)
+    const { code, stderr } = await runCli(['mcp', 'prompts', 'remote', '--get', 'nope', '--url', h.url])
+    expect(code).toBe(1)
+    expect(stderr).toMatch(/MCP 错误|未知提示词|Unknown/i)
+  }, 20000)
+})
+
 describe('CLI flare mcp resources（v0.6.10）', () => {
-  /** 带 resources 的 HTTP MCP 服务器 */
   async function startResServer() {
     return startMcpHttpServer({
       tools: [echoTool],

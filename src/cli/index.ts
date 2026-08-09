@@ -1089,6 +1089,78 @@ export function main() {
       }
     })
 
+  mcpCmd
+    .command('prompts <server>')
+    .description('查看 MCP 服务器暴露的提示词（prompts/list；--get <name> 渲染，v0.6.10）')
+    .option('--url <url>', '直接连 HTTP transport 端点（如 http://127.0.0.1:8931/mcp），跳过配置查找')
+    .option('--config <path>', 'MCP 配置文件路径（默认 ~/.flare/mcp.json）')
+    .option('--timeout <ms>', '单请求超时毫秒（默认 15000）')
+    .option('--get <name>', '渲染指定提示词（替代列出元数据）')
+    .option('--args <json>', '渲染提示词的参数（--get 时可选，JSON 对象）')
+    .action(async (server: string, options: { url?: string; config?: string; timeout?: string; get?: string; args?: string }) => {
+      try {
+        const { MCPClient, MCPHttpClient, McpManager } = await import('../index.js')
+        const timeoutMs = options.timeout ? Number(options.timeout) : 15000
+        // 连接客户端：--url 直连 HTTP；否则查配置——与 mcp call/resources 同构
+        let client: InstanceType<typeof MCPClient> | InstanceType<typeof MCPHttpClient>
+        let label = server
+        if (options.url) {
+          client = new MCPHttpClient({ url: options.url, timeoutMs })
+          label = `${server}（${options.url}）`
+        } else {
+          const mgr = new McpManager({ configPath: options.config })
+          const cfg = mgr.servers.find((s) => s.name === server)
+          if (!cfg) {
+            throw new Error(`未配置 MCP 服务器: ${server}（~/.flare/mcp.json 的 servers 列表，或 --url 直连 HTTP 端点）`)
+          }
+          if (!cfg.url && !cfg.command) {
+            throw new Error(`MCP 服务器 ${server} 配置无效：需提供 command（stdio）或 url（HTTP transport）`)
+          }
+          client = cfg.url
+            ? new MCPHttpClient({ url: cfg.url, timeoutMs: cfg.timeoutMs || timeoutMs })
+            : new MCPClient({ command: cfg.command as string, args: cfg.args, env: cfg.env, timeoutMs })
+          if (cfg.url) label = `${server}（${cfg.url}）`
+        }
+        await client.initialize()
+        if (options.get) {
+          let args: Record<string, any> = {}
+          if (options.args !== undefined) {
+            try {
+              args = JSON.parse(options.args)
+            } catch (e: any) {
+              throw new Error(`--args 不是合法 JSON: ${e?.message || e}`)
+            }
+          }
+          const result = await client.getPrompt(options.get, args)
+          client.close()
+          const texts = (result.messages || [])
+            .filter((m: any) => m.content && typeof m.content.text === 'string')
+            .map((m: any) => m.content.text)
+          if (result.description) console.log(chalk.gray(result.description))
+          console.log(texts.join('\n') || `（提示词 ${options.get} 渲染结果为空）`)
+          return
+        }
+        const prompts = await client.listPrompts()
+        client.close()
+        if (prompts.length === 0) {
+          console.log(chalk.gray(`服务器 ${label} 未暴露任何提示词（prompts/list 为空）`))
+          return
+        }
+        const lines = prompts.map((p) => {
+          const args = p.arguments && p.arguments.length > 0
+            ? `（参数: ${p.arguments.map((a) => a.name).join(', ')}）`
+            : ''
+          return `  ${chalk.green(p.name)}${args ? chalk.gray(args) : ''}${p.description ? `\n    ${chalk.gray(p.description)}` : ''}`
+        })
+        console.log(chalk.cyan(`服务器 ${label} 的提示词（${prompts.length}）:`))
+        console.log(lines.join('\n'))
+        console.log(chalk.gray('  提示: flare mcp prompts <服务器> --get <提示词名> [--args \'{"k":"v"}\'] 渲染'))
+      } catch (e: any) {
+        console.error(chalk.red(`❌ ${e?.message || e}`))
+        process.exit(1)
+      }
+    })
+
   program
     .command('models')
     .description('查看可用模型：配置的主/视觉模型 + 本地 Ollama 已拉取模型（v0.6.0）')
