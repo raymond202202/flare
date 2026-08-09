@@ -8,7 +8,7 @@
 
 ### 2026-08-09 第五轮实施（v0.6.2）——MCP prompts 真实暴露
 
-- **N7 MCP prompts 真实暴露**（commit 待提交）：MCPServer 新增 `prompts` 选项（name/description/arguments/render 支持异步）——
+- **N7 MCP prompts 真实暴露**（commit `d780c5c`）：MCPServer 新增 `prompts` 选项（name/description/arguments/render 支持异步）——
   `prompts/list` 真实元数据（客户端探测清单）+ `prompts/get` 按客户端 arguments 渲染消息序列 `{ description?, messages }`；
   未知 name -32602、render 抛错 -32603 服务器不崩；注入后 initialize capabilities 声明 prompts（缺省不声明，v0.5.9 空列表兼容）；
   `McpPrompt`/`McpPromptArgument`/`McpPromptMessage` 类型库导出；docs/mcp.md 提示词暴露章节 + README Changelog + v0.6.2 版本号；
