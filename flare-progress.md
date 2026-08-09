@@ -3,8 +3,35 @@
 > 目标：flare 是 Pulse/StorySpire 依赖的 AI Agent 引擎（TS）。任何改动必须安全（tsc 0 错 + 测试全绿才 commit）。
 > 铁律：禁止 push；禁止修改 src/core/agent.ts 的 Agent.run 核心循环。
 
-> **最新状态（v0.5.9）**：MCP 服务器端完整（MCPServer + CLI `flare mcp-server` + resources/prompts 空响应兼容）+ 上下文裁剪建议 suggestTrim 纯函数；221/221 全绿（commits 06eae7b/5779078/7379a5e/d84b2ef 未 push）。
-> 下一步候选：① CLI/server 接入 ConfirmationGate（宿主弹窗流程）；② agent.ts trimContext 自动裁剪（风险高暂缓）；③ MCP 更多协议特性（resources 真实暴露/HTTP transport）。
+> **最新状态（v0.6.1）**：CLI/server 接入 ConfirmationGate 完成（宿主弹窗确认流程：confirm 事件 + confirm_result 请求；写回类工具默认 memory_save 经确认门；always 持久化到记忆库 settings 表；超时安全 deny）；245/245 全绿（commit bd80b9f 未 push）。
+> 下一步候选：① server 协议 chat 参数透传（maxTokens/temperature）；② MCP 更多协议特性（resources 真实暴露/HTTP transport）；③ agent.ts trimContext 自动裁剪（风险高暂缓）。
+
+### 2026-08-09 第四轮实施（v0.6.1）——CLI/server 接入 ConfirmationGate
+
+- **N5 宿主弹窗确认流程**（commit `bd80b9f`）：
+  - server 协议新增 `confirm` 事件（`{type, sessionId, id, name, args}`）→ 宿主弹窗 → 宿主回
+    `confirm_result`（`{id, decision}`，decision ∈ allow_once/allow_session/always/deny/alternative）；
+    缺 id/非法 decision 回 error（含合法值提示）；未知 id 静默忽略（不污染事件流）
+  - 写回类工具经确认门：默认名单 `DEFAULT_CONFIRM_TOOLS = ['memory_save']`；`wrapConfirmTools` 纯函数
+    （名单过滤：命中包装/未命中原样/空名单关闭）+ 库导出；HostServerOptions.confirmTools / confirmTimeoutMs 可配
+  - 记忆化/持久化/超时全继承 ConfirmationGate：allow_session 按会话记忆（跨模型重建保留）、
+    always 持久化到记忆库 settings 表（memoryStoreKv 适配器）、宿主未回 confirm_result 超时安全 deny
+  - **修复关键缺口**：无 profile 时 mergedTools 为空 → Agent 回退内置工具会绕过确认门；
+    改为显式传内置工具集再包装（baseTools = mergedTools || builtinTools）
+  - CLI `flare server` 新增 `--confirm-tools <a,b,c>`（空串关闭）/ `--confirm-timeout <ms>`
+  - docs/host-protocol.md：confirm_result 请求章节 + 响应表 confirm 事件 + 确认流图；
+    README Changelog + CLI 表 + 版本号 v0.6.1
+  - 测试 12 新增（wrapConfirmTools 名单过滤 5 含内置工具防绕过回归 + Agent×确认门集成 4：
+    allow_once/deny/allow_session 记忆化/超时 deny + e2e 协议校验 3），**245/245 全绿**，
+    tsc 0 错误，零 agent.ts 改动
+  - **冒烟实测**：本机 Ollama qwen2.5:7b 真实触发——AI 调 memory_save → confirm 事件 →
+    回 allow_once → tool_result → done（事件流 tool_call,confirm,tool_result,text,done PASS）
+- **已知行为（非本轮引入，记录备忘）**：server 无 profile 时内置 memory_save 写全局库
+  （~/.flare/flare.db）而非 --storage 指定库——与 Agent 默认一致，宿主应用应传 profile.tools 绑定独立库
+- **下一步候选**：① server 协议 chat 参数透传（maxTokens/temperature，需评估）；② MCP 增强
+  （resources 真实暴露/HTTP transport）；③ agent.ts trimContext 自动裁剪（风险高，仍暂缓）
+
+---
 
 ### 2026-08-09 第三轮实施（v0.6.0）——N1/N2/N3 完成
 
