@@ -684,6 +684,47 @@ export function main() {
       // 保持进程存活：stdin 未关闭前不退出（start 已注册监听；无需额外动作）
     })
 
+  program
+    .command('models')
+    .description('查看可用模型：配置的主/视觉模型 + 本地 Ollama 已拉取模型（v0.6.0）')
+    .action(async () => {
+      const { config } = await import('../core/config.js')
+      const { resolveProviderOptions } = await import('../core/llm.js')
+      const { listOllamaModels, formatModelSize } = await import('../core/models.js')
+      const lines: string[] = []
+
+      // 配置的模型（纯本地，无网络）
+      lines.push(chalk.cyan('⚙️  配置的模型:'))
+      let mainModel = config.get('DEFAULT_MODEL') || 'gpt-4o'
+      try {
+        // 运行时 /model 切换的模型优先（settings 表）
+        const { getMemoryStore } = await import('../memory/store.js')
+        const saved = getMemoryStore().getSetting('main_model')
+        if (saved) mainModel = saved
+      } catch { /* 无全局库（宿主环境）用默认 */ }
+      const mainResolved = resolveProviderOptions({ model: mainModel })
+      lines.push(`  主模型:   ${chalk.green(mainModel)} → ${mainResolved.baseURL}`)
+      const visionModel = config.get('VISION_MODEL') || 'qwen2.5vl:3b'
+      const visionResolved = resolveProviderOptions({ model: visionModel })
+      lines.push(`  视觉模型: ${chalk.green(visionModel)} → ${visionResolved.baseURL}`)
+
+      // 本地 Ollama 已拉取模型（网络查询；不可达不报错）
+      lines.push(chalk.cyan('🤖 本地 Ollama:'))
+      const result = await listOllamaModels()
+      if (result.ok && result.models.length > 0) {
+        for (const m of result.models) {
+          lines.push(`  ${chalk.green(m.name)}  ${chalk.gray(formatModelSize(m.size))}`)
+        }
+      } else if (result.ok) {
+        lines.push(chalk.gray('  已连接，但未拉取任何模型（ollama pull <模型名> 下载）'))
+      } else {
+        lines.push(chalk.gray(`  ${result.error || 'Ollama 不可达'}（可用 /model 切到远端模型）`))
+      }
+      lines.push(chalk.gray('  提示: /model <模型名> 切换主模型；/vision <模型名> 切换视觉模型'))
+
+      console.log(lines.join('\n'))
+    })
+
   // 默认命令（无参数时进入交互模式）
   program.action(() => {
     startInteractive()
