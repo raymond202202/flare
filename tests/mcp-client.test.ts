@@ -118,4 +118,33 @@ describe('MCPClient（stdio NDJSON JSON-RPC，零依赖）', () => {
     await expect(p).rejects.toThrow()
     client.close()
   })
+
+  it('listResources：列出服务器资源元数据（uri/name/description/mimeType）', async () => {
+    const client = spawnMock()
+    await client.initialize()
+    const resources = await client.listResources()
+    expect(resources.length).toBe(2)
+    expect(resources[0].uri).toBe('memory://preferences')
+    expect(resources[0].name).toBe('用户偏好')
+    expect(resources[0].mimeType).toBe('text/plain')
+    expect(resources[1].uri).toBe('file:///etc/hosts')
+    client.close()
+  })
+
+  it('readResource：按 uri 读取资源内容（contents 列表）', async () => {
+    const client = spawnMock()
+    await client.initialize()
+    const contents = await client.readResource('memory://preferences')
+    expect(contents.length).toBe(1)
+    expect(contents[0].uri).toBe('memory://preferences')
+    expect(contents[0].text).toContain('浅色')
+    client.close()
+  })
+
+  it('readResource：未知 uri → reject 带错误信息（JSON-RPC error -32602）', async () => {
+    const client = spawnMock()
+    await client.initialize()
+    await expect(client.readResource('memory://nope')).rejects.toThrow(/未知资源/)
+    client.close()
+  })
 })

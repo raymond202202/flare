@@ -90,6 +90,7 @@ export type {
   McpServerStatus,
   McpResource,
   McpResourceContents,
+  McpResourceInfo,
   McpPrompt,
   McpPromptArgument,
   McpPromptMessage,

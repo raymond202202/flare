@@ -24,7 +24,7 @@
 import { spawn, type ChildProcess } from 'node:child_process'
 import { createInterface, type Interface } from 'node:readline'
 import { createRequire } from 'node:module'
-import type { McpTool, McpCallResult, McpPromptInfo, McpPromptResult } from './types.js'
+import type { McpTool, McpCallResult, McpPromptInfo, McpPromptResult, McpResourceInfo, McpResourceContents } from './types.js'
 
 const require = createRequire(import.meta.url)
 const pkg = require('../../package.json') as { version: string }
@@ -175,6 +175,18 @@ export class MCPClient {
   /** 获取并渲染提示词（prompts/get，v0.6.2）：按 arguments 补全模板返回消息序列；未知 name 协议错误则 reject */
   async getPrompt(name: string, args?: Record<string, string>): Promise<McpPromptResult> {
     return this.request<McpPromptResult>('prompts/get', { name, ...(args ? { arguments: args } : {}) })
+  }
+
+  /** 列出服务器可用资源（resources/list，v0.6.6）：元数据（uri/name/description/mimeType），内容经 readResource */
+  async listResources(): Promise<McpResourceInfo[]> {
+    const res = await this.request<any>('resources/list', {})
+    return Array.isArray(res?.resources) ? (res.resources as McpResourceInfo[]) : []
+  }
+
+  /** 读取资源内容（resources/read，v0.6.6）：按 uri 返回内容列表；未知 uri 协议错误则 reject */
+  async readResource(uri: string): Promise<McpResourceContents[]> {
+    const res = await this.request<any>('resources/read', { uri })
+    return Array.isArray(res?.contents) ? (res.contents as McpResourceContents[]) : []
   }
 
   /** 服务器名称（initialize 后可用） */

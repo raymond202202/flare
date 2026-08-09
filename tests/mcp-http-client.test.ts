@@ -8,7 +8,7 @@
 import { describe, it, expect, afterEach } from 'vitest'
 import { startMcpHttpServer, type McpHttpServerHandle } from '../src/mcp/http.js'
 import { MCPHttpClient } from '../src/mcp/http-client.js'
-import type { Tool, McpPrompt } from '../src/index.js'
+import type { Tool, McpPrompt, McpResource } from '../src/index.js'
 
 const echoTool: Tool = {
   definition: {
@@ -39,6 +39,14 @@ const greetPrompt: McpPrompt = {
   description: '问候模板',
   arguments: [{ name: 'name', required: true }],
   render: async (args) => [{ role: 'user', content: { type: 'text', text: `你好，${args.name || '世界'}！` } }],
+}
+
+const prefsResource: McpResource = {
+  uri: 'memory://preferences',
+  name: '用户偏好',
+  description: '用户偏好设置',
+  mimeType: 'text/plain',
+  read: async () => '主题: 浅色',
 }
 
 const handles: McpHttpServerHandle[] = []
@@ -113,6 +121,27 @@ describe('MCPHttpClient（HTTP transport 消费端，与 stdio MCPClient 对称�
     expect(rendered.messages[0].content.text).toBe('你好，flare！')
     // 未知 name → reject
     await expect(client.getPrompt('nope')).rejects.toThrow(/Unknown prompt|MCP 错误/)
+  })
+
+  it('resources 消费：listResources 元数据 + readResource 内容（与 MCPServer 暴露对称闭环）', async () => {
+    const h = await startMcpHttpServer({ tools: [echoTool], resources: [prefsResource] })
+    handles.push(h)
+    const client = new MCPHttpClient({ url: h.url })
+    clients.push(client)
+    const info = await client.initialize()
+    // 注入 resources → capabilities 声明 resources
+    expect(info.capabilities.resources).toBeTruthy()
+    const resources = await client.listResources()
+    expect(resources).toHaveLength(1)
+    expect(resources[0].uri).toBe('memory://preferences')
+    expect(resources[0].name).toBe('用户偏好')
+    expect(resources[0].mimeType).toBe('text/plain')
+    const contents = await client.readResource('memory://preferences')
+    expect(contents).toHaveLength(1)
+    expect(contents[0].uri).toBe('memory://preferences')
+    expect(contents[0].text).toContain('浅色')
+    // 未知 uri → reject（-32602）
+    await expect(client.readResource('memory://nope')).rejects.toThrow(/Unknown resource|MCP 错误/)
   })
 
   it('ping → 健康检查 true', async () => {
