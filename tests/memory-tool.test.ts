@@ -136,6 +136,30 @@ describe('memory_save 工具（createMemorySaveTool，v0.5.4）', () => {
     expect(res.success).toBe(true)
     expect(res.output).toContain('排查结论')
   })
+
+  it('长记忆/长消息折叠（v0.6.0）：超长内容截断 + 折叠标记，不撑爆上下文', async () => {
+    // 500 字长记忆：输出只保留前 150 字 + 折叠标记
+    const longContent = '这是一条非常长的记忆内容。'.repeat(50)
+    store.saveMemory(longContent, 'note')
+    const search = createMemorySearchTool(store)
+    const res = await search.execute({ query: '非常长的记忆', scope: 'memories' })
+    expect(res.success).toBe(true)
+    // 折叠：不包含完整原文（被截断），含折叠标记
+    expect(res.output).not.toContain(longContent)
+    expect(res.output).toContain('…')
+    // 每条结果行 ≤ 152（150 + 前缀标记）；折叠后单行不至于太长
+    const line = res.output.split('\n').find(l => l.startsWith('- ')) || ''
+    expect(line.length).toBeLessThan(200)
+
+    // 长历史消息同样折叠
+    const sid = store.createSession('折叠测试')
+    const longMsg = '历史上的一条超长讨论消息，'.repeat(40)
+    store.saveMessage(sid, { role: 'user', content: longMsg })
+    const res2 = await search.execute({ query: '超长讨论', scope: 'messages' })
+    expect(res2.success).toBe(true)
+    expect(res2.output).not.toContain(longMsg)
+    expect(res2.output).toContain('…')
+  })
 })
 
 describe('memory_save 默认工具与内置工具集（v0.5.4）', () => {
