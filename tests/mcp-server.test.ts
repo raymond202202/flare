@@ -651,6 +651,24 @@ describe('MCPServer roots（v0.6.12：服务器→客户端主动请求）', () 
     await expect(h.server.requestRoots()).rejects.toThrow(/已关闭/)
   })
 
+  it('requestRoots pending 期间客户端发来同 id 新请求：按请求分发，不误判为 roots 响应（id 空间冲突防御）', async () => {
+    const h = createHarness()
+    const p = h.server.requestRoots() // 服务器首个主动请求（id 从 1 自增，可能与客户端请求撞车）
+    await h.flush()
+    const req = h.last()
+    // 客户端发来同 id 的 ping 请求（带 method）——必须走正常分发，不能被 pending 吞掉（响应行才无 method）
+    h.send({ jsonrpc: '2.0', id: req.id, method: 'ping', params: {} })
+    await h.flush()
+    const pingResp = h.last()
+    expect(pingResp.id).toBe(req.id)
+    expect(pingResp.result).toEqual({})
+    // 请求被处理后 pending 仍在，真正的 roots 响应（无 method）照常 resolve
+    h.send({ jsonrpc: '2.0', id: req.id, result: { roots: [{ uri: 'file:///x' }] } })
+    const roots = await p
+    expect(roots).toEqual([{ uri: 'file:///x' }])
+    h.server.close()
+  })
+
   it('roots 真实互通 e2e：MCPServer requestRoots ↔ MCPClient（带 roots 注入）', async () => {
     // fixture 起真实 MCPServer 子进程，握手后主动 requestRoots，结果写 ROOTS_RESULT_FILE
     const resultFile = join(tmpdir(), `flare-roots-e2e-${Date.now()}-${Math.floor(Math.random() * 1e6)}.json`)
