@@ -3,8 +3,38 @@
 > 目标：flare 是 Pulse/StorySpire 依赖的 AI Agent 引擎（TS）。任何改动必须安全（tsc 0 错 + 测试全绿才 commit）。
 > 铁律：禁止 push；禁止修改 src/core/agent.ts 的 Agent.run 核心循环。
 
-> **最新状态（v0.6.11）**：MCP completion/complete 参数补全（prompts 配套协议能力）+ server 协议 `tools` 工具清单接口（确认门标注+来源）+ CLI `/tools` 命令；401/401 全绿（commits `1aff83e`/`0a85618`，未 push）。
-> 下一步候选：① agent.ts trimContext 自动裁剪（风险高仍暂缓）；② 其他安全的外围增强（MCP 更多协议特性、server 协议其他管理接口等）。
+> **最新状态（v0.6.12）**：MCP roots 协议闭环（客户端暴露根目录 + 服务器主动请求 requestRoots）+ 412/412 全绿（commit `78954a5`，未 push）。
+> 下一步候选：① agent.ts trimContext 自动裁剪（风险高仍暂缓）；② 其他安全的外围增强（MCP 更多协议特性如 logging/sampling、server 协议其他管理接口等）。
+
+### 2026-08-10 第十四轮实施（v0.6.12）——MCP roots 协议闭环
+
+- **P29 MCP roots 协议**（commit `78954a5`）：
+  - roots 是客户端暴露给服务器的命名空间/根目录（方向与 resources 相反）——**客户端侧**：
+    `MCPClient` 新增 `roots` 选项，配置后 `initialize` 声明 `capabilities.roots`（`{ listChanged: true }`，
+    未配置不声明，缺省兼容）+ 服务器主动发 `roots/list` 请求时**自动响应**注入的 roots
+    （新增 handleServerRequest 分流：pending 响应之外带 id+method 的行视为服务器请求；
+    未知方法回 -32601，连接不断）+ `notifyRootsChanged()` 发 `notifications/roots/list_changed` 通知
+    （roots 变化告知服务器）+ `roots` getter
+  - **服务器侧**：`MCPServer` 新增**主动请求能力** `requestRoots(timeoutMs?)`——v0.6.12 起服务器可向
+    客户端发请求（为未来 sampling 等服务器→客户端请求打基础）：发 `roots/list` 等待客户端响应
+    （pending 匹配 + 超时，默认 15s，`MCPServerOptions.requestTimeoutMs` 可配）；客户端回 error /
+    超时 / 服务器已关闭 → reject（不悬挂）；响应缺 roots 或非数组 → 容错返回 `[]`（与客户端宽松
+    解析一致）；close 拒绝 pending
+  - **传输差异（文档记录）**：HTTP transport（startMcpHttpServer）是"一请求一响应"同步子集，
+    无服务器→客户端通道，故不提供 `requestRoots`（stdio 专属）；MCPHttpClient 无 SSE 长连接也不声明
+    roots 能力——文档如实记录，不假装支持
+  - `McpRoot`/`McpRootsResult` 类型库导出；docs/mcp.md roots 协议章节 + README Changelog + 版本号 0.6.12
+  - **412/412 全绿**（401 + 11 新增：MCPServer requestRoots 5——发起+解析客户端响应/客户端 error reject/
+    响应非数组容错 []/超时 reject 后服务器仍可用/已关闭 reject + roots 真实互通 e2e——真实 MCPServer
+    子进程 requestRoots ↔ 真实 MCPClient 带 roots 注入写文件断言 + MCPClient 5——配置 roots 声明+getter/
+    未配置不声明/服务器 roots/list 请求自动响应/notifyRootsChanged 通知/close 后不抛错），tsc 0 错误，
+    零 agent.ts 改动
+  - **冒烟实测**：真实 dist 产物互通——MCPClient（带 2 个 roots）连接真实 MCPServer 子进程，
+    requestRoots 拿到 `file:///tmp/projects` + `memory://workspace`，版本 0.6.12，SMOKE PASS
+- **下一步候选**：① agent.ts trimContext 自动裁剪（风险高仍暂缓）；② 其他安全的外围增强
+  （MCP 更多协议特性如 logging/sampling、server 协议其他管理接口、CLI 交互增强等）
+
+---
 
 ### 2026-08-10 第十三轮实施（v0.6.11）——MCP completion/complete 参数补全 + server 协议 tools 工具清单 + CLI /tools
 
