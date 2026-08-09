@@ -517,13 +517,30 @@ export async function handleSlashCommand(
 
   // /model 切换主模型（本地 Ollama / 远端；持久化 settings main_model，模式同 /vision）
   if (lower === '/model' || lower.startsWith('/model ')) {
-    // 裸 /model（无参数）→ 显示当前；/model <name> → 切换；/model default → 回默认
+    // 裸 /model（无参数）→ 显示当前；/model <name> → 切换；/model default → 回默认；/model list → 列出本地 Ollama 模型
     const arg = cmd.replace(/^\/model(?:\s+|$)/, '').trim()
     const current = store.getSetting('main_model') || config.get('DEFAULT_MODEL') || 'deepseek-chat'
     if (!arg) {
       output(chalk.cyan(`\n🤖 当前主模型: ${current}`))
       output('  /model <模型名> - 切换主模型（本地 Ollama 如 /model qwen2.5:7b | 远端如 /model deepseek-chat）')
-      output('  /model default  - 回默认（.env 的 DEFAULT_MODEL）')
+      output('  /model list    - 查看本地 Ollama 可用模型')
+      output('  /model default - 回默认（.env 的 DEFAULT_MODEL）')
+    } else if (arg === 'list') {
+      // /model list 列出本地 Ollama 可用模型（v0.6.9）：Ollama 不可达友好提示，不崩
+      const { listOllamaModels, formatModelSize } = await import('../core/models.js')
+      const r = await listOllamaModels()
+      if (r.ok && r.models.length > 0) {
+        output(chalk.cyan(`\n🤖 当前主模型: ${current}`))
+        output(chalk.gray('  本地 Ollama 可用模型:'))
+        for (const m of r.models) {
+          const isCur = m.name === current
+          output(`  ${isCur ? chalk.green('●') : chalk.gray('○')} ${m.name}${isCur ? chalk.gray('（当前）') : ''}  ${chalk.gray(formatModelSize(m.size))}`)
+        }
+        output(chalk.gray('  /model <模型名> 切换；远端模型（如 deepseek-chat）不在此列'))
+      } else {
+        output(chalk.yellow(`\n  ${r.error || 'Ollama 已连接但未拉取模型'}`))
+        output(chalk.gray('  提示: /model <模型名> 切到远端模型（如 deepseek-chat）'))
+      }
     } else if (arg === 'default' || arg === 'reset') {
       store.setSetting('main_model', '')
       onModelSwitch?.('')
@@ -650,6 +667,7 @@ export async function handleSlashCommand(
       output('  /image       - 显式看图（如: /image ~/Pictures/a.png 这张图里有什么）')
       output('  /vision      - 切换看图模型（/vision 3b 快速 | /vision 7b 质量）')
       output('  /model       - 切换主模型（/model qwen2.5:7b 本地 Ollama | /model deepseek-chat 远端）')
+      output('  /model list  - 查看本地 Ollama 可用模型（v0.6.9）')
       output('  /mcp         - 查看 MCP 服务器状态（~/.flare/mcp.json 配置）')
       output('  /mcp connect <name> - 连接 MCP 服务器并注入其工具')
       output('  /mcp disconnect <name> - 断开 MCP 服务器')

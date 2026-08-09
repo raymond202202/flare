@@ -71,6 +71,22 @@ describe('/model 命令', () => {
     expect(lines.join('\n')).toContain('恢复默认')
   })
 
+  it('/model list → 列出本地 Ollama 模型（可达列模型/不可达友好提示；不写 main_model，v0.6.9）', async () => {
+    const lines: string[] = []
+    const r = await handleSlashCommand('/model list', store, (s) => lines.push(s))
+    expect(r).toBe('continue')
+    const out = lines.join('\n')
+    // 两种情况均合法：Ollama 可达 → 模型列表；不可达 → 友好提示（都含当前主模型行 + Ollama 字样）
+    expect(out).toContain('当前主模型')
+    expect(out).toContain('Ollama')
+    expect(store.getSetting('main_model')).toBeNull()
+  })
+
+  it('/model list 不会把 list 当模型名写入 main_model', async () => {
+    await handleSlashCommand('/model list', store, () => {})
+    expect(store.getSetting('main_model')).toBeNull()
+  })
+
   it('不触发 /model 的命令不碰 main_model', async () => {
     const lines: string[] = []
     await handleSlashCommand('/help', store, (s) => lines.push(s))
