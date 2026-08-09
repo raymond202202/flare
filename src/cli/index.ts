@@ -676,16 +676,27 @@ export function main() {
 
   program
     .command('mcp-server')
-    .description('MCP stdio 服务器：把 flare 工具集暴露给其他 AI 客户端（v0.5.8，见 docs/mcp.md）')
+    .description('MCP 服务器：把 flare 工具集暴露给其他 AI 客户端（stdio 默认；--http 起 HTTP transport，见 docs/mcp.md）')
     .option('-t, --tools <names>', '要暴露的工具（逗号分隔，默认全部内置工具）')
-    .action(async (options: { tools?: string }) => {
-      const { MCPServer, tools: builtinTools } = await import('../index.js')
+    .option('--http', '用 HTTP transport 替代 stdio（POST /mcp，JSON-RPC over HTTP，v0.6.3）')
+    .option('-p, --port <port>', 'HTTP 监听端口（默认 0 = 随机；仅监听 127.0.0.1 本机）')
+    .action(async (options: { tools?: string; http?: boolean; port?: string }) => {
+      const { MCPServer, startMcpHttpServer, tools: builtinTools } = await import('../index.js')
       const names = options.tools
         ? options.tools.split(',').map((s) => s.trim()).filter(Boolean)
         : undefined
       const selected = names
         ? builtinTools.filter((t) => names.includes(t.definition.function.name))
         : builtinTools
+      if (options.http) {
+        // HTTP transport（v0.6.3）：常驻监听 POST /mcp，Ctrl+C 退出
+        const h = await startMcpHttpServer({
+          tools: selected,
+          port: options.port ? Number(options.port) : undefined,
+        })
+        console.log(`MCP HTTP 服务器已启动: ${h.url}（POST JSON-RPC；Ctrl+C 退出）`)
+        return
+      }
       // 常驻监听 stdin（MCP 客户端经 stdio 连接），直到 EOF 退出
       const server = new MCPServer({ tools: selected })
       server.start()
