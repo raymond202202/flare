@@ -46,6 +46,19 @@ const PROMPTS = [
   },
 ]
 
+const RESOURCES = [
+  {
+    uri: 'memory://preferences',
+    name: '用户偏好',
+    description: '用户偏好设置',
+    mimeType: 'text/plain',
+  },
+  {
+    uri: 'file:///etc/hosts',
+    name: 'hosts 文件',
+  },
+]
+
 const rl = readline.createInterface({ input: process.stdin })
 rl.on('line', (line) => {
   if (!line.trim()) return
@@ -66,13 +79,32 @@ rl.on('line', (line) => {
     case 'initialize':
       respond({
         protocolVersion: msg.params?.protocolVersion || '2025-03-26',
-        capabilities: { tools: {}, prompts: {} },
+        capabilities: { tools: {}, prompts: {}, resources: {} },
         serverInfo: { name: 'flare-mock', version: '1.0.0' },
       })
       break
     case 'tools/list':
       respond({ tools: TOOLS })
       break
+    case 'resources/list':
+      respond({ resources: RESOURCES })
+      break
+    case 'resources/read': {
+      const { uri } = msg.params || {}
+      const res = RESOURCES.find((r) => r.uri === uri)
+      if (!res) {
+        respondError(-32602, `未知资源: ${uri}`)
+        break
+      }
+      respond({
+        contents: [{
+          uri: res.uri,
+          mimeType: res.mimeType || 'text/plain',
+          text: res.uri === 'memory://preferences' ? '主题: 浅色' : '127.0.0.1 localhost',
+        }],
+      })
+      break
+    }
     case 'prompts/list':
       respond({ prompts: PROMPTS })
       break

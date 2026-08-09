@@ -81,6 +81,14 @@ export interface McpResourceContents {
   text: string
 }
 
+/** MCP resources/list 响应项（客户端视角 v0.6.6：元数据，不含读取函数） */
+export interface McpResourceInfo {
+  uri: string
+  name: string
+  description?: string
+  mimeType?: string
+}
+
 /** MCP prompt 模板参数（prompts/list 响应 arguments[] 元素） */
 export interface McpPromptArgument {
   name: string

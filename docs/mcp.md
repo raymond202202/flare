@@ -227,7 +227,8 @@ await h.close()
 
 #### HTTP 客户端（v0.6.4）：MCPHttpClient
 
-与 stdio `MCPClient` 接口完全一致（`initialize` / `listTools` / `callTool` / `listPrompts` / `getPrompt` / `ping` / `close`），
+与 stdio `MCPClient` 接口完全一致（`initialize` / `listTools` / `callTool` / `listPrompts` / `getPrompt` /
+`listResources` / `readResource` / `ping` / `close`，v0.6.6 起含 resources 消费），
 可互换使用——本地子进程服务器用 stdio，远端/HTTP 服务器用 HTTP（`src/mcp/http-client.ts`，零依赖 node:http）：
 
 ```ts
@@ -243,6 +244,7 @@ client.close()
 - 每个请求独立 HTTP 往返（MCP streamable HTTP 同步子集）；`initialize` 后自动发 `notifications/initialized` 通知（202 空体）
 - 服务器返回 JSON-RPC error → `reject`（与 stdio 客户端一致）；HTTP 非 200 / 无响应体 → `reject`（含状态码与原因）
 - 单请求超时默认 15s（`MCPHttpClient({ timeoutMs })` 可调）；`close()` 后拒绝后续请求
+- **resources 消费（v0.6.6）**：`listResources()` → 元数据（uri/name/description/mimeType）；`readResource(uri)` → 内容列表；未知 uri 协议错误 reject（与 stdio 客户端对称，与 MCPServer 暴露闭环）
 
 #### McpManager 接入（v0.6.6）：配置 `url` 即走 HTTP
 
