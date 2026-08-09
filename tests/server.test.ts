@@ -260,6 +260,47 @@ describe('flare host server 协议', () => {
     expect(msgs[0].messageCount).toBeGreaterThanOrEqual(1)
   })
 
+  it('context_status 带 budgetTokens → 附裁剪建议 suggestion（v0.6.4：宿主按预算裁剪上下文）', async () => {
+    // 默认会话已积累上下文（至少 system + 历史）；给一个足够小的预算触发裁剪建议
+    const msgs = await request(
+      { type: 'context_status', sessionId: 's-ctx2', budgetTokens: 500, reserveForOutput: 100 },
+      { expect: ['context_status'] }
+    )
+    const s = msgs[0].suggestion
+    expect(msgs[0].type).toBe('context_status')
+    // suggestion 结构完整：keepIndexes 保留 system 且数量 ≥1、droppedCount ≥0、估算 tokens ≤ 预算（扣预留）
+    expect(Array.isArray(s.keepIndexes)).toBe(true)
+    expect(s.keepIndexes.length).toBeGreaterThanOrEqual(1)
+    expect(s.keepIndexes[0]).toBe(0) // system 保底 → 首个建议保留索引必为 0
+    expect(typeof s.droppedCount).toBe('number')
+    expect(s.droppedCount).toBeGreaterThanOrEqual(0)
+    expect(typeof s.estimatedKeptTokens).toBe('number')
+    // 保留部分估算 ≤ 总量（裁剪只减不增）；预算充足时保留全部
+    expect(s.estimatedKeptTokens).toBeLessThanOrEqual(msgs[0].estimatedTokens)
+    expect(typeof s.estimatedDroppedTokens).toBe('number')
+    // keepIndexes 单调递增（保持原顺序）
+    for (let i = 1; i < s.keepIndexes.length; i++) {
+      expect(s.keepIndexes[i]).toBeGreaterThan(s.keepIndexes[i - 1])
+    }
+  })
+
+  it('context_status 带非法 budgetTokens（0 / 负数 / 非整数）→ error，不返回 suggestion', async () => {
+    for (const bad of [0, -5, 1.5, 'abc']) {
+      const msgs = await request({ type: 'context_status', budgetTokens: bad }, { expect: ['error'] })
+      expect(msgs[0].type).toBe('error')
+      expect(msgs[0].message).toContain('budgetTokens')
+    }
+  })
+
+  it('context_status 带非法 reserveForOutput（负数）→ error', async () => {
+    const msgs = await request(
+      { type: 'context_status', budgetTokens: 100, reserveForOutput: -1 },
+      { expect: ['error'] }
+    )
+    expect(msgs[0].type).toBe('error')
+    expect(msgs[0].message).toContain('reserveForOutput')
+  })
+
   it('remember → 保存记忆 + get_memories 可检索到（记忆生命周期：存 → 查）', async () => {
     // 数据往返：remember 写入临时库 → get_memories 必须命中（同时证明 T1 store 字段修复）
     await request({ type: 'remember', content: '用户偏好深色主题', kind: 'preference' }, { expect: ['ok'] })

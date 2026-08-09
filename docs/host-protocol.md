@@ -131,6 +131,27 @@ flare server --profile <expert-profile-file> --storage <db-path> [--mcp <mcp-con
 - 宿主 AI 面板显示\"上下文占用/成本预估\"、接近上限提醒时使用；只读，不触发生成
 - 无 `sessionId` 时默认会话 `default`；同会话多次调用随对话增长而增大
 
+#### 10.1 预算建议（v0.6.4，可选参数）
+
+```json
+{"type":"context_status","sessionId":"s1","budgetTokens":4000,"reserveForOutput":500}
+```
+
+响应附加 `suggestion` 字段：
+
+```json
+{"type":"context_status","sessionId":"s1","messageCount":31,"estimatedTokens":2143,
+ "suggestion":{"keepIndexes":[0,29,30],"droppedCount":28,"estimatedKeptTokens":1890,"estimatedDroppedTokens":253}}
+```
+
+- `budgetTokens`：上下文 token 预算（正整数）。带此参数时按建议式裁剪（system 保底 + 最近优先，见 `suggestTrim`）计算应保留哪些消息
+- `reserveForOutput`（可选）：为模型输出预留的 token 数（非负数值），保留部分最多占 `budgetTokens - reserveForOutput`
+- `suggestion.keepIndexes`：建议保留的消息在上下文中的索引（单调递增，首条必为 0 即 system 保底；宿主按索引裁剪后回 `set_context` 即可让裁剪生效）
+- `suggestion.droppedCount`：建议丢弃的消息数
+- `suggestion.estimatedKeptTokens` / `suggestion.estimatedDroppedTokens`：保留/丢弃部分的估算 tokens
+- 非法 `budgetTokens`（非正整数）或 `reserveForOutput`（负数）→ 回 `error`（含原因提示），不触发生成
+- 宿主按预算自管理上下文的推荐流程：`context_status` 带预算取建议 → 裁剪 → `set_context` 回写（零 agent.ts 改动）
+
 ### 11. create_session — 显式创建会话（宿主会话管理）
 
 ```json

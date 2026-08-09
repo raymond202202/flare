@@ -327,6 +327,13 @@ Interactive mode commands:
 
 > 中文条目 / Chinese entries · English summary for each version
 
+#### v0.6.4 (2026-08-09) — context_status 预算建议 + MCP HTTP 客户端 / Budget-trim suggestion + MCP HTTP client
+- 🧮 **server 协议 `context_status` 预算建议（src/server.ts）**：请求可选带 `budgetTokens`（正整数）与 `reserveForOutput`（非负）——响应附 `suggestion` 字段（`keepIndexes` 建议保留的消息索引、`droppedCount`、`estimatedKeptTokens`/`estimatedDroppedTokens`）；复用 `suggestTrim` 纯函数（system 保底 + 最近优先），宿主按索引裁剪后回 `set_context` 即可生效（零 agent.ts 改动）；非法值回 error 不触发生成
+- 🌐 **MCPHttpClient（src/mcp/http-client.ts）**：HTTP transport 消费端——与 stdio `MCPClient` 接口完全一致（`initialize`/`listTools`/`callTool`/`listPrompts`/`getPrompt`/`ping`/`close`），零依赖 node:http 每请求独立 POST；`initialize` 后自动发 initialized 通知（202）；JSON-RPC error / 非 200 / 无响应体 → reject（含原因）；超时默认 15s；库导出 + docs/mcp.md HTTP 客户端章节（与 P11 服务器端对称闭环）
+- 📚 docs/host-protocol.md §10.1 预算建议 + docs/mcp.md + README Changelog + 版本号 0.6.4
+- 🧪 新增 13 项测试（server 协议 3：带预算返回 suggestion 结构/非法 budgetTokens 0·负·非整数·abc 回 error/非法 reserveForOutput 回 error + MCPHttpClient 10：握手/工具列表/执行成功与工具级失败/未知工具 -32602/prompts 消费闭环/ping/服务器关闭 reject/close 后拒绝/非法 URL/404 路径），共 295/295；零 agent.ts 改动
+- EN: context_status now accepts budgetTokens/reserveForOutput and returns a trim suggestion (keepIndexes via suggestTrim) for hosts to self-manage context; new MCPHttpClient — HTTP-transport twin of the stdio MCPClient (same API, zero-dep POST /mcp); 295/295 tests.
+
 #### v0.6.3 (2026-08-09) — chat 采样参数透传 / Sampling control passthrough (maxTokens + temperature)
 - 🎛️ **server 协议 chat 新增 `maxTokens` / `temperature`（src/server.ts）**：宿主每请求可指定最大输出 token 数与采样温度——透传到 LLM 请求体（`max_tokens` / `temperature`）；非法值（maxTokens 非正整数、temperature 超出 0~2）直接回 error 不触发生成；同一会话采样参数变化自动重建 Agent（与切换 model 同机制，历史从记忆库恢复）
 - 🔌 **`ProviderOptions` 扩展（src/core/llm.ts）**：`maxTokens` / `temperature` 可选字段，`OpenAIProvider.chat`/`chatStream` 请求体透传（仅显式传入时携带，缺省不传保持服务端默认）；库导出类型自动覆盖

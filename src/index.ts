@@ -102,6 +102,9 @@ export type { MCPServerOptions } from './mcp/server.js'
 // MCP HTTP transport（v0.6.3）：POST /mcp 同步 JSON-RPC，复用同一 MCPServer 核心
 export { startMcpHttpServer } from './mcp/http.js'
 export type { McpHttpServerOptions, McpHttpServerHandle } from './mcp/http.js'
+// MCP HTTP 客户端（v0.6.4）：与 stdio MCPClient 接口对称，连 HTTP transport 服务器
+export { MCPHttpClient } from './mcp/http-client.js'
+export type { MCPHttpClientOptions } from './mcp/http-client.js'
 
 // ===== 上下文可观测性（v0.5.6/v0.5.9）：token 估算 + 裁剪建议（宿主面板显示上下文占用/成本预估）=====
 export {
