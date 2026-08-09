@@ -100,3 +100,16 @@ export interface McpPrompt {
   /** 渲染提示词内容（按客户端传入的 arguments 填充模板；返回消息列表，支持异步） */
   render(args: Record<string, string>): McpPromptMessage[] | Promise<McpPromptMessage[]>
 }
+
+/** MCP prompts/list 响应项（客户端视角：元数据，不含渲染函数） */
+export interface McpPromptInfo {
+  name: string
+  description?: string
+  arguments?: McpPromptArgument[]
+}
+
+/** MCP prompts/get 响应（客户端视角：渲染后的消息序列） */
+export interface McpPromptResult {
+  description?: string
+  messages: McpPromptMessage[]
+}

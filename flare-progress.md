@@ -3,16 +3,20 @@
 > 目标：flare 是 Pulse/StorySpire 依赖的 AI Agent 引擎（TS）。任何改动必须安全（tsc 0 错 + 测试全绿才 commit）。
 > 铁律：禁止 push；禁止修改 src/core/agent.ts 的 Agent.run 核心循环。
 
-> **最新状态（v0.6.2）**：MCP prompts 真实暴露完成（prompts/list 真实元数据 + prompts/get 渲染，注入后 capabilities 声明 prompts，缺省空列表兼容；McpPrompt 类型库导出）；257/257 全绿（commit N7 待提交，未 push）。
+> **最新状态（v0.6.2）**：MCP prompts 闭环完成（MCPServer 真实暴露 prompts/list + prompts/get 渲染；MCPClient 对称消费 listPrompts/getPrompt；prompts 真实互通 e2e 通过）；262/262 全绿（commits d780c5c/8cf3088 及 N8 待提交，未 push）。
 > 下一步候选：① server 协议 chat 参数透传（maxTokens/temperature，需评估）；② MCP HTTP transport（可选）；③ agent.ts trimContext 自动裁剪（风险高暂缓）。
 
-### 2026-08-09 第五轮实施（v0.6.2）——MCP prompts 真实暴露
+### 2026-08-09 第五轮实施（v0.6.2）——MCP prompts 真实暴露 + 客户端消费闭环
 
 - **N7 MCP prompts 真实暴露**（commit `d780c5c`）：MCPServer 新增 `prompts` 选项（name/description/arguments/render 支持异步）——
   `prompts/list` 真实元数据（客户端探测清单）+ `prompts/get` 按客户端 arguments 渲染消息序列 `{ description?, messages }`；
   未知 name -32602、render 抛错 -32603 服务器不崩；注入后 initialize capabilities 声明 prompts（缺省不声明，v0.5.9 空列表兼容）；
   `McpPrompt`/`McpPromptArgument`/`McpPromptMessage` 类型库导出；docs/mcp.md 提示词暴露章节 + README Changelog + v0.6.2 版本号；
   **257/257 全绿**（251 + 6 新增测试），tsc 0 错误，零 agent.ts 改动
+- **N8 MCPClient 消费 prompts**（commit 待提交）：MCPClient 新增 `listPrompts()`（元数据）+ `getPrompt(name, args?)`（渲染，未知 name 协议错误 reject）——
+  与 MCPServer 暴露对称闭环；`McpPromptInfo`/`McpPromptResult` 类型库导出；mock server fixture 支持 prompts；
+  新增 **prompts 真实互通 e2e**（MCPClient↔MCPServer 子进程：capabilities 声明 / listPrompts 元数据 / getPrompt 渲染 / 未知 name reject /
+  无 prompts 缺省兼容返回空列表）；**262/262 全绿**（257 + 5 新增），tsc 0 错误，零 agent.ts 改动
 - **下一步候选**：① server 协议 chat 参数透传（maxTokens/temperature，需评估）；② MCP HTTP transport（可选）；
   ③ agent.ts trimContext 自动裁剪（风险高，仍暂缓）
 

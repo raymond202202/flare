@@ -37,6 +37,38 @@ describe('MCPClient（stdio NDJSON JSON-RPC，零依赖）', () => {
     client.close()
   })
 
+  it('listPrompts：列出服务器提示词元数据（name/description/arguments）', async () => {
+    const client = spawnMock()
+    await client.initialize()
+    const prompts = await client.listPrompts()
+    expect(prompts.length).toBe(2)
+    expect(prompts.map(p => p.name)).toEqual(['greet', 'summarize'])
+    const summarize = prompts.find(p => p.name === 'summarize')
+    expect(summarize?.description).toBe('总结内容')
+    expect(summarize?.arguments).toEqual([{ name: 'topic', description: '主题', required: true }])
+    client.close()
+  })
+
+  it('getPrompt：按 arguments 渲染提示词消息序列（description + messages）', async () => {
+    const client = spawnMock()
+    await client.initialize()
+    const res = await client.getPrompt('summarize', { topic: 'flare 引擎' })
+    expect(res.description).toBe('总结内容')
+    expect(res.messages).toEqual([
+      { role: 'user', content: { type: 'text', text: '请总结关于「flare 引擎」的内容' } },
+    ])
+    const greet = await client.getPrompt('greet')
+    expect(greet.messages[0].content.text).toBe('你好')
+    client.close()
+  })
+
+  it('getPrompt：未知 name → reject 带错误信息（JSON-RPC error -32602）', async () => {
+    const client = spawnMock()
+    await client.initialize()
+    await expect(client.getPrompt('nonexist')).rejects.toThrow(/MCP 错误.*未知提示词/)
+    client.close()
+  })
+
   it('tools/call：调用成功返回 text 内容', async () => {
     const client = spawnMock()
     await client.initialize()

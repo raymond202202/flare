@@ -92,6 +92,8 @@ export type {
   McpPrompt,
   McpPromptArgument,
   McpPromptMessage,
+  McpPromptInfo,
+  McpPromptResult,
 } from './mcp/types.js'
 
 // ===== MCP 服务器端（v0.5.8）：flare 工具集经 MCP 标准协议暴露给外部客户端 =====
