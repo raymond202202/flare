@@ -707,9 +707,33 @@ export function main() {
       // 保持进程存活：stdin 未关闭前不退出（start 已注册监听；无需额外动作）
     })
 
-  program
+  const mcpCmd = program
     .command('mcp')
-    .description('MCP 服务器工具调用（v0.6.6）')
+    .description('MCP 服务器工具调用/状态（v0.6.6）')
+
+  mcpCmd
+    .command('status')
+    .description('查看配置的 MCP 服务器（~/.flare/mcp.json，含传输类型与端点/命令）')
+    .option('--config <path>', 'MCP 配置文件路径（默认 ~/.flare/mcp.json）')
+    .action(async (options: { config?: string }) => {
+      const { McpManager } = await import('../index.js')
+      const mgr = new McpManager({ configPath: options.config })
+      const servers = mgr.servers
+      if (servers.length === 0) {
+        console.log(chalk.yellow('未配置 MCP 服务器（~/.flare/mcp.json 的 servers 列表）'))
+        return
+      }
+      const lines = servers.map((s) => {
+        const transport = s.url ? 'HTTP' : 'stdio'
+        const target = s.url || `${s.command || ''}${s.args?.length ? ' ' + s.args.join(' ') : ''}`
+        return `  ${chalk.green(s.name)}  ${chalk.gray(transport)} ${target}`
+      })
+      console.log(chalk.cyan('配置的 MCP 服务器:'))
+      console.log(lines.join('\n'))
+      console.log(chalk.gray('  提示: flare mcp call <服务器> <工具> [JSON参数] 调用工具'))
+    })
+
+  mcpCmd
     .command('call <server> <tool> [jsonArgs]')
     .description('调用 MCP 服务器工具（stdio 或 HTTP transport；服务器名查 ~/.flare/mcp.json 配置，--url 直连 HTTP 端点）')
     .option('--url <url>', '直接连 HTTP transport 端点（如 http://127.0.0.1:8931/mcp），跳过配置查找')
