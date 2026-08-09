@@ -3,10 +3,10 @@
 > 目标：flare 是 Pulse/StorySpire 依赖的 AI Agent 引擎（TS）。任何改动必须安全（tsc 0 错 + 测试全绿才 commit）。
 > 铁律：禁止 push；禁止修改 src/core/agent.ts 的 Agent.run 核心循环。
 
-> **最新状态（v0.6.9）**：server 协议 models 接口——宿主查询可切换模型（configured 主/视觉模型端点 + Ollama 本地列表）；362/362 全绿（commit `57dd1ac`，未 push）。
+> **最新状态（v0.6.9）**：server 协议 models 接口（宿主查询可切换模型）+ CLI 交互 `/model list`（本地 Ollama 模型列表）；364/364 全绿（commit `5eb2189`，未 push）。
 > 下一步候选：① agent.ts trimContext 自动裁剪（风险高仍暂缓）；② 其他安全的外围增强（CLI /allow 增强、MCP 更多协议特性等）。
 
-### 2026-08-10 第十一轮实施（v0.6.9）——server 协议 models 接口：可切换模型查询
+### 2026-08-10 第十一轮实施（v0.6.9）——server 协议 models 接口 + CLI /model list
 
 - **P20 server 协议 models 接口**（commit `57dd1ac`）：
   - `models` 请求 → 宿主面板查询可切换模型（只读、不触发生成、不创建会话）：
@@ -23,6 +23,14 @@
     server e2e 1——真实子进程 models 响应结构完整、Ollama 不可达不崩），tsc 0 错误，零 agent.ts 改动
   - **冒烟实测**：真实 server 子进程——models 返回 `deepseek-chat` 主模型（deepseek 端点 + hasApiKey true）、
     `qwen2.5vl:3b` 视觉模型（ollama 端点）、ollama 真实列出 4 个本地模型（qwen2.5:7b-64k/qwen2.5vl:3b/qwen2.5vl:7b/qwen2.5:7b）
+- **P21 CLI 交互 `/model list`**（commit `5eb2189`）：
+  - `/model list` → 列出本地 Ollama 可用模型（复用 `listOllamaModels`：模型名 + 大小 formatModelSize +
+    当前主模型标记 ●/○ + 切换提示），并显示当前主模型；Ollama 不可达友好提示不崩；
+    `list` 不是合法模型名——不写 main_model（防误切换）；`/help` 与裸 `/model` 帮助同步说明
+  - **364/364 全绿**（362 + 2 新增 model-command.test.ts：/model list 输出合法且不写 main_model /
+    list 不当模型名），tsc 0 错误，零 agent.ts 改动
+  - **冒烟实测**：真实 PTY 交互 CLI——`/model list` 列出 qwen2.5:7b-64k（4.4 GB）/qwen2.5vl:3b（3.0 GB）/
+    qwen2.5vl:7b（5.6 GB）/qwen2.5:7b（4.4 GB）+ 当前主模型 deepseek-chat，/exit 正常退出
 - **下一步候选**：① agent.ts trimContext 自动裁剪（风险高仍暂缓）；② 其他安全的外围增强
   （CLI /allow 增强、MCP 更多协议特性、server 协议其他管理接口等）
 
