@@ -3,8 +3,30 @@
 > 目标：flare 是 Pulse/StorySpire 依赖的 AI Agent 引擎（TS）。任何改动必须安全（tsc 0 错 + 测试全绿才 commit）。
 > 铁律：禁止 push；禁止修改 src/core/agent.ts 的 Agent.run 核心循环。
 
-> **最新状态（v0.6.9）**：server 协议 models 接口（宿主查询可切换模型）+ CLI 交互 `/model list`（本地 Ollama 模型列表）；364/364 全绿（commit `5eb2189`，未 push）。
-> 下一步候选：① agent.ts trimContext 自动裁剪（风险高仍暂缓）；② 其他安全的外围增强（CLI /allow 增强、MCP 更多协议特性等）。
+> **最新状态（v0.6.10）**：CLI `/allow` 增强——`/allow add <工具名> [session|always]` 显式放行 + 列表范围标注（本会话/跨会话持久化/两者）；373/373 全绿（commit `713ac14`，未 push）。
+> 下一步候选：① agent.ts trimContext 自动裁剪（风险高仍暂缓）；② 其他安全的外围增强（MCP 更多协议特性、server 协议其他管理接口等）。
+
+### 2026-08-10 第十二轮实施（v0.6.10）——CLI /allow 增强：显式放行 + 范围明细
+
+- **P22 CLI /allow 增强**（commit `713ac14`）：
+  - `/allow add <工具名> [session|always]` → 显式放行确认工具（无需等 AI 触发确认弹窗）：缺省 `session`
+    本会话内不再确认；`always` 跨会话持久化（写入全局库 settings 表，新会话/新实例也放行）；非法模式/缺参/
+    无 allow 回调（旧 hooks）各有清晰提示，未知子命令仍回用法
+  - `/allow` 列表带范围标注：`（本会话）` 会话级 / `（跨会话持久化）` always / `（会话+持久化）` 两者
+    （同一会话内 allowAlways 同时写会话级+持久化 → 两者；新会话只见持久化）
+  - **AllowGateHooks 新增可选方法**：`allow(name, mode)` / `listDetailed()`——未提供则回退旧 `list()`
+    （向后兼容，宿主不受影响）；CLI 注入点用 `gate.allowSession/allowAlways` + `listAllowed/listAlwaysAllowed` 实现；
+    注意 `listAlwaysAllowed` 只能按候选名单（CLI_CONFIRM_TOOLS）查持久化（KV store 无法枚举 key，v0.6.8 已知限制）
+  - docs/confirmation.md CLI 章节 + README CLI 表/Changelog + 版本号 0.6.10
+  - **373/373 全绿**（364 + 9 新增：/allow 范围标注 2——会话级/持久化/两者+新会话持久化、无 listDetailed 回退旧行为；
+    /allow add 7——缺省 session 不写持久化、session、always 持久化+跨实例生效、缺参、非法模式、无 allow 回调、
+    add 后 revoke 双清），tsc 0 错误，零 agent.ts 改动
+  - **冒烟实测**：真实 PTY 交互 CLI——`/allow add memory_save always` → 「已放行 memory_save（跨会话持久化）」、
+    `/allow` 列表标注 `memory_save（会话+持久化）`、`/allow add bad xyz` → 非法模式提示、`/allow revoke` → 恢复确认
+- **下一步候选**：① agent.ts trimContext 自动裁剪（风险高仍暂缓）；② 其他安全的外围增强
+  （MCP 更多协议特性、server 协议其他管理接口、CLI 更多交互增强等）
+
+---
 
 ### 2026-08-10 第十一轮实施（v0.6.9）——server 协议 models 接口 + CLI /model list
 
