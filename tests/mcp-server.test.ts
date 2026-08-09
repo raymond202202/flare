@@ -5,7 +5,7 @@ import { dirname, join } from 'node:path'
 import { MCPServer, toMcpTool } from '../src/mcp/server.js'
 import { MCPClient } from '../src/mcp/client.js'
 import { readFileTool, type Tool } from '../src/tools/index.js'
-import type { McpResource } from '../src/mcp/types.js'
+import type { McpPrompt, McpResource } from '../src/mcp/types.js'
 import { MCP_PROTOCOL_VERSION } from '../src/mcp/client.js'
 import pkg from '../package.json' with { type: 'json' }
 
@@ -42,10 +42,10 @@ const slowTool: Tool = {
 }
 
 /** 进程内测试台：注入 input/write，模拟 MCP 客户端逐行发请求 */
-function createHarness(customTools?: Tool[], customResources?: McpResource[]) {
+function createHarness(customTools?: Tool[], customResources?: McpResource[], customPrompts?: McpPrompt[]) {
   const writes: string[] = []
   const input = new Readable({ read() {} })
-  const server = new MCPServer({ tools: customTools, resources: customResources, write: (l) => writes.push(l), input })
+  const server = new MCPServer({ tools: customTools, resources: customResources, prompts: customPrompts, write: (l) => writes.push(l), input })
   server.start()
   const send = (obj: unknown) => { input.push(JSON.stringify(obj) + '\n') }
   const flush = () => new Promise<void>((r) => setTimeout(r, 30))
@@ -276,6 +276,114 @@ describe('MCPServer（stdio NDJSON JSON-RPC，零依赖）', () => {
     await withoutRes.flush()
     expect(withoutRes.last().result.capabilities).not.toHaveProperty('resources')
     withoutRes.server.close()
+  })
+
+  it('prompts/list：注入的提示词真实暴露（name/description/arguments 元数据）', async () => {
+    const prompts: McpPrompt[] = [
+      {
+        name: 'summarize',
+        description: '总结会话内容',
+        arguments: [{ name: 'topic', description: '主题', required: true }],
+        render: (args) => [{ role: 'user', content: { type: 'text', text: `总结关于 ${args.topic ?? ''} 的内容` } }],
+      },
+      { name: 'greet', render: () => [{ role: 'user', content: { type: 'text', text: '你好' } }] },
+    ]
+    const h = createHarness(undefined, undefined, prompts)
+    h.send({ jsonrpc: '2.0', id: 1, method: 'prompts/list', params: {} })
+    await h.flush()
+    const res = h.last()
+    expect(res.result.prompts).toEqual([
+      {
+        name: 'summarize',
+        description: '总结会话内容',
+        arguments: [{ name: 'topic', description: '主题', required: true }],
+      },
+      { name: 'greet' },
+    ])
+    h.server.close()
+  })
+
+  it('prompts/get：渲染提示词（参数替换 + description 透传）', async () => {
+    const prompts: McpPrompt[] = [
+      {
+        name: 'summarize',
+        description: '总结会话内容',
+        arguments: [{ name: 'topic', description: '主题', required: true }],
+        render: (args) => [
+          { role: 'user', content: { type: 'text', text: `请总结关于「${args.topic}」的会话` } },
+          { role: 'assistant', content: { type: 'text', text: '好的，我来总结。' } },
+        ],
+      },
+    ]
+    const h = createHarness(undefined, undefined, prompts)
+    h.send({ jsonrpc: '2.0', id: 2, method: 'prompts/get', params: { name: 'summarize', arguments: { topic: 'flare 引擎' } } })
+    await h.flush()
+    const res = h.last()
+    expect(res.result.description).toBe('总结会话内容')
+    expect(res.result.messages).toEqual([
+      { role: 'user', content: { type: 'text', text: '请总结关于「flare 引擎」的会话' } },
+      { role: 'assistant', content: { type: 'text', text: '好的，我来总结。' } },
+    ])
+    h.server.close()
+  })
+
+  it('prompts/get：异步 render 也支持（await 返回值）；arguments 缺省传空对象', async () => {
+    const prompts: McpPrompt[] = [
+      {
+        name: 'status',
+        render: async (args) => [{ role: 'user', content: { type: 'text', text: `当前状态: ${args.mode ?? 'default'}` } }],
+      },
+    ]
+    const h = createHarness(undefined, undefined, prompts)
+    h.send({ jsonrpc: '2.0', id: 3, method: 'prompts/get', params: { name: 'status' } })
+    await h.flush()
+    const res = h.last()
+    expect(res.result.messages[0].content.text).toBe('当前状态: default')
+    h.server.close()
+  })
+
+  it('prompts/get：未知 name → -32602 协议错误', async () => {
+    const h = createHarness(undefined, undefined, [{ name: 'greet', render: () => [] }])
+    h.send({ jsonrpc: '2.0', id: 4, method: 'prompts/get', params: { name: 'nonexist' } })
+    await h.flush()
+    const res = h.last()
+    expect(res.error.code).toBe(-32602)
+    expect(res.error.message).toContain('Unknown prompt')
+    h.server.close()
+  })
+
+  it('prompts/get：render() 抛错 → -32603（服务器不崩，后续请求正常）', async () => {
+    const prompts: McpPrompt[] = [
+      {
+        name: 'broken',
+        render: () => { throw new Error('模板渲染失败: 缺少参数') },
+      },
+    ]
+    const h = createHarness(undefined, undefined, prompts)
+    h.send({ jsonrpc: '2.0', id: 5, method: 'prompts/get', params: { name: 'broken' } })
+    await h.flush()
+    const res = h.last()
+    expect(res.error.code).toBe(-32603)
+    expect(res.error.message).toContain('模板渲染失败')
+    // 服务器未崩：ping 正常
+    h.send({ jsonrpc: '2.0', id: 6, method: 'ping', params: {} })
+    await h.flush()
+    expect(h.last().result).toEqual({})
+    h.server.close()
+  })
+
+  it('initialize：配置了 prompts 时 capabilities 声明 prompts 能力（缺省不声明）', async () => {
+    const withPrompts = createHarness(undefined, undefined, [{ name: 'greet', render: () => [] }])
+    withPrompts.send({ jsonrpc: '2.0', id: 1, method: 'initialize', params: {} })
+    await withPrompts.flush()
+    expect(withPrompts.last().result.capabilities).toHaveProperty('prompts')
+    withPrompts.server.close()
+
+    const withoutPrompts = createHarness()
+    withoutPrompts.send({ jsonrpc: '2.0', id: 2, method: 'initialize', params: {} })
+    await withoutPrompts.flush()
+    expect(withoutPrompts.last().result.capabilities).not.toHaveProperty('prompts')
+    withoutPrompts.server.close()
   })
 
   it('toMcpTool：flare Tool → MCP 工具定义（名称/描述/schema 映射）', () => {

@@ -76,3 +76,27 @@ export interface McpResourceContents {
   mimeType?: string
   text: string
 }
+
+/** MCP prompt 模板参数（prompts/list 响应 arguments[] 元素） */
+export interface McpPromptArgument {
+  name: string
+  description?: string
+  required?: boolean
+}
+
+/** MCP prompts/get 响应消息项（messages[] 元素） */
+export interface McpPromptMessage {
+  role: 'user' | 'assistant'
+  content: { type: 'text'; text: string }
+}
+
+/** MCP prompt（v0.6.2 prompts 真实暴露）：宿主注入的提示词模板 + 渲染函数 */
+export interface McpPrompt {
+  /** 提示词唯一名称（prompts/get 定位用） */
+  name: string
+  description?: string
+  /** 模板参数声明（prompts/list 暴露给客户端补全提示） */
+  arguments?: McpPromptArgument[]
+  /** 渲染提示词内容（按客户端传入的 arguments 填充模板；返回消息列表，支持异步） */
+  render(args: Record<string, string>): McpPromptMessage[] | Promise<McpPromptMessage[]>
+}

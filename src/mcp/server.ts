@@ -24,7 +24,7 @@
 import { createInterface, type Interface } from 'node:readline'
 import { createRequire } from 'node:module'
 import { tools, type Tool, type ToolResult } from '../tools/index.js'
-import type { McpContentItem, McpResource, McpResourceContents, McpTool } from './types.js'
+import type { McpContentItem, McpPrompt, McpPromptMessage, McpResource, McpResourceContents, McpTool } from './types.js'
 import { MCP_PROTOCOL_VERSION } from './client.js'
 
 const require = createRequire(import.meta.url)
@@ -36,6 +36,8 @@ export interface MCPServerOptions {
   tools?: Tool[]
   /** MCP 资源（v0.6.1）：resources/list 真实暴露 + resources/read 读取；缺省无资源能力（空列表） */
   resources?: McpResource[]
+  /** MCP 提示词（v0.6.2）：prompts/list 真实暴露 + prompts/get 渲染；缺省无 prompts 能力（空列表） */
+  prompts?: McpPrompt[]
   /** 服务器信息（默认 name: 'flare'，version 读 package.json 不硬编码） */
   serverInfo?: { name: string; version: string }
   /** 输出函数（默认 process.stdout.write + 换行；测试可注入收集） */
@@ -57,6 +59,7 @@ export function toMcpTool(tool: Tool): McpTool {
 export class MCPServer {
   private readonly toolList: Tool[]
   private readonly resourceList: McpResource[]
+  private readonly promptList: McpPrompt[]
   private readonly serverInfo: { name: string; version: string }
   private readonly write: (line: string) => void
   private readonly input: NodeJS.ReadableStream
@@ -68,6 +71,7 @@ export class MCPServer {
   constructor(opts: MCPServerOptions = {}) {
     this.toolList = opts.tools ?? tools
     this.resourceList = opts.resources ?? []
+    this.promptList = opts.prompts ?? []
     this.serverInfo = opts.serverInfo ?? { name: 'flare', version: pkg.version }
     this.write = opts.write ?? ((line) => process.stdout.write(line + '\n'))
     this.input = opts.input ?? process.stdin
@@ -134,12 +138,13 @@ export class MCPServer {
   private async dispatch(method: string, params: any): Promise<any> {
     switch (method) {
       case 'initialize':
-        // 握手：协商协议版本、声明能力（tools / 可选 resources）、返回服务器信息
+        // 握手：协商协议版本、声明能力（tools / 可选 resources / 可选 prompts）、返回服务器信息
         return {
           protocolVersion: MCP_PROTOCOL_VERSION,
           capabilities: {
             tools: {},
             ...(this.resourceList.length > 0 ? { resources: {} } : {}),
+            ...(this.promptList.length > 0 ? { prompts: {} } : {}),
           },
           serverInfo: this.serverInfo,
         }
@@ -160,8 +165,16 @@ export class MCPServer {
       case 'resources/read':
         return this.readResource(params)
       case 'prompts/list':
-        // 无 prompts 能力：返回空列表
-        return { prompts: [] }
+        // v0.6.2：真实暴露注入的提示词模板（元数据；渲染经 prompts/get）
+        return {
+          prompts: this.promptList.map(p => ({
+            name: p.name,
+            ...(p.description ? { description: p.description } : {}),
+            ...(p.arguments && p.arguments.length > 0 ? { arguments: p.arguments } : {}),
+          })),
+        }
+      case 'prompts/get':
+        return this.getPrompt(params)
       case 'ping':
         // JSON-RPC 标准健康检查
         return {}
@@ -187,6 +200,26 @@ export class MCPServer {
         ...(resource.mimeType ? { mimeType: resource.mimeType } : {}),
         text: String(text),
       }],
+    }
+  }
+
+  /** 渲染提示词（prompts/get）：未知 name → -32602；render() 异常 → -32603（服务器不崩） */
+  private async getPrompt(params: any): Promise<{ description?: string; messages: McpPromptMessage[] }> {
+    const name = String(params?.name || '')
+    const prompt = this.promptList.find(p => p.name === name)
+    if (!prompt) {
+      throw Object.assign(new Error(`Unknown prompt: ${name}`), { code: -32602 })
+    }
+    const args: Record<string, string> = {}
+    if (params?.arguments && typeof params.arguments === 'object') {
+      for (const [k, v] of Object.entries(params.arguments)) {
+        args[k] = String(v)
+      }
+    }
+    const messages = await prompt.render(args)
+    return {
+      ...(prompt.description ? { description: prompt.description } : {}),
+      messages,
     }
   }
 
