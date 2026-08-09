@@ -3,10 +3,10 @@
 > 目标：flare 是 Pulse/StorySpire 依赖的 AI Agent 引擎（TS）。任何改动必须安全（tsc 0 错 + 测试全绿才 commit）。
 > 铁律：禁止 push；禁止修改 src/core/agent.ts 的 Agent.run 核心循环。
 
-> **最新状态（v0.6.10）**：CLI `/allow` 增强——`/allow add <工具名> [session|always]` 显式放行 + 列表范围标注（本会话/跨会话持久化/两者）；373/373 全绿（commit `713ac14`，未 push）。
+> **最新状态（v0.6.10）**：确认门显式放行闭环（CLI `/allow add` + server `confirm_allow`）+ MCP CLI 命令组补全（`flare mcp resources`/`prompts`）；384/384 全绿（commit `14a22e7`，未 push）。
 > 下一步候选：① agent.ts trimContext 自动裁剪（风险高仍暂缓）；② 其他安全的外围增强（MCP 更多协议特性、server 协议其他管理接口等）。
 
-### 2026-08-10 第十二轮实施（v0.6.10）——CLI /allow 增强：显式放行 + 范围明细
+### 2026-08-10 第十二轮实施（v0.6.10）——确认门显式放行（CLI /allow add + server confirm_allow）+ MCP CLI 命令组补全
 
 - **P22 CLI /allow 增强**（commit `713ac14`）：
   - `/allow add <工具名> [session|always]` → 显式放行确认工具（无需等 AI 触发确认弹窗）：缺省 `session`
@@ -42,6 +42,15 @@
     退出码 1 / 未配置服务器退出码 1），tsc 0 错误，零 agent.ts 改动
   - **冒烟实测**：真实 HTTP MCP 服务器（注入 resources）——`mcp resources` 列出 `flare://smoke/note  smoke-note · text/plain`
     + 描述、`--read` 输出「冒烟内容 OK」、未知 uri `MCP 错误: Unknown resource` 退出码 1
+- **P25 CLI `flare mcp prompts`**（commit `b06f812`）：
+  - `flare mcp prompts <服务器> [--get <名称>]` → 查看/渲染 MCP 服务器暴露的提示词：复用 v0.6.2 的
+    `listPrompts`/`getPrompt`（stdio/HTTP 均可），`--get` 渲染 + `--args` JSON 可选——mcp 命令组完整闭环
+    （call/status/resources/prompts）；未知提示词协议错误退出码 1
+  - docs/mcp.md CLI 章节 + README CLI 表/Changelog（`14a22e7` 文档收尾）
+  - **384/384 全绿**（381 + 3 新增 mcp-cli-call：列表元数据（名称+参数+描述）/ --get 渲染 / 未知提示词退出码 1），
+    tsc 0 错误，零 agent.ts 改动
+  - **冒烟实测**：真实 HTTP MCP 服务器（注入 prompts）——`mcp prompts` 列出 `greet（参数: name）` + 描述、
+    `--get greet --args '{"name":"flare"}'` 渲染「你好，flare！」、未知提示词 `MCP 错误: Unknown prompt` 退出码 1
 - **下一步候选**：① agent.ts trimContext 自动裁剪（风险高仍暂缓）；② 其他安全的外围增强
   （MCP 更多协议特性、server 协议其他管理接口、CLI 更多交互增强等）
 
