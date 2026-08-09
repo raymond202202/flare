@@ -12,6 +12,7 @@ import pkg from '../package.json' with { type: 'json' }
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const TSK_CLI = fileURLToPath(new URL('../node_modules/tsx/dist/cli.mjs', import.meta.url))
 const FLARE_SERVER_FIXTURE = join(__dirname, 'fixtures', 'mcp-flare-server.ts')
+const FLARE_SERVER_PROMPTS_FIXTURE = join(__dirname, 'fixtures', 'mcp-flare-server-prompts.ts')
 
 /** 测试用工具：回显 / 慢（模拟慢工具验证串行响应） */
 const echoTool: Tool = {
@@ -422,6 +423,52 @@ describe('MCPServer ↔ MCPClient 端到端互通（真实子进程 stdio）', (
       const denied = await client.callTool('terminal', { command: 'rm -rf /' })
       expect(denied.isError).toBe(true)
       expect(denied.content[0]?.text).toContain('安全策略拦截')
+    } finally {
+      client.close()
+    }
+  })
+
+  it('MCPClient 消费 flare 服务器 prompts：listPrompts 元数据 + getPrompt 渲染（prompts 真实互通 e2e）', async () => {
+    const client = new MCPClient({
+      command: process.execPath,
+      args: [TSK_CLI, FLARE_SERVER_PROMPTS_FIXTURE],
+      timeoutMs: 15000,
+    })
+    try {
+      const init = await client.initialize()
+      expect(init.capabilities).toHaveProperty('prompts')
+
+      const prompts = await client.listPrompts()
+      expect(prompts.map(p => p.name)).toEqual(['summarize', 'greet'])
+      const summarize = prompts.find(p => p.name === 'summarize')
+      expect(summarize?.description).toBe('总结会话内容')
+      expect(summarize?.arguments).toEqual([{ name: 'topic', description: '主题', required: true }])
+
+      const res = await client.getPrompt('summarize', { topic: 'flare 引擎' })
+      expect(res.description).toBe('总结会话内容')
+      expect(res.messages).toEqual([
+        { role: 'user', content: { type: 'text', text: '请总结关于「flare 引擎」的会话' } },
+        { role: 'assistant', content: { type: 'text', text: '好的，我来总结。' } },
+      ])
+
+      // 未知 name → 协议错误（-32602）经客户端 reject
+      await expect(client.getPrompt('nonexist')).rejects.toThrow(/未知提示词|Unknown prompt/)
+    } finally {
+      client.close()
+    }
+  })
+
+  it('MCPClient 连接无 prompts 的 flare 服务器：listPrompts 返回空列表（缺省兼容）', async () => {
+    const client = new MCPClient({
+      command: process.execPath,
+      args: [TSK_CLI, FLARE_SERVER_FIXTURE],
+      timeoutMs: 15000,
+    })
+    try {
+      const init = await client.initialize()
+      expect(init.capabilities).toHaveProperty('tools')
+      const prompts = await client.listPrompts()
+      expect(prompts).toEqual([])
     } finally {
       client.close()
     }

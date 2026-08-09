@@ -24,7 +24,7 @@
 import { spawn, type ChildProcess } from 'node:child_process'
 import { createInterface, type Interface } from 'node:readline'
 import { createRequire } from 'node:module'
-import type { McpTool, McpCallResult } from './types.js'
+import type { McpTool, McpCallResult, McpPromptInfo, McpPromptResult } from './types.js'
 
 const require = createRequire(import.meta.url)
 const pkg = require('../../package.json') as { version: string }
@@ -164,6 +164,17 @@ export class MCPClient {
       isError: !!res?.isError,
       structuredContent: res?.structuredContent,
     }
+  }
+
+  /** 列出服务器可用提示词（prompts/list，v0.6.2）：元数据（name/description/arguments），渲染经 getPrompt */
+  async listPrompts(): Promise<McpPromptInfo[]> {
+    const res = await this.request<any>('prompts/list', {})
+    return Array.isArray(res?.prompts) ? (res.prompts as McpPromptInfo[]) : []
+  }
+
+  /** 获取并渲染提示词（prompts/get，v0.6.2）：按 arguments 补全模板返回消息序列；未知 name 协议错误则 reject */
+  async getPrompt(name: string, args?: Record<string, string>): Promise<McpPromptResult> {
+    return this.request<McpPromptResult>('prompts/get', { name, ...(args ? { arguments: args } : {}) })
   }
 
   /** 服务器名称（initialize 后可用） */

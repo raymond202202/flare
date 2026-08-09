@@ -332,13 +332,16 @@ Interactive mode commands:
   `prompts/list` 返回真实元数据（客户端探测清单）、`prompts/get` 按客户端 arguments 渲染消息序列
   `{ description?, messages: [{ role, content }] }`（未知 name -32602、render 抛错 -32603 服务器不崩）；
   注入后 initialize capabilities 声明 `prompts`（缺省不声明，v0.5.9 空列表兼容）
-- 🧩 **`McpPrompt`/`McpPromptArgument`/`McpPromptMessage` 类型库导出**（src/index.ts）；docs/mcp.md 提示词暴露章节
-- 🧪 新增 6 项测试（prompts/list 真实元数据 / prompts/get 参数渲染+description 透传 / 异步 render / 未知 name -32602 /
-  render 抛错 -32603 不崩 / capabilities 声明与缺省），共 **257/257 全绿**，tsc 0 错误，零 agent.ts 改动
+- 🤝 **MCPClient 消费 prompts（src/mcp/client.ts）**：`listPrompts()` 元数据 + `getPrompt(name, args?)` 渲染——
+  与 MCPServer 对称闭环（未知 name 协议错误 reject）；`McpPrompt`/`McpPromptArgument`/`McpPromptMessage`/`McpPromptInfo`/
+  `McpPromptResult` 类型库导出；docs/mcp.md 提示词暴露章节 + 客户端用法
+- 🧪 新增 11 项测试（MCPServer 6：prompts/list 真实元数据 / prompts/get 参数渲染+description 透传 / 异步 render / 未知 name -32602 /
+  render 抛错 -32603 不崩 / capabilities 声明与缺省 + MCPClient 5：listPrompts 元数据 / getPrompt 渲染 / 未知 name reject /
+  **prompts 真实互通 e2e**（MCPClient↔MCPServer 子进程，含无 prompts 缺省兼容）），共 **262/262 全绿**，tsc 0 错误，零 agent.ts 改动
 - EN: MCPServer now exposes real prompts — inject templates with declared arguments; `prompts/list` returns
   metadata and `prompts/get` renders messages (async render supported; unknown name -32602, render error -32603
-  without crashing). Capabilities declare prompts only when injected; empty-list compatible otherwise.
-  257/257 tests, zero agent.ts changes.
+  without crashing). MCPClient can consume prompts too (`listPrompts`/`getPrompt`), closing the loop.
+  262/262 tests, zero agent.ts changes.
 
 #### v0.6.1 (2026-08-09) — CLI/server 接入 ConfirmationGate：宿主弹窗确认流程 / Host-prompt confirmation flow (ConfirmationGate wired into server)
 - 🚪 **server 协议 `confirm` 事件 + `confirm_result` 请求（src/server.ts）**：AI 调用需确认工具时，服务发

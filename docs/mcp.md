@@ -198,6 +198,8 @@ const client = new MCPClient({ command: 'node', args: ['your-mcp-server-entry.js
 await client.initialize()
 const tools = await client.listTools()            // flare 内置 6 工具
 await client.callTool('read_file', { path: 'a.txt' })
+const prompts = await client.listPrompts()        // v0.6.2：提示词清单（name/description/arguments）
+const p = await client.getPrompt('summarize', { topic: 'flare' })  // v0.6.2：渲染消息序列
 ```
 
 > ⚠️ 安全：暴露的是 flare **原生工具**，危险命令黑名单 / 路径保护 / 记忆边界照常生效

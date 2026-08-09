@@ -34,6 +34,18 @@ const TOOLS = [
   },
 ]
 
+const PROMPTS = [
+  {
+    name: 'greet',
+    description: '打招呼',
+  },
+  {
+    name: 'summarize',
+    description: '总结内容',
+    arguments: [{ name: 'topic', description: '主题', required: true }],
+  },
+]
+
 const rl = readline.createInterface({ input: process.stdin })
 rl.on('line', (line) => {
   if (!line.trim()) return
@@ -54,13 +66,33 @@ rl.on('line', (line) => {
     case 'initialize':
       respond({
         protocolVersion: msg.params?.protocolVersion || '2025-03-26',
-        capabilities: { tools: {} },
+        capabilities: { tools: {}, prompts: {} },
         serverInfo: { name: 'flare-mock', version: '1.0.0' },
       })
       break
     case 'tools/list':
       respond({ tools: TOOLS })
       break
+    case 'prompts/list':
+      respond({ prompts: PROMPTS })
+      break
+    case 'prompts/get': {
+      const { name, arguments: args } = msg.params || {}
+      const prompt = PROMPTS.find((p) => p.name === name)
+      if (!prompt) {
+        respondError(-32602, `未知提示词: ${name}`)
+        break
+      }
+      if (name === 'summarize') {
+        respond({
+          description: prompt.description,
+          messages: [{ role: 'user', content: { type: 'text', text: `请总结关于「${args?.topic || ''}」的内容` } }],
+        })
+      } else {
+        respond({ messages: [{ role: 'user', content: { type: 'text', text: '你好' } }] })
+      }
+      break
+    }
     case 'tools/call': {
       if (mode === 'no-response') return // 不响应 → 客户端超时
       const { name, arguments: args } = msg.params || {}
