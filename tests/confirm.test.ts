@@ -186,6 +186,71 @@ describe('ConfirmationGate 放行记忆化', () => {
   })
 })
 
+describe('ConfirmationGate 放行名单查询（v0.6.8：listAlwaysAllowed / listAllAllowed）', () => {
+  const candidates = ['memory_save', 'write_something']
+
+  it('listAlwaysAllowed：无 store 时 always 退化为会话级，持久化名单为空（但 isAllowed 生效）', async () => {
+    const gate = new ConfirmationGate({ confirmer: () => 'always' })
+    const tool = gate.wrap(makeWriteTool())
+    await tool.execute({ content: 'a' })
+    expect(gate.isAllowed('write_something')).toBe(true)
+    expect(gate.listAlwaysAllowed(candidates)).toEqual([])
+  })
+
+  it('listAlwaysAllowed：store 持久化 always → 返回命中候选', () => {
+    const gate = new ConfirmationGate({ confirmer: () => 'always', store: makeKvStore() })
+    gate.allowAlways('write_something')
+    expect(gate.listAlwaysAllowed(candidates)).toEqual(['write_something'])
+  })
+
+  it('listAlwaysAllowed 按候选名单过滤：非候选工具不返回', () => {
+    const gate = new ConfirmationGate({ confirmer: () => 'always', store: makeKvStore() })
+    gate.allowAlways('other_tool') // 不在候选名单
+    expect(gate.listAlwaysAllowed(candidates)).toEqual([])
+    expect(gate.listAlwaysAllowed(['other_tool', ...candidates])).toEqual(['other_tool'])
+  })
+
+  it('listAllAllowed：会话级 + always 持久化合并去重', async () => {
+    const gate = new ConfirmationGate({ confirmer: () => 'allow_session', store: makeKvStore() })
+    const tool = gate.wrap(makeWriteTool())
+    // allow_session → 会话级放行 write_something；显式 allowAlways → 持久化 memory_save
+    await tool.execute({ content: 'a' })
+    gate.allowAlways('memory_save')
+    expect(gate.listAllAllowed(candidates)).toEqual(['memory_save', 'write_something'])
+    // 去重：同一工具会话级 + always 双命中只出现一次
+    gate.allowSession('memory_save')
+    expect(gate.listAllAllowed(candidates)).toEqual(['memory_save', 'write_something'])
+  })
+
+  it('listAllAllowed 并入不在候选名单的会话级放行（显式 allowSession）', () => {
+    const gate = new ConfirmationGate({ confirmer: () => 'deny' })
+    gate.allowSession('custom_tool')
+    expect(gate.listAllAllowed(candidates)).toEqual(['custom_tool'])
+  })
+
+  it('revoke 后名单查询同步清除（会话级 + 持久化）', () => {
+    const store = makeKvStore()
+    const gate = new ConfirmationGate({ confirmer: () => 'allow_session', store })
+    gate.allowAlways('write_something')
+    gate.allowSession('memory_save')
+    expect(gate.listAllAllowed(candidates).length).toBe(2)
+    gate.revoke('write_something')
+    expect(gate.listAlwaysAllowed(candidates)).toEqual([])
+    expect(gate.listAllAllowed(candidates)).toEqual(['memory_save'])
+    expect(store.data.has('confirm.always.write_something')).toBe(false)
+  })
+
+  it('空候选名单：always 持久化无法枚举（返回空）；会话级放行仍可见（不依赖候选）', () => {
+    const store = makeKvStore()
+    const gate = new ConfirmationGate({ confirmer: () => 'always', store })
+    gate.allowAlways('write_something')
+    expect(gate.listAlwaysAllowed([])).toEqual([])
+    // listAllAllowed 含会话级：allowAlways 同时写入会话级 → 即使无候选也可见
+    expect(gate.listAllAllowed([])).toEqual(['write_something'])
+    expect(gate.isAllowed('write_something')).toBe(true)
+  })
+})
+
 describe('ConfirmationGate 超时保护', () => {
   it('confirmer 超时未决 → 默认 deny（安全），结果带 timeout 标记', async () => {
     const gate = new ConfirmationGate({ confirmer: neverConfirmer, timeoutMs: 50 })

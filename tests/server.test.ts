@@ -422,6 +422,51 @@ describe('flare host server 协议', () => {
     expect((msgs[0] as any).sawError).toBe(false)
   }, 15000)
 
+  it('confirm_status 默认：返回确认名单配置 + 空放行名单（v0.6.8 确认门管理）', async () => {
+    const msgs = await request({ type: 'confirm_status' }, { expect: ['confirm_status'] })
+    expect(msgs[0].type).toBe('confirm_status')
+    expect(msgs[0].sessionId).toBe('default')
+    // 默认确认名单 = DEFAULT_CONFIRM_TOOLS（含 memory_save）；无放行记录时三名单均为空
+    expect(msgs[0].confirmTools).toContain('memory_save')
+    expect(msgs[0].allowedTools).toEqual([])
+    expect(msgs[0].sessionAllowed).toEqual([])
+    expect(msgs[0].alwaysAllowed).toEqual([])
+  })
+
+  it('confirm_status 指定 sessionId：独立查询，返回该会话配置与空名单', async () => {
+    const msgs = await request({ type: 'confirm_status', sessionId: 's-confirm-mgmt' }, { expect: ['confirm_status'] })
+    expect(msgs[0].sessionId).toBe('s-confirm-mgmt')
+    expect(Array.isArray(msgs[0].confirmTools)).toBe(true)
+    expect(msgs[0].allowedTools).toEqual([])
+  })
+
+  it('confirm_revoke 缺 tool 且无 resetSession → error（参数校验）', async () => {
+    const msgs = await request({ type: 'confirm_revoke', sessionId: 's-confirm-mgmt' }, { expect: ['error'] })
+    expect(msgs[0].message).toContain('confirm_revoke')
+    expect(msgs[0].message).toContain('tool')
+  })
+
+  it('confirm_revoke 指定 tool（无放行记录）→ 幂等 ok，随后 confirm_status 仍空', async () => {
+    const msgs = await request(
+      { type: 'confirm_revoke', sessionId: 's-confirm-mgmt', tool: 'memory_save' },
+      { expect: ['ok'] }
+    )
+    expect(msgs[0].type).toBe('ok')
+    expect(msgs[0].sessionId).toBe('s-confirm-mgmt')
+    expect(msgs[0].tool).toBe('memory_save')
+    const st = await request({ type: 'confirm_status', sessionId: 's-confirm-mgmt' }, { expect: ['confirm_status'] })
+    expect(st[0].allowedTools).toEqual([])
+  })
+
+  it('confirm_revoke resetSession（无放行记录）→ 幂等 ok', async () => {
+    const msgs = await request(
+      { type: 'confirm_revoke', sessionId: 's-confirm-mgmt', resetSession: true },
+      { expect: ['ok'] }
+    )
+    expect(msgs[0].type).toBe('ok')
+    expect(msgs[0].resetSession).toBe(true)
+  })
+
   it('chat 带非法 maxTokens → error（v0.6.3 采样参数校验，不触发生成）', async () => {
     const msgs = await request({ type: 'chat', sessionId: 's-param', input: 'hi', maxTokens: -5 }, { expect: ['error'] })
     expect(msgs[0].type).toBe('error')

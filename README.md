@@ -331,6 +331,23 @@ Interactive mode commands:
 
 > 中文条目 / Chinese entries · English summary for each version
 
+#### v0.6.8 (2026-08-10) — server 协议确认门管理：confirm_status / confirm_revoke / Confirmation-gate management over the host protocol
+- 🎛️ **server 协议新增 `confirm_status` / `confirm_revoke`（src/server.ts）**：宿主随时查询/撤销确认门放行——
+  `confirm_status {sessionId}` 返回确认名单配置（`confirmTools`）+ 放行名单（`allowedTools` 完整合并 /
+  `sessionAllowed` 会话级 / `alwaysAllowed` 持久化），只读不创建会话；`confirm_revoke {tool}` 撤销该工具放行
+  （会话级 + always 持久化同步清除，恢复每次确认）/ `{resetSession:true}` 清空会话级放行（不影响 always）；
+  参数缺失回 error（含用法提示）、无放行记录幂等 ok
+- 🔍 **`ConfirmationGate` 新增名单查询方法（src/core/confirm.ts）**：`listAlwaysAllowed(candidates)`（KV store 无法
+  枚举 key，按候选名单逐个查询持久化 always）/ `listAllAllowed(candidates)`（会话级 + always 合并去重，含非候选的
+  显式会话级放行）——库导出（类方法随类导出）
+- 📚 docs/host-protocol.md §18/§19 + 确认门管理章节 + 响应表 + README Changelog + 版本号 0.6.8
+- 🧪 新增 12 项测试（ConfirmationGate 名单查询 7：无 store always 退化/持久化命中/候选过滤/合并去重/非候选会话级并入/
+  revoke 同步清除/空候选 + server 协议 e2e 5：confirm_status 默认配置+空名单/指定 sessionId/confirm_revoke 缺参 error/
+  幂等 ok+随后 status 仍空/resetSession），共 352/352；零 agent.ts 改动
+- EN: New host-protocol requests `confirm_status` (query confirmation-gate state: confirmTools + session/always allow
+  lists, read-only) and `confirm_revoke` (revoke one tool, or resetSession to clear session-level grants, idempotent);
+  ConfirmationGate gains listAlwaysAllowed/listAllAllowed; 352/352 tests.
+
 #### v0.6.7 (2026-08-09) — CLI 交互模式接入 ConfirmationGate / ConfirmationGate wired into interactive CLI
 - 🔐 **交互模式确认门（src/cli/index.ts）**：AI 调用写回类工具（`memory_save`）执行前**终端内确认弹窗**——`[y] 允许一次 / [s] 本次会话允许 / [a] 总是允许 / [n] 拒绝（默认）`；`allow_session` 会话记忆、`always` 持久化到全局库 settings 表（跨会话记住）；确认期间暂停火焰动画 + 恢复终端回显（readline 读一行），决策后反馈一行结果并继续 Agent 流；`ConfirmationGate` 超时安全 deny 继承
 - 🛡️ **防绕过**：交互模式始终显式传工具集（内置 + MCP）再经 `wrapConfirmTools` 包装——避免 Agent 回退内置工具绕过确认门（与 server 端 v0.6.1 同机制）；默认名单 `CLI_CONFIRM_TOOLS = ['memory_save']`（与 server `DEFAULT_CONFIRM_TOOLS` 一致）

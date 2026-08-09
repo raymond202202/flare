@@ -162,6 +162,38 @@ export class ConfirmationGate {
     return [...this.sessionAllowed]
   }
 
+  /**
+   * 查看 always 持久化放行名单（v0.6.8）：KV store 无法枚举 key，按候选名单逐个查询。
+   * candidates 应为当前确认名单（如 server 的 confirmTools）——被包装的工具才可能产生 always。
+   */
+  listAlwaysAllowed(candidates: string[]): string[] {
+    return candidates.filter((name) => this.isAlwaysPersisted(name))
+  }
+
+  /**
+   * 查看完整放行名单（v0.6.8）：会话级 + always 持久化合并（按候选顺序去重）。
+   * 宿主确认门管理面板用：展示哪些工具当前已被放行（不再弹窗）。
+   */
+  listAllAllowed(candidates: string[]): string[] {
+    const seen = new Set<string>()
+    const out: string[] = []
+    for (const name of candidates) {
+      if (seen.has(name)) continue
+      if (this.isAlwaysPersisted(name) || this.sessionAllowed.has(name)) {
+        seen.add(name)
+        out.push(name)
+      }
+    }
+    // 会话级放行中不在候选名单的工具（如显式 allowSession 的非名单工具）也并入
+    for (const name of this.sessionAllowed) {
+      if (!seen.has(name)) {
+        seen.add(name)
+        out.push(name)
+      }
+    }
+    return out
+  }
+
   /** 清空会话级放行（不影响持久化 always） */
   resetSession(): void {
     this.sessionAllowed.clear()
