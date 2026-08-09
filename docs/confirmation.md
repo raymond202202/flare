@@ -86,3 +86,29 @@ gate.resetSession()              // 清空会话级放行（不影响 always）
 
 - server 协议宿主工具走 `tool_execute` 事件（宿主自己确认），本机制是**宿主侧**增强——宿主把
   `tool_execute` 弹窗与 `ConfirmationGate` 结合即可获得记忆化；协议本身无需改动。
+- **CLI 交互模式已内置确认门（v0.6.7）**：AI 调用写回类工具（`memory_save`）执行前弹终端确认——
+  见下方章节。
+
+## CLI 交互模式确认门（v0.6.7）
+
+交互模式（`flare`）把 `ConfirmationGate` 接到终端：AI 想写持久记忆（`memory_save`）时暂停火焰动画，
+弹确认行（恢复终端回显，readline 读一行），决策后反馈并继续 Agent 流。
+
+```
+🔧 调用工具: memory_save
+⚠️ AI 想调用「memory_save」（{"content":"用户喜欢喝美式咖啡"}）
+  [y] 允许一次    [s] 本次会话允许    [a] 总是允许    [n] 拒绝（默认）
+  你的选择 [y/s/a/n]: y
+⚠️ 工具「memory_save」已允许本次执行
+```
+
+- **决策**：`y`→allow_once / `s`→allow_session（本会话不再确认）/ `a`→always（持久化到全局库
+  settings 表，跨会话记住）/ 其余（含 `n`、空、未知）→ deny（安全默认）；
+- **默认名单** `CLI_CONFIRM_TOOLS = ['memory_save']`（与 server 端 `DEFAULT_CONFIRM_TOOLS` 一致）；
+  交互模式始终显式传工具集（内置 + MCP）再包装，避免 Agent 回退内置工具绕过确认门；
+- **/allow 命令**：`/allow` 查看已放行的确认工具（含 always 持久化）；`/allow revoke <工具名>`
+  撤销放行（恢复每次确认）；
+- **可复用纯函数**（库导出）：`parseConfirmAnswer(ans)`（输入→决策）/ `formatConfirmPrompt(toolName, args)`
+  （确认 UI 文案）/ `terminalConfirmer({ toolName, args, ask, onPause?, onResume?, onFeedback? })`
+  （可注入读行实现与暂停/恢复/反馈回调的终端确认流程）——其他宿主可复用同样的终端确认体验。
+

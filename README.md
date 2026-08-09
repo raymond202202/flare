@@ -164,6 +164,8 @@ cp .env.example ~/.flare/.env
 | `/mcp` | 查看 MCP 服务器状态（`~/.flare/mcp.json` 配置，v0.5.5） |
 | `/mcp connect <name>` | 连接 MCP 服务器并注入其工具（v0.5.5） |
 | `/mcp disconnect <name>` | 断开 MCP 服务器（v0.5.5） |
+| `/allow` | 查看已放行的确认工具（AI 写回类工具执行前会请求确认，v0.6.7） |
+| `/allow revoke <工具名>` | 撤销放行（恢复每次确认，v0.6.7） |
 | `/memory` | 查看持久记忆 |
 | `/remember` | 保存一条记忆（如: /remember 用户喜欢浅色主题） |
 | `/forget` | 删除记忆（如: /forget 浅色主题，删除包含该关键词的记忆） |
@@ -328,6 +330,16 @@ Interactive mode commands:
 ### Changelog / Release Notes
 
 > 中文条目 / Chinese entries · English summary for each version
+
+#### v0.6.7 (2026-08-09) — CLI 交互模式接入 ConfirmationGate / ConfirmationGate wired into interactive CLI
+- 🔐 **交互模式确认门（src/cli/index.ts）**：AI 调用写回类工具（`memory_save`）执行前**终端内确认弹窗**——`[y] 允许一次 / [s] 本次会话允许 / [a] 总是允许 / [n] 拒绝（默认）`；`allow_session` 会话记忆、`always` 持久化到全局库 settings 表（跨会话记住）；确认期间暂停火焰动画 + 恢复终端回显（readline 读一行），决策后反馈一行结果并继续 Agent 流；`ConfirmationGate` 超时安全 deny 继承
+- 🛡️ **防绕过**：交互模式始终显式传工具集（内置 + MCP）再经 `wrapConfirmTools` 包装——避免 Agent 回退内置工具绕过确认门（与 server 端 v0.6.1 同机制）；默认名单 `CLI_CONFIRM_TOOLS = ['memory_save']`（与 server `DEFAULT_CONFIRM_TOOLS` 一致）
+- 🎛️ **`/allow` 命令**：查看已放行的确认工具（含 always 持久化）/ `/allow revoke <工具名>` 撤销放行（恢复每次确认）；`handleSlashCommand` 新增可选 `allowGate` hooks（向后兼容）
+- 🔧 **可测性**：新增纯函数 `parseConfirmAnswer`（输入→决策，未知/空安全 deny）/ `formatConfirmPrompt`（确认 UI 文案，参数 JSON 截断 120 字符）/ `terminalConfirmer`（可注入 ask/onPause/onResume/onFeedback 的终端确认流程）——库导出
+- 📚 README CLI 表 + Changelog + docs/confirmation.md CLI 交互章节 + 版本号 0.6.7
+- 🧪 新增 23 项测试（parseConfirmAnswer 4：y/s/a 全别名 + 空/未知 deny / formatConfirmPrompt 3：摘要/超长截断/无参数 / terminalConfirmer 4：决策流转/空 deny/ask 抛错安全 deny/always 反馈 / Gate×terminal 集成 5：allow_once 每次确认/deny 拒绝/allow_session 会话记忆/always 跨实例持久化+revoke/默认名单 / /allow 命令 7：无 hooks/列出/空名单/revoke 成功/revoke 未放行/未知子命令/help），共 340/340；零 agent.ts 改动
+- 🔥 **冒烟实测**：本机 Ollama qwen2.5:7b 真实触发——AI 调 memory_save → 确认弹窗（含参数摘要）→ 输入 y →「已允许本次执行」→ 工具真实写入 → AI 回复，事件链完整
+- EN: The interactive CLI now routes write-back tools (memory_save) through ConfirmationGate with an in-terminal prompt (allow once/session/always/deny); allow_session is per-session, always persists to the global store's settings table; new /allow command lists and revokes granted tools; 340/340 tests.
 
 #### v0.6.6 (2026-08-09) — MCP HTTP 接入 McpManager + CLI `flare mcp call` + resources 客户端消费 / MCP HTTP wired into McpManager + `flare mcp call` + MCP resources client
 - 🔌 **McpManager 支持 HTTP transport 服务器（src/mcp/manager.ts + src/mcp/types.ts）**：`McpServerConfig` 新增 `url`（HTTP 端点）与 `timeoutMs`（可选）——配了 `url` 走 `MCPHttpClient` 直连，否则按 `command` stdio spawn；`McpManager({ httpTimeoutMs })` 全局超时可配；`createMcpTools` 参数放宽为 `McpToolClient` 接口（stdio/HTTP 传输无关）；配置同时有 url 与 command 时 url 优先；既无 url 也无 command 抛清晰错误；CLI 交互 `/mcp`、`flare server --mcp` 自动继承
