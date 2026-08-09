@@ -74,6 +74,49 @@ export const DEFAULT_CONFIRM_TOOLS = ['memory_save']
 /** 合法确认决策（confirm_result 请求校验用） */
 const VALID_CONFIRM_DECISIONS: ConfirmDecision[] = ['allow_once', 'allow_session', 'always', 'deny', 'alternative']
 
+/** 单个工具元数据（tools 请求响应项，v0.6.11） */
+export interface ToolMeta {
+  name: string
+  description?: string
+  /** JSON Schema 参数定义（tools/list 同构） */
+  parameters?: Record<string, unknown>
+  /** 是否经确认门（命中 confirmTools 名单；宿主面板"写回类工具需确认"标注） */
+  confirmed: boolean
+  /** 工具来源：host（宿主代理）/ profile（专家配置）/ mcp（外部 MCP 服务器）/ builtin（内置回退） */
+  source: 'host' | 'profile' | 'mcp' | 'builtin'
+}
+
+/** describeTools 来源判定输入（v0.6.11） */
+export interface ToolSourceSets {
+  host?: Set<string>
+  profile?: Set<string>
+  mcp?: Set<string>
+}
+
+/**
+ * 收集工具元数据（v0.6.11，纯函数可单测）：工具集 → 名称/描述/参数 + 确认门标注 + 来源。
+ * 宿主面板"AI 可用工具清单"数据源（tools 请求用；只读，不触发生成）。
+ */
+export function describeTools(tools: Tool[], confirmTools: string[], sources: ToolSourceSets = {}): ToolMeta[] {
+  const confirmSet = new Set(confirmTools)
+  const sourceOf = (name: string): ToolMeta['source'] => {
+    if (sources.host?.has(name)) return 'host'
+    if (sources.mcp?.has(name)) return 'mcp'
+    if (sources.profile?.has(name)) return 'profile'
+    return 'builtin'
+  }
+  return tools.map((t) => {
+    const def = t.definition.function
+    return {
+      name: def.name,
+      ...(def.description ? { description: def.description } : {}),
+      ...(def.parameters ? { parameters: def.parameters as Record<string, unknown> } : {}),
+      confirmed: confirmSet.has(def.name),
+      source: sourceOf(def.name),
+    }
+  })
+}
+
 /**
  * 对工具集应用确认门（v0.6.1，纯函数可单测）：
  * 命中 confirmTools 名单的工具用 gate.wrap 包装（执行前经宿主确认），其余原样返回。
@@ -182,8 +225,9 @@ export function startHostServer(opts: HostServerOptions) {
   // 确认门配置（v0.6.1）：名单默认写回类工具；显式传空数组 = 关闭
   const confirmTools = opts.confirmTools ?? DEFAULT_CONFIRM_TOOLS
   const confirmTimeoutMs = opts.confirmTimeoutMs ?? 30000
-  // 会话 → { agent, model, llmOpts }：model / 采样控制变化时重建 Agent（同 sessionId，历史从记忆库恢复）
-  const agents = new Map<string, { agent: Agent; model?: string; llmOpts?: LlmChatOpts }>()
+  // 会话 → { agent, model, llmOpts, toolMeta }：model / 采样控制变化时重建 Agent（同 sessionId，历史从记忆库恢复）
+  // toolMeta（v0.6.11）：该会话 Agent 当前工具清单元数据（tools 请求只读查询用）
+  const agents = new Map<string, { agent: Agent; model?: string; llmOpts?: LlmChatOpts; toolMeta?: ToolMeta[] }>()
   const cancels = new Map<string, { cancelled: boolean }>()
   const pending = new Map<string, PendingTool>()
   // 确认门（v0.6.1）：按 sessionId 缓存——allow_session 放行记忆跨模型重建保留；always 持久化到记忆库 settings 表
@@ -266,6 +310,12 @@ export function startHostServer(opts: HostServerOptions) {
       const baseTools = mergedTools.length > 0 ? mergedTools : builtinTools
       // 确认门（v0.6.1）：命中 confirmTools 名单的工具执行前经宿主弹窗确认（写回类工具知情授权）
       const gatedTools = wrapConfirmTools(baseTools, getGate(sessionId), confirmTools)
+      // 工具元数据（v0.6.11）：来源标注（宿主代理 / 专家配置 / MCP / 内置回退）
+      const toolMeta = describeTools(gatedTools, confirmTools, {
+        host: new Set((hostTools || []).map((t) => t.definition.function.name)),
+        profile: new Set((profile.tools || []).map((t) => t.definition.function.name)),
+        mcp: new Set(mcpTools.map((t) => t.definition.function.name)),
+      })
       entry = {
         agent: new Agent({
           ...profileToConfig(profile),
@@ -276,6 +326,7 @@ export function startHostServer(opts: HostServerOptions) {
         }),
         model,
         llmOpts,
+        toolMeta,
       }
       agents.set(sessionId, entry)
     }
@@ -621,6 +672,16 @@ export function startHostServer(opts: HostServerOptions) {
           if (mode === 'always') gate.allowAlways(tool)
           else gate.allowSession(tool)
           reply({ type: 'ok', sessionId, tool, mode })
+          break
+        }
+        case 'tools': {
+          // 宿主查询当前会话 Agent 可用工具清单（v0.6.11，只读不生成）：
+          //   名称/描述/参数 + 确认门标注（confirmed）+ 来源（host/profile/mcp/builtin）
+          //   宿主面板"AI 可用工具 + 哪些写回类工具需确认"的数据源
+          const sessionId = String(req.sessionId || 'default')
+          const entry = agents.get(sessionId)
+          const toolMeta = entry?.toolMeta ?? describeTools(builtinTools, confirmTools)
+          reply({ type: 'tools', sessionId, tools: toolMeta, confirmTools })
           break
         }
         case 'models': {

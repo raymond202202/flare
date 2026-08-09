@@ -39,6 +39,14 @@ const greetPrompt: McpPrompt = {
   description: '问候模板',
   arguments: [{ name: 'name', required: true }],
   render: async (args) => [{ role: 'user', content: { type: 'text', text: `你好，${args.name || '世界'}！` } }],
+  // v0.6.11：参数补全候选（completion/complete HTTP 消费端测试用）
+  complete: async (argName, value) => {
+    if (argName === 'name') {
+      const all = ['flare', 'pulse', 'storyspire']
+      return all.filter(v => v.startsWith(value))
+    }
+    return []
+  },
 }
 
 const prefsResource: McpResource = {
@@ -121,6 +129,13 @@ describe('MCPHttpClient（HTTP transport 消费端，与 stdio MCPClient 对称�
     expect(rendered.messages[0].content.text).toBe('你好，flare！')
     // 未知 name → reject
     await expect(client.getPrompt('nope')).rejects.toThrow(/Unknown prompt|MCP 错误/)
+    // v0.6.11：completion/complete HTTP 消费闭环——capabilities 声明 + 候选值 + 空匹配 + 未知 prompt reject
+    expect(info.capabilities.completions).toBeTruthy()
+    const comp = await client.completePrompt('greet', 'name', 'fl')
+    expect(comp.values).toEqual(['flare'])
+    const empty = await client.completePrompt('greet', 'name', 'zzz')
+    expect(empty.values).toEqual([])
+    await expect(client.completePrompt('nope', 'name', 'x')).rejects.toThrow(/Unknown prompt|MCP 错误/)
   })
 
   it('resources 消费：listResources 元数据 + readResource 内容（与 MCPServer 暴露对称闭环）', async () => {

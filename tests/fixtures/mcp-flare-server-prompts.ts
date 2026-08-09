@@ -12,6 +12,14 @@ const server = new MCPServer({
         { role: 'user', content: { type: 'text', text: `请总结关于「${args.topic ?? ''}」的会话` } },
         { role: 'assistant', content: { type: 'text', text: '好的，我来总结。' } },
       ],
+      // v0.6.11：参数补全候选（completion/complete 消费端测试用）
+      complete: (argName, value) => {
+        if (argName === 'topic') {
+          const all = ['flare 引擎', 'Pulse', 'StorySpire', 'MCP 协议']
+          return all.filter(v => v.includes(value))
+        }
+        return []
+      },
     },
     { name: 'greet', render: () => [{ role: 'user', content: { type: 'text', text: '你好' } }] },
   ],

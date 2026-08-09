@@ -335,6 +335,30 @@ Interactive mode commands:
 
 > 中文条目 / Chinese entries · English summary for each version
 
+#### v0.6.11 (2026-08-10) — MCP 参数补全 completion/complete + server 协议 tools 工具清单 / MCP completion capability + tool listing over the host protocol
+- 🧩 **MCP `completion/complete` 协议特性（src/mcp/server.ts + client.ts + http-client.ts）**：prompt 新增可选
+  `complete(argumentName, value)` 回调——客户端交互式输入参数时（如宿主面板提示词表单）向服务器请求候选值；
+  `initialize` 在任一 prompt 有回调（或注入了资源）时声明 `capabilities.completions`（缺省不声明，兼容探测）
+- 🧩 **`completion/complete` 服务器端**：`ref/prompt` 按回调返回候选 / `ref/resource` 按已暴露资源 uri 前缀建议 /
+  无回调的 prompt 返回空候选（不报错）；未知 prompt / 缺 ref → `-32602`，回调抛错 → `-32603`（服务器不崩）；
+  响应 `{ completion: { values, total, hasMore } }`——stdio（MCPServer）与 HTTP（startMcpHttpServer）共用同一核心
+- 🧩 **客户端消费**：`MCPClient.completePrompt` / `MCPHttpClient.completePrompt(name, argumentName, value)` →
+  `{ values }`（stdio/HTTP 同构，与服务器暴露对称闭环）；`McpCompletionResult` 类型库导出
+- 🎛️ **server 协议新增 `tools` 请求（src/server.ts）**：宿主面板查询当前会话 Agent 可用工具清单（只读、不触发生成）——
+  每项 `name`/`description`/`parameters` + `confirmed`（是否经确认门，命中 confirmTools 名单）+ `source`
+  （host 宿主代理 / profile 专家配置 / mcp 外部 MCP / builtin 内置回退）；`confirmTools` 确认名单配置回显；
+  纯函数 `describeTools` 库导出（宿主可复用）；chat 带宿主工具后 tools 查询反映该会话真实工具集
+- 📚 docs/mcp.md 参数补全章节 + docs/host-protocol.md §22 + 请求类型列表 + 响应表 + README Changelog + 版本号 0.6.11
+- 🧪 新增 13 项测试：completion/complete 服务器端 5（ref/prompt 候选 / 异步+空匹配 / ref/resource uri 前缀 /
+  无回调空候选+未知 prompt+缺 ref / capabilities 声明含资源不声明）+ stdio e2e 消费闭环 + HTTP e2e 消费闭环 +
+  describeTools 单测 5（元数据+确认标注 / 来源判定 / host 优先 / 空名单关闭 / 缺省字段）+ server e2e 3（默认内置
+  清单+确认标注 / 指定 sessionId / chat 带宿主工具后 host 来源）；共 397/397；零 agent.ts 改动
+- EN: MCP prompts gain the standard `completion/complete` capability (optional `complete` callback per prompt,
+  `ref/resource` URI-prefix suggestions, `capabilities.completions` declared when available) consumed by
+  `completePrompt()` on both stdio and HTTP clients; the host protocol gains `tools` (read-only listing of the
+  session's tool set with confirmation-gate annotation and source host/profile/mcp/builtin, backed by exported
+  `describeTools`); 397/397 tests.
+
 #### v0.6.10 (2026-08-10) — CLI /allow 增强 + server confirm_allow：确认门显式放行 / Explicit confirmation-gate grants (CLI + host protocol)
 - 🎛️ **`/allow add <工具名> [session|always]`（src/cli/index.ts）**：显式放行确认工具，无需等 AI 触发确认弹窗——缺省
   `session` 本会话内不再确认；`always` 跨会话持久化（写入全局库 settings 表，新会话/新实例也放行）；非法模式/缺参/
