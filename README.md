@@ -148,7 +148,7 @@ cp .env.example ~/.flare/.env
 | `flare chat` | 交互模式 |
 | `flare chat -q "问题"` | 单次查询模式 |
 | `flare chat -q "问题" -i 图片.png` | 单次查询附带图片 |
-| `flare server [--profile --storage --mcp]` | 宿主协议服务（stdin/stdout JSON Lines，供 Qt 等宿主调用） |
+| `flare server [--profile --storage --mcp --confirm-tools --confirm-timeout]` | 宿主协议服务（stdin/stdout JSON Lines，供 Qt 等宿主调用；v0.6.1 起写回类工具经确认门） |
 | `flare mcp-server [-t 工具名,...]` | MCP stdio 服务器：把 flare 工具集暴露给其他 AI 客户端（v0.5.8） |
 
 交互模式命令：
@@ -326,6 +326,23 @@ Interactive mode commands:
 ### Changelog / Release Notes
 
 > 中文条目 / Chinese entries · English summary for each version
+
+#### v0.6.1 (2026-08-09) — CLI/server 接入 ConfirmationGate：宿主弹窗确认流程 / Host-prompt confirmation flow (ConfirmationGate wired into server)
+- 🚪 **server 协议 `confirm` 事件 + `confirm_result` 请求（src/server.ts）**：AI 调用需确认工具时，服务发
+  `{"type":"confirm","sessionId","id","name","args"}` → 宿主弹窗让用户决策 → 宿主回
+  `{"type":"confirm_result","id","decision"}`（`allow_once`/`allow_session`/`always`/`deny`/`alternative`）——
+  写回类工具（默认 `memory_save`）经确认门：用户知情授权后才落库
+- 🧠 **记忆化 + 持久化 + 超时全继承 ConfirmationGate**：`allow_session` 按会话记忆（跨模型重建保留）；`always` 持久化到
+  记忆库 settings 表（`memoryStoreKv` 适配器，跨会话记住）；宿主未在时限内回 `confirm_result` 按安全默认 deny（超时标记）
+- 🧩 **`wrapConfirmTools` 纯函数 + `DEFAULT_CONFIRM_TOOLS`**：名单过滤（命中包装/未命中原样/空名单关闭）；库导出
+  （宿主可复用 gate + 名单）；`HostServerOptions.confirmTools` / `confirmTimeoutMs` 可配
+- ⌨️ **CLI `flare server` 新参数**：`--confirm-tools <a,b,c>`（逗号分隔名单，空串关闭）`--confirm-timeout <ms>`
+- 🧪 新增 12 项测试（wrapConfirmTools 名单过滤 5：含内置工具集防绕过回归 + Agent×确认门集成 4：allow_once/deny/allow_session 记忆化/超时 deny
+  + e2e 协议校验 3：缺 id/非法 decision/未知 id 静默不崩），共 **245/245 全绿**，tsc 0 错误，零 agent.ts 改动
+- EN: Server now wires ConfirmationGate — AI calls to write-back tools (memory_save by default) emit a `confirm` event;
+  the host shows a prompt and replies `confirm_result` (allow_once/session/always/deny/alternative). Session memory,
+  always-persistence (settings KV), and timeout-safety all inherited. `wrapConfirmTools`/`DEFAULT_CONFIRM_TOOLS` exported.
+  245/245 tests, zero agent.ts changes.
 
 #### v0.6.0 (2026-08-09) — 宿主会话/模型可观测性增强 / Host session & model observability
 - **协议 `recent_sessions`（src/server.ts）**：会话列表 + 首条 user 消息预览（`preview`，最多 120 字符）——

@@ -3,7 +3,7 @@
 > 供非 Node 宿主（如 Qt 应用）调用 flare 引擎的本地协议。
 > 传输：stdin/stdout · JSON Lines（每行一个 JSON 对象）
 > 实现：`src/server.ts`（`flare server` 命令）
-> 请求类型：chat / cancel / set_context / list_sessions / recent_sessions / get_messages / get_usage / context_status / ping / version / create_session / delete_session / remember / get_memories / delete_memory / tool_result / mcp_status
+> 请求类型：chat / cancel / set_context / list_sessions / recent_sessions / get_messages / get_usage / context_status / ping / version / create_session / delete_session / remember / get_memories / delete_memory / tool_result / confirm_result / mcp_status
 
 ## 启动
 
@@ -198,6 +198,19 @@ flare server --profile <expert-profile-file> --storage <db-path> [--mcp <mcp-con
 - 列出 `--mcp` 配置的每个服务器：`connected`（是否连接成功）、`toolCount`（桥接的工具数）、`error`（连接失败原因，可选）
 - 宿主 AI 面板展示/诊断外部 MCP 工具时使用；连接是启动时后台完成的，本请求会等待其落定
 
+### 17. confirm_result — 回传用户确认决策（v0.6.1，响应 confirm 事件）
+
+```json
+{"type":"confirm_result","id":"c_1","decision":"allow_once"}
+```
+
+- `id`：必填，`confirm` 事件携带的确认请求 id
+- `decision`：必填，合法值 `allow_once` / `allow_session` / `always` / `deny` / `alternative`
+  （与 ConfirmationGate 决策一致；`deny` 拒绝、`alternative` 要求替代方案，均不执行工具）
+- 缺 `id` / 非法 `decision` → 回 `error`（含合法值提示）；未知 `id`（已超时/不存在）→ 静默忽略（不污染事件流）
+- 宿主弹窗让用户决策后回传；宿主未在时限内（默认 30s，`--confirm-timeout` 可配）回传 → 按安全默认 `deny` 处理
+  （工具结果带超时提示，AI 收到拒绝后自然调整策略）
+
 ## 响应（服务 → 宿主，stdout 每行一个）
 
 | type | 字段 | 说明 |
@@ -205,6 +218,7 @@ flare server --profile <expert-profile-file> --storage <db-path> [--mcp <mcp-con
 | `text` | `sessionId, content` | AI 生成的文本块（流式） |
 | `tool_call` | `sessionId, name, args` | AI 请求调用工具 |
 | `tool_execute` | `id, name, args` | **请求宿主执行工具**（宿主回 `tool_result`） |
+| `confirm` | `sessionId, id, name, args` | **请求宿主弹窗确认**（v0.6.1，宿主回 `confirm_result`；写回类工具经确认门） |
 | `tool_result` | `sessionId, name, content` | 工具执行结果摘要（喂回 AI） |
 | `done` | `sessionId` | 本轮生成结束 |
 | `cancelled` | `sessionId` | 生成被取消 |
@@ -231,6 +245,21 @@ flare server --profile <expert-profile-file> --storage <db-path> [--mcp <mcp-con
 ```
 
 宿主收到 `tool_execute` 后应尽快回 `tool_result`（服务侧默认 30s 超时返回"工具执行超时"）。
+
+## 确认流（v0.6.1，写回类工具经确认门）
+
+AI 调用需确认的工具（默认 `memory_save`；`flare server --confirm-tools` 可扩展名单）时：
+
+```
+服务 → confirm {sessionId, id, name, args}   ← 宿主收到：弹窗让用户决策
+宿主 → confirm_result {id, decision}          ← 用户决策：allow_once/allow_session/always/deny/alternative
+服务 → 执行工具（allow_*）或返回拒绝（deny/alternative）
+服务 → tool_result（结果/拒绝喂回 AI）
+```
+
+- `allow_session`：本会话内该工具不再重复确认（跨模型重建保留）；`always`：持久化到记忆库 settings 表，跨会话记住
+- 宿主未回 `confirm_result` 超时（默认 30s，`--confirm-timeout` 可配）→ 安全默认 `deny`
+- `deny` / `alternative` 不执行原工具，AI 收到拒绝提示后自然调整策略
 
 ## 取消流
 

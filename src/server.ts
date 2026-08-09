@@ -16,7 +16,24 @@
 
 import { createInterface } from 'node:readline'
 import { createRequire } from 'node:module'
-import { Agent, createProvider, profileToConfig, McpManager, estimateMessagesTokens, type ExpertProfile, type ToolDefinition, type Tool, type ToolResult, type McpServerConfig } from './index.js'
+import {
+  Agent,
+  createProvider,
+  profileToConfig,
+  McpManager,
+  estimateMessagesTokens,
+  MemoryStore,
+  getMemoryStore,
+  ConfirmationGate,
+  memoryStoreKv,
+  tools as builtinTools,
+  type ExpertProfile,
+  type ToolDefinition,
+  type Tool,
+  type ToolResult,
+  type McpServerConfig,
+  type ConfirmDecision,
+} from './index.js'
 
 // 从 package.json 读取引擎版本（不硬编码；宿主 version 协商用）
 // 注意：编译产物 dist/server.js 位于 dist/ 下，package.json 在项目根（../package.json）
@@ -35,6 +52,28 @@ export interface HostServerOptions {
   namespace?: string
   /** MCP 服务器配置（v0.5.5）：启动时连接外部 MCP 服务器，工具并入 Agent 工具集 */
   mcp?: McpServerConfig[]
+  /** 需要用户确认的工具名名单（v0.6.1）：命中名单的工具经 ConfirmationGate，宿主弹窗确认后才执行。
+   *  默认 ['memory_save']（写回类工具）；传空数组关闭确认门。 */
+  confirmTools?: string[]
+  /** 确认超时毫秒（v0.6.1，默认 30000）：宿主未在时限内回 confirm_result 按安全默认（deny）处理 */
+  confirmTimeoutMs?: number
+}
+
+/** 默认需确认的工具（v0.6.1）：AI 写持久记忆前经确认门（宿主弹窗"AI 想记住…"，用户知情授权） */
+export const DEFAULT_CONFIRM_TOOLS = ['memory_save']
+
+/** 合法确认决策（confirm_result 请求校验用） */
+const VALID_CONFIRM_DECISIONS: ConfirmDecision[] = ['allow_once', 'allow_session', 'always', 'deny', 'alternative']
+
+/**
+ * 对工具集应用确认门（v0.6.1，纯函数可单测）：
+ * 命中 confirmTools 名单的工具用 gate.wrap 包装（执行前经宿主确认），其余原样返回。
+ * 名单为空 → 全部原样（确认门关闭）。
+ */
+export function wrapConfirmTools(tools: Tool[], gate: ConfirmationGate, confirmTools: string[]): Tool[] {
+  if (!confirmTools || confirmTools.length === 0) return tools
+  const set = new Set(confirmTools)
+  return tools.map(t => (set.has(t.definition.function.name) ? gate.wrap(t) : t))
 }
 
 interface PendingTool {
@@ -63,10 +102,17 @@ function makeHostTools(defs: ToolDefinition[], reply: (msg: any) => void, pendin
 /** 启动宿主协议服务（阻塞读 stdin） */
 export function startHostServer(opts: HostServerOptions) {
   const { profile, storage, toolTimeoutMs = 30000, namespace } = opts
+  // 确认门配置（v0.6.1）：名单默认写回类工具；显式传空数组 = 关闭
+  const confirmTools = opts.confirmTools ?? DEFAULT_CONFIRM_TOOLS
+  const confirmTimeoutMs = opts.confirmTimeoutMs ?? 30000
   // 会话 → { agent, model }：model 变化时重建 Agent（同 sessionId，历史从记忆库恢复）
   const agents = new Map<string, { agent: Agent; model?: string }>()
   const cancels = new Map<string, { cancelled: boolean }>()
   const pending = new Map<string, PendingTool>()
+  // 确认门（v0.6.1）：按 sessionId 缓存——allow_session 放行记忆跨模型重建保留；always 持久化到记忆库 settings 表
+  const gates = new Map<string, ConfirmationGate>()
+  // 挂起的确认请求：confirm 事件发出后等待宿主 confirm_result
+  const pendingConfirms = new Map<string, { resolve: (d: ConfirmDecision) => void; timer: NodeJS.Timeout }>()
   // MCP 管理器（v0.5.5）：外部 MCP 服务器工具并入 Agent 工具集
   const mcpManager = new McpManager({ configPath: '' })
   if (opts.mcp && opts.mcp.length > 0) {
@@ -80,6 +126,40 @@ export function startHostServer(opts: HostServerOptions) {
 
   const reply = (msg: any) => {
     process.stdout.write(JSON.stringify(msg) + '\n')
+  }
+
+  /**
+   * 向宿主发起确认请求（v0.6.1）：发 confirm 事件 → 宿主弹窗 → 回 confirm_result。
+   * 超时兜底：宿主一直不回时由 ConfirmationGate 自身超时（安全 deny）处理；
+   * 本函数只负责在稍后清理挂起条目（防泄漏），resolve 值不会被 gate 采用（已处理完）。
+   */
+  const askHostConfirm = (sessionId: string, toolName: string, args: Record<string, any>): Promise<ConfirmDecision> => {
+    return new Promise((resolve) => {
+      const id = `c_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`
+      const timer = setTimeout(() => {
+        pendingConfirms.delete(id)
+        resolve('deny')
+      }, confirmTimeoutMs + 5000)
+      timer.unref?.()
+      pendingConfirms.set(id, { resolve, timer })
+      reply({ type: 'confirm', sessionId, id, name: toolName, args: args || {} })
+    })
+  }
+
+  /** 会话确认门（v0.6.1，按 sessionId 缓存）：confirmer = 宿主弹窗（confirm 事件）；always 持久化到记忆库 settings 表 */
+  const getGate = (sessionId: string): ConfirmationGate => {
+    let gate = gates.get(sessionId)
+    if (!gate) {
+      const kv = memoryStoreKv(storage ? new MemoryStore(storage) : getMemoryStore())
+      gate = new ConfirmationGate({
+        confirmer: (toolName, args) => askHostConfirm(sessionId, toolName, args),
+        sessionId,
+        store: kv,
+        timeoutMs: confirmTimeoutMs,
+      })
+      gates.set(sessionId, gate)
+    }
+    return gate
   }
 
   const getAgent = (sessionId: string, tools?: ToolDefinition[], model?: string): Agent => {
@@ -97,10 +177,14 @@ export function startHostServer(opts: HostServerOptions) {
       // MCP 工具（v0.5.5）：已连接的服务器工具并入工具集（与宿主代理工具/专家工具并存）
       const mcpTools = mcpManager.getAllTools()
       const mergedTools = [...(hostTools || profile.tools || []), ...mcpTools]
+      // 无注入工具时用内置工具集（与 Agent 默认一致）——否则 Agent 回退内置工具会绕过确认门
+      const baseTools = mergedTools.length > 0 ? mergedTools : builtinTools
+      // 确认门（v0.6.1）：命中 confirmTools 名单的工具执行前经宿主弹窗确认（写回类工具知情授权）
+      const gatedTools = wrapConfirmTools(baseTools, getGate(sessionId), confirmTools)
       entry = {
         agent: new Agent({
           ...profileToConfig(profile),
-          ...(mergedTools.length > 0 ? { tools: mergedTools } : {}),
+          ...(gatedTools.length > 0 ? { tools: gatedTools } : {}),
           ...(llm ? { llm } : {}),
           sessionId: namespace ? `${namespace}:${sessionId}` : sessionId,
           storage,
@@ -313,6 +397,25 @@ export function startHostServer(opts: HostServerOptions) {
               alternative: r.alternative,
             })
           }
+          break
+        }
+        case 'confirm_result': {
+          // 宿主回传用户确认决策（v0.6.1）：响应 confirm 事件（弹窗结果）
+          const id = req.id === undefined || req.id === null ? '' : String(req.id)
+          if (!id) {
+            reply({ type: 'error', message: 'confirm_result 需要 id 参数（confirm 事件携带的 id）' })
+            break
+          }
+          const decision = String(req.decision || '')
+          if (!(VALID_CONFIRM_DECISIONS as string[]).includes(decision)) {
+            reply({ type: 'error', message: `confirm_result 需要合法 decision（${VALID_CONFIRM_DECISIONS.join('/')}）` })
+            break
+          }
+          const pendingConfirm = pendingConfirms.get(id)
+          if (!pendingConfirm) break // 未知/已超时的确认 id：静默忽略（不污染事件流）
+          clearTimeout(pendingConfirm.timer)
+          pendingConfirms.delete(id)
+          pendingConfirm.resolve(decision as ConfirmDecision)
           break
         }
         case 'mcp_status': {
