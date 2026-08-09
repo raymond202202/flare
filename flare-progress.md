@@ -3,8 +3,31 @@
 > 目标：flare 是 Pulse/StorySpire 依赖的 AI Agent 引擎（TS）。任何改动必须安全（tsc 0 错 + 测试全绿才 commit）。
 > 铁律：禁止 push；禁止修改 src/core/agent.ts 的 Agent.run 核心循环。
 
-> **最新状态（v0.6.7）**：CLI 交互模式接入 ConfirmationGate（终端确认弹窗 + /allow 管理 + always 持久化）；340/340 全绿（commit `fc5763c`，未 push）。
-> 下一步候选：① agent.ts trimContext 自动裁剪（风险高仍暂缓）；② 其他安全的外围增强（server 协议确认门管理请求 confirm_status/confirm_revoke 等）。
+> **最新状态（v0.6.8）**：server 协议确认门管理 confirm_status/confirm_revoke（宿主查询/撤销放行）；352/352 全绿（commit `14444eb`，未 push）。
+> 下一步候选：① agent.ts trimContext 自动裁剪（风险高仍暂缓）；② 其他安全的外围增强（CLI /allow 增强、MCP 更多协议特性等）。
+
+### 2026-08-10 第十轮实施（v0.6.8）——server 协议确认门管理 confirm_status/confirm_revoke
+
+- **P19 server 协议确认门管理**（commit `14444eb`）：
+  - `confirm_status {sessionId?}` → 查询确认门状态（只读，不创建会话）：`confirmTools`（当前确认名单配置）、
+    `allowedTools`（完整放行：会话级 + always 持久化合并去重）、`sessionAllowed`（会话级）、`alwaysAllowed`（持久化）——
+    宿主面板"已自动放行工具"清单的数据源；无放行记录返回空名单
+  - `confirm_revoke {tool}` → 撤销该工具放行（会话级 + always 持久化同步清除，恢复每次确认）；
+    `{resetSession:true}` → 清空会话级放行（不影响 always 持久化，跨会话"总是允许"需逐个 tool 撤销）；
+    缺参回 error（含用法提示）；无放行记录幂等 ok（服务不崩、状态不变）
+  - **ConfirmationGate 新增名单查询方法**：`listAlwaysAllowed(candidates)`（KV store 无法枚举 key，
+    按候选名单逐个查持久化 always）/ `listAllAllowed(candidates)`（会话级 + always 合并去重，
+    含非候选的显式会话级放行）——类方法随类库导出
+  - docs/host-protocol.md §18/§19 + 确认门管理章节 + 响应表 + README Changelog + 版本号 0.6.8
+  - **352/352 全绿**（340 + 12 新增：名单查询 7——无 store always 退化/持久化命中/候选过滤/合并去重/
+    非候选会话级并入/revoke 同步清除/空候选；协议 e2e 5——confirm_status 默认配置+空名单/指定 sessionId/
+    revoke 缺参 error/幂等 ok+随后 status 仍空/resetSession），tsc 0 错误，零 agent.ts 改动
+  - **冒烟实测**：真实 server 子进程——version 0.6.8、confirm_status 返回 confirmTools=['memory_save']+空名单、
+    confirm_revoke 缺参 error 清晰、tool/resetSession 幂等 ok、撤销后 status 仍空
+- **下一步候选**：① agent.ts trimContext 自动裁剪（风险高仍暂缓）；② 其他安全的外围增强
+  （CLI /allow 增强/交互模式状态查看、MCP 更多协议特性、server 协议其他管理接口等）
+
+---
 
 ### 2026-08-09 第九轮实施（v0.6.7）——CLI 交互模式接入 ConfirmationGate
 
