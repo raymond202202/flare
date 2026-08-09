@@ -3,7 +3,7 @@
 > 供非 Node 宿主（如 Qt 应用）调用 flare 引擎的本地协议。
 > 传输：stdin/stdout · JSON Lines（每行一个 JSON 对象）
 > 实现：`src/server.ts`（`flare server` 命令）
-> 请求类型：chat / cancel / set_context / list_sessions / recent_sessions / get_messages / get_usage / context_status / ping / version / create_session / delete_session / remember / get_memories / delete_memory / tool_result / confirm_result / confirm_status / confirm_revoke / models / mcp_status
+> 请求类型：chat / cancel / set_context / list_sessions / recent_sessions / get_messages / get_usage / context_status / ping / version / create_session / delete_session / remember / get_memories / delete_memory / tool_result / confirm_result / confirm_status / confirm_revoke / confirm_allow / models / mcp_status
 
 ## 启动
 
@@ -261,6 +261,19 @@ flare server --profile <expert-profile-file> --storage <db-path> [--mcp <mcp-con
 - `tool` 与 `resetSession` 至少其一，否则回 `error`（含用法提示）
 - 响应：`{"type":"ok","sessionId","tool"?,"resetSession"?}`；无放行记录时幂等 ok（服务不崩、状态不变）
 
+### 21. confirm_allow — 显式放行确认工具（v0.6.10，确认门管理）
+
+```json
+{"type":"confirm_allow","sessionId":"s1","tool":"memory_save"}
+{"type":"confirm_allow","sessionId":"s1","tool":"memory_save","mode":"always"}
+```
+
+- `tool`：要放行的工具名（必填，缺省回 `error` 含用法提示）——宿主面板操作，无需等 AI 触发 confirm 事件
+- `mode`：可选，`session`（默认，本会话内不再确认）| `always`（跨会话持久化到记忆库 settings 表，新会话也放行）；
+  其他值回 `error`（含合法值提示）
+- 响应：`{"type":"ok","sessionId","tool","mode"}`；与 `confirm_status`（查询）/ `confirm_revoke`（撤销）组成确认门管理闭环
+- 注意：`mode=always` 放行的工具在**当前会话内**也同时放行（`confirm_status.allowedTools` 可见）；仅跨会话持久化部分由 `alwaysAllowed` 体现
+
 ### 20. models — 查询可切换模型（v0.6.9，只读）
 
 ```json
@@ -291,7 +304,7 @@ flare server --profile <expert-profile-file> --storage <db-path> [--mcp <mcp-con
 | `recent_sessions` | `sessions` | 最近会话列表（含 preview，v0.6.0） |
 | `messages` | `sessionId, messages` | 指定会话的消息历史 |
 | `memories` | `memories` | 记忆列表（get_memories 响应） |
-| `ok` | `sessionId, deleted?/tool?/resetSession?` | 通用确认（set_context/cancel/create_session/delete_session/remember/delete_memory/confirm_revoke） |
+| `ok` | `sessionId, deleted?/tool?/resetSession?/mode?` | 通用确认（set_context/cancel/create_session/delete_session/remember/delete_memory/confirm_revoke/confirm_allow） |
 | `pong` | `ts` | ping 响应（宿主健康检查） |
 | `version` | `protocol, engine` | 版本协商（协议版本 + 引擎版本） |
 | `usage` | `stats` | token 用量统计（get_usage 响应） |
@@ -327,19 +340,23 @@ AI 调用需确认的工具（默认 `memory_save`；`flare server --confirm-too
 - 宿主未回 `confirm_result` 超时（默认 30s，`--confirm-timeout` 可配）→ 安全默认 `deny`
 - `deny` / `alternative` 不执行原工具，AI 收到拒绝提示后自然调整策略
 
-## 确认门管理（v0.6.8）
+## 确认门管理（v0.6.8/v0.6.10）
 
-宿主可随时查询/撤销放行（如面板"已自动放行的工具"开关）：
+宿主可随时查询/放行/撤销（如面板"已自动放行的工具"开关）：
 
 ```json
 {"type":"confirm_status","sessionId":"s1"}          → 确认名单 + 会话级/持久化放行名单（只读）
+{"type":"confirm_allow","sessionId":"s1","tool":"memory_save"}          → 显式放行（本会话，v0.6.10）
+{"type":"confirm_allow","sessionId":"s1","tool":"memory_save","mode":"always"} → 显式放行（跨会话持久化）
 {"type":"confirm_revoke","sessionId":"s1","tool":"memory_save"}   → 撤销该工具放行（恢复每次确认）
 {"type":"confirm_revoke","sessionId":"s1","resetSession":true}    → 清空会话级放行（不影响 always 持久化）
 ```
 
-- `confirm_status` 无放行记录时返回空名单（不创建会话）；`confirm_revoke` 无放行记录时幂等 ok
-- 宿主 UI 集成建议：确认弹窗内提供"管理已放行"入口 → `confirm_status` 列出 → 用户关闭某项 → `confirm_revoke`
-- 完整语义见 §18 / §19
+- `confirm_status` 无放行记录时返回空名单（不创建会话）；`confirm_revoke` 无放行记录时幂等 ok；
+  `confirm_allow` 缺 tool / 非法 mode 回 `error`（含用法提示）
+- 宿主 UI 集成建议：确认弹窗内提供"管理已放行"入口 → `confirm_status` 列出 → 用户关闭某项 → `confirm_revoke`；
+  "信任此工具"按钮 → `confirm_allow mode=always`（无需等下次触发确认）
+- 完整语义见 §18 / §19 / §21
 
 ## 取消流
 

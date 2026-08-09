@@ -603,6 +603,26 @@ export function startHostServer(opts: HostServerOptions) {
           reply({ type: 'ok', sessionId, ...(tool ? { tool } : {}), ...(resetSession ? { resetSession: true } : {}) })
           break
         }
+        case 'confirm_allow': {
+          // 宿主显式放行确认工具（v0.6.10）：无需等 confirm 事件触发——
+          //   { tool, mode? } mode: session（默认，本会话内不再确认）| always（跨会话持久化）
+          const sessionId = String(req.sessionId || 'default')
+          const tool = req.tool === undefined || req.tool === null ? '' : String(req.tool).trim()
+          if (!tool) {
+            reply({ type: 'error', message: 'confirm_allow 需要 tool 参数（要放行的工具名）' })
+            break
+          }
+          const mode = req.mode === undefined || req.mode === null ? 'session' : String(req.mode).toLowerCase()
+          if (mode !== 'session' && mode !== 'always') {
+            reply({ type: 'error', message: 'confirm_allow 需要合法 mode（session 本会话放行 / always 跨会话持久化）' })
+            break
+          }
+          const gate = getGate(sessionId)
+          if (mode === 'always') gate.allowAlways(tool)
+          else gate.allowSession(tool)
+          reply({ type: 'ok', sessionId, tool, mode })
+          break
+        }
         case 'models': {
           // 宿主查询可切换模型（v0.6.9）：当前配置主/视觉模型端点信息 + 本地 Ollama 模型列表（只读，不触发生成）
           reply({ type: 'models', ...(await collectModelInfo()) })

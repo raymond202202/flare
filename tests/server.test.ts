@@ -467,6 +467,59 @@ describe('flare host server 协议', () => {
     expect(msgs[0].resetSession).toBe(true)
   })
 
+  it('confirm_allow 缺 tool → error（参数校验）', async () => {
+    const msgs = await request({ type: 'confirm_allow', sessionId: 's-allow' }, { expect: ['error'] })
+    expect(msgs[0].type).toBe('error')
+    expect(msgs[0].message).toContain('confirm_allow')
+    expect(msgs[0].message).toContain('tool')
+  })
+
+  it('confirm_allow 非法 mode → error（含合法值提示）', async () => {
+    const msgs = await request(
+      { type: 'confirm_allow', sessionId: 's-allow', tool: 'memory_save', mode: 'forever' },
+      { expect: ['error'] }
+    )
+    expect(msgs[0].type).toBe('error')
+    expect(msgs[0].message).toContain('mode')
+    expect(msgs[0].message).toContain('session')
+    expect(msgs[0].message).toContain('always')
+  })
+
+  it('confirm_allow 缺省 mode → session 会话级放行，confirm_status 可见且 always 为空', async () => {
+    const sid = 's-allow-session'
+    const ok = await request({ type: 'confirm_allow', sessionId: sid, tool: 'memory_save' }, { expect: ['ok'] })
+    expect(ok[0].type).toBe('ok')
+    expect(ok[0].sessionId).toBe(sid)
+    expect(ok[0].tool).toBe('memory_save')
+    expect(ok[0].mode).toBe('session')
+    const st = await request({ type: 'confirm_status', sessionId: sid }, { expect: ['confirm_status'] })
+    expect(st[0].allowedTools).toContain('memory_save')
+    expect(st[0].sessionAllowed).toContain('memory_save')
+    expect(st[0].alwaysAllowed).toEqual([])
+  })
+
+  it('confirm_allow mode=always → 跨会话持久化，confirm_status always 可见；revoke 可撤销', async () => {
+    const sid = 's-allow-always'
+    const ok = await request(
+      { type: 'confirm_allow', sessionId: sid, tool: 'memory_save', mode: 'always' },
+      { expect: ['ok'] }
+    )
+    expect(ok[0].type).toBe('ok')
+    expect(ok[0].mode).toBe('always')
+    const st = await request({ type: 'confirm_status', sessionId: sid }, { expect: ['confirm_status'] })
+    expect(st[0].allowedTools).toContain('memory_save')
+    expect(st[0].alwaysAllowed).toContain('memory_save')
+    // revoke 撤销后恢复每次确认
+    const rv = await request(
+      { type: 'confirm_revoke', sessionId: sid, tool: 'memory_save' },
+      { expect: ['ok'] }
+    )
+    expect(rv[0].type).toBe('ok')
+    const st2 = await request({ type: 'confirm_status', sessionId: sid }, { expect: ['confirm_status'] })
+    expect(st2[0].allowedTools).toEqual([])
+    expect(st2[0].alwaysAllowed).toEqual([])
+  })
+
   it('chat 带非法 maxTokens → error（v0.6.3 采样参数校验，不触发生成）', async () => {
     const msgs = await request({ type: 'chat', sessionId: 's-param', input: 'hi', maxTokens: -5 }, { expect: ['error'] })
     expect(msgs[0].type).toBe('error')
