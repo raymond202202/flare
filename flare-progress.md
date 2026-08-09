@@ -3,8 +3,8 @@
 > 目标：flare 是 Pulse/StorySpire 依赖的 AI Agent 引擎（TS）。任何改动必须安全（tsc 0 错 + 测试全绿才 commit）。
 > 铁律：禁止 push；禁止修改 src/core/agent.ts 的 Agent.run 核心循环。
 
-> **最新状态（v0.6.1）**：CLI/server 接入 ConfirmationGate 完成（宿主弹窗确认流程：confirm 事件 + confirm_result 请求；写回类工具默认 memory_save 经确认门；always 持久化到记忆库 settings 表；超时安全 deny）；245/245 全绿（commit bd80b9f 未 push）。
-> 下一步候选：① server 协议 chat 参数透传（maxTokens/temperature）；② MCP 更多协议特性（resources 真实暴露/HTTP transport）；③ agent.ts trimContext 自动裁剪（风险高暂缓）。
+> **最新状态（v0.6.1）**：CLI/server 接入 ConfirmationGate 完成（宿主弹窗确认流程：confirm 事件 + confirm_result 请求；写回类工具默认 memory_save 经确认门；always 持久化到记忆库 settings 表；超时安全 deny）+ MCP resources 真实暴露（resources/list + resources/read）；251/251 全绿（commits bd80b9f/2673196 及 N6 待提交，未 push）。
+> 下一步候选：① server 协议 chat 参数透传（maxTokens/temperature）；② MCP 更多特性（prompts 真实暴露/HTTP transport）；③ agent.ts trimContext 自动裁剪（风险高暂缓）。
 
 ### 2026-08-09 第四轮实施（v0.6.1）——CLI/server 接入 ConfirmationGate
 
@@ -28,8 +28,12 @@
     回 allow_once → tool_result → done（事件流 tool_call,confirm,tool_result,text,done PASS）
 - **已知行为（非本轮引入，记录备忘）**：server 无 profile 时内置 memory_save 写全局库
   （~/.flare/flare.db）而非 --storage 指定库——与 Agent 默认一致，宿主应用应传 profile.tools 绑定独立库
-- **下一步候选**：① server 协议 chat 参数透传（maxTokens/temperature，需评估）；② MCP 增强
-  （resources 真实暴露/HTTP transport）；③ agent.ts trimContext 自动裁剪（风险高，仍暂缓）
+- **N6 MCP resources 真实暴露**（commit 待写）：MCPServer 新增 `resources` 选项（uri/name/description/mimeType/read 支持异步）——
+  `resources/list` 真实元数据 + `resources/read` 内容（未知 uri -32602、read 抛错 -32603 服务器不崩）；
+  注入后 initialize capabilities 声明 resources（缺省不声明，v0.5.9 空列表兼容）；`McpResource`/`McpResourceContents` 类型库导出；
+  docs/mcp.md 资源暴露章节 + 6 测试（**251/251 全绿**，tsc 0 错误，零 agent.ts 改动）
+- **下一步候选**：① server 协议 chat 参数透传（maxTokens/temperature，需评估）；② MCP 更多特性
+  （prompts 真实暴露 / HTTP transport）；③ agent.ts trimContext 自动裁剪（风险高，仍暂缓）
 
 ---
 
