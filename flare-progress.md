@@ -3,10 +3,10 @@
 > 目标：flare 是 Pulse/StorySpire 依赖的 AI Agent 引擎（TS）。任何改动必须安全（tsc 0 错 + 测试全绿才 commit）。
 > 铁律：禁止 push；禁止修改 src/core/agent.ts 的 Agent.run 核心循环。
 
-> **最新状态（v0.6.6）**：MCP HTTP 接入 McpManager + CLI `flare mcp call`/`mcp status`；313/313 全绿（commits `0be72bd`/`3c9e54d`/`ce7291f`，未 push）。
+> **最新状态（v0.6.6）**：MCP HTTP 接入 McpManager + CLI `flare mcp call`/`mcp status` + MCP resources 客户端消费；317/317 全绿（commits `0be72bd`/`3c9e54d`/`ce7291f`/`74306d0`，未 push）。
 > 下一步候选：① agent.ts trimContext 自动裁剪（风险高仍暂缓）；② 其他安全的外围增强。
 
-### 2026-08-09 第八轮实施（v0.6.6）——MCP HTTP 接入 McpManager + CLI `flare mcp call`/`mcp status`
+### 2026-08-09 第八轮实施（v0.6.6）——MCP HTTP 接入 McpManager + CLI `flare mcp call`/`mcp status` + resources 客户端消费
 
 - **P15 MCP HTTP 接入 McpManager**（commit `0be72bd`）：
   - `McpServerConfig` 新增 `url`（HTTP 端点）/ `timeoutMs`（可选）——配了 `url` 走 `MCPHttpClient`
@@ -21,13 +21,19 @@
 - **P16b CLI `flare mcp status`**（commit `ce7291f`）：列出配置的 MCP 服务器（名称 + 传输类型 HTTP/stdio +
   端点/命令，`--config` 可指定）；空配置友好提示退出码 0；与 mcp call 组成完整命令组
   （共享 `mcpCmd` 父命令，修复 call 误挂 status 下的 commander 注册问题）
-- 文档：docs/mcp.md McpManager 接入 + CLI mcp call/status 章节 + README CLI 表/Changelog + 版本号 0.6.6
-- **313/313 全绿**（299 + 14 新增：McpManager×HTTP 5——配置 url 连接桥接+真实执行/HTTP 不可达错误记录/
+- **P17 MCP resources 客户端消费**（commit `74306d0`）：stdio MCPClient 与 HTTP MCPHttpClient 新增
+  `listResources()`（元数据 uri/name/description/mimeType）/ `readResource(uri)`（内容列表，未知 uri
+  协议错误 reject）——与 MCPServer resources 暴露（v0.6.1）对称闭环；`McpResourceInfo` 类型 + 库导出；
+  mock fixture 支持 resources（capabilities 声明 resources）
+- 文档：docs/mcp.md McpManager 接入 + CLI mcp call/status + resources 客户端消费章节 + README CLI 表/Changelog + 版本号 0.6.6
+- **317/317 全绿**（299 + 18 新增：McpManager×HTTP 5——配置 url 连接桥接+真实执行/HTTP 不可达错误记录/
   无 url 无 command 报错/disconnect/url 优先；CLI e2e 9——--url 直连/配置 url/配置 command stdio/
-  无参数兜底/未配置服务器/非法 JSON/未知工具/status 列表/status 空配置），tsc 0 错误，零 agent.ts 改动
+  无参数兜底/未配置服务器/非法 JSON/未知工具/status 列表/status 空配置；resources 消费 4——
+  stdio 元数据/stdio 读取/stdio 未知 uri reject/HTTP 闭环），tsc 0 错误，零 agent.ts 改动
 - **冒烟实测**：`flare mcp-server --http --port 19211 -t read_file` + `flare mcp call --url` /
   配置 url 走 HTTP——真实调用 read_file 输出文件内容；未知工具/未配置服务器退出码 1 提示清晰；
-  `flare mcp status` 输出 HTTP/stdio 服务器清单与端点
+  `flare mcp status` 输出 HTTP/stdio 服务器清单与端点；startMcpHttpServer 注入 resources +
+  MCPHttpClient 真实 listResources/readResource 成功、未知 uri reject
 - **下一步候选**：① agent.ts trimContext 自动裁剪（风险高仍暂缓）；② 其他安全的外围增强
 
 ---
