@@ -337,12 +337,16 @@ Interactive mode commands:
 - 🧩 **`wrapConfirmTools` 纯函数 + `DEFAULT_CONFIRM_TOOLS`**：名单过滤（命中包装/未命中原样/空名单关闭）；库导出
   （宿主可复用 gate + 名单）；`HostServerOptions.confirmTools` / `confirmTimeoutMs` 可配
 - ⌨️ **CLI `flare server` 新参数**：`--confirm-tools <a,b,c>`（逗号分隔名单，空串关闭）`--confirm-timeout <ms>`
-- 🧪 新增 12 项测试（wrapConfirmTools 名单过滤 5：含内置工具集防绕过回归 + Agent×确认门集成 4：allow_once/deny/allow_session 记忆化/超时 deny
-  + e2e 协议校验 3：缺 id/非法 decision/未知 id 静默不崩），共 **245/245 全绿**，tsc 0 错误，零 agent.ts 改动
+- 📦 **MCPServer resources 真实暴露（src/mcp/server.ts）**：`resources` 选项注入资源（uri/name/description/mimeType/read 支持异步）——
+  `resources/list` 返回真实元数据、`resources/read` 返回内容（未知 uri -32602、read 抛错 -32603 服务器不崩）；
+  注入后 initialize capabilities 声明 `resources`（缺省不声明，v0.5.9 空列表兼容）；`McpResource` 类型库导出
+- 🧪 新增 18 项测试（wrapConfirmTools 名单过滤 5：含内置工具集防绕过回归 + Agent×确认门集成 4：allow_once/deny/allow_session 记忆化/超时 deny
+  + e2e 协议校验 3：缺 id/非法 decision/未知 id 静默不崩 + MCP resources 6：真实列表/同步读/异步读/未知 uri/read 抛错/capabilities 声明），共 **251/251 全绿**，tsc 0 错误，零 agent.ts 改动
 - EN: Server now wires ConfirmationGate — AI calls to write-back tools (memory_save by default) emit a `confirm` event;
   the host shows a prompt and replies `confirm_result` (allow_once/session/always/deny/alternative). Session memory,
   always-persistence (settings KV), and timeout-safety all inherited. `wrapConfirmTools`/`DEFAULT_CONFIRM_TOOLS` exported.
-  245/245 tests, zero agent.ts changes.
+  MCPServer also exposes real resources (resources/list + resources/read, async read supported).
+  251/251 tests, zero agent.ts changes.
 
 #### v0.6.0 (2026-08-09) — 宿主会话/模型可观测性增强 / Host session & model observability
 - **协议 `recent_sessions`（src/server.ts）**：会话列表 + 首条 user 消息预览（`preview`，最多 120 字符）——
