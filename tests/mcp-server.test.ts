@@ -5,6 +5,7 @@ import { dirname, join } from 'node:path'
 import { MCPServer, toMcpTool } from '../src/mcp/server.js'
 import { MCPClient } from '../src/mcp/client.js'
 import { readFileTool, type Tool } from '../src/tools/index.js'
+import type { McpResource } from '../src/mcp/types.js'
 import { MCP_PROTOCOL_VERSION } from '../src/mcp/client.js'
 import pkg from '../package.json' with { type: 'json' }
 
@@ -41,10 +42,10 @@ const slowTool: Tool = {
 }
 
 /** 进程内测试台：注入 input/write，模拟 MCP 客户端逐行发请求 */
-function createHarness(customTools?: Tool[]) {
+function createHarness(customTools?: Tool[], customResources?: McpResource[]) {
   const writes: string[] = []
   const input = new Readable({ read() {} })
-  const server = new MCPServer({ tools: customTools, write: (l) => writes.push(l), input })
+  const server = new MCPServer({ tools: customTools, resources: customResources, write: (l) => writes.push(l), input })
   server.start()
   const send = (obj: unknown) => { input.push(JSON.stringify(obj) + '\n') }
   const flush = () => new Promise<void>((r) => setTimeout(r, 30))
@@ -194,6 +195,87 @@ describe('MCPServer（stdio NDJSON JSON-RPC，零依赖）', () => {
     expect(resps[0].result).toEqual({ resources: [] })
     expect(resps[1].result).toEqual({ prompts: [] })
     h.server.close()
+  })
+
+  it('resources/list：注入的资源真实暴露（uri/name/description/mimeType 元数据）', async () => {
+    const resources: McpResource[] = [
+      { uri: 'memory://preferences', name: '用户偏好', description: '用户的持久偏好记忆', mimeType: 'text/plain', read: () => '偏好深色主题' },
+      { uri: 'file:///etc/hostname', name: '主机名', read: () => 'flare-host' },
+    ]
+    const h = createHarness(undefined, resources)
+    h.send({ jsonrpc: '2.0', id: 1, method: 'resources/list', params: {} })
+    await h.flush()
+    const res = h.last()
+    expect(res.result.resources).toEqual([
+      { uri: 'memory://preferences', name: '用户偏好', description: '用户的持久偏好记忆', mimeType: 'text/plain' },
+      { uri: 'file:///etc/hostname', name: '主机名' },
+    ])
+    h.server.close()
+  })
+
+  it('resources/read：读取资源内容（同步 read + mimeType）', async () => {
+    const resources: McpResource[] = [
+      { uri: 'memory://preferences', name: '用户偏好', mimeType: 'text/plain', read: () => '偏好深色主题' },
+    ]
+    const h = createHarness(undefined, resources)
+    h.send({ jsonrpc: '2.0', id: 2, method: 'resources/read', params: { uri: 'memory://preferences' } })
+    await h.flush()
+    const res = h.last()
+    expect(res.result.contents).toEqual([{ uri: 'memory://preferences', mimeType: 'text/plain', text: '偏好深色主题' }])
+    h.server.close()
+  })
+
+  it('resources/read：异步 read 也支持（await 返回值）', async () => {
+    const resources: McpResource[] = [
+      { uri: 'async://status', name: '异步状态', read: async () => 'ok' },
+    ]
+    const h = createHarness(undefined, resources)
+    h.send({ jsonrpc: '2.0', id: 3, method: 'resources/read', params: { uri: 'async://status' } })
+    await h.flush()
+    const res = h.last()
+    expect(res.result.contents[0].text).toBe('ok')
+    h.server.close()
+  })
+
+  it('resources/read：未知 uri → -32602 协议错误', async () => {
+    const h = createHarness(undefined, [{ uri: 'memory://preferences', name: '用户偏好', read: () => 'x' }])
+    h.send({ jsonrpc: '2.0', id: 4, method: 'resources/read', params: { uri: 'memory://nonexist' } })
+    await h.flush()
+    const res = h.last()
+    expect(res.error.code).toBe(-32602)
+    expect(res.error.message).toContain('Unknown resource')
+    h.server.close()
+  })
+
+  it('resources/read：read() 抛错 → -32603（服务器不崩，后续请求正常）', async () => {
+    const resources: McpResource[] = [
+      { uri: 'broken://x', name: '坏资源', read: () => { throw new Error('读取失败: 磁盘错误') } },
+    ]
+    const h = createHarness(undefined, resources)
+    h.send({ jsonrpc: '2.0', id: 5, method: 'resources/read', params: { uri: 'broken://x' } })
+    await h.flush()
+    const res = h.last()
+    expect(res.error.code).toBe(-32603)
+    expect(res.error.message).toContain('磁盘错误')
+    // 服务器未崩：ping 正常
+    h.send({ jsonrpc: '2.0', id: 6, method: 'ping', params: {} })
+    await h.flush()
+    expect(h.last().result).toEqual({})
+    h.server.close()
+  })
+
+  it('initialize：配置了 resources 时 capabilities 声明 resources 能力（缺省不声明）', async () => {
+    const withRes = createHarness(undefined, [{ uri: 'memory://preferences', name: '用户偏好', read: () => 'x' }])
+    withRes.send({ jsonrpc: '2.0', id: 1, method: 'initialize', params: {} })
+    await withRes.flush()
+    expect(withRes.last().result.capabilities).toHaveProperty('resources')
+    withRes.server.close()
+
+    const withoutRes = createHarness()
+    withoutRes.send({ jsonrpc: '2.0', id: 2, method: 'initialize', params: {} })
+    await withoutRes.flush()
+    expect(withoutRes.last().result.capabilities).not.toHaveProperty('resources')
+    withoutRes.server.close()
   })
 
   it('toMcpTool：flare Tool → MCP 工具定义（名称/描述/schema 映射）', () => {
