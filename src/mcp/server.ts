@@ -121,8 +121,10 @@ export class MCPServer {
       this.safeWrite({ jsonrpc: '2.0', id: null, error: { code: -32700, message: 'Parse error' } })
       return
     }
-    // v0.6.12：客户端对服务器主动请求（requestRoots）的响应行——按 id 匹配 pending，不当作新请求
-    if (msg && msg.id !== undefined && this.pending.has(msg.id)) {
+    // v0.6.12：客户端对服务器主动请求（requestRoots）的响应行——按 id 匹配 pending，不当作新请求。
+    // 注意：响应行无 method；带 method 的行是客户端发来的新请求（id 可能与 pending 撞车，如双方都从 1 自增），
+    // 不能误判为响应——加 method 校验，请求行始终走正常分发。
+    if (msg && msg.id !== undefined && typeof msg.method !== 'string' && this.pending.has(msg.id)) {
       const p = this.pending.get(msg.id)!
       this.pending.delete(msg.id)
       clearTimeout(p.timer)

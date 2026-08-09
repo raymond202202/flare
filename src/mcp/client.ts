@@ -105,7 +105,7 @@ export class MCPClient {
     } catch {
       return
     }
-    if (msg && msg.id !== undefined && this.pending.has(msg.id)) {
+    if (msg && msg.id !== undefined && typeof msg.method !== 'string' && this.pending.has(msg.id)) {
       const p = this.pending.get(msg.id)!
       this.pending.delete(msg.id)
       clearTimeout(p.timer)
