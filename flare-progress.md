@@ -3,8 +3,26 @@
 > 目标：flare 是 Pulse/StorySpire 依赖的 AI Agent 引擎（TS）。任何改动必须安全（tsc 0 错 + 测试全绿才 commit）。
 > 铁律：禁止 push；禁止修改 src/core/agent.ts 的 Agent.run 核心循环。
 
-> **最新状态（v0.6.2）**：MCP prompts 闭环完成（MCPServer 真实暴露 prompts/list + prompts/get 渲染；MCPClient 对称消费 listPrompts/getPrompt；prompts 真实互通 e2e 通过）；262/262 全绿（commits d780c5c/8cf3088 及 N8 待提交，未 push）。
-> 下一步候选：① server 协议 chat 参数透传（maxTokens/temperature，需评估）；② MCP HTTP transport（可选）；③ agent.ts trimContext 自动裁剪（风险高暂缓）。
+> **最新状态（v0.6.3）**：server 协议 chat 采样参数透传完成（maxTokens/temperature → ProviderOptions → LLM 请求体 max_tokens/temperature）；272/272 全绿（commit 784af29，未 push）。
+> 下一步候选：① MCP HTTP transport（可选）；② agent.ts trimContext 自动裁剪（风险高暂缓）；③ 其他外围增强。
+
+### 2026-08-09 第六轮实施（v0.6.3）——server 协议 chat 采样参数透传
+
+- **P10 chat 采样参数透传**（commit `784af29`）：
+  - server 协议 chat 新增 `maxTokens`（正整数，最大输出 token 数）/ `temperature`（0~2，采样温度）——
+    非法值直接回 error 不触发生成；合法值透传到 LLM 请求体（`max_tokens` / `temperature`）
+  - `ProviderOptions` 扩展 `maxTokens`/`temperature` 可选字段；`OpenAIProvider.chat`/`chatStream` 请求体透传
+    （仅显式传入时携带，缺省不传保持服务端默认——零行为回归）
+  - 同一会话采样参数变化自动重建 Agent（与切换 model 同机制，历史从记忆库恢复）；`llmOptsChanged` 逐字段比较
+  - docs/host-protocol.md chat 请求参数表 + README Changelog + 版本号 v0.6.3（src 无版本硬编码，server version 协商自动跟随）
+  - **272/272 全绿**（262 + 10 新增：provider 请求体透传 5——chat/chatStream/缺省不传/temperature 0 不丢失；
+    server 协议 5——非法 maxTokens/-5、1.5、非法 temperature/3、'abc' 回 error、合法值流程完整），tsc 0 错误，零 agent.ts 改动
+  - **冒烟实测**：本机 Ollama qwen2.5:7b 真实 chat 带 `maxTokens:50, temperature:0.2`——输出被截断在 ~50 token
+    （未写完 200 字短文），证明 max_tokens 真实生效，事件流 text → done 完整
+- **下一步候选**：① MCP HTTP transport（可选）；② agent.ts trimContext 自动裁剪（风险高仍暂缓）；
+  ③ 其他安全的外围增强（如 CLI --max-tokens 默认值 / 协议 context_status 含预算建议）
+
+---
 
 ### 2026-08-09 第五轮实施（v0.6.2）——MCP prompts 真实暴露 + 客户端消费闭环
 
