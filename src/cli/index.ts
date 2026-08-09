@@ -8,10 +8,11 @@
  */
 
 import { Command } from 'commander'
-import { Agent, createProvider, getMemoryStore, config, tools, McpManager, estimateMessagesTokens, type AgentConfig, type McpServerStatus } from '../index.js'
+import { Agent, createProvider, getMemoryStore, config, tools, McpManager, estimateMessagesTokens, ConfirmationGate, memoryStoreKv, wrapConfirmTools, type AgentConfig, type McpServerStatus, type ConfirmDecision } from '../index.js'
 import chalk from 'chalk'
 import { execSync } from 'child_process'
 import { createRequire } from 'module'
+import { createInterface } from 'node:readline'
 import { pathToFileURL } from 'node:url'
 import { LineInput } from './line-input.js'
 import { R, O, A, Y, D, createFlameState, updateFlame, renderFlameFrame, flameBreathColor } from './flame-banner.js'
@@ -32,6 +33,27 @@ async function startInteractive() {
   const sessionId = store.createSession('CLI 会话')
   // MCP 管理器（v0.5.5）：~/.flare/mcp.json 配置外部 MCP 服务器，/mcp connect 注入工具
   const mcpManager = new McpManager()
+  // 确认门（v0.6.7）：写回类工具（memory_save）执行前终端内确认——allow_session 会话记忆、
+  // always 持久化到全局库 settings 表（跨会话记住），超时安全 deny；/allow 管理放行名单
+  const gate = new ConfirmationGate({
+    sessionId,
+    store: memoryStoreKv(store),
+    confirmer: (toolName, args) => terminalConfirmer({
+      toolName,
+      args,
+      ask: (prompt) => new Promise<string>((resolve) => {
+        // 确认期间渲染循环已暂停、回显已恢复：readline 读一行即可
+        const rl = createInterface({ input: process.stdin, output: process.stdout })
+        rl.question(prompt, (ans) => {
+          rl.close()
+          resolve(ans.trim().toLowerCase())
+        })
+      }),
+      onPause: () => { stopRenderLoop(); restoreEcho() },
+      onResume: () => { disableEcho(); startRenderLoop(); renderFrame() },
+      onFeedback: (msg) => { agentOutput += Y(`  ${msg}\n`) },
+    }),
+  })
   // 主模型：settings main_model（/model 切换）优先，否则默认（.env DEFAULT_MODEL → 自动路由）
   // MCP 工具：已连接的服务器工具并入内置工具集（重建 Agent 时生效）
   const makeAgent = () => {
@@ -39,11 +61,24 @@ async function startInteractive() {
     const mcpTools = mcpManager.getAllTools()
     const cfg: AgentConfig = { sessionId }
     if (savedModel) cfg.llm = createProvider({ model: savedModel })
-    if (mcpTools.length > 0) cfg.tools = [...tools, ...mcpTools]
+    // 确认门（v0.6.7）：始终显式传工具集（内置 + MCP）再包装——避免 Agent 回退内置工具绕过确认门
+    cfg.tools = wrapConfirmTools([...tools, ...mcpTools], gate, CLI_CONFIRM_TOOLS)
     return new Agent(cfg)
   }
   let agent = makeAgent()
   const isUnix = process.platform !== 'win32'
+  // 终端回显开关（v0.6.7 提升为会话级）：Agent 运行期间关回显，确认弹窗期间临时恢复
+  let echoDisabled = false
+  const disableEcho = () => {
+    if (isUnix && !echoDisabled) {
+      try { execSync('stty -echo', { stdio: 'ignore' }); echoDisabled = true } catch { /* 忽略 */ }
+    }
+  }
+  const restoreEcho = () => {
+    if (isUnix && echoDisabled) {
+      try { execSync('stty echo', { stdio: 'ignore' }); echoDisabled = false } catch { /* 忽略 */ }
+    }
+  }
 
   // ===== 常驻火焰动画 =====
   const flame = createFlameState()
@@ -148,10 +183,9 @@ async function startInteractive() {
     pendingText = ''
     agentOutput += O(`🔥 flare> ${input}`) + '\n\n'
 
-    let echoDisabled = false
-    if (isUnix) {
-      try { execSync('stty -echo', { stdio: 'ignore' }); echoDisabled = true } catch { /* 忽略 */ }
-    }
+    let echoWasOff = false
+    disableEcho()
+    echoWasOff = echoDisabled
 
     try {
       for await (const chunk of agent.run(input, attachments)) {
@@ -180,9 +214,7 @@ async function startInteractive() {
       flushDraft()
       agentOutput += chalk.red(`\n❌ 错误: ${e.message}\n`)
     } finally {
-      if (isUnix && echoDisabled) {
-        try { execSync('stty echo', { stdio: 'ignore' }) } catch { /* 忽略 */ }
-      }
+      if (echoWasOff) restoreEcho()
       agentRunning = false
       renderFrame()
     }
@@ -215,6 +247,16 @@ async function startInteractive() {
       // /context 命令（v0.5.6）：读取当前 Agent 的上下文占用（public getMessages()，无侵入）
       const msgs = agent.getMessages()
       return { messageCount: msgs.length, estimatedTokens: estimateMessagesTokens(msgs) }
+    }, {
+      // /allow 命令（v0.6.7）：确认门放行名单管理（含 always 持久化——isAllowed 逐个查询确认名单）
+      list: () => CLI_CONFIRM_TOOLS.filter((t) => gate.isAllowed(t)),
+      revoke: (name) => {
+        if (gate.isAllowed(name)) {
+          gate.revoke(name)
+          return true
+        }
+        return false
+      },
     })
     agentRunning = false
     renderFrame()
@@ -303,6 +345,97 @@ function parseImageCommand(cmd: string): { text: string; attachments: string[] }
   return { text: rest.slice(sp + 1).trim(), attachments: [rest.slice(0, sp)] }
 }
 
+/**
+ * CLI 交互模式确认名单（v0.6.7）：AI 写回类工具（持久记忆）执行前终端内确认。
+ * 与 server 端默认名单（DEFAULT_CONFIRM_TOOLS）一致；allow_session/always 可免打扰。
+ */
+export const CLI_CONFIRM_TOOLS = ['memory_save']
+
+/** 解析确认输入为决策（v0.6.7）：y/yes→allow_once，s/session→allow_session，a/always→always；其余（含 n/空/未知）→deny（安全默认） */
+export function parseConfirmAnswer(ans: string): ConfirmDecision {
+  switch ((ans || '').trim().toLowerCase()) {
+    case 'y':
+    case 'yes':
+    case 'allow':
+    case 'allow_once':
+      return 'allow_once'
+    case 's':
+    case 'session':
+    case 'allow_session':
+      return 'allow_session'
+    case 'a':
+    case 'always':
+      return 'always'
+    default:
+      return 'deny'
+  }
+}
+
+/** 确认 UI 文案（v0.6.7）：工具名 + 参数摘要（JSON 截断 120 字符） */
+export function formatConfirmPrompt(toolName: string, args: Record<string, any>): string {
+  const raw = args && Object.keys(args).length > 0 ? JSON.stringify(args) : ''
+  const summary = raw ? raw.slice(0, 120) + (raw.length > 120 ? '…' : '') : ''
+  const head = `⚠️ AI 想调用「${toolName}」${summary ? `（${summary}）` : ''}`
+  return [
+    `\n${head}`,
+    '  [y] 允许一次    [s] 本次会话允许    [a] 总是允许    [n] 拒绝（默认）',
+    '  你的选择 [y/s/a/n]: ',
+  ].join('\n')
+}
+
+/** 决策反馈文案（确认后追加到输出区，用户能看到结果） */
+function confirmFeedbackText(decision: ConfirmDecision): string {
+  switch (decision) {
+    case 'allow_once': return '已允许本次执行'
+    case 'allow_session': return '已放行（本次会话内不再确认）'
+    case 'always': return '已永久放行（跨会话记住；/allow revoke 可撤销）'
+    case 'alternative': return '已要求替代方案'
+    default: return '已拒绝'
+  }
+}
+
+/** 终端确认器选项（v0.6.7） */
+export interface TerminalConfirmOptions {
+  toolName: string
+  args: Record<string, any>
+  /** 读行实现（CLI 用 readline question；测试注入 fake） */
+  ask: (prompt: string) => Promise<string>
+  /** 确认前回调（暂停动画渲染、恢复终端回显） */
+  onPause?: () => void
+  /** 确认后回调（恢复动画渲染、关闭回显） */
+  onResume?: () => void
+  /** 反馈回调（向输出区追加一行确认结果） */
+  onFeedback?: (message: string) => void
+}
+
+/**
+ * 终端内确认流程（v0.6.7，可测）：显示确认 UI → ask 读一行 → 解析决策。
+ * - 暂停/恢复回调包裹确认期间（避免常驻动画重绘干扰输入）
+ * - ask 抛错按 deny（安全默认）处理
+ */
+export async function terminalConfirmer(opts: TerminalConfirmOptions): Promise<ConfirmDecision> {
+  opts.onPause?.()
+  try {
+    const answer = await opts.ask(formatConfirmPrompt(opts.toolName, opts.args))
+    const decision = parseConfirmAnswer(answer)
+    opts.onFeedback?.(`⚠️ 工具「${opts.toolName}」${confirmFeedbackText(decision)}`)
+    return decision
+  } catch {
+    opts.onFeedback?.(`⚠️ 工具「${opts.toolName}」确认输入异常，已按拒绝处理`)
+    return 'deny'
+  } finally {
+    opts.onResume?.()
+  }
+}
+
+/** /allow 命令回调（v0.6.7）：确认门放行名单管理（列出已放行 / 撤销放行） */
+export interface AllowGateHooks {
+  /** 列出确认名单内当前被放行的工具（含 always 持久化） */
+  list(): string[]
+  /** 撤销放行（返回是否确实撤销了） */
+  revoke(name: string): boolean
+}
+
 /** /mcp 命令回调（CLI 注入真实实现；测试注入 fake） */
 export interface McpCommandHooks {
   /** 列出配置的 MCP 服务器状态 */
@@ -327,7 +460,9 @@ export async function handleSlashCommand(
   /** /mcp 命令回调（v0.5.5，外部 MCP 服务器管理） */
   mcp?: McpCommandHooks,
   /** /context 命令回调（v0.5.6，读取当前会话上下文占用） */
-  contextInfo?: ContextInfoGetter
+  contextInfo?: ContextInfoGetter,
+  /** /allow 命令回调（v0.6.7，确认门放行名单管理） */
+  allowGate?: AllowGateHooks
 ): Promise<'exit' | 'continue'> {
   const lower = cmd.toLowerCase()
   // /remember 带内容，必须用前缀匹配（switch 精确匹配会永远"未知命令"）
@@ -469,6 +604,37 @@ export async function handleSlashCommand(
     return 'continue'
   }
 
+  // /allow 确认门放行名单管理（v0.6.7）：/allow 列出已放行 | /allow revoke <工具名> 撤销
+  if (lower === '/allow' || lower.startsWith('/allow ')) {
+    if (!allowGate) {
+      output(chalk.yellow('\n  确认门未启用（当前环境未提供确认门）'))
+      return 'continue'
+    }
+    const arg = cmd.replace(/^\/allow(?:\s+|$)/, '').trim()
+    const [sub, ...rest] = arg ? arg.split(/\s+/) : []
+    if (!sub) {
+      const allowed = allowGate.list()
+      if (allowed.length === 0) {
+        output(chalk.gray('\n  当前没有已放行的确认工具（AI 写回类工具每次都会请求确认）'))
+      } else {
+        output(chalk.cyan('\n✅ 已放行的确认工具:'))
+        for (const n of allowed) output(`  ${chalk.green(n)}`)
+      }
+      output(chalk.gray('  /allow revoke <工具名> 撤销放行（恢复每次确认）'))
+      return 'continue'
+    }
+    if (sub === 'revoke' && rest.length > 0) {
+      const name = rest.join(' ')
+      const ok = allowGate.revoke(name)
+      output(ok
+        ? chalk.green(`\n  已撤销 ${name} 的放行（恢复每次确认）`)
+        : chalk.yellow(`\n  ${name} 未被放行`))
+      return 'continue'
+    }
+    output(chalk.yellow('\n  用法: /allow | /allow revoke <工具名>'))
+    return 'continue'
+  }
+
   switch (lower) {
     case '/help':
       output(chalk.cyan('\n可用命令:'))
@@ -487,6 +653,8 @@ export async function handleSlashCommand(
       output('  /mcp         - 查看 MCP 服务器状态（~/.flare/mcp.json 配置）')
       output('  /mcp connect <name> - 连接 MCP 服务器并注入其工具')
       output('  /mcp disconnect <name> - 断开 MCP 服务器')
+      output('  /allow     - 查看已放行的确认工具（AI 写回类工具执行前会请求确认）')
+      output('  /allow revoke <工具名> - 撤销放行（恢复每次确认）')
       output('  /pause       - 暂停动画（屏幕静止，可选中复制输出）')
       output('  /resume      - 恢复动画')
       output(chalk.gray('  💡 对话里直接发图片路径也会自动识别（如: 看看这张图 xxx.png）'))
