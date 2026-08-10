@@ -69,6 +69,9 @@ export interface MCPClientOptions {
   /** 资源列表变化通知回调（v0.6.20）：服务器推送 notifications/resources/list_changed（资源列表动态变化）
    *  → 按此回调触发（无参）；收到后应重新拉取 resources/list 刷新清单；缺省忽略 */
   onResourcesChanged?: () => void
+  /** 提示词列表变化通知回调（v0.6.25）：服务器推送 notifications/prompts/list_changed（提示词列表动态变化）
+   *  → 按此回调触发（无参）；收到后应重新拉取 prompts/list 刷新清单；缺省忽略 */
+  onPromptsChanged?: () => void
 }
 
 export class MCPClient {
@@ -88,6 +91,7 @@ export class MCPClient {
   private readonly onProgress?: (params: McpProgressParams) => void
   private readonly onToolsChanged?: () => void
   private readonly onResourcesChanged?: () => void
+  private readonly onPromptsChanged?: () => void
 
   constructor(opts: MCPClientOptions) {
     this.timeoutMs = opts.timeoutMs || DEFAULT_TIMEOUT_MS
@@ -98,6 +102,7 @@ export class MCPClient {
     this.onProgress = opts.onProgress
     this.onToolsChanged = opts.onToolsChanged
     this.onResourcesChanged = opts.onResourcesChanged
+    this.onPromptsChanged = opts.onPromptsChanged
     this.child = spawn(opts.command, opts.args || [], {
       env: opts.env ? { ...process.env, ...opts.env } : process.env,
       stdio: ['pipe', 'pipe', 'pipe'],
@@ -156,7 +161,8 @@ export class MCPClient {
   /** 处理服务器通知（v0.6.13）：notifications/message → onLog 回调转发；v0.6.15：notifications/resources/updated
    *  → onResourceUpdated 回调转发（已订阅资源更新）；v0.6.16：notifications/progress → onProgress 回调转发；
    *  v0.6.20：notifications/tools/list_changed → onToolsChanged、notifications/resources/list_changed →
-   *  onResourcesChanged（列表变化，应重新拉取）。缺省忽略对应回调；通知无需响应，不干扰后续请求 */
+   *  onResourcesChanged（列表变化，应重新拉取）；v0.6.25：notifications/prompts/list_changed → onPromptsChanged。
+   *  缺省忽略对应回调；通知无需响应，不干扰后续请求 */
   private handleNotification(msg: any): void {
     if (msg.method === 'notifications/message') {
       if (typeof this.onLog !== 'function') return
@@ -195,6 +201,12 @@ export class MCPClient {
       // v0.6.20 列表变化通知：服务器资源列表动态变化 → 客户端应重新拉取 resources/list
       if (typeof this.onResourcesChanged !== 'function') return
       this.onResourcesChanged()
+      return
+    }
+    if (msg.method === 'notifications/prompts/list_changed') {
+      // v0.6.25 列表变化通知：服务器提示词列表动态变化 → 客户端应重新拉取 prompts/list
+      if (typeof this.onPromptsChanged !== 'function') return
+      this.onPromptsChanged()
     }
   }
 

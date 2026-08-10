@@ -531,10 +531,11 @@ describe('MCPClient progress + cancelled 通知（v0.6.16：onProgress 接收 + 
   })
 })
 
-describe('MCPClient 列表变化通知（v0.6.20：onToolsChanged/onResourcesChanged 接收 list_changed）', () => {
-  it('服务器推送 notifications/tools/list_changed + resources/list_changed → 对应回调各触发一次（list-changed 模式）', async () => {
+describe('MCPClient 列表变化通知（v0.6.20：onToolsChanged/onResourcesChanged 接收 list_changed；v0.6.25 补齐 onPromptsChanged）', () => {
+  it('服务器推送 notifications/tools/list_changed + resources/list_changed + prompts/list_changed → 对应回调各触发一次（list-changed 模式）', async () => {
     let toolsChanged = 0
     let resourcesChanged = 0
+    let promptsChanged = 0
     const client = new MCPClient({
       command: process.execPath,
       args: [MOCK_SERVER],
@@ -542,22 +543,24 @@ describe('MCPClient 列表变化通知（v0.6.20：onToolsChanged/onResourcesCha
       timeoutMs: 5000,
       onToolsChanged: () => toolsChanged++,
       onResourcesChanged: () => resourcesChanged++,
+      onPromptsChanged: () => promptsChanged++,
     })
     await client.initialize()
-    // mock 服务器握手后立即推送两个列表变化通知
+    // mock 服务器握手后立即推送三个列表变化通知
     const deadline = Date.now() + 3000
-    while ((toolsChanged === 0 || resourcesChanged === 0) && Date.now() < deadline) {
+    while ((toolsChanged === 0 || resourcesChanged === 0 || promptsChanged === 0) && Date.now() < deadline) {
       await new Promise((r) => setTimeout(r, 50))
     }
     expect(toolsChanged).toBe(1)
     expect(resourcesChanged).toBe(1)
+    expect(promptsChanged).toBe(1)
     // 通知后连接仍正常：后续请求照常工作
     const res = await client.callTool('echo_text', { text: 'still-alive' })
     expect(res.content[0]?.text).toBe('echo: still-alive')
     client.close()
   })
 
-  it('只配置其中一个回调：另一个通知被忽略（互不干扰）', async () => {
+  it('只配置其中一个回调：另外两个通知被忽略（互不干扰）', async () => {
     let toolsChanged = 0
     const client = new MCPClient({
       command: process.execPath,
@@ -565,7 +568,7 @@ describe('MCPClient 列表变化通知（v0.6.20：onToolsChanged/onResourcesCha
       env: { MOCK_MODE: 'list-changed' },
       timeoutMs: 5000,
       onToolsChanged: () => toolsChanged++,
-      // 不配置 onResourcesChanged → resources/list_changed 静默忽略
+      // 不配置 onResourcesChanged / onPromptsChanged → 对应通知静默忽略
     })
     await client.initialize()
     const deadline = Date.now() + 3000
