@@ -616,6 +616,30 @@ export function startHostServer(opts: HostServerOptions) {
           reply({ type: 'messages', sessionId, messages, ...(recent ? { recent: true } : {}) })
           break
         }
+        case 'search_messages': {
+          // 全文搜索历史对话（v0.6.24）：宿主面板"搜索历史"数据源——复用 store 的 FTS5
+          // trigram 索引（bm25 相关度排序，中文友好；短查询 LIKE 回退），全局跨会话检索
+          //（与 get_usage 同风格，只读不触发生成）
+          const query = String(req.query ?? '').trim()
+          if (!query) {
+            reply({ type: 'error', message: 'search_messages 需要 query 参数（搜索关键词），用法: {"type":"search_messages","query":"关键词"}' })
+            break
+          }
+          let limit = 10
+          if (req.limit !== undefined && req.limit !== null) {
+            limit = Number(req.limit)
+            if (!Number.isInteger(limit) || limit <= 0 || limit > 100) {
+              reply({ type: 'error', message: 'search_messages 的 limit 必须是 1~100 的整数' })
+              break
+            }
+          }
+          const agent = getAgent(String(req.sessionId || 'default'))
+          const results = (typeof (agent as any).store?.searchMessages === 'function')
+            ? await (agent as any).store.searchMessages(query, limit)
+            : []
+          reply({ type: 'search_results', query, results })
+          break
+        }
         case 'get_usage': {
           // 宿主读取 token 用量统计（同 get_messages 模式，只读不生成）
           const agent = getAgent(String(req.sessionId || 'default'))

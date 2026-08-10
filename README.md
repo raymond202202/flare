@@ -337,6 +337,31 @@ Interactive mode commands:
 
 > 中文条目 / Chinese entries · English summary for each version
 
+#### v0.6.24 (2026-08-11) — server 协议 search_messages 全文搜索 + CLI /search / host-protocol search_messages + CLI /search
+- 🔍 **server 协议 `search_messages`（src/server.ts）**：宿主面板"搜索历史对话"数据源——复用记忆库
+  FTS5 trigram 全文索引（bm25 相关度排序、中文友好；短查询 <3 字自动 LIKE 回退），**跨全部会话**
+  检索（与 get_usage 全局统计同风格，只读不触发生成）：`{query, limit?}` →
+  `{ type:'search_results', query, results:[{sessionId,role,content,createdAt}] }`；`query` 必填
+  （缺失/空白回 error 含用法提示）、`limit` 1~100 整数默认 10（非法回 error 含提示）、无结果空数组
+  幂等不报错
+- 💬 **CLI 交互 `/search <关键词>`（src/cli/index.ts）**：跨会话搜索历史对话（找回旧对话），
+  显示命中消息的角色/时间/内容截断；无关键词用法提示、无结果友好提示；`/help` 注册
+- 📚 docs/host-protocol.md §5.1 新章节 + 请求类型列表 + README Changelog + 版本号 0.6.24
+- 🧪 新增 8 项测试（server e2e 4：缺 query/空白 error / 非法 limit（0/-1/101/非数字）/ 合法路径空结果
+  幂等 / **数据往返**——测试进程写入临时库消息后协议可搜索到（含 sessionId/role/content 断言）/
+  不相关内容不命中；CLI /search 4：命中列表跨会话 / 无关键词用法提示 / 无结果提示 / help 注册）；
+  共 **558/558 全绿**（550 + 8），tsc 0 错误，零 agent.ts 改动
+- EN: new host-protocol request `search_messages` (FTS5 full-text search across all sessions,
+  bm25-ranked, Chinese-friendly) + interactive CLI `/search`. 558/558 green, zero Agent.run changes.
+- 🩺 **MCPClient.ping()（src/mcp/client.ts）**：与既有 `MCPHttpClient.ping()` 对齐（此前 stdio 客户端
+  接口不对称）——发 MCP 标准 `ping` 请求（服务器回空 result 即存活），成功返回 `true`，断开/超时/
+  协议错误 reject；无状态保活探测不干扰后续请求。MCPServer dispatch 早已支持 `ping`（零服务器改动）
+- 📚 docs/mcp.md 编程方式章节补 ping 健康检查示例（stdio/HTTP 对称声明）
+- 🧪 新增 2 项测试（MCPClient ping 真实互通——mock 服务器 ping 往返 + ping 后连接仍可用 / close 后
+  reject）；**560/560 全绿**（558 + 2），tsc 0 错误，零 agent.ts 改动
+- EN: added `MCPClient.ping()` (stdio) to match `MCPHttpClient.ping()` — standard MCP health-check,
+  returns true on empty-result, rejects on disconnect/timeout. 560/560 green, zero Agent.run changes.
+
 #### v0.6.23 (2026-08-11) — completion/complete 并入资源模板候选 / resource-template candidates in ref/resource completion
 - 🎯 **ref/resource 补全增强（src/mcp/server.ts）**：`completion/complete`（ref/resource）候选从**仅静态
   资源 uri** 扩展为**静态资源 + 资源模板 uriTemplate**（v0.6.22 模板协议的自然衔接）：客户端输入 uri

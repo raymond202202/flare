@@ -332,6 +332,14 @@ export class MCPClient {
     await this.request('logging/setLevel', { level })
   }
 
+  /** 健康检查（ping，v0.6.24）：与 MCPHttpClient.ping 对称——发标准 ping 请求，服务器回空 result
+   *  即存活；连接断开/超时/服务器回 error → reject。宿主可用它做保活探测（区别于 listTools 等
+   *  业务请求，ping 是 MCP 标准无状态探测，服务器不依赖任何初始化状态） */
+  async ping(): Promise<boolean> {
+    await this.request('ping', {})
+    return true
+  }
+
   /** 读取资源内容（resources/read，v0.6.6）：按 uri 返回内容列表；未知 uri 协议错误则 reject */
   async readResource(uri: string): Promise<McpResourceContents[]> {
     const res = await this.request<any>('resources/read', { uri })

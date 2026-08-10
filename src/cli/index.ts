@@ -736,12 +736,33 @@ export async function handleSlashCommand(
     return 'continue'
   }
 
+  // /search <关键词> 跨会话全文搜索历史对话（v0.6.24：FTS5 trigram，中文友好，找回旧对话）
+  if (lower === '/search' || lower.startsWith('/search ')) {
+    const kw = cmd.replace(/^\/search(?:\s+|$)/, '').trim()
+    if (!kw) {
+      output(chalk.yellow('\n  用法: /search <关键词>（跨会话搜索历史对话）'))
+      return 'continue'
+    }
+    const hits = store.searchMessages(kw, 10)
+    if (hits.length === 0) {
+      output(chalk.gray(`\n未找到包含「${kw}」的历史消息`))
+    } else {
+      output(chalk.cyan(`\n🔍 「${kw}」相关消息（${hits.length} 条）:`))
+      hits.forEach(h => {
+        const who = h.role === 'user' ? '你' : h.role === 'assistant' ? 'AI' : h.role
+        output(`  ${chalk.gray(`[${h.createdAt || ''}]`)} ${who}: ${h.content.replace(/\s+/g, ' ').trim().slice(0, 100)}`)
+      })
+    }
+    return 'continue'
+  }
+
   switch (lower) {
     case '/help':
       output(chalk.cyan('\n可用命令:'))
       output('  /help        - 显示帮助')
       output('  /exit        - 退出')
       output('  /memory      - 查看记忆')
+      output('  /search <关键词> - 搜索历史对话（跨会话，v0.6.24）')
       output('  /remember    - 保存一条记忆（如: /remember 用户喜欢浅色主题）')
       output('  /forget      - 删除记忆（如: /forget 浅色主题，删除包含该关键词的记忆）')
       output('  /usage       - 查看 token 用量')

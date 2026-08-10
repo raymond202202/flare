@@ -379,6 +379,25 @@ describe('MCPClient logging（v0.6.13：setLogLevel + onLog 接收 notifications
   })
 })
 
+describe('MCPClient ping（v0.6.24：标准健康检查，与 MCPHttpClient.ping 对称）', () => {
+  it('ping：真实互通——mock 服务器回空 result → 返回 true', async () => {
+    const client = spawnMock()
+    await client.initialize()
+    await expect(client.ping()).resolves.toBe(true)
+    // ping 后连接仍可用（无状态探测不干扰后续请求）
+    const tools = await client.listTools()
+    expect(tools.length).toBe(3)
+    client.close()
+  })
+
+  it('close 后 ping → reject（客户端已关闭）', async () => {
+    const client = spawnMock()
+    await client.initialize()
+    client.close()
+    await expect(client.ping()).rejects.toThrow(/已关闭/)
+  })
+})
+
 describe('MCPClient resources 订阅（v0.6.15：subscribeResource/unsubscribeResource + onResourceUpdated 通知）', () => {
   it('subscribeResource / unsubscribeResource：发送请求并收到 {} 响应（不抛错）', async () => {
     const client = spawnMock()
