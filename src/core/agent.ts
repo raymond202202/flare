@@ -8,6 +8,7 @@
 import { Message, LLMProvider, createProvider, createVisionProvider, buildImageContent, parseAttachments, type ContentPart, type ToolDefinition } from './llm.js'
 import { getToolDefinitions, executeTool, type Tool } from '../tools/index.js'
 import { getMemoryStore, MemoryStore } from '../memory/store.js'
+import { trimContextMessages } from './context.js'
 import { logger } from './logger.js'
 
 export interface AgentConfig {
@@ -29,6 +30,13 @@ export interface AgentConfig {
   visionEnabled?: boolean
   /** 注入主 LLM provider（默认 createProvider()）；测试可注入 mock */
   llm?: LLMProvider
+  /** 上下文自动裁剪条数上限（v0.6.17，默认 30）：迭代前超过则保留最近 N 条
+   *  （含 tool_calls ↔ tool 配对保护；system 保底）。0 = 不按条数裁剪。 */
+  maxContextMessages?: number
+  /** 上下文自动裁剪 token 预算（v0.6.17，可选）：迭代前估算 tokens 超过则按预算
+   *  裁剪（最近优先 + 配对保护 + system 保底；与 maxContextMessages 任一先到即停）。
+   *  不配置则只按条数裁剪（行为与旧版一致）。 */
+  maxContextTokens?: number
 }
 
 const DEFAULT_SYSTEM_PROMPT = `你是 Flare，一个通用能力的 AI Agent。
@@ -400,59 +408,19 @@ export class Agent {
    * 安全地截断上下文，防止内存和 token 爆炸。
    * 保留 system prompt + 最近若干条消息，
    * 且保证不截断 tool_calls ↔ tool 响应的配对关系。
-   * 
-   * 规则：从末尾往前找到最近的"完整对话轮次"边界：
-   *   - 如果最后一条是 tool 响应，向前找到它的 tool_calls 一起保留
-   *   - 如果有 assistant(tool_calls)+tool 配对，整对保留
+   *
+   * 规则（v0.6.17 起委托 trimContextMessages 纯函数）：
+   *   - 默认保留最近 30 条（maxContextMessages 可配）
+   *   - maxContextTokens 配置后按 token 预算裁剪（最近优先 + 配对保护 + system 保底）
+   *   - 从末尾往前找到最近的"完整对话轮次"边界：
+   *     - 如果最后一条是 tool 响应，向前找到它的 tool_calls 一起保留
+   *     - 如果有 assistant(tool_calls)+tool 配对，整对保留
    */
   private trimContext() {
-    if (this.messages.length <= 30) return
-
-    const systemMsg = this.messages.find(m => m.role === 'system')
-    const maxKept = 30 // 保留最近 30 条（覆盖较长的工具调用链）
-
-    // 从末尾向前收集消息，保证不拆散 tool_calls/tool 配对
-    const kept: Message[] = []
-    let pendingToolCallIds = new Set<string>() // 需要找 tool_calls 的 ID
-
-    for (let i = this.messages.length - 1; i >= 0; i--) {
-      const msg = this.messages[i]
-
-      // 如果还有待配对的 tool_calls，继续往前找
-      if (msg.role === 'tool' && msg.tool_call_id) {
-        pendingToolCallIds.add(msg.tool_call_id)
-        kept.unshift(msg)
-        continue
-      }
-
-      if (msg.role === 'assistant' && msg.tool_calls) {
-        // 这个 assistant 发了 tool_calls
-        kept.unshift(msg)
-        // 把它的 tool_call_id 从待配对中移除
-        for (const tc of msg.tool_calls) {
-          pendingToolCallIds.delete(tc.id)
-        }
-        // 如果这个 assistant 还有文本内容，说明一轮对话完整结束
-        if (msg.content) {
-          pendingToolCallIds.clear()
-        }
-        // 待配对清空 = 这一轮完整了，可以停
-        if (pendingToolCallIds.size === 0 && kept.length >= maxKept) {
-          break
-        }
-        continue
-      }
-
-      // user 或 assistant(无tool_calls) 或 system
-      kept.unshift(msg)
-      if (kept.length >= maxKept && pendingToolCallIds.size === 0) {
-        break
-      }
-    }
-
-    this.messages = systemMsg
-      ? [systemMsg, ...kept]
-      : kept
+    this.messages = trimContextMessages(this.messages, {
+      maxMessages: this.config.maxContextMessages ?? 30,
+      maxTokens: this.config.maxContextTokens,
+    })
   }
 
   /** 获取当前消息列表 */

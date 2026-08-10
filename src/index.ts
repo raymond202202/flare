@@ -121,16 +121,17 @@ export type { McpHttpServerOptions, McpHttpServerHandle } from './mcp/http.js'
 export { MCPHttpClient } from './mcp/http-client.js'
 export type { MCPHttpClientOptions } from './mcp/http-client.js'
 
-// ===== 上下文可观测性（v0.5.6/v0.5.9）：token 估算 + 裁剪建议（宿主面板显示上下文占用/成本预估）=====
+// ===== 上下文可观测性（v0.5.6/v0.5.9/v0.6.17）：token 估算 + 裁剪建议/自动裁剪 =====
 export {
   estimateTokens,
   estimateMessagesTokens,
   suggestTrim,
+  trimContextMessages,
   IMAGE_TOKEN_COST,
   MESSAGE_STRUCTURE_TOKENS,
   TOOL_CALL_STRUCTURE_TOKENS,
 } from './core/context.js'
-export type { TrimSuggestion, SuggestTrimOptions } from './core/context.js'
+export type { TrimSuggestion, SuggestTrimOptions, TrimContextOptions } from './core/context.js'
 
 // ===== 模型可观测性（v0.6.0）：本地 Ollama 模型列表查询（flare models 命令 / 宿主面板）=====
 export {

@@ -148,7 +148,7 @@ cp .env.example ~/.flare/.env
 | `flare chat` | 交互模式 |
 | `flare chat -q "问题"` | 单次查询模式 |
 | `flare chat -q "问题" -i 图片.png` | 单次查询附带图片 |
-| `flare server [--profile --storage --mcp --confirm-tools --confirm-timeout --max-tokens --temperature]` | 宿主协议服务（stdin/stdout JSON Lines，供 Qt 等宿主调用；v0.6.1 起写回类工具经确认门；v0.6.5 起 --max-tokens/--temperature 设 chat 默认采样参数） |
+| `flare server [--profile --storage --mcp --confirm-tools --confirm-timeout --max-tokens --temperature --max-context-messages --max-context-tokens]` | 宿主协议服务（stdin/stdout JSON Lines，供 Qt 等宿主调用；v0.6.1 起写回类工具经确认门；v0.6.5 起 --max-tokens/--temperature 设 chat 默认采样参数；v0.6.17 起 --max-context-messages/--max-context-tokens 设默认上下文自动裁剪） |
 | `flare mcp-server [-t 工具名,...]` | MCP stdio 服务器：把 flare 工具集暴露给其他 AI 客户端（v0.5.8） |
 | `flare mcp call <服务器> <工具> [JSON参数]` | 调用 MCP 服务器工具（stdio 或 HTTP transport；服务器名查 `~/.flare/mcp.json`，`--url` 直连 HTTP 端点，v0.6.6） |
 | `flare mcp status` | 查看配置的 MCP 服务器（名称 + 传输类型 + 端点/命令，v0.6.6） |
@@ -335,6 +335,32 @@ Interactive mode commands:
 ### Changelog / Release Notes
 
 > 中文条目 / Chinese entries · English summary for each version
+
+#### v0.6.17 (2026-08-10) — 上下文自动裁剪：trimContext 支持 token 预算 / Context auto-trim by token budget (Agent.trimContext + trimContextMessages)
+- 🧩 **Agent 上下文自动裁剪（src/core/agent.ts + context.ts）**：`AgentConfig` 新增 `maxContextMessages`
+  （条数上限，默认 30）/ `maxContextTokens`（token 预算，可选）——迭代前 `trimContext()` 自动按预算
+  裁剪，宿主免手动 set_context；**不配置则行为与旧版完全一致**（保留最近 30 条，零回归）
+- 🧩 **纯函数 `trimContextMessages(messages, { maxMessages?, maxTokens? })`（src/core/context.ts）**：
+  与 suggestTrim（宿主建议、不保证配对）不同，这是 Agent 内部安全裁剪——**保证不拆散
+  tool_calls ↔ tool 响应配对**（LLM 收到拆散配对会 400）：system 保底（token 计入预算）+
+  最近优先 + 配对链（tool/assistant(tool_calls)）无条件保留 + 极小预算仍保底最新一条 +
+  `maxMessages:0` = 关闭条数裁剪（仅按 token）；未超限返回原数组引用（零拷贝）；默认 30 条
+  行为与原 trimContext 逐条等价（原 30 行逻辑整体替换为委托，调用点/循环结构不动）
+- 🧩 **server 协议透传（src/server.ts + cli/index.ts）**：chat 请求带 `maxContextMessages` /
+  `maxContextTokens`（非负整数/正整数校验，非法回 error 不触发生成；变化自动重建 Agent 立即生效，
+  与 model/采样参数同机制）；`flare server --max-context-messages <n> / --max-context-tokens <n>`
+  设置 server 级默认（chat 未指定时应用，请求优先）；`HostServerOptions` 对应默认字段
+- 📚 docs/context-observability.md 自动裁剪章节 + docs/host-protocol.md chat 参数表 + README Changelog + 版本号 0.6.17
+- 🧪 新增 22 项测试：trimContextMessages 纯函数 11（空/零拷贝/默认 30 条/maxMessages 可配/0 关闭条数/
+  token 预算/极小预算保底/system 保底/token+条数取紧/配对保护/tail tool 连带配对）+ Agent 集成 5
+  （默认零回归 30 条/maxContextMessages 生效/0 不裁/预算裁剪/极小预算保底最新输入）+ server e2e 6
+  （默认值不破坏启动/不带参数应用默认/非法 maxContextMessages·负数·非法 maxContextTokens·0/合法透传
+  流程完整）；共 **491/491 全绿**（469 + 22）
+- EN: Context auto-trim — `AgentConfig.maxContextMessages` / `maxContextTokens` drive the iteration-time
+  `trimContext()`; new pure `trimContextMessages()` (system kept + newest-first + tool_calls pairing
+  protection + tiny-budget keeps latest input, zero-copy when under limit). Chat protocol passes
+  `maxContextMessages` / `maxContextTokens` through and `flare server` gains the matching defaults.
+  491/491 tests green.
 
 #### v0.6.16 (2026-08-10) — MCP progress + cancelled 通知协议闭环 / MCP progress & cancellation notifications (notifications/progress + notifications/cancelled)
 - 🧩 **MCP progress 通知协议（src/mcp/server.ts + client.ts + http-client.ts + types.ts）**：服务器处理

@@ -66,6 +66,10 @@ export interface HostServerOptions {
   defaultMaxTokens?: number
   /** 默认采样温度 0~2（v0.6.5）：chat 请求未指定 temperature 时应用（CLI --temperature） */
   defaultTemperature?: number
+  /** 默认上下文裁剪条数上限（v0.6.17）：chat 请求未指定 maxContextMessages 时应用（CLI --max-context-messages） */
+  defaultMaxContextMessages?: number
+  /** 默认上下文裁剪 token 预算（v0.6.17）：chat 请求未指定 maxContextTokens 时应用（CLI --max-context-tokens） */
+  defaultMaxContextTokens?: number
 }
 
 /** 默认需确认的工具（v0.6.1）：AI 写持久记忆前经确认门（宿主弹窗"AI 想记住…"，用户知情授权） */
@@ -215,9 +219,19 @@ interface LlmChatOpts {
   temperature?: number
 }
 
+/** chat 请求可透传的上下文自动裁剪控制（v0.6.17：maxContextMessages/maxContextTokens，Agent 构造时生效） */
+interface CtxChatOpts {
+  maxContextMessages?: number
+  maxContextTokens?: number
+}
+
 const llmOptsChanged = (a?: LlmChatOpts, b?: LlmChatOpts): boolean =>
   (a?.maxTokens ?? undefined) !== (b?.maxTokens ?? undefined) ||
   (a?.temperature ?? undefined) !== (b?.temperature ?? undefined)
+
+const ctxOptsChanged = (a?: CtxChatOpts, b?: CtxChatOpts): boolean =>
+  (a?.maxContextMessages ?? undefined) !== (b?.maxContextMessages ?? undefined) ||
+  (a?.maxContextTokens ?? undefined) !== (b?.maxContextTokens ?? undefined)
 
 /** 启动宿主协议服务（阻塞读 stdin） */
 export function startHostServer(opts: HostServerOptions) {
@@ -225,9 +239,9 @@ export function startHostServer(opts: HostServerOptions) {
   // 确认门配置（v0.6.1）：名单默认写回类工具；显式传空数组 = 关闭
   const confirmTools = opts.confirmTools ?? DEFAULT_CONFIRM_TOOLS
   const confirmTimeoutMs = opts.confirmTimeoutMs ?? 30000
-  // 会话 → { agent, model, llmOpts, toolMeta }：model / 采样控制变化时重建 Agent（同 sessionId，历史从记忆库恢复）
+  // 会话 → { agent, model, llmOpts, ctxOpts, toolMeta }：model / 采样控制 / 上下文裁剪控制变化时重建 Agent（同 sessionId，历史从记忆库恢复）
   // toolMeta（v0.6.11）：该会话 Agent 当前工具清单元数据（tools 请求只读查询用）
-  const agents = new Map<string, { agent: Agent; model?: string; llmOpts?: LlmChatOpts; toolMeta?: ToolMeta[] }>()
+  const agents = new Map<string, { agent: Agent; model?: string; llmOpts?: LlmChatOpts; ctxOpts?: CtxChatOpts; toolMeta?: ToolMeta[] }>()
   const cancels = new Map<string, { cancelled: boolean }>()
   const pending = new Map<string, PendingTool>()
   // 确认门（v0.6.1）：按 sessionId 缓存——allow_session 放行记忆跨模型重建保留；always 持久化到记忆库 settings 表
@@ -283,10 +297,11 @@ export function startHostServer(opts: HostServerOptions) {
     return gate
   }
 
-  const getAgent = (sessionId: string, tools?: ToolDefinition[], model?: string, llmOpts?: LlmChatOpts): Agent => {
+  const getAgent = (sessionId: string, tools?: ToolDefinition[], model?: string, llmOpts?: LlmChatOpts, ctxOpts?: CtxChatOpts): Agent => {
     let entry = agents.get(sessionId)
-    // 请求带 model 且与会话当前模型不同 → 重建；采样控制（maxTokens/temperature）任一变化 → 重建（立即生效）
-    if (entry && ((model && entry.model !== model) || llmOptsChanged(entry.llmOpts, llmOpts))) {
+    // 请求带 model 且与会话当前模型不同 → 重建；采样控制（maxTokens/temperature）任一变化 → 重建（立即生效）；
+    // 上下文裁剪控制（maxContextMessages/maxContextTokens）任一变化 → 重建（v0.6.17）
+    if (entry && ((model && entry.model !== model) || llmOptsChanged(entry.llmOpts, llmOpts) || ctxOptsChanged(entry.ctxOpts, ctxOpts))) {
       entry = undefined
     }
     if (!entry) {
@@ -323,9 +338,13 @@ export function startHostServer(opts: HostServerOptions) {
           ...(llm ? { llm } : {}),
           sessionId: namespace ? `${namespace}:${sessionId}` : sessionId,
           storage,
+          // 上下文自动裁剪（v0.6.17）：maxContextMessages/maxContextTokens 透传到 Agent
+          ...(ctxOpts?.maxContextMessages !== undefined ? { maxContextMessages: ctxOpts.maxContextMessages } : {}),
+          ...(ctxOpts?.maxContextTokens !== undefined ? { maxContextTokens: ctxOpts.maxContextTokens } : {}),
         }),
         model,
         llmOpts,
+        ctxOpts,
         toolMeta,
       }
       agents.set(sessionId, entry)
@@ -386,7 +405,45 @@ export function startHostServer(opts: HostServerOptions) {
               llmOpts = { ...llmOpts, temperature: v }
             }
           }
-          const agent = getAgent(sessionId, req.tools, req.model ? String(req.model) : undefined, llmOpts)
+          // v0.6.17：上下文自动裁剪控制（maxContextMessages/maxContextTokens）——非法值直接 error，不触发生成
+          let ctxOpts: CtxChatOpts | undefined
+          if (req.maxContextMessages !== undefined && req.maxContextMessages !== null) {
+            const v = Number(req.maxContextMessages)
+            if (!Number.isInteger(v) || v < 0) {
+              reply({ type: 'error', message: 'chat 的 maxContextMessages 必须是非负整数（0 = 不按条数裁剪）' })
+              break
+            }
+            ctxOpts = { ...ctxOpts, maxContextMessages: v }
+          }
+          if (req.maxContextTokens !== undefined && req.maxContextTokens !== null) {
+            const v = Number(req.maxContextTokens)
+            if (!Number.isInteger(v) || v <= 0) {
+              reply({ type: 'error', message: 'chat 的 maxContextTokens 必须是正整数（上下文 token 预算）' })
+              break
+            }
+            ctxOpts = { ...ctxOpts, maxContextTokens: v }
+          }
+          // chat 未指定裁剪控制时应用 server 级默认（CLI --max-context-messages/--max-context-tokens）
+          if (!ctxOpts && (opts.defaultMaxContextMessages !== undefined || opts.defaultMaxContextTokens !== undefined)) {
+            ctxOpts = {}
+            if (opts.defaultMaxContextMessages !== undefined) {
+              const v = Number(opts.defaultMaxContextMessages)
+              if (!Number.isInteger(v) || v < 0) {
+                reply({ type: 'error', message: 'server 默认 maxContextMessages 必须是非负整数（0 = 不按条数裁剪）' })
+                break
+              }
+              ctxOpts = { ...ctxOpts, maxContextMessages: v }
+            }
+            if (opts.defaultMaxContextTokens !== undefined) {
+              const v = Number(opts.defaultMaxContextTokens)
+              if (!Number.isInteger(v) || v <= 0) {
+                reply({ type: 'error', message: 'server 默认 maxContextTokens 必须是正整数（上下文 token 预算）' })
+                break
+              }
+              ctxOpts = { ...ctxOpts, maxContextTokens: v }
+            }
+          }
+          const agent = getAgent(sessionId, req.tools, req.model ? String(req.model) : undefined, llmOpts, ctxOpts)
           if (req.context && typeof agent.setContext === 'function') {
             agent.setContext(String(req.context))
           }
