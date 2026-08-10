@@ -788,6 +788,27 @@ export function startHostServer(opts: HostServerOptions) {
           reply({ type: 'models', ...(await collectModelInfo()) })
           break
         }
+        case 'get_config': {
+          // 宿主查询服务器运行配置（v0.6.18，只读不触发生成）——面板"设置/关于"数据源：
+          //   确认门配置、默认采样/裁剪参数、工具超时、namespace、storage、MCP 服务器清单（不含密钥）
+          reply({
+            type: 'config',
+            confirmTools,
+            confirmTimeoutMs,
+            defaultMaxTokens: opts.defaultMaxTokens ?? null,
+            defaultTemperature: opts.defaultTemperature ?? null,
+            defaultMaxContextMessages: opts.defaultMaxContextMessages ?? null,
+            defaultMaxContextTokens: opts.defaultMaxContextTokens ?? null,
+            toolTimeoutMs,
+            namespace: namespace ?? null,
+            storage: typeof storage === 'string' ? storage : null,
+            mcpServers: (opts.mcp || []).map((m) => ({
+              name: m.name,
+              transport: m.url ? 'http' : 'stdio',
+            })),
+          })
+          break
+        }
         case 'mcp_status': {
           // 宿主查看 MCP 服务器连接状态（v0.5.5；等待启动时的后台连接落定，保证确定性）
           await Promise.allSettled(mcpConnects)
