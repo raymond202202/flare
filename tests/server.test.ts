@@ -219,6 +219,36 @@ describe('flare host server 协议', () => {
     expect(msgs[0].sessionId).toBe('s-new')
   })
 
+  it('rename_session → ok（重命名已有会话；面板"重命名会话"数据往返）', async () => {
+    await request({ type: 'create_session', sessionId: 's-rn1', title: '旧标题' }, { expect: ['ok'] })
+    const msgs = await request({ type: 'rename_session', sessionId: 's-rn1', title: '新标题' }, { expect: ['ok'] })
+    expect(msgs[0].type).toBe('ok')
+    expect(msgs[0].sessionId).toBe('s-rn1')
+    expect(msgs[0].title).toBe('新标题')
+    // 数据往返：recent_sessions 必须反映新标题（证明真实写入）
+    const list = await request({ type: 'recent_sessions' }, { expect: ['recent_sessions'] })
+    const row = list[0].sessions.find((s: any) => s.id === 's-rn1')
+    expect(row).toBeTruthy()
+    expect(row.title).toBe('新标题')
+  })
+
+  it('rename_session 缺 title / 空白 title → error（含用法提示，不触发生成）', async () => {
+    const missing = await request({ type: 'rename_session', sessionId: 's-rn1' }, { expect: ['error'] })
+    expect(missing[0].message).toContain('rename_session 需要 title')
+    const blank = await request({ type: 'rename_session', sessionId: 's-rn1', title: '   ' }, { expect: ['error'] })
+    expect(blank[0].message).toContain('rename_session 需要 title')
+  })
+
+  it('rename_session 不存在会话 → UPSERT 幂等 ok（与 create_session 同语义）', async () => {
+    const msgs = await request({ type: 'rename_session', sessionId: 's-rn-none', title: '新会话' }, { expect: ['ok'] })
+    expect(msgs[0].type).toBe('ok')
+    // 会话被 UPSERT 创建，列表可见
+    const list = await request({ type: 'recent_sessions' }, { expect: ['recent_sessions'] })
+    const row = list[0].sessions.find((s: any) => s.id === 's-rn-none')
+    expect(row).toBeTruthy()
+    expect(row.title).toBe('新会话')
+  })
+
   it('delete_session → 真实删除（T1 修复：先建会话再删 deleted:true；再删 deleted:false 幂等）', async () => {
     // 修复前 memoryStore 字段错位：deleteSession 从不执行，deleted 恒 false（隐私数据删不掉）
     await request({ type: 'create_session', sessionId: 's-del2' }, { expect: ['ok'] })
