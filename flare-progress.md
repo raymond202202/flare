@@ -3,11 +3,46 @@
 > 目标：flare 是 Pulse/StorySpire 依赖的 AI Agent 引擎（TS）。任何改动必须安全（tsc 0 错 + 测试全绿才 commit）。
 > 铁律：禁止 push；禁止修改 src/core/agent.ts 的 Agent.run 核心循环。
 
-> **最新状态（v0.6.16）**：MCP progress + cancelled 通知协议闭环（`notifyProgress` 推送
-> `notifications/progress` 长请求进度 + `notifyCancelled` 发送 `notifications/cancelled` 取消告知，
-> 服务器命中 pending reject 不悬挂）；469/469 全绿。下一步候选：① agent.ts trimContext 自动裁剪
-> （风险高仍暂缓）；② 其他安全的外围增强（MCP 协议特性已基本覆盖，可考虑 server 协议其他管理接口、
-> CLI 交互增强、MCP 工具集完善等）。
+> **最新状态（v0.6.17）**：上下文自动裁剪落地——trimContextMessages 纯函数（system 保底 + 最近优先
+> + tool_calls 配对保护 + 极小预算保底最新一条）+ AgentConfig.maxContextMessages/maxContextTokens
+> （不配置零回归）+ server 协议 chat 透传 + CLI 默认参数；491/491 全绿。下一步候选：① 上下文压缩摘要
+> （裁剪掉的历史压缩成摘要而非直接丢弃，需评估）；② 其他安全的外围增强（MCP 协议特性已基本覆盖，
+> 可考虑 server 协议其他管理接口、CLI 交互增强、MCP 工具集完善等）。
+
+### 2026-08-10 第十九轮实施（v0.6.17）——上下文自动裁剪：trimContext 支持 token 预算
+
+- **P34 上下文自动裁剪**（src/core/context.ts + core/agent.ts + server.ts + cli/index.ts）：
+  - **纯函数 `trimContextMessages(messages, { maxMessages?, maxTokens? })`**（context.ts）：
+    与 suggestTrim（宿主建议、不保证配对）不同，这是 Agent 内部安全裁剪——**保证不拆散
+    tool_calls ↔ tool 响应配对**（LLM 收到拆散配对会 400）：system 保底（token 计入预算，
+    保留部分严格不超）+ 最近优先 + 配对链（tool/assistant(tool_calls)）无条件保留 +
+    极小预算仍保底最新一条（AI 必须看到最新输入）+ `maxMessages:0` = 关闭条数裁剪 +
+    未超限返回原数组引用（零拷贝）；默认 30 条行为与原 trimContext 逐条等价
+  - **AgentConfig 新增 `maxContextMessages`（默认 30）/ `maxContextTokens`（可选）**：
+    `trimContext()` 委托纯函数（私有方法体替换，**run 循环调用点/结构不动**）——
+    不配置则行为与旧版完全一致（保留最近 30 条，零回归）；宿主免手动 set_context
+  - **server 协议透传**：chat 请求带 `maxContextMessages`（非负整数，0=不按条数）/
+    `maxContextTokens`（正整数）——非法回 error 不触发生成；变化自动重建 Agent 立即生效
+    （ctxOptsChanged 与 model/采样参数同机制，agents entry 记录 ctxOpts）；
+    `HostServerOptions.defaultMaxContextMessages/defaultMaxContextTokens` + CLI
+    `flare server --max-context-messages <n> / --max-context-tokens <n>` server 级默认
+    （chat 未指定时应用，请求优先）
+  - docs/context-observability.md 自动裁剪章节（suggestTrim vs trimContextMessages 定位差异）
+    + docs/host-protocol.md chat 参数表 + README Changelog/CLI 表 + 版本号 0.6.17
+  - **491/491 全绿**（469 + 22 新增：trimContextMessages 纯函数 11——空/零拷贝原引用/默认
+    30 条/maxMessages 可配/0 关闭条数/token 预算/极小预算保底/system 保底/token+条数取紧/
+    配对保护/tail tool 连带配对；Agent 集成 5——默认零回归 30 条/maxContextMessages 生效/
+    0 不裁/预算裁剪/极小预算保底最新输入；server e2e 6——默认值不破坏启动/不带参数应用默认/
+    非法 maxContextMessages·负数·非法 maxContextTokens·0/合法透传流程完整），tsc 0 错误，
+    **run 循环零改动**（仅 trimContext 私有方法体委托）
+  - **冒烟实测**：真实 server 子进程——version 0.6.17、chat 协议流完整（text→done）、
+    非法 maxContextMessages（-1）→「必须是非负整数」error、非法 maxContextTokens（0）→
+    「必须是正整数」error、context_status 正常响应，SMOKE PASS
+- **下一步候选**：① 上下文压缩摘要（裁剪掉的历史压缩成摘要而非直接丢弃，需评估）；
+  ② 其他安全的外围增强（MCP 协议特性已基本覆盖，可考虑 server 协议其他管理接口、CLI 交互增强、
+  MCP 工具集完善等）
+
+---
 
 ### 2026-08-10 第十八轮实施（v0.6.16）——MCP progress + cancelled 通知协议闭环
 
