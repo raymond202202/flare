@@ -336,6 +336,35 @@ Interactive mode commands:
 
 > 中文条目 / Chinese entries · English summary for each version
 
+#### v0.6.14 (2026-08-10) — MCP sampling 协议闭环：服务器→客户端请求 LLM 采样 / MCP sampling (server-initiated LLM sampling via client)
+- 🧩 **MCP sampling 协议（src/mcp/types.ts + client.ts + server.ts）**：MCP sampling 让服务器（自身无模型）
+  请求**客户端（宿主应用）代为调用 LLM** 生成内容——方向与 roots 一致（服务器→客户端请求），
+  复用 v0.6.12 建立的主动请求通道
+- 🧩 **服务器侧**：`MCPServer.requestSample(request, timeoutMs?)` 发 `sampling/createMessage` 请求——
+  参数含 `messages`（必填，至少一条）/ `systemPrompt` / `temperature` / `maxTokens`（必填）/
+  `stopSequences` / `modelPreferences`（hints + cost/speed/intelligence 优先级）/ `includeContext` / `metadata`；
+  等待客户端响应（带超时，默认 15s，`requestTimeoutMs` 可配）；客户端回 error / 超时 / 已关闭 → reject（不悬挂）；
+  响应缺 `content.text` → reject（采样结果必须有内容，与 roots 容错 `[]` 不同）；请求缺 messages → 立即 reject
+- 🧩 **客户端侧**：`MCPClient` 新增 `sampling` 回调选项——配置后 `initialize` 声明 `capabilities.sampling`
+  （未配置不声明，缺省兼容）；服务器发 `sampling/createMessage` 请求 → 回调自动执行并回传结果（支持异步）；
+  回调抛错 → 回 `-32603`（客户端不崩）；未配置回调却收到请求 → 回 `-32601`（协议错误，连接不断）
+- 📌 **传输差异（文档记录）**：HTTP transport（startMcpHttpServer）一请求一响应、无服务器→客户端通道，
+  不提供 `requestSample`（stdio 专属）；MCPHttpClient 无 SSE 长连接也不声明 sampling 能力——与 roots 一致
+- 🛡️ **安全**：sampling 是客户端主动授权能力——只有配置了 `sampling` 回调的客户端才会响应，
+  服务器无法强制客户端调用模型
+- 📚 docs/mcp.md sampling 协议章节 + README Changelog + 版本号 0.6.14
+- 🧪 新增 13 项测试：MCPServer 7（发起+解析响应含 model/stopReason / 客户端 error reject / 缺 content reject /
+  缺 messages 立即 reject / 超时 reject 后服务器仍可用 / 已关闭 reject / 真实互通 e2e——真实 MCPServer 子进程
+  requestSample ↔ MCPClient sampling 回调，含未配置回调回 -32601 e2e）+ MCPClient 6（配置回调声明能力+闭环 /
+  未配置不声明 / 无回调回 -32601 连接不断 / 回调抛错 -32603 / 异步回调 / 请求参数完整透传）；共 439/439；零 agent.ts 改动
+- 🔬 冒烟实测：真实 stdio 子进程闭环——客户端带 sampling 回调连接真实 MCPServer，requestSample 拿到
+  确定性采样文本（含 model 回显）；不带回调的客户端服务器收到 -32601 不悬挂
+- EN: MCP sampling round-trip — `MCPServer.requestSample()` sends `sampling/createMessage` to ask the
+  **client (host app)** to generate content via its own LLM (timeout-safe, rejects on missing content),
+  and `MCPClient` gains a `sampling` callback that declares `capabilities.sampling` and auto-answers
+  server-initiated sampling requests (async supported, errors → -32603, unconfigured → -32601);
+  stdio-only like roots; 439/439 tests, zero agent.ts changes.
+
 #### v0.6.13 (2026-08-10) — MCP logging 协议：日志级别设置 + 服务器日志推送 / MCP logging (logging/setLevel + notifications/message)
 - 🧩 **MCP logging 协议特性（src/mcp/server.ts + client.ts + http-client.ts）**：`MCPServer` 缺省声明
   `capabilities.logging`（`logging:false` 可关闭，不声明）——客户端 `logging/setLevel` 设置日志级别阈值

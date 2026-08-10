@@ -319,6 +319,59 @@ await client.setLogLevel('debug')   // 让服务器推送所有级别（含 debu
 > 与 `resources`/`prompts`/`completions` 的"注入才声明"不同，logging 是协议标准能力，缺省声明
 > （`logging:false` 显式关闭）——客户端可据此探测服务器是否支持日志推送。
 
+#### sampling 协议（v0.6.14）：服务器→客户端请求 LLM 采样
+
+MCP **sampling** 让服务器（自身无模型/不想直接调模型）请求**客户端（宿主应用）代为调用 LLM**
+生成内容——对 AI Agent 引擎是天然场景：flare 服务器经 MCP 复用宿主已配置的模型能力。
+方向与 roots 一致（服务器→客户端请求），复用 v0.6.12 建立的主动请求通道。flare 两端都支持：
+
+**服务器侧（flare 作为 MCP 服务器）**——`MCPServer.requestSample(request, timeoutMs?)`：
+
+```ts
+const server = new MCPServer({ tools: builtinTools })
+server.start()
+// 请求客户端代为采样（带超时，默认 15s；MCPServerOptions.requestTimeoutMs 可配）
+const result = await server.requestSample({
+  messages: [{ role: 'user', content: { type: 'text', text: '用一句话介绍 flare 引擎' } }],
+  systemPrompt: '你是 flare 引擎的技术讲解员。',
+  maxTokens: 100,
+  temperature: 0.5,
+})
+// result = { role: 'assistant', content: { type: 'text', text: '...' }, model: 'deepseek-chat', stopReason: 'endTurn' }
+```
+
+- 请求参数：`messages`（必填，至少一条）、`systemPrompt` / `temperature` / `maxTokens`（必填）/
+  `stopSequences` / `modelPreferences`（模型偏好：hints + cost/speed/intelligence 优先级）/
+  `includeContext`（'none' | 'thisServer' | 'allServers'）/ `metadata`
+- 客户端回 error / 超时 / 服务器已关闭 → reject（不悬挂）；响应缺 `content.text` → reject
+  （采样结果必须有内容才可用，与 roots 容错 `[]` 不同）；请求缺 messages → 立即 reject（不发请求）
+
+**客户端侧（flare 作为 MCP 客户端）**——`MCPClient` 配置 `sampling` 回调后：
+
+```ts
+const client = new MCPClient({
+  command: 'node', args: ['your-mcp-server-entry.js'],
+  // 宿主注入 LLM 采样器：收到服务器 sampling/createMessage 请求时调用（真实 LLM 由宿主负责）
+  sampling: async (request) => {
+    const text = await yourLLM(request.messages, { system: request.systemPrompt, maxTokens: request.maxTokens })
+    return { role: 'assistant', content: { type: 'text', text }, model: 'your-model' }
+  },
+})
+await client.initialize()
+// 连接的服务器可 requestSample() 请求客户端代为生成内容
+```
+
+- 配置了回调 → `initialize` 声明 `capabilities.sampling`（未配置不声明，缺省兼容——服务器不应请求采样）
+- 服务器发 `sampling/createMessage` 请求 → 回调自动执行并回传结果（支持异步回调）
+- 回调抛错 → 回 `-32603`（客户端不崩，服务器收到错误）；未配置回调却收到请求 → 回 `-32601`
+  （协议错误，连接不断）
+- **传输差异（文档记录）**：HTTP transport（`startMcpHttpServer`）是"一请求一响应"同步子集，
+  无服务器→客户端通道，故不提供 `requestSample`（stdio 专属）；MCPHttpClient 因无 SSE 长连接
+  也不声明 sampling 能力——与 roots 的传输差异一致
+
+> ⚠️ 安全：sampling 是**客户端主动授权**的能力——只有配置了 `sampling` 回调的客户端才会
+> 响应采样请求，服务器无法强制客户端调用模型；未配置的客户端一律回 `-32601`。
+
 ### HTTP transport（v0.6.3）：POST /mcp
 
 除 stdio 外，MCPServer 可经 **HTTP** 暴露（`src/mcp/http.ts`，零依赖 node:http）——
