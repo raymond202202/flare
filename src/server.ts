@@ -70,6 +70,8 @@ export interface HostServerOptions {
   defaultMaxContextMessages?: number
   /** 默认上下文裁剪 token 预算（v0.6.17）：chat 请求未指定 maxContextTokens 时应用（CLI --max-context-tokens） */
   defaultMaxContextTokens?: number
+  /** 默认上下文压缩摘要开关（v0.6.19）：chat 请求未指定 contextSummarize 时应用（CLI --context-summarize） */
+  defaultContextSummarize?: boolean
 }
 
 /** 默认需确认的工具（v0.6.1）：AI 写持久记忆前经确认门（宿主弹窗"AI 想记住…"，用户知情授权） */
@@ -219,10 +221,13 @@ interface LlmChatOpts {
   temperature?: number
 }
 
-/** chat 请求可透传的上下文自动裁剪控制（v0.6.17：maxContextMessages/maxContextTokens，Agent 构造时生效） */
+/** chat 请求可透传的上下文自动裁剪控制（v0.6.17：maxContextMessages/maxContextTokens，Agent 构造时生效；
+ *  v0.6.19：contextSummarize 压缩摘要开关） */
 interface CtxChatOpts {
   maxContextMessages?: number
   maxContextTokens?: number
+  /** 上下文压缩摘要（v0.6.19）：裁剪时把丢弃历史压缩成摘要（AI 保留话题连续性） */
+  contextSummarize?: boolean
 }
 
 const llmOptsChanged = (a?: LlmChatOpts, b?: LlmChatOpts): boolean =>
@@ -231,7 +236,8 @@ const llmOptsChanged = (a?: LlmChatOpts, b?: LlmChatOpts): boolean =>
 
 const ctxOptsChanged = (a?: CtxChatOpts, b?: CtxChatOpts): boolean =>
   (a?.maxContextMessages ?? undefined) !== (b?.maxContextMessages ?? undefined) ||
-  (a?.maxContextTokens ?? undefined) !== (b?.maxContextTokens ?? undefined)
+  (a?.maxContextTokens ?? undefined) !== (b?.maxContextTokens ?? undefined) ||
+  (a?.contextSummarize ?? undefined) !== (b?.contextSummarize ?? undefined)
 
 /** 启动宿主协议服务（阻塞读 stdin） */
 export function startHostServer(opts: HostServerOptions) {
@@ -341,6 +347,8 @@ export function startHostServer(opts: HostServerOptions) {
           // 上下文自动裁剪（v0.6.17）：maxContextMessages/maxContextTokens 透传到 Agent
           ...(ctxOpts?.maxContextMessages !== undefined ? { maxContextMessages: ctxOpts.maxContextMessages } : {}),
           ...(ctxOpts?.maxContextTokens !== undefined ? { maxContextTokens: ctxOpts.maxContextTokens } : {}),
+          // 上下文压缩摘要（v0.6.19）：contextSummarize 透传到 Agent
+          ...(ctxOpts?.contextSummarize !== undefined ? { contextSummarize: ctxOpts.contextSummarize } : {}),
         }),
         model,
         llmOpts,
@@ -423,8 +431,16 @@ export function startHostServer(opts: HostServerOptions) {
             }
             ctxOpts = { ...ctxOpts, maxContextTokens: v }
           }
-          // chat 未指定裁剪控制时应用 server 级默认（CLI --max-context-messages/--max-context-tokens）
-          if (!ctxOpts && (opts.defaultMaxContextMessages !== undefined || opts.defaultMaxContextTokens !== undefined)) {
+          // v0.6.19：上下文压缩摘要开关（contextSummarize）——非法值直接 error，不触发生成
+          if (req.contextSummarize !== undefined && req.contextSummarize !== null) {
+            if (typeof req.contextSummarize !== 'boolean') {
+              reply({ type: 'error', message: 'chat 的 contextSummarize 必须是布尔值（true/false，压缩摘要开关）' })
+              break
+            }
+            ctxOpts = { ...ctxOpts, contextSummarize: req.contextSummarize }
+          }
+          // chat 未指定裁剪控制时应用 server 级默认（CLI --max-context-messages/--max-context-tokens/--context-summarize）
+          if (!ctxOpts && (opts.defaultMaxContextMessages !== undefined || opts.defaultMaxContextTokens !== undefined || opts.defaultContextSummarize !== undefined)) {
             ctxOpts = {}
             if (opts.defaultMaxContextMessages !== undefined) {
               const v = Number(opts.defaultMaxContextMessages)
@@ -441,6 +457,9 @@ export function startHostServer(opts: HostServerOptions) {
                 break
               }
               ctxOpts = { ...ctxOpts, maxContextTokens: v }
+            }
+            if (opts.defaultContextSummarize !== undefined) {
+              ctxOpts = { ...ctxOpts, contextSummarize: opts.defaultContextSummarize }
             }
           }
           const agent = getAgent(sessionId, req.tools, req.model ? String(req.model) : undefined, llmOpts, ctxOpts)
@@ -799,6 +818,7 @@ export function startHostServer(opts: HostServerOptions) {
             defaultTemperature: opts.defaultTemperature ?? null,
             defaultMaxContextMessages: opts.defaultMaxContextMessages ?? null,
             defaultMaxContextTokens: opts.defaultMaxContextTokens ?? null,
+            defaultContextSummarize: opts.defaultContextSummarize ?? null,
             toolTimeoutMs,
             namespace: namespace ?? null,
             storage: typeof storage === 'string' ? storage : null,

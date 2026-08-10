@@ -104,4 +104,29 @@ describe('Agent trimContext 自动裁剪（v0.6.17）', () => {
     expect(after.length).toBeGreaterThanOrEqual(1)
     expect(after.map(m => m.content)).toContain('最新输入')
   })
+
+  it('contextSummarize=true：裁剪后生成摘要消息（system 之后、含 marker 与条数统计）', async () => {
+    const agent = agentWithHistory(25, { maxContextMessages: 5, contextSummarize: true })
+    for await (const _ of agent.run('继续')) { /* 消费流 */ }
+    const after = agent.getMessages()
+    // system + 摘要 + 保留 5 条（含本轮输入）+ 本轮 assistant 回复
+    expect(after[0].role).toBe('system')
+    expect(after[1].role).toBe('system')
+    expect(typeof after[1].content).toBe('string')
+    expect(after[1].content).toContain('[历史摘要]')
+    // 摘要含被压缩条数（25 条历史中裁掉约 20 条）
+    expect(after[1].content).toContain('条消息已被压缩')
+    // 最新输入仍保留（AI 必须看到）
+    expect(after.map(m => m.content)).toContain('继续')
+  })
+
+  it('contextSummarize 缺省 false：行为与旧版完全一致（零回归）', async () => {
+    const agent = agentWithHistory(25, { maxContextMessages: 5 })
+    for await (const _ of agent.run('继续')) { /* 消费流 */ }
+    const after = agent.getMessages()
+    // 无摘要消息：system 之后直接是保留消息
+    expect(after[0].role).toBe('system')
+    expect(after[1].role).not.toBe('system')
+    expect(after.map(m => m.content)).not.toContain('[历史摘要]')
+  })
 })

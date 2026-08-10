@@ -68,6 +68,9 @@ import {
   estimateMessagesTokens,
   suggestTrim,               // v0.5.9：按预算建议保留哪些消息
   trimContextMessages,       // v0.6.17：Agent 内部安全自动裁剪（保证配对）
+  summarizeTrimmedMessages,  // v0.6.19：裁剪时把丢弃历史压缩成摘要消息
+  buildSummaryText,          // v0.6.19：摘要文本组装（纯函数）
+  SUMMARY_MARKER,            // v0.6.19：摘要消息识别标记 '[历史摘要]'
   IMAGE_TOKEN_COST,          // 85
   MESSAGE_STRUCTURE_TOKENS,  // 4
   TOOL_CALL_STRUCTURE_TOKENS,// 3
@@ -146,7 +149,41 @@ const agent = new Agent({
 生成；变化自动重建 Agent 立即生效）；`flare server --max-context-messages <n> --max-context-tokens <n>`
 设置 server 级默认（chat 未指定时应用，请求优先）。详见 docs/host-protocol.md。
 
+## 上下文压缩摘要（v0.6.19，summarizeTrimmedMessages）
+
+`trimContextMessages` 把丢弃的历史**直接删除**（旧话题对 AI 完全不可见）；`summarizeTrimmedMessages`
+在同样裁剪策略的基础上，把被丢弃的历史**压缩成一条摘要消息**而非直接丢弃——AI 保留话题连续性
+（长会话裁剪后仍知道之前聊过什么、调过哪些工具）。
+
+```ts
+import { summarizeTrimmedMessages } from 'flare-agent'
+
+// 与 trimContextMessages 同参数；发生裁剪时返回 system 保底 + 摘要 + 保留消息
+const result = summarizeTrimmedMessages(messages, { maxMessages: 30, maxTokens: 8000 })
+```
+
+| 特性 | 说明 |
+|------|------|
+| 纯启发式 | 摘要由**统计**生成（条数 / 角色分布 / 估算 tokens / 涉及工具去重列表 / 最后话题片段），**不调用 LLM**——零额外成本、可离线确定性测试 |
+| 零拷贝契约 | 未发生裁剪 → 返回**原数组引用**（与 trimContextMessages 一致，调用方无感知） |
+| 摘要位置 | 裁剪后摘要紧随 system 之后（`role` 默认 `'system'`，可配 `'user'`）——AI 明确知道这是压缩的历史 |
+| 摘要链防堆积 | 摘要以 `SUMMARY_MARKER`（`[历史摘要]`）开头；下次裁剪时旧摘要无论被保留还是被裁掉，都被识别并合并进新摘要（新摘要含"更早历史"行，多次裁剪不越滚越大） |
+| 参数 | `role` / `maxChars`（默认 400，超长截断）/ `maxTools`（默认 8）/ `includeTail`（默认 true）/ `tailChars`（默认 80） |
+
+**AgentConfig 接入**：`contextSummarize: true`（默认 false，不配置行为与旧版完全一致）——
+
+```ts
+const agent = new Agent({
+  maxContextMessages: 30,   // 裁剪条数上限
+  contextSummarize: true,   // 开启后裁剪时生成摘要（纯启发式，不调 LLM）
+})
+```
+
+**server 协议透传**：chat 请求带 `contextSummarize`（布尔，非法值回 error 不触发生成）；
+`flare server --context-summarize` 设置 server 级默认（chat 未指定时应用，请求优先）；
+`get_config` 响应回显 `defaultContextSummarize`。详见 docs/host-protocol.md。
+
 ## 未来方向（记录）
 
-- 上下文压缩摘要（裁剪掉的历史压缩成摘要而非直接丢弃，需评估）
+- 摘要内容升级为 LLM 生成（当前纯启发式统计；如需语义级压缩摘要可评估在 run 循环外异步生成）
 - 工具确认机制完善：allow_session/always 记忆化 + 超时（已完成 v0.5.7/v0.6.1/v0.6.7）
