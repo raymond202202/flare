@@ -506,3 +506,40 @@ describe('/tools 命令（v0.6.11 当前 Agent 可用工具清单）', () => {
     expect(lines.join('\n')).toContain('/tools')
   })
 })
+
+describe('/usage 本会话用量（v0.6.17）', () => {
+  it('无用量记录 → 提示暂无', async () => {
+    const lines: string[] = []
+    const r = await handleSlashCommand('/usage', store, (s) => lines.push(s))
+    expect(r).toBe('continue')
+    expect(lines.join('\n')).toContain('暂无用量记录')
+  })
+
+  it('有全局用量 + 提供 sessionId → 显示本会话用量行', async () => {
+    // 本会话 2 次调用
+    store.logUsage('my-session', 100, 50, 'deepseek-chat')
+    store.logUsage('my-session', 200, 80, 'deepseek-chat')
+    // 其他会话 1 次（验证按会话过滤）
+    store.logUsage('other-session', 999, 999, 'deepseek-chat')
+
+    const lines: string[] = []
+    await handleSlashCommand('/usage', store, (s) => lines.push(s), undefined, undefined, undefined, undefined, undefined, 'my-session')
+    const out = lines.join('\n')
+    expect(out).toContain('📊 Token 用量')
+    // 全局统计（3 次调用：prompt 1299 + completion 1129 = 2428）
+    expect(out).toContain('2,428')
+    // 本会话行：430 tokens / 2 次调用
+    expect(out).toContain('本会话')
+    expect(out).toContain('430 tokens')
+    expect(out).toContain('2 次调用')
+  })
+
+  it('不提供 sessionId → 不显示本会话行（向后兼容）', async () => {
+    store.logUsage('x', 10, 20, 'deepseek-chat')
+    const lines: string[] = []
+    await handleSlashCommand('/usage', store, (s) => lines.push(s))
+    const out = lines.join('\n')
+    expect(out).toContain('📊 Token 用量')
+    expect(out).not.toContain('本会话')
+  })
+})

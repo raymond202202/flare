@@ -47,6 +47,11 @@
   - docs/host-protocol.md §9.1 + 请求类型列表 + README Changelog 并入 v0.6.17 条目
   - **493/493 全绿**（491 + 2 新增：store 单会话过滤+无记录幂等 / 协议响应结构+缺省 default），
     tsc 0 错误，零 agent.ts 改动
+- **P36 CLI `/usage` 本会话用量**（src/cli/index.ts + tests/cli-confirm.test.ts）：
+  - `/usage` 全局统计下方新增「本会话」行（`store.getSessionUsage(sessionId)`：tokens + 调用次数）
+  - `handleSlashCommand` 新增可选 `sessionId` 参数（缺省不显示——向后兼容，宿主集成不受影响）
+  - **496/496 全绿**（493 + 3 新增：无记录提示 / 带 sessionId 显示本会话行+按会话过滤（全局 2428 vs
+    本会话 430）/ 缺省不显示），tsc 0 错误，零 agent.ts 改动
 - **下一步候选**：① 上下文压缩摘要（裁剪掉的历史压缩成摘要而非直接丢弃，需评估）；
   ② 其他安全的外围增强（MCP 协议特性已基本覆盖，可考虑 server 协议其他管理接口、CLI 交互增强、
   MCP 工具集完善等）
