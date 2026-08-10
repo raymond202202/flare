@@ -278,7 +278,7 @@ async function startInteractive() {
       const mcpNames = new Set(mcpTools.map((t) => t.definition.function.name))
       const allTools = [...tools, ...mcpTools]
       return describeTools(allTools, CLI_CONFIRM_TOOLS, { mcp: mcpNames })
-    })
+    }, sessionId)
     agentRunning = false
     renderFrame()
     return result
@@ -492,7 +492,9 @@ export async function handleSlashCommand(
   /** /allow 命令回调（v0.6.7，确认门放行名单管理） */
   allowGate?: AllowGateHooks,
   /** /tools 命令回调（v0.6.11，当前 Agent 可用工具清单） */
-  toolsInfo?: ToolsInfoGetter
+  toolsInfo?: ToolsInfoGetter,
+  /** 当前会话 id（v0.6.17，/usage 显示本会话用量；缺省不显示） */
+  sessionId?: string
 ): Promise<'exit' | 'continue'> {
   const lower = cmd.toLowerCase()
   // /remember 带内容，必须用前缀匹配（switch 精确匹配会永远"未知命令"）
@@ -769,6 +771,11 @@ export async function handleSlashCommand(
         output(`  ${chalk.gray('Completion:')} ${usage.completionTokens.toLocaleString()}`)
         output(`  ${chalk.gray('总计:')}       ${usage.totalTokens.toLocaleString()} tokens`)
         output(`  ${chalk.gray('会话数:')}     ${usage.sessionCount}`)
+        // 当前会话用量（v0.6.17：getSessionUsage 按 session 过滤；未提供 sessionId 不显示）
+        if (sessionId) {
+          const mine = store.getSessionUsage(sessionId)
+          output(chalk.gray(`  本会话:     ${mine.totalTokens.toLocaleString()} tokens（${mine.callCount} 次调用）`))
+        }
       }
       break
     case '/exit':
