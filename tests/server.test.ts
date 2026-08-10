@@ -677,4 +677,24 @@ describe('flare host server 协议', () => {
       expect(['text', 'tool_call', 'tool_execute', 'tool_result', 'done', 'error', 'cancelled'].includes(m.type)).toBe(true)
     }
   }, 45000)
+
+  it('get_config → config 响应（服务器运行配置，v0.6.18 只读不触发生成）', async () => {
+    const msgs = await request({ type: 'get_config' }, { expect: ['config'] })
+    const c = msgs[0]
+    expect(c.type).toBe('config')
+    // 确认门配置（默认名单 + 默认 30s 超时）
+    expect(c.confirmTools).toEqual(DEFAULT_CONFIRM_TOOLS)
+    expect(c.confirmTimeoutMs).toBe(30000)
+    // 默认采样/裁剪参数（本测试服务器未带 --max-* → null）
+    expect(c.defaultMaxTokens).toBe(null)
+    expect(c.defaultTemperature).toBe(null)
+    expect(c.defaultMaxContextMessages).toBe(null)
+    expect(c.defaultMaxContextTokens).toBe(null)
+    // 工具超时 / namespace / storage / MCP 清单（不含密钥）
+    expect(c.toolTimeoutMs).toBe(30000)
+    expect(c.namespace).toBe(null)
+    expect(typeof c.storage).toBe('string')
+    expect(c.storage).toContain('test.db')
+    expect(Array.isArray(c.mcpServers)).toBe(true)
+  })
 })

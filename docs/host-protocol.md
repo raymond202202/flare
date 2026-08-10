@@ -3,7 +3,7 @@
 > 供非 Node 宿主（如 Qt 应用）调用 flare 引擎的本地协议。
 > 传输：stdin/stdout · JSON Lines（每行一个 JSON 对象）
 > 实现：`src/server.ts`（`flare server` 命令）
-> 请求类型：chat / cancel / set_context / list_sessions / recent_sessions / get_messages / get_usage / session_usage / context_status / ping / version / create_session / rename_session / clear_session / delete_session / remember / get_memories / delete_memory / tool_result / confirm_result / confirm_status / confirm_revoke / confirm_allow / models / tools / mcp_status
+> 请求类型：chat / cancel / set_context / list_sessions / recent_sessions / get_messages / get_usage / session_usage / context_status / ping / version / create_session / rename_session / clear_session / delete_session / remember / get_memories / delete_memory / tool_result / confirm_result / confirm_status / confirm_revoke / confirm_allow / models / get_config / tools / mcp_status
 
 ## 启动
 
@@ -343,6 +343,17 @@ flare server --profile <expert-profile-file> --storage <db-path> [--mcp <mcp-con
 - 同时销毁该会话缓存 Agent（内存上下文同步清空；下次 chat 自动重建干净会话，与 delete_session 同模式）
 - 幂等安全：空/不存在会话 `cleared:0` 不报错；清空后仍可继续写入（会话记录未删，无外键问题）；FTS 检索索引由触发器联动清理
 
+### 25. get_config — 查询服务器运行配置（v0.6.18，只读）
+
+```json
+{"type":"get_config"}
+```
+
+响应：`{"type":"config","confirmTools":["memory_save"],"confirmTimeoutMs":30000,"defaultMaxTokens":null,"defaultTemperature":null,"defaultMaxContextMessages":null,"defaultMaxContextTokens":null,"toolTimeoutMs":30000,"namespace":null,"storage":"/path/flare.db","mcpServers":[{"name":"fs","transport":"stdio"}]}`
+
+- 宿主面板"设置/关于"数据源：确认门配置（`confirmTools` 名单 / `confirmTimeoutMs` 超时）、默认采样参数（`defaultMaxTokens` / `defaultTemperature`，未配置为 null）、默认上下文裁剪参数（`defaultMaxContextMessages` / `defaultMaxContextTokens`，未配置为 null）、`toolTimeoutMs` 工具超时、`namespace` 记忆隔离标识（无则 null）、`storage` 存储路径（非字符串配置为 null）、`mcpServers` MCP 服务器清单（名称 + 传输类型 http/stdio）
+- 只读查询：不触发生成、不创建会话；**不含任何密钥/敏感配置**
+
 ## 响应（服务 → 宿主，stdout 每行一个）
 
 | type | 字段 | 说明 |
@@ -367,6 +378,7 @@ flare server --profile <expert-profile-file> --storage <db-path> [--mcp <mcp-con
 | `confirm_status` | `sessionId, confirmTools, allowedTools, sessionAllowed, alwaysAllowed` | 确认门状态（confirm_status 响应，v0.6.8） |
 | `models` | `configured, ollama` | 可切换模型（models 响应，v0.6.9） |
 | `tools` | `sessionId, tools, confirmTools` | Agent 工具清单（tools 响应，v0.6.11） |
+| `config` | `confirmTools, confirmTimeoutMs, defaultMaxTokens, defaultTemperature, defaultMaxContextMessages, defaultMaxContextTokens, toolTimeoutMs, namespace, storage, mcpServers` | 服务器运行配置（get_config 响应，v0.6.18，只读） |
 
 ## 工具执行流（宿主代理工具）
 
