@@ -9,7 +9,8 @@
  * 覆盖 MCP 核心子集（工具互通所需）：
  *   initialize / notifications/initialized / tools/list / tools/call / ping
  *   （v0.6.1 resources、v0.6.2 prompts、v0.6.11 completion/complete、v0.6.13 logging/setLevel、
- *     v0.6.15 resources/subscribe + unsubscribe + notifications/resources/updated）
+ *     v0.6.15 resources/subscribe + unsubscribe + notifications/resources/updated、
+ *     v0.6.20 notifications/tools/list_changed + notifications/resources/list_changed）
  *
  * 设计：
  * - 零依赖：不引入 @modelcontextprotocol/sdk，直接手写 NDJSON 行协议
@@ -418,6 +419,30 @@ export class MCPServer {
     if (this.closed) return
     if (!this.subscribedUris.has(uri)) return
     this.safeWrite({ jsonrpc: '2.0', method: 'notifications/resources/updated', params: { uri } })
+  }
+
+  /**
+   * 服务器推送工具列表变化通知（v0.6.20）：发 notifications/tools/list_changed（无 id、无 params，客户端无需响应）。
+   * 工具集**动态变化**（宿主在运行中新增/移除工具）时调用——客户端收到后应重新拉取 tools/list 刷新清单；
+   * 与 resources/updated（单个资源内容变化、需订阅）互补：list_changed 是**列表**变化，面向所有已连接客户端。
+   * 服务器已关闭 / 写失败 → 静默忽略（不抛错）。
+   * 注意传输差异：stdio（MCPServer）有服务器→客户端通道可推送；HTTP transport（startMcpHttpServer）
+   * 是一请求一响应、无推送通道——客户端收不到该通知（与 sendLog/notifyResourceUpdated 差异一致，文档如实记录）。
+   */
+  notifyToolListChanged(): void {
+    if (this.closed) return
+    this.safeWrite({ jsonrpc: '2.0', method: 'notifications/tools/list_changed' })
+  }
+
+  /**
+   * 服务器推送资源列表变化通知（v0.6.20）：发 notifications/resources/list_changed（无 id、无 params，客户端无需响应）。
+   * 资源**列表**动态变化（新增/移除 uri）时调用——客户端收到后应重新拉取 resources/list 刷新清单；
+   * 与 notifyResourceUpdated（订阅的单个资源**内容**更新）互补。所有已连接客户端都会收到（无需订阅）。
+   * 服务器已关闭 / 写失败 → 静默忽略（不抛错）。传输差异与 notifyToolListChanged 一致（HTTP 收不到）。
+   */
+  notifyResourceListChanged(): void {
+    if (this.closed) return
+    this.safeWrite({ jsonrpc: '2.0', method: 'notifications/resources/list_changed' })
   }
 
   /** 渲染提示词（prompts/get）：未知 name → -32602；render() 异常 → -32603（服务器不崩） */

@@ -337,6 +337,30 @@ Interactive mode commands:
 
 > 中文条目 / Chinese entries · English summary for each version
 
+#### v0.6.20 (2026-08-11) — MCP 列表变化通知：tools/list_changed + resources/list_changed / MCP list-changed notifications (tools + resources)
+- 🔔 **服务器侧（src/mcp/server.ts）**：`MCPServer.notifyToolListChanged()` / `notifyResourceListChanged()`
+  ——工具集/资源列表**动态变化**（运行中新增或移除）时推送 MCP 标准通知 `notifications/tools/list_changed`
+  / `notifications/resources/list_changed`（无 id、无 params，客户端无需响应）：客户端收到后应重新拉取
+  tools/list / resources/list 刷新清单；与 v0.6.15 的 `resources/updated`（订阅的单个资源**内容**变化）
+  互补——updated 面向已订阅 uri，list_changed 面向**列表整体**、无需订阅（所有已连接客户端收到）；
+  服务器已关闭 / 写失败 → 静默忽略（不抛错）
+- 👂 **客户端侧（src/mcp/client.ts）**：`MCPClient` 选项新增 `onToolsChanged()` / `onResourcesChanged()`
+  回调——收到对应通知触发（无参，建议回调内重新 listTools/listResources）；未配置静默忽略不干扰后续
+  请求；两个回调独立只配置其一互不影响（与 onLog/onResourceUpdated/onProgress 同风格）
+- 📚 docs/mcp.md 列表变化通知章节（含与 resources/updated 的定位差异 + HTTP transport 无推送通道的
+  传输差异如实记录，MCPHttpClient 不提供回调不假装支持）+ README Changelog + 版本号 0.6.20
+- 🧪 新增 8 项测试（MCPServer 5：notifyToolListChanged 推送结构 / notifyResourceListChanged 推送结构 /
+  两者独立互不干扰 / 已关闭静默 / **list_changed 真实互通 e2e**——真实 MCPServer 子进程 callTool
+  notify_changed → 客户端 onToolsChanged+onResourcesChanged 各收到 2 次且连接不断；MCPClient 3：
+  两个回调各触发 / 只配其一互不干扰 / 未配置忽略不抛错）；共 **535/535 全绿**（527 + 8），
+  tsc 0 错误，零 agent.ts 改动
+- EN: New `MCPServer.notifyToolListChanged()` / `notifyResourceListChanged()` push the standard MCP
+  `notifications/tools/list_changed` / `notifications/resources/list_changed` (no id/params) when the
+  tool/resource **lists** change dynamically, and `MCPClient` gains `onToolsChanged` / `onResourcesChanged`
+  callbacks so hosts can re-fetch tools/list & resources/list — complementary to the per-uri
+  `resources/updated` subscription (content change) from v0.6.15. HTTP transport documented as
+  push-incapable (no SSE). 535/535 green, zero Agent.run changes.
+
 #### v0.6.19 (2026-08-10) — 上下文压缩摘要：裁剪掉的历史压缩成摘要 / Context summarization: trimmed history compressed into a summary message
 - 🧩 **上下文压缩摘要（src/core/context.ts + agent.ts + server.ts + cli）**：`AgentConfig` 新增
   `contextSummarize`（默认 false）——开启后迭代前裁剪把**丢弃的历史压缩成摘要消息**而非直接丢弃
