@@ -3,9 +3,51 @@
 > 目标：flare 是 Pulse/StorySpire 依赖的 AI Agent 引擎（TS）。任何改动必须安全（tsc 0 错 + 测试全绿才 commit）。
 > 铁律：禁止 push；禁止修改 src/core/agent.ts 的 Agent.run 核心循环。
 
-> **最新状态（v0.6.15）**：MCP resources 订阅协议闭环（`resources/subscribe` + `unsubscribe` + 服务器
-> `notifyResourceUpdated` 推送 `notifications/resources/updated` 仅已订阅客户端）；454/454 全绿（commit `7fbd894`，未 push）。
-> 下一步候选：① agent.ts trimContext 自动裁剪（风险高仍暂缓）；② 其他安全的外围增强（MCP 更多协议特性、server 协议其他管理接口等）。
+> **最新状态（v0.6.16）**：MCP progress + cancelled 通知协议闭环（`notifyProgress` 推送
+> `notifications/progress` 长请求进度 + `notifyCancelled` 发送 `notifications/cancelled` 取消告知，
+> 服务器命中 pending reject 不悬挂）；469/469 全绿。下一步候选：① agent.ts trimContext 自动裁剪
+> （风险高仍暂缓）；② 其他安全的外围增强（MCP 协议特性已基本覆盖，可考虑 server 协议其他管理接口、
+> CLI 交互增强、MCP 工具集完善等）。
+
+### 2026-08-10 第十八轮实施（v0.6.16）——MCP progress + cancelled 通知协议闭环
+
+- **P33 MCP progress + cancelled 通知**（src/mcp/server.ts + client.ts + http-client.ts + types.ts）：
+  - **progress 协议语义**：服务器处理**长请求**（耗时工具调用）期间推送进度——客户端无需轮询；
+    关联方式：客户端在请求 `_meta.progressToken` 指定令牌，服务器推送时原样回传
+  - **服务器侧**：`MCPServer.notifyProgress(progress?, total?, message?)` 发 `notifications/progress`
+    （无 id，客户端无需响应）——只在**正在处理的请求带 `_meta.progressToken`** 时推送（活动令牌机制，
+    handleMessage 进入时记录、finally 恢复；串行队列保证同一时刻只有一个活动请求，令牌不串）；
+    无活动令牌 / 已关闭 / 写失败 → 静默忽略不抛错
+  - **客户端侧**：`MCPClient` 新增 `onProgress` 回调（收到 `notifications/progress` 转发
+    `{ progressToken, progress?, total?, message? }`；未配置忽略不干扰后续请求）+ `callTool(name, args?,
+    options?)` 第三参 `{ progressToken }` → 请求带 `_meta`（不带则行为与旧版一致，向后兼容）
+  - **cancelled 协议语义**：请求方放弃已发出请求时通知对方——`MCPClient.notifyCancelled(requestId,
+    reason?)` / `MCPHttpClient.notifyCancelled`（async，发通知回 202）发 `notifications/cancelled`
+    （超时/用户取消后礼貌告知服务器）
+  - **服务器侧接收**：handleMessage 通知分流新增 handleNotification——`notifications/cancelled` 命中
+    pending（服务器→客户端请求如 `requestRoots` / `requestSample` 等待响应中）→ reject 并清理
+    （不悬挂，错误含 reason）；未知/已完成请求 → 静默忽略（连接不断）
+  - **传输差异（文档记录）**：HTTP transport 共用 handleMessage 核心，请求带 `_meta.progressToken`
+    可识别、`notifications/cancelled` 正常处理（202）；但无 SSE 推送通道，`notifyProgress` 客户端
+    收不到（与 logging/resources 订阅一致）；stdio 串行队列下取消通知通常排在慢请求之后到达——
+    cancelled 的主要价值是**协议完整性与超时后的礼貌告知**，对 pending 请求的取消真实生效
+  - `McpProgressParams` / `McpCancelledParams` / `McpCallOptions` 类型库导出；
+    docs/mcp.md progress + cancelled 协议章节 + README Changelog + 版本号 0.6.16
+  - **469/469 全绿**（454 + 15 新增：MCPServer 7——带 token 推送结构含无 id / 无 token 静默 /
+    请求完成令牌清除 / 已关闭静默 / cancelled 取消 pending reject / 未知 requestId 静默后续正常 +
+    **progress 真实互通 e2e**——真实 MCPServer 子进程 callTool 带 progressToken ↔ 工具执行中
+    notifyProgress 3 次 → 客户端 onProgress 收到全部进度；MCPClient 5——onProgress 转发
+    progress-notify 模式 / 无回调忽略 / 不带 options 无 _meta / notifyCancelled 发送含 reason +
+    不带 reason / close 后静默；MCPHttpClient 3——callTool 透传 progressToken / notifyCancelled 202 /
+    close 后静默），tsc 0 错误，零 agent.ts 改动
+  - **冒烟实测**：真实 tsx 子进程闭环——HTTP callTool 带 progressToken 透传成功（version 0.6.16）、
+    notifyCancelled 202 ok；stdio 真实 MCPServer 子进程 progress_work → onProgress 收到 3 条进度
+    （token 回传 smoke-1、progress 1→2→3、message 完整），SMOKE PASS
+- **下一步候选**：① agent.ts trimContext 自动裁剪（风险高仍暂缓）；② 其他安全的外围增强
+  （MCP 协议特性已基本覆盖——tools/resources/prompts/completion/roots/logging/sampling/subscribe/
+  progress/cancelled；可考虑 server 协议其他管理接口、CLI 交互增强、MCP 工具集完善等）
+
+---
 
 ### 2026-08-10 第十七轮实施（v0.6.15）——MCP resources 订阅闭环
 

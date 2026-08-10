@@ -336,6 +336,37 @@ Interactive mode commands:
 
 > 中文条目 / Chinese entries · English summary for each version
 
+#### v0.6.16 (2026-08-10) — MCP progress + cancelled 通知协议闭环 / MCP progress & cancellation notifications (notifications/progress + notifications/cancelled)
+- 🧩 **MCP progress 通知协议（src/mcp/server.ts + client.ts + http-client.ts + types.ts）**：服务器处理
+  **长请求**（耗时工具调用）期间推送进度——`MCPServer.notifyProgress(progress?, total?, message?)` 发
+  `notifications/progress`（无 id，客户端无需响应）；关联方式：客户端在请求 `_meta.progressToken`
+  指定令牌（`callTool(name, args?, options?)` 第三参，向后兼容），服务器推送时原样回传
+- 🧩 **服务器侧活动令牌机制**：请求带 `_meta.progressToken` → 处理期间记录为活动令牌，`notifyProgress`
+  用它推送（串行队列保证同一时刻只有一个活动请求，令牌不串）；无活动令牌 / 已关闭 / 写失败 → 静默忽略
+- 🧩 **客户端侧**：`MCPClient` 新增 `onProgress` 回调选项（收到 `notifications/progress` 转发
+  `{ progressToken, progress?, total?, message? }`；未配置忽略不干扰后续请求）；`callTool` 带
+  `progressToken` 时请求携带 `_meta`（不带则行为与旧版一致）
+- 🧩 **MCP cancelled 通知协议**：`MCPClient.notifyCancelled(requestId, reason?)` / `MCPHttpClient.notifyCancelled`
+  发 `notifications/cancelled`（超时/用户取消后礼貌告知服务器）；服务器收到 → 若 `requestId` 命中 pending
+  （服务器→客户端请求如 `requestRoots` / `requestSample` 等待响应中）→ reject 并清理（不悬挂，含 reason）；
+  未知/已完成请求 → 静默忽略（连接不断）
+- 📌 **传输差异（文档记录）**：HTTP transport 共用 handleMessage 核心，请求带 `_meta.progressToken`
+  可识别、`notifications/cancelled` 正常处理（202）；但无 SSE 推送通道，`notifyProgress` 客户端收不到
+  （与 logging/resources 订阅一致）；stdio 串行队列下取消通知通常排在慢请求之后到达——cancelled 的
+  主要价值是协议完整性与超时后的礼貌告知，对 pending 请求的取消真实生效
+- 📚 docs/mcp.md progress + cancelled 协议章节 + README Changelog + 版本号 0.6.16
+- 🧪 新增 15 项测试：MCPServer 7（带 token 推送结构含无 id / 无 token 静默 / 请求完成清除 / 已关闭静默 /
+  cancelled 取消 pending reject / 未知 requestId 静默后续正常 + **真实互通 e2e**——真实 MCPServer 子进程
+  callTool 带 progressToken ↔ 工具执行中 notifyProgress 3 次 → 客户端 onProgress 收到全部进度）+
+  MCPClient 5（onProgress 转发 progress-notify 模式 / 无回调忽略 / 不带 options 无 _meta / notifyCancelled
+  发送含 reason + 不带 reason / close 后静默）+ MCPHttpClient 3（callTool 透传 progressToken / notifyCancelled
+  202 / close 后静默）；共 469/469；零 agent.ts 改动
+- EN: MCP progress notifications — `MCPServer.notifyProgress()` pushes `notifications/progress` while handling a
+  request carrying `_meta.progressToken`; `MCPClient` gains `onProgress` and `callTool(name, args, { progressToken })`
+  (HTTP client passes the token through but can't receive pushes — no SSE). Cancellation — `notifyCancelled(requestId,
+  reason?)` sends `notifications/cancelled`; the server rejects matching pending requests (roots/sampling) instead of
+  hanging, silently ignoring unknown ids. 469/469 tests, zero agent.ts changes.
+
 #### v0.6.15 (2026-08-10) — MCP resources 订阅闭环：subscribe/unsubscribe + 资源更新通知 / MCP resource subscriptions (resources/subscribe + notifications/resources/updated)
 - 🧩 **MCP resources 订阅协议（src/mcp/server.ts + client.ts + http-client.ts）**：客户端订阅资源后，
   服务器资源变化时推送更新通知——resources 闭环的最后一块（v0.6.1 暴露 + v0.6.6 消费 + 本轮订阅）

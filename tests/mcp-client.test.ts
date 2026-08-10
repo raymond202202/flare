@@ -416,3 +416,86 @@ describe('MCPClient resources 订阅（v0.6.15：subscribeResource/unsubscribeRe
     await expect(client.subscribeResource('memory://preferences')).rejects.toThrow(/已关闭/)
   })
 })
+
+describe('MCPClient progress + cancelled 通知（v0.6.16：onProgress 接收 + notifyCancelled 发送）', () => {
+  it('callTool 带 progressToken：服务器推送 notifications/progress → onProgress 收到（progress 协议消费闭环）', async () => {
+    const received: any[] = []
+    const client = new MCPClient({
+      command: process.execPath,
+      args: [MOCK_SERVER],
+      env: { MOCK_MODE: 'progress-notify' },
+      timeoutMs: 5000,
+      onProgress: (p) => received.push(p),
+    })
+    await client.initialize()
+    const res = await client.callTool('echo_text', { text: 'hi' }, { progressToken: 'tk-1' })
+    expect(res.content[0]?.text).toBe('echo: hi')
+    // mock 服务器在响应前推送 2 条进度（带 message 与不带）
+    expect(received).toHaveLength(2)
+    expect(received[0]).toMatchObject({ progressToken: 'tk-1', progress: 1, total: 2, message: '第一步' })
+    expect(received[1]).toMatchObject({ progressToken: 'tk-1', progress: 2, total: 2 })
+    expect(received[1].message).toBeUndefined()
+    client.close()
+  })
+
+  it('未配置 onProgress：服务器推送进度通知 → 静默忽略（不抛错、不影响后续请求）', async () => {
+    const client = spawnMock('progress-notify')
+    await client.initialize()
+    const res = await client.callTool('echo_text', { text: 'no-callback' }, { progressToken: 'tk-2' })
+    expect(res.content[0]?.text).toBe('echo: no-callback')
+    client.close()
+  })
+
+  it('callTool 不带 options：不携带 _meta（向后兼容，行为不变）', async () => {
+    const client = spawnMock('progress-notify') // 无 progressToken → mock 不推送进度
+    await client.initialize()
+    const res = await client.callTool('echo_text', { text: 'plain' })
+    expect(res.content[0]?.text).toBe('echo: plain')
+    client.close()
+  })
+
+  it('notifyCancelled：发送 notifications/cancelled（服务器记录 requestId + reason）', async () => {
+    const cancelLog = join(tmpdir(), `flare-cancel-${Date.now()}-${Math.floor(Math.random() * 1e6)}.json`)
+    const client = new MCPClient({
+      command: process.execPath,
+      args: [MOCK_SERVER],
+      env: { MOCK_MODE: 'cancel-echo', CANCEL_LOG_FILE: cancelLog },
+      timeoutMs: 5000,
+    })
+    await client.initialize()
+    client.notifyCancelled(7, 'timeout')
+    // 等待 mock 服务器把 cancelled 参数写入文件
+    const deadline = Date.now() + 4000
+    let lines: any[] = []
+    while (Date.now() < deadline) {
+      lines = readLogLines(cancelLog)
+      if (lines.length > 0) break
+      await new Promise((r) => setTimeout(r, 50))
+    }
+    expect(lines).toHaveLength(1)
+    expect(lines[0]).toEqual({ requestId: 7, reason: 'timeout' })
+    client.close()
+  })
+
+  it('notifyCancelled 不带 reason：只发送 requestId；close 后静默不抛错', async () => {
+    const cancelLog = join(tmpdir(), `flare-cancel-${Date.now()}-${Math.floor(Math.random() * 1e6)}.json`)
+    const client = new MCPClient({
+      command: process.execPath,
+      args: [MOCK_SERVER],
+      env: { MOCK_MODE: 'cancel-echo', CANCEL_LOG_FILE: cancelLog },
+      timeoutMs: 5000,
+    })
+    await client.initialize()
+    client.notifyCancelled(3)
+    const deadline = Date.now() + 4000
+    let lines: any[] = []
+    while (Date.now() < deadline) {
+      lines = readLogLines(cancelLog)
+      if (lines.length > 0) break
+      await new Promise((r) => setTimeout(r, 50))
+    }
+    expect(lines).toEqual([{ requestId: 3 }])
+    client.close()
+    expect(() => client.notifyCancelled(1, 'after-close')).not.toThrow()
+  })
+})

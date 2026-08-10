@@ -25,7 +25,7 @@
 import { request as httpRequest } from 'node:http'
 import { request as httpsRequest } from 'node:https'
 import { createRequire } from 'node:module'
-import type { McpTool, McpCallResult, McpPromptInfo, McpPromptResult, McpResourceInfo, McpResourceContents, McpCompletionResult, McpLogLevel } from './types.js'
+import type { McpTool, McpCallResult, McpPromptInfo, McpPromptResult, McpResourceInfo, McpResourceContents, McpCompletionResult, McpLogLevel, McpCallOptions, McpCancelledParams } from './types.js'
 
 const require = createRequire(import.meta.url)
 const pkg = require('../../package.json') as { version: string }
@@ -163,9 +163,15 @@ export class MCPHttpClient {
     return Array.isArray(res?.tools) ? (res.tools as McpTool[]) : []
   }
 
-  /** 调用服务器工具（tools/call）；工具级失败以 isError 标记返回（协议层错误则 reject） */
-  async callTool(name: string, args?: Record<string, any>): Promise<McpCallResult> {
-    const res = await this.request<any>('tools/call', { name, arguments: args || {} })
+  /** 调用服务器工具（tools/call）；工具级失败以 isError 标记返回（协议层错误则 reject）。
+   *  v0.6.16：options.progressToken → 请求带 _meta.progressToken（服务器可识别；但 HTTP transport
+   *  无 SSE 推送通道，进度通知收不到——与 logging/resources 订阅的传输差异一致，文档如实记录） */
+  async callTool(name: string, args?: Record<string, any>, options?: McpCallOptions): Promise<McpCallResult> {
+    const params: Record<string, any> = { name, arguments: args || {} }
+    if (options?.progressToken !== undefined) {
+      params._meta = { progressToken: options.progressToken }
+    }
+    const res = await this.request<any>('tools/call', params)
     return {
       content: Array.isArray(res?.content) ? res.content : [],
       isError: !!res?.isError,
@@ -220,6 +226,16 @@ export class MCPHttpClient {
   /** 设置服务器日志级别阈值（logging/setLevel，v0.6.13）：HTTP transport 一请求一响应，可设置但收不到日志推送（无 SSE 长连接） */
   async setLogLevel(level: McpLogLevel): Promise<void> {
     await this.request('logging/setLevel', { level })
+  }
+
+  /**
+   * 通知服务器取消一个已发出的请求（v0.6.16 cancelled 通知协议）：发 notifications/cancelled 通知
+   * （无 id，服务器回 202 空体）。requestId 是本客户端发出请求时使用的 id；reason 可选。
+   * HTTP transport 一请求一响应，取消通知到达时原请求可能已完成——尽力而为；失败静默不抛错。
+   */
+  async notifyCancelled(requestId: string | number, reason?: string): Promise<void> {
+    const params: McpCancelledParams = { requestId, ...(reason ? { reason } : {}) }
+    await this.notify('notifications/cancelled', params)
   }
 
   /** 健康检查（ping）：成功返回 true；服务器无响应 reject */

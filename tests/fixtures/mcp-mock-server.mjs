@@ -6,7 +6,10 @@
 //   no-response  — 不响应 tools/call（测客户端超时）
 //   log-notify   — initialize 后推送一条 notifications/message（测客户端 onLog 转发）
 //   res-update   — 收到 resources/subscribe 后推送一条 notifications/resources/updated（测客户端 onResourceUpdated 转发）
+//   progress-notify — tools/call 带 _meta.progressToken 时推送 2 条 notifications/progress（测客户端 onProgress 转发）
+//   cancel-echo  — 收到 notifications/cancelled 时把参数写入 CANCEL_LOG_FILE（测客户端 notifyCancelled 发送）
 import readline from 'node:readline'
+import { writeFileSync } from 'node:fs'
 
 const mode = process.env.MOCK_MODE || 'default'
 
@@ -70,8 +73,15 @@ rl.on('line', (line) => {
   } catch {
     return
   }
-  // 通知类消息（无 id）忽略
-  if (msg.id === undefined) return
+  // 通知类消息（无 id）忽略；cancel-echo 模式下记录 notifications/cancelled
+  if (msg.id === undefined) {
+    if (msg.method === 'notifications/cancelled' && mode === 'cancel-echo' && process.env.CANCEL_LOG_FILE) {
+      try {
+        writeFileSync(process.env.CANCEL_LOG_FILE, JSON.stringify(msg.params || {}) + '\n')
+      } catch { /* 忽略 */ }
+    }
+    return
+  }
 
   const respond = (result) => process.stdout.write(JSON.stringify({ jsonrpc: '2.0', id: msg.id, result }) + '\n')
   const respondError = (code, message) =>
@@ -130,6 +140,23 @@ rl.on('line', (line) => {
     case 'tools/call': {
       if (mode === 'no-response') return // 不响应 → 客户端超时
       const { name, arguments: args } = msg.params || {}
+      // v0.6.16：progress-notify 模式下带 progressToken 的调用先推 2 条进度通知（模拟长任务进度）
+      if (mode === 'progress-notify' && msg.params?._meta?.progressToken !== undefined) {
+        process.stdout.write(
+          JSON.stringify({
+            jsonrpc: '2.0',
+            method: 'notifications/progress',
+            params: { progressToken: msg.params._meta.progressToken, progress: 1, total: 2, message: '第一步' },
+          }) + '\n'
+        )
+        process.stdout.write(
+          JSON.stringify({
+            jsonrpc: '2.0',
+            method: 'notifications/progress',
+            params: { progressToken: msg.params._meta.progressToken, progress: 2, total: 2 },
+          }) + '\n'
+        )
+      }
       if (name === 'echo_text') {
         respond({ content: [{ type: 'text', text: `echo: ${args?.text || ''}` }] })
       } else if (name === 'add_numbers') {

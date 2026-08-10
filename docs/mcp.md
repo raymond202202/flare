@@ -402,6 +402,72 @@ await client.initialize()
 > ⚠️ 安全：sampling 是**客户端主动授权**的能力——只有配置了 `sampling` 回调的客户端才会
 > 响应采样请求，服务器无法强制客户端调用模型；未配置的客户端一律回 `-32601`。
 
+#### progress 通知协议（v0.6.16）：长请求进度推送
+
+MCP **progress** 让服务器在处理**长请求**（如耗时工具调用）期间向客户端推送进度
+（`notifications/progress`，无 id 通知），客户端无需轮询——长任务可视化的标准做法。
+关联方式：客户端在请求参数 `_meta.progressToken` 指定令牌，服务器推送时原样回传。
+
+**客户端侧（flare 作为 MCP 客户端）**——`callTool` 第三参带 `progressToken` + 配置 `onProgress` 回调：
+
+```ts
+const client = new MCPClient({
+  command: 'node', args: ['your-mcp-server-entry.js'],
+  onProgress: (p) => console.log(`${p.progressToken}: ${p.progress}/${p.total} ${p.message || ''}`),
+})
+await client.initialize()
+const res = await client.callTool('long_task', { steps: 10 }, { progressToken: 'job-1' })
+```
+
+- `callTool(name, args?, options?)`：`options.progressToken`（string | number）→ 请求带
+  `_meta.progressToken`；不带则行为与旧版完全一致（向后兼容）
+- 服务器推送 `notifications/progress` → `onProgress` 回调收到 `{ progressToken, progress?, total?, message? }`；
+  未配置回调 → 忽略不干扰后续请求（与 onLog/onResourceUpdated 同风格）
+
+**服务器侧（flare 作为 MCP 服务器）**——`MCPServer.notifyProgress(progress?, total?, message?)`：
+
+```ts
+let server: MCPServer
+const longTool: Tool = {
+  definition: { type: 'function', function: { name: 'long_task', description: '', parameters: {} } },
+  execute: async () => {
+    server.notifyProgress(1, 10, '开始')
+    // ... 长任务中间步骤
+    server.notifyProgress(10, 10, '完成')
+    return { success: true, output: 'done' }
+  },
+}
+server = new MCPServer({ tools: [longTool] })
+```
+
+- 只在**正在处理的请求带 `_meta.progressToken`** 时推送（活动令牌机制；串行队列保证同一时刻
+  只有一个活动请求，令牌不会串）；无活动令牌 / 已关闭 / 写失败 → 静默忽略（不抛错）
+- 推送 `{ jsonrpc: '2.0', method: 'notifications/progress', params: { progressToken, progress?, total?, message? } }`
+  （无 id，客户端无需响应）；进度令牌原样回传供客户端关联请求
+- **传输差异（文档记录）**：HTTP transport（`startMcpHttpServer`）共用 handleMessage 核心，请求带
+  `_meta.progressToken` 可正常识别；但无 SSE 推送通道，服务器 `notifyProgress` 客户端收不到
+  （与 logging/resources 订阅的传输差异一致）；MCPHttpClient `callTool` 同样可透传 progressToken
+
+#### cancelled 通知协议（v0.6.16）：请求取消告知
+
+MCP **cancelled** 让**请求方**在放弃一个已发出的请求时通知对方（`notifications/cancelled`，
+无 id 通知），对方可停止处理/清理状态——超时或用户取消后礼貌告知的协议标准做法。
+
+```ts
+// 客户端：取消自己发出的请求（requestId 是本客户端发出请求时使用的 id；reason 可选）
+client.notifyCancelled(7, 'timeout')          // stdio MCPClient（同步发送）
+await httpClient.notifyCancelled(7, 'timeout') // HTTP MCPHttpClient（发通知，服务器回 202）
+```
+
+- **服务器侧**：收到 `notifications/cancelled` → 若 `requestId` 命中 pending（服务器→客户端请求，
+  如 `requestRoots` / `requestSample` 等待客户端响应中）→ reject 并清理（不悬挂，错误信息含 reason）；
+  未知/已完成请求 → 静默忽略（协议错误不致命，连接不断）
+- **传输差异（文档记录）**：HTTP transport 共用 handleMessage 核心，`notifications/cancelled`
+  通知同样处理（202）；但一请求一响应，取消通知到达时原请求可能已完成——尽力而为
+- 边界说明：stdio 串行队列下，取消通知通常排在慢请求**之后**处理（此时原请求已完成、响应已发），
+  故 cancelled 的主要价值是**协议完整性与客户端超时/取消后的礼貌告知**；对服务器→客户端
+  pending 请求（roots/sampling）的取消则真实生效（reject 不悬挂）
+
 ### HTTP transport（v0.6.3）：POST /mcp
 
 除 stdio 外，MCPServer 可经 **HTTP** 暴露（`src/mcp/http.ts`，零依赖 node:http）——

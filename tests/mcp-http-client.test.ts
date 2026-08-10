@@ -231,3 +231,35 @@ describe('MCPHttpClient（HTTP transport 消费端，与 stdio MCPClient 对称�
     await expect(client.setLogLevel('debug')).resolves.toBeUndefined()
   })
 })
+
+describe('MCPHttpClient progress + cancelled 通知（v0.6.16：callTool 透传 progressToken + notifyCancelled 发送）', () => {
+  it('callTool 带 progressToken：HTTP transport 可透传 _meta（调用正常；无推送通道收不到进度——文档记录）', async () => {
+    const h = await startMcpHttpServer({ tools: [echoTool] })
+    handles.push(h)
+    const client = new MCPHttpClient({ url: h.url })
+    clients.push(client)
+    await client.initialize()
+    const res = await client.callTool('echo', { text: 'hi-http' }, { progressToken: 'tk-http' })
+    expect(res.content[0]?.text).toBe('hi-http')
+  })
+
+  it('notifyCancelled：发送 notifications/cancelled（服务器回 202，不抛错；服务器仍可用）', async () => {
+    const h = await startMcpHttpServer({ tools: [echoTool] })
+    handles.push(h)
+    const client = new MCPHttpClient({ url: h.url })
+    clients.push(client)
+    await client.initialize()
+    await expect(client.notifyCancelled(3, 'user cancelled')).resolves.toBeUndefined()
+    await expect(client.ping()).resolves.toBe(true)
+  })
+
+  it('close 后 notifyCancelled 静默不抛错', async () => {
+    const h = await startMcpHttpServer({ tools: [echoTool] })
+    handles.push(h)
+    const client = new MCPHttpClient({ url: h.url })
+    clients.push(client)
+    await client.initialize()
+    client.close()
+    await expect(client.notifyCancelled(1)).resolves.toBeUndefined()
+  })
+})
