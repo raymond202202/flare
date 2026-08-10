@@ -3,12 +3,43 @@
 > 目标：flare 是 Pulse/StorySpire 依赖的 AI Agent 引擎（TS）。任何改动必须安全（tsc 0 错 + 测试全绿才 commit）。
 > 铁律：禁止 push；禁止修改 src/core/agent.ts 的 Agent.run 核心循环。
 
-> **最新状态（v0.6.19）**：上下文压缩摘要闭环——`contextSummarize` 开启后裁剪把丢弃历史压缩成
-> 摘要消息（纯启发式不调 LLM：条数/角色分布/涉及工具/最后话题；`[历史摘要]` 标记识别旧摘要合并
-> 覆盖防堆积）而非直接丢弃；server（chat 透传 + --context-summarize + get_config 回显）与 CLI
-> 交互模式（flare chat --context-summarize）均接入；527/527 全绿。下一步候选：
-> ① 其他安全的外围增强（CLI 交互增强、MCP 工具集完善、server 协议其他管理接口等）；
+> **最新状态（v0.6.20）**：MCP 列表变化通知闭环——`MCPServer.notifyToolListChanged`/`notifyResourceListChanged`
+> 推送标准通知 `notifications/tools/list_changed` + `notifications/resources/list_changed`（无 id/params，
+> 工具/资源列表动态变化时告知客户端重新拉取；与 v0.6.15 resources/updated 单资源内容订阅互补）；
+> `MCPClient` 新增 `onToolsChanged`/`onResourcesChanged` 回调（未配置静默忽略，只配其一互不干扰）；
+> 真实互通 e2e + 冒烟实测全通过；535/535 全绿。下一步候选：
+> ① 其他安全的外围增强（server 协议其他管理接口、CLI 交互增强、MCP 工具集完善等）；
 > ② 摘要内容升级为 LLM 生成（语义级压缩，需评估 run 循环外异步）。
+
+### 2026-08-11 第二十二轮实施（v0.6.20）——MCP 列表变化通知：tools/list_changed + resources/list_changed
+
+- **P42 MCP 列表变化通知**（src/mcp/server.ts + client.ts + fixtures + 测试）：
+  - **服务器侧** `MCPServer.notifyToolListChanged()` / `notifyResourceListChanged()`：工具集/资源列表
+    **动态变化**（运行中新增或移除，非内容更新）时推送 MCP 标准通知 `notifications/tools/list_changed`
+    / `notifications/resources/list_changed`（无 id、无 params，客户端无需响应）——客户端收到后应
+    重新拉取 tools/list / resources/list 刷新清单；与 v0.6.15 的 `resources/updated`（订阅的单个资源
+    **内容**变化）互补：updated 面向已订阅 uri，list_changed 面向**列表整体**、无需订阅（所有已连接
+    客户端收到）；服务器已关闭 / 写失败 → 静默忽略（不抛错，与 sendLog/notifyResourceUpdated 同风格）；
+    两方法相互独立可分别调用
+  - **客户端侧** `MCPClient` 选项新增 `onToolsChanged()` / `onResourcesChanged()` 回调——handleNotification
+    分流新增两分支：收到对应通知触发（无参，建议回调内重新 listTools/listResources）；未配置静默忽略
+    不干扰后续请求；两个回调独立只配置其一互不影响（与 onLog/onResourceUpdated/onProgress 同风格）
+  - **传输差异（文档记录）**：stdio 有服务器→客户端通道可推送；HTTP transport（startMcpHttpServer）
+    是一请求一响应、无推送通道——服务器可调用通知方法（不抛错）但客户端收不到；MCPHttpClient 无 SSE
+    长连接故不提供这两个回调，文档如实记录不假装支持
+  - docs/mcp.md 列表变化通知章节（含与 resources/updated 定位差异 + 传输差异）+ README Changelog +
+    版本号 0.6.20
+  - **535/535 全绿**（527 + 8 新增：MCPServer 5——notifyToolListChanged 推送结构（无 id/params）/
+    notifyResourceListChanged 推送结构 / 两者独立互不干扰 / 已关闭静默 / **list_changed 真实互通 e2e**
+    ——真实 MCPServer 子进程 callTool notify_changed → 客户端 onToolsChanged+onResourcesChanged 各收到
+    2 次且连接不断（后续请求照常）；MCPClient 3——两个回调各触发一次（mock list-changed 模式握手后
+    推送） / 只配其一互不干扰 / 未配置忽略不抛错且后续请求正常），tsc 0 错误，零 agent.ts 改动
+  - **冒烟实测**：真实 tsx 子进程闭环——version 0.6.20、callTool notify_changed 工具结果正常、
+    onToolsChanged + onResourcesChanged 均真实触发，SMOKE PASS
+- **下一步候选**：① 其他安全的外围增强（server 协议其他管理接口、CLI 交互增强、MCP 工具集完善等）；
+  ② 摘要内容升级为 LLM 生成（语义级压缩，需评估 run 循环外异步）
+
+---
 
 ### 2026-08-10 第二十一轮实施（v0.6.19）——上下文压缩摘要：裁剪掉的历史压缩成摘要
 
