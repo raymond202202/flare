@@ -3,13 +3,35 @@
 > 目标：flare 是 Pulse/StorySpire 依赖的 AI Agent 引擎（TS）。任何改动必须安全（tsc 0 错 + 测试全绿才 commit）。
 > 铁律：禁止 push；禁止修改 src/core/agent.ts 的 Agent.run 核心循环。
 
-> **最新状态（v0.6.24）**：两小步完成——① server 协议 `search_messages` 全文搜索历史对话
-> （复用 store FTS5 trigram 索引：bm25 相关度、中文友好、短查询 LIKE 回退；跨全部会话只读检索；
-> `query` 必填、`limit` 1~100 默认 10；宿主面板"搜索历史"数据源）+ CLI 交互 `/search <关键词>`；
-> ② `MCPClient.ping()` 补齐（stdio 与 HTTP 端对称，标准保活探测，MCPServer 早已支持零改动）；
-> 真实子进程冒烟均 PASS；560/560 全绿。下一步候选：
+> **最新状态（v0.6.25）**：一小步完成——MCP 列表变化通知**第三块对称补齐** `notifications/prompts/list_changed`
+> （v0.6.20 只做了 tools/resources，漏了 MCP 标准的 prompts 通知）：`MCPServer.notifyPromptListChanged()`
+> + `MCPClient.onPromptsChanged` 回调，真实子进程 e2e 三通知闭环（各收到 2 次连接不断）；
+> 562/562 全绿。下一步候选：
 > ① 其他安全的外围增强（server 协议其他管理接口、CLI 交互增强、MCP 工具集完善等）；
 > ② 摘要内容升级为 LLM 生成（语义级压缩，需评估 run 循环外异步）。
+
+### 2026-08-11 第二十五轮实施（v0.6.25）——MCP 列表变化通知补齐 prompts/list_changed
+
+- **P48 `notifications/prompts/list_changed` 对称补齐**（src/mcp/server.ts + client.ts + 测试，commit `af53cdc`）：
+  - **协议缺口修复**：MCP 标准列表变化通知共三个（tools/resources/prompts），v0.6.20 只做了前两个——
+    本轮补上第三个 `notifications/prompts/list_changed`（提示词**列表**动态变化，运行中新增/移除 prompt）
+  - **服务器侧** `MCPServer.notifyPromptListChanged()`：发 `notifications/prompts/list_changed`
+    （无 id、无 params，客户端无需响应）；已关闭 / 写失败 → 静默忽略（与 notifyToolListChanged 同风格）；
+    与另两个方法独立，可分别按需调用
+  - **客户端侧** `MCPClient` 新增 `onPromptsChanged()` 回调选项——handleNotification 新增分支
+    （收到对应通知触发，建议回调内重新拉取 prompts/list 刷新清单）；未配置静默忽略不干扰后续请求；
+    三个回调独立，只配置其一互不影响；MCPHttpClient 无 SSE 长连接不提供（传输差异与 v0.6.20 一致）
+  - docs/mcp.md 列表变化通知章节更新（三通知同文档、示例含 prompts）+ README Changelog + 版本号 0.6.25
+  - **562/562 全绿**（560 + 2 新增：MCPServer 2——notifyPromptListChanged 推送结构（无 id/params）/
+    三者独立互不干扰；e2e 扩展——fixture notify_changed 工具改为推送三个通知，真实子进程三回调各收到
+    2 次且连接不断；MCPClient list-changed 模式断言并入 prompts、已关闭静默并入既有用例），
+    tsc 0 错误，零 agent.ts 改动
+  - **冒烟实测**：真实 stdio 子进程闭环——callTool notify_all → 工具执行中推送三个列表变化通知 →
+    客户端三回调各收到 1 次，serverInfo 0.6.25，SMOKE PASS
+- **下一步候选**：① 其他安全的外围增强（server 协议其他管理接口、CLI 交互增强、MCP 工具集完善等）；
+  ② 摘要内容升级为 LLM 生成（语义级压缩，需评估 run 循环外异步）
+
+---
 
 ### 2026-08-11 第二十四轮实施（v0.6.24）——search_messages 全文搜索 + MCPClient.ping 对称补齐
 
