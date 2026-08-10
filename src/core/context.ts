@@ -104,6 +104,100 @@ export interface SuggestTrimOptions {
   keepSystem?: boolean
 }
 
+/**
+ * 上下文自动裁剪（v0.6.17，纯函数）
+ *
+ * 与 suggestTrim 的区别：**保证不拆散 tool_calls ↔ tool 响应配对**——
+ * 这是 Agent 内部实际裁剪用的策略（suggestTrim 是给宿主的\"最近优先\"建议，
+ * 不保证配对，宿主按索引裁剪后自行负责语义；trimContextMessages 用于 Agent
+ * 内部安全裁剪，LLM 收到拆散的 tool 配对会 400）。
+ *
+ * 策略：
+ *   - system 消息保底（首条 role=system 始终保留）
+ *   - 其余从尾部向前收集，直到条数达到 maxMessages（默认 30）**或**
+ *     token 预算 maxTokens 耗尽（两者任一先到即停；均未配置不裁剪）
+ *   - 配对保护：tool 响应向后（实际向前收集时）连带它的 assistant(tool_calls)
+ *     一起保留；assistant 有文本内容 = 一轮完整结束可停
+ *   - 极小预算仍保底保留最近一条（AI 必须看到用户最新输入）
+ *   - 未超限返回**原数组引用**（调用方无感知，零拷贝）
+ */
+export interface TrimContextOptions {
+  /** 最大保留消息条数（默认 30）；与 maxTokens 任一先到即停 */
+  maxMessages?: number
+  /** token 预算（可选）：保留部分估算 tokens 不超过该值；不配置则只按条数裁剪 */
+  maxTokens?: number
+}
+
+export function trimContextMessages(messages: Message[], options: TrimContextOptions = {}): Message[] {
+  if (!messages || messages.length === 0) return []
+  const maxMessages = options.maxMessages ?? 30
+  const maxTokens = options.maxTokens
+  // 无需裁剪：条数未超（或条数裁剪关闭）且 token 未超（或 token 裁剪关闭）→ 返回原引用（零拷贝）
+  const messagesUnderLimit = maxMessages <= 0 || messages.length <= maxMessages
+  const tokensUnderLimit = maxTokens === undefined || estimateMessagesTokens(messages) <= maxTokens
+  if (messagesUnderLimit && tokensUnderLimit) {
+    return messages
+  }
+
+  const systemMsg = messages.find(m => m.role === 'system')
+  // 预计算每条消息 token（避免循环内重复估算）
+  const tokens = messages.map(m => estimateMessagesTokens([m]))
+  const kept: Message[] = []
+  let pendingToolCallIds = new Set<string>() // 需要找 tool_calls 的 ID
+  // system 保底占用预算（最后单独加回，但 token 计入预算，保证保留部分不超）
+  let usedTokens = systemMsg ? estimateMessagesTokens([systemMsg]) : 0
+
+  // 停止条件（普通消息加入前检查，放不下就不放——保留部分不超预算）：
+  //   条数达到上限（maxMessages>0 时）或 加入本条后 token 预算耗尽
+  //   极小预算时 kept 为空 → 不检查，无条件保底保留最新一条（AI 必须看到最新输入）
+  const overLimit = (nextTokens: number) =>
+    (maxMessages > 0 && kept.length >= maxMessages) ||
+    (maxTokens !== undefined && usedTokens + nextTokens > maxTokens)
+
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const msg = messages[i]
+    const t = tokens[i]
+
+    // tool 响应：无条件保留（配对链，不可拆散）并记录待配对
+    if (msg.role === 'tool' && msg.tool_call_id) {
+      pendingToolCallIds.add(msg.tool_call_id)
+      kept.unshift(msg)
+      usedTokens += t
+      continue
+    }
+
+    // assistant(tool_calls)：无条件保留（配对链）；有文本内容 = 一轮完整结束
+    if (msg.role === 'assistant' && msg.tool_calls) {
+      kept.unshift(msg)
+      usedTokens += t
+      for (const tc of msg.tool_calls) {
+        pendingToolCallIds.delete(tc.id)
+      }
+      if (msg.content) {
+        pendingToolCallIds.clear()
+      }
+      // 配对完整且超限 → 停（后续不再收集）
+      if (pendingToolCallIds.size === 0 && overLimit(0)) {
+        break
+      }
+      continue
+    }
+
+    // user / assistant(无 tool_calls) / system：配对完整且放不下 → 停；否则保留
+    // 极小预算保底：kept 为空时无条件保留第一条（最新输入）
+    if (kept.length > 0 && pendingToolCallIds.size === 0 && overLimit(t)) {
+      break
+    }
+    kept.unshift(msg)
+    usedTokens += t
+  }
+
+  // system 保底（若被收集进 kept 则去重，避免重复）；其余保持原顺序
+  return systemMsg
+    ? [systemMsg, ...kept.filter(m => m !== systemMsg)]
+    : kept
+}
+
 export function suggestTrim(messages: Message[], budgetTokens: number, options: SuggestTrimOptions = {}): TrimSuggestion {
   if (!messages || messages.length === 0) {
     return { keep: [], droppedCount: 0, estimatedKeptTokens: 0, estimatedDroppedTokens: 0 }

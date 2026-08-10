@@ -67,6 +67,7 @@ import {
   estimateTokens,
   estimateMessagesTokens,
   suggestTrim,               // v0.5.9：按预算建议保留哪些消息
+  trimContextMessages,       // v0.6.17：Agent 内部安全自动裁剪（保证配对）
   IMAGE_TOKEN_COST,          // 85
   MESSAGE_STRUCTURE_TOKENS,  // 4
   TOOL_CALL_STRUCTURE_TOKENS,// 3
@@ -109,10 +110,43 @@ console.log(r.droppedCount, r.estimatedKeptTokens)
 }
 ```
 
-> 这是"按 token 预算裁剪"方向的**宿主侧地基**（纯函数、零风险）；
-> 引擎内部 trimContext 的自动裁剪仍需谨慎评估 agent.ts，暂缓。
+## 引擎内部自动裁剪（v0.6.17，trimContextMessages）
+
+`suggestTrim` 是给**宿主**的建议（不保证 tool_calls ↔ tool 配对，宿主按索引裁剪后自行负责语义）；
+引擎内部 `Agent` 的自动裁剪用 `trimContextMessages`——**保证不拆散配对**（LLM 收到拆散的 tool
+配对会 400）。
+
+```ts
+import { trimContextMessages } from 'flare-agent'
+
+// 纯函数：返回裁剪后的消息（未超限返回原数组引用，零拷贝）
+const trimmed = trimContextMessages(messages, { maxMessages: 30, maxTokens: 8000 })
+```
+
+策略（Agent 每次迭代前 `trimContext()` 自动调用）：
+
+| 规则 | 说明 |
+|------|------|
+| system 保底 | 首条 `role=system` 始终保留，且 token **计入预算**（保留部分严格不超） |
+| 最近优先 | 从最新消息向前收集；`maxMessages`（默认 30）与 `maxTokens` 任一先到即停 |
+| 配对保护 | `tool` 响应连带它的 `assistant(tool_calls)` 无条件保留（配对链不拆散）；`assistant(tool_calls)` 有文本内容 = 一轮完整结束可停 |
+| 极小预算保底 | 预算小到一条都放不下时，仍保底保留**最新一条**（AI 必须看到用户最新输入） |
+| maxMessages:0 | 关闭条数裁剪（仅按 token 预算） |
+
+**AgentConfig 接入**（宿主免手动 set_context，Agent 自动管理）：
+
+```ts
+const agent = new Agent({
+  maxContextMessages: 30,   // 可选，默认 30（不配置行为与旧版完全一致）
+  maxContextTokens: 8000,   // 可选，token 预算；不配置则只按条数裁剪
+})
+```
+
+**server 协议透传**：chat 请求带 `maxContextMessages` / `maxContextTokens`（非法值回 error 不触发
+生成；变化自动重建 Agent 立即生效）；`flare server --max-context-messages <n> --max-context-tokens <n>`
+设置 server 级默认（chat 未指定时应用，请求优先）。详见 docs/host-protocol.md。
 
 ## 未来方向（记录）
 
-- 按 token 预算裁剪上下文（碰 agent.ts trimContext，需谨慎评估，暂缓）
-- 工具确认机制完善：allow_session/always 记忆化 + 超时（备选下轮）
+- 上下文压缩摘要（裁剪掉的历史压缩成摘要而非直接丢弃，需评估）
+- 工具确认机制完善：allow_session/always 记忆化 + 超时（已完成 v0.5.7/v0.6.1/v0.6.7）

@@ -917,7 +917,9 @@ export function main() {
     .option('--confirm-timeout <ms>', '确认超时毫秒（默认 30000；宿主未在时限内回 confirm_result 按拒绝处理，v0.6.1）')
     .option('--max-tokens <n>', '默认最大输出 token 数（chat 请求未指定时应用，v0.6.5）')
     .option('--temperature <n>', '默认采样温度 0~2（chat 请求未指定时应用，v0.6.5）')
-    .action(async (options: { profile?: string; storage?: string; namespace?: string; mcp?: string; confirmTools?: string; confirmTimeout?: string; maxTokens?: string; temperature?: string }) => {
+    .option('--max-context-messages <n>', '默认上下文裁剪条数上限（chat 请求未指定时应用；0 = 不按条数裁剪，v0.6.17）')
+    .option('--max-context-tokens <n>', '默认上下文裁剪 token 预算（chat 请求未指定时应用；超过则迭代前自动裁剪，v0.6.17）')
+    .action(async (options: { profile?: string; storage?: string; namespace?: string; mcp?: string; confirmTools?: string; confirmTimeout?: string; maxTokens?: string; temperature?: string; maxContextMessages?: string; maxContextTokens?: string }) => {
       const { startHostServer } = await import('../server.js')
       const fs = await import('fs/promises')
       let profile: Record<string, unknown> = {}
@@ -943,6 +945,8 @@ export function main() {
         ...(options.confirmTimeout ? { confirmTimeoutMs: Number(options.confirmTimeout) } : {}),
         ...(options.maxTokens !== undefined ? { defaultMaxTokens: Number(options.maxTokens) } : {}),
         ...(options.temperature !== undefined ? { defaultTemperature: Number(options.temperature) } : {}),
+        ...(options.maxContextMessages !== undefined ? { defaultMaxContextMessages: Number(options.maxContextMessages) } : {}),
+        ...(options.maxContextTokens !== undefined ? { defaultMaxContextTokens: Number(options.maxContextTokens) } : {}),
       })
     })
 
