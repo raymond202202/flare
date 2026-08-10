@@ -195,6 +195,30 @@ describe('flare host server 协议', () => {
     expect(msgs[0].sessionId).toBe('s-hist2')
   })
 
+  it('get_messages 带 limit → 合法路径不破坏（空会话仍返回空数组，无 recent 标记）', async () => {
+    await request({ type: 'create_session', sessionId: 's-hist-limit' }, { expect: ['ok'] })
+    const msgs = await request({ type: 'get_messages', sessionId: 's-hist-limit', limit: 10 }, { expect: ['messages'] })
+    expect(msgs[0].type).toBe('messages')
+    expect(msgs[0].messages).toEqual([])
+    expect(msgs[0].recent).toBeUndefined()
+  })
+
+  it('get_messages recent:true → 响应带 recent 标记（最近消息数据源路径，空会话返回空数组）', async () => {
+    await request({ type: 'create_session', sessionId: 's-hist-recent' }, { expect: ['ok'] })
+    const msgs = await request({ type: 'get_messages', sessionId: 's-hist-recent', recent: true, limit: 5 }, { expect: ['messages'] })
+    expect(msgs[0].type).toBe('messages')
+    expect(msgs[0].recent).toBe(true)
+    expect(msgs[0].messages).toEqual([])
+  })
+
+  it('get_messages 非法 limit（0 / -1 / 501 / 非数字）→ error 含用法提示（不触发生成）', async () => {
+    for (const bad of [0, -1, 501, 'abc']) {
+      const msgs = await request({ type: 'get_messages', sessionId: 's-hist2', limit: bad }, { expect: ['error'] })
+      expect(msgs[0].type).toBe('error')
+      expect(msgs[0].message).toContain('limit 必须是 1~500 的整数')
+    }
+  })
+
   it('version → 协议版本 + 引擎版本（宿主版本协商）', async () => {
     const msgs = await request({ type: 'version' }, { expect: ['version'] })
     expect(msgs[0].type).toBe('version')
@@ -242,8 +266,8 @@ describe('flare host server 协议', () => {
   it('rename_session 不存在会话 → UPSERT 幂等 ok（与 create_session 同语义）', async () => {
     const msgs = await request({ type: 'rename_session', sessionId: 's-rn-none', title: '新会话' }, { expect: ['ok'] })
     expect(msgs[0].type).toBe('ok')
-    // 会话被 UPSERT 创建，列表可见
-    const list = await request({ type: 'recent_sessions' }, { expect: ['recent_sessions'] })
+    // 会话被 UPSERT 创建，列表可见（limit 放宽：测试会话累积后避免被 recent_sessions 默认 10 条挤出）
+    const list = await request({ type: 'recent_sessions', limit: 50 }, { expect: ['recent_sessions'] })
     const row = list[0].sessions.find((s: any) => s.id === 's-rn-none')
     expect(row).toBeTruthy()
     expect(row.title).toBe('新会话')

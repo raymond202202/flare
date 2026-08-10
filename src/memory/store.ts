@@ -303,13 +303,33 @@ export class MemoryStore {
     ).run(sessionId)
   }
 
-  /** 获取会话消息历史 */
+  /** 获取会话消息历史（最早 limit 条，时间正序） */
   getMessages(sessionId: string, limit = 50): Message[] {
     const rows = this.db.prepare(
       'SELECT role, content, tool_call_id, name, tool_calls FROM messages WHERE session_id = ? ORDER BY created_at ASC LIMIT ?'
     ).all(sessionId, limit) as any[]
 
     return rows.map(r => ({
+      role: r.role as Message['role'],
+      content: deserializeContent(r.content || ''),
+      ...(r.tool_call_id ? { tool_call_id: r.tool_call_id } : {}),
+      ...(r.name ? { name: r.name } : {}),
+      ...(r.tool_calls ? { tool_calls: JSON.parse(r.tool_calls) } : {}),
+    }))
+  }
+
+  /**
+   * 获取会话**最近**的消息（v0.6.21）：时间倒序取最近 limit 条后反转回正序返回——
+   * 宿主面板\"最近对话/当前上下文\"数据源（区别于 getMessages 取最早 limit 条，
+   * 长会话下 getMessages 看到的是开头而非最新内容）。空/不存在会话幂等返回 []。
+   */
+  getRecentMessages(sessionId: string, limit = 50): Message[] {
+    // 同秒插入多条时 created_at 相同——用自增 id 作次级排序（id 越大越新），顺序确定
+    const rows = this.db.prepare(
+      'SELECT role, content, tool_call_id, name, tool_calls FROM messages WHERE session_id = ? ORDER BY created_at DESC, id DESC LIMIT ?'
+    ).all(sessionId, limit) as any[]
+
+    return rows.reverse().map(r => ({
       role: r.role as Message['role'],
       content: deserializeContent(r.content || ''),
       ...(r.tool_call_id ? { tool_call_id: r.tool_call_id } : {}),
