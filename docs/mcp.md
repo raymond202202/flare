@@ -63,6 +63,9 @@
 - `/mcp`：查看全部配置服务器状态（`●` 已连接 + 工具数，连接失败显示原因）
 - `/mcp connect <name>`：连接并桥接工具（内置工具保留，重建会话生效）
 - `/mcp disconnect <name>`：断开并移除其工具
+- v0.6.26：已连接服务器状态行带 `（N 个工具 · M 资源 · K 模板）`——连接时同时拉取该服务器
+  `resources/list` + `resources/templates/list`（资源桥接），外部服务器暴露的资源/动态资源模板
+  真实暴露给宿主（`mcp_resources` 协议请求可查看/透传）
 
 ### 3. 单次查询
 
@@ -110,6 +113,13 @@ if (await client.ping()) { /* 服务器存活，继续业务请求 */ }
 const mgr = new McpManager()                  // 读 ~/.flare/mcp.json
 await mgr.connect('fs')                       // 连接 + 桥接
 const agent2 = new Agent({ tools: [...builtinTools, ...mgr.getAllTools()] })
+
+// 资源桥接（v0.6.26）：连接时同时拉取 resources/list + resources/templates/list——
+// 外部服务器暴露的资源/动态资源模板真实暴露给宿主（只桥接工具的历史缺口已补齐）
+const resources = mgr.getAllResources()       // [{ uri, name, description?, mimeType?, server }]
+const templates = mgr.getAllResourceTemplates() // [{ uriTemplate, name, description?, mimeType?, server }]
+const contents = await mgr.readResource('fs', 'memory://preferences') // 代理读取资源内容
+mgr.status()                                  // 已连接时带 resourceCount/templateCount
 mgr.closeAll()
 ```
 

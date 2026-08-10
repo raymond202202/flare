@@ -59,7 +59,21 @@ export interface McpServerStatus {
   name: string
   connected: boolean
   toolCount: number
+  /** 桥接的资源数（v0.6.26 资源桥接：连接时拉取 resources/list；服务器无资源能力为 0） */
+  resourceCount?: number
+  /** 桥接的资源模板数（v0.6.26：resources/templates/list；无模板为 0） */
+  templateCount?: number
   error?: string
+}
+
+/** 带来源的资源引用（v0.6.26 McpManager 资源桥接：getAllResources 返回项，含所属服务器名） */
+export interface McpResourceRef extends McpResourceInfo {
+  server: string
+}
+
+/** 带来源的资源模板引用（v0.6.26 McpManager 资源桥接：getAllResourceTemplates 返回项） */
+export interface McpResourceTemplateRef extends McpResourceTemplateInfo {
+  server: string
 }
 
 /** MCP 资源（v0.6.1 resources 真实暴露）：宿主注入的资源描述 + 内容读取函数 */
