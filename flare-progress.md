@@ -3,12 +3,50 @@
 > 目标：flare 是 Pulse/StorySpire 依赖的 AI Agent 引擎（TS）。任何改动必须安全（tsc 0 错 + 测试全绿才 commit）。
 > 铁律：禁止 push；禁止修改 src/core/agent.ts 的 Agent.run 核心循环。
 
-> **最新状态（v0.6.18）**：server 协议会话管理闭环——`rename_session` 重命名会话（title 非空必填，
-> UPSERT）+ `clear_session` 清空会话消息（保留会话记录与用量，销毁缓存 Agent 下次重建干净会话）+
-> `get_config` 运行配置查询（面板设置/关于数据源，不含密钥）+ `get_usage` 用量按模型分解 perModel
-> （成本核算数据源）；506/506 全绿。下一步候选：
-> ① 上下文压缩摘要（裁剪掉的历史压缩成摘要而非直接丢弃，需评估——涉及 run 循环则跳过）；
-> ② 其他安全的外围增强（CLI 交互增强、MCP 工具集完善等）。
+> **最新状态（v0.6.19）**：上下文压缩摘要闭环——`contextSummarize` 开启后裁剪把丢弃历史压缩成
+> 摘要消息（纯启发式不调 LLM：条数/角色分布/涉及工具/最后话题；`[历史摘要]` 标记识别旧摘要合并
+> 覆盖防堆积）而非直接丢弃；526/526 全绿。下一步候选：
+> ① 其他安全的外围增强（CLI 交互增强、MCP 工具集完善、server 协议其他管理接口等）；
+> ② 摘要内容升级为 LLM 生成（语义级压缩，需评估 run 循环外异步）。
+
+### 2026-08-10 第二十一轮实施（v0.6.19）——上下文压缩摘要：裁剪掉的历史压缩成摘要
+
+- **P41 上下文压缩摘要**（src/core/context.ts + core/agent.ts + server.ts + cli/index.ts）：
+  - **纯函数 `summarizeTrimmedMessages(messages, opts)`**（context.ts）：在 trimContextMessages
+    基础上**把丢弃的历史压缩成摘要消息**而非直接丢弃——AI 保留话题连续性（长会话裁剪后仍知道
+    之前聊过什么/调过哪些工具）；**未裁剪返回原数组引用**（零拷贝契约与 trimContextMessages 一致）；
+    裁剪后摘要紧随 system 之后（`role` 默认 'system'，可配 'user'）
+  - **`buildSummaryText` 纯启发式统计，不调 LLM**（零额外成本）：被压缩条数 + 角色分布
+    （user/assistant/tool）+ 估算 tokens + 涉及工具**去重列表**（tool 响应 name + assistant.tool_calls，
+    最多 maxTools 个）+ **最后话题**（最新被裁消息内容片段，AI 衔接最近话题）；
+    参数 `role`/`maxChars`（默认 400 超长截断）/`maxTools`（默认 8）/`includeTail`/`tailChars`
+  - **摘要链防堆积**：摘要以 `SUMMARY_MARKER`（`[历史摘要]`）开头；下次裁剪时旧摘要**无论被保留
+    还是被裁掉**都被识别并合并进新摘要（新摘要含"更早历史"行，多次裁剪不越滚越大）
+  - **AgentConfig 新增 `contextSummarize`（默认 false）**：trimContext 私有方法体委托
+    （contextSummarize 时走 summarizeTrimmedMessages）——**run 循环调用点/结构零改动**，
+    不配置行为与旧版完全一致（零回归）
+  - **server 协议透传**：chat 请求带 `contextSummarize`（布尔，非布尔回 error 含提示不触发生成）；
+    `HostServerOptions.defaultContextSummarize` + CLI `flare server --context-summarize` server 级
+    默认（chat 未指定时应用，请求优先）；ctxOptsChanged 同机制自动重建 Agent；
+    `get_config` 回显 `defaultContextSummarize`（只读，不含密钥）
+  - **库导出**：`summarizeTrimmedMessages`/`buildSummaryText`/`SUMMARY_MARKER` + 类型
+    `SummarizeOptions`/`TrimStats`
+  - docs/context-observability.md 压缩摘要章节（含未来方向：LLM 语义级摘要需评估 run 循环外异步）
+    + docs/host-protocol.md chat 参数表 + get_config 响应 + README Changelog/CLI 表 + 版本号 0.6.19
+  - **526/526 全绿**（506 + 20 新增：summarizeTrimmedMessages 纯函数 11——未裁剪原引用零拷贝 /
+    摘要紧随 system+条数统计 / 角色分布+涉及工具去重 / 最后话题最新被裁 / 摘要链防堆积（丢弃区+
+    保留区旧摘要合并覆盖不堆积） / maxChars 截断 / role=user / includeTail:false / 无 system 摘要
+    放最前 / maxTools 限制；buildSummaryText 2——基础统计行 / previousSummary 更早历史；
+    Agent 集成 2——contextSummarize 生效含摘要 / 缺省 false 零回归；server e2e 5——默认值不破坏
+    启动 / 非法 contextSummarize error / 缺省应用默认 / 合法透传流程完整 / get_config 回显），
+    tsc 0 错误，**run 循环零改动**
+  - **冒烟实测**：真实 server 子进程带 --context-summarize——version 协商正常、get_config 回显
+    defaultContextSummarize true、非法 contextSummarize('yes') → 「必须是布尔值」error 清晰，
+    SMOKE PASS（chat 合法链路由 e2e 真实子进程覆盖）
+- **下一步候选**：① 其他安全的外围增强（CLI 交互增强、MCP 工具集完善、server 协议其他管理接口）；
+  ② 摘要内容升级为 LLM 生成（语义级压缩，需评估 run 循环外异步）
+
+---
 
 ### 2026-08-10 第二十轮实施（v0.6.18）——server 协议会话管理：rename_session + clear_session
 
