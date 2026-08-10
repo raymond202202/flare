@@ -3,15 +3,16 @@
 > 目标：flare 是 Pulse/StorySpire 依赖的 AI Agent 引擎（TS）。任何改动必须安全（tsc 0 错 + 测试全绿才 commit）。
 > 铁律：禁止 push；禁止修改 src/core/agent.ts 的 Agent.run 核心循环。
 
-> **最新状态（v0.6.25）**：两小步完成——① MCP 列表变化通知**第三块对称补齐**
+> **最新状态（v0.6.25）**：三小步完成——① MCP 列表变化通知**第三块对称补齐**
 > `notifications/prompts/list_changed`（v0.6.20 只做了 tools/resources，漏了 MCP 标准的 prompts 通知）：
 > `MCPServer.notifyPromptListChanged()` + `MCPClient.onPromptsChanged` 回调，真实子进程 e2e 三通知闭环
 > （各收到 2 次连接不断）；② CLI `/memory <关键词>` 搜索持久记忆（复用 searchMemories FTS5，与 /search
-> 对称；无关键词列出全部零回归）；567/567 全绿。下一步候选：
+> 对称；无关键词列出全部零回归）；③ server 协议 `get_memories` 增强（`kind` 按记忆类型过滤 + limit
+> 严格校验 1~100，对齐 get_messages 风格）；570/570 全绿。下一步候选：
 > ① 其他安全的外围增强（server 协议其他管理接口、CLI 交互增强、MCP 工具集完善等）；
 > ② 摘要内容升级为 LLM 生成（语义级压缩，需评估 run 循环外异步）。
 
-### 2026-08-11 第二十五轮实施（v0.6.25）——MCP 列表变化通知补齐 prompts/list_changed + CLI /memory 搜索
+### 2026-08-11 第二十五轮实施（v0.6.25）——MCP 列表变化通知补齐 prompts/list_changed + CLI /memory 搜索 + get_memories 增强
 
 - **P48 `notifications/prompts/list_changed` 对称补齐**（src/mcp/server.ts + client.ts + 测试，commit `af53cdc`）：
   - **协议缺口修复**：MCP 标准列表变化通知共三个（tools/resources/prompts），v0.6.20 只做了前两个——
@@ -38,6 +39,22 @@
     （与 /remember /search 同模式，避免带参落 switch 未知命令）；`/help` 注册说明更新
   - **567/567 全绿**（562 + 5 新增 memory-command.test.ts：列出全部 / 关键词 FTS 命中（不相关不出现）/
     无记忆提示 / 无结果提示 / help 注册），tsc 0 错误，零 agent.ts 改动
+- **P50 server 协议 get_memories 增强**（src/server.ts + memory/store.ts + 测试，commit `ae40975`）：
+  - **kind 按记忆类型过滤**：`get_memories {kind?}` 只返回该类型记忆（如 `preference` 偏好 / `note` 笔记；
+    与 remember 的 kind 参数同语义；不用 type——那是请求判别符）——宿主面板"记忆管理"按类型筛选数据源；
+    与 `query` 组合时先搜索再按类型过滤（searchMemories 结果 filter type）
+  - **`MemoryStore.getMemoriesByType(type, limit=50)`**（新方法）：`WHERE type = ? ORDER BY
+    created_at DESC, id DESC`（同秒插入用自增 id 次级排序，与 getRecentMessages v0.6.21 同模式）；
+    空 type 等价列出全部（与 getAllMemories 一致）、无匹配类型幂等返回 []
+  - **limit 严格校验**：显式提供必须 1~100 整数（0/-1/101/非数字/小数回 error 含用法提示，对齐
+    get_messages v0.6.21 风格不触发生成）；缺省 50 行为与旧版一致（零回归）
+  - docs/host-protocol.md §13 更新（kind 参数 + limit 校验说明，请求示例）
+  - **570/570 全绿**（567 + 3 新增：store 单测 1——类型过滤+limit 截断+空 type 全部+无匹配空数组；
+    server e2e 2——kind 过滤只返回该类型（含 query+kind 组合、无匹配幂等）/ limit 非法值
+    （0/-1/101/'abc'/1.5）全 error 含提示 + 缺省不报错），tsc 0 错误，零 agent.ts 改动
+  - **冒烟实测**：真实 server 子进程——remember 两条（preference + note）→ get_memories kind=preference
+    只回「冒烟偏好A:preference」→ limit:0 → error「get_memories 的 limit 必须是 1~100 的整数」→
+    kind=ghost 空数组，SMOKE PASS
 - **下一步候选**：① 其他安全的外围增强（server 协议其他管理接口、CLI 交互增强、MCP 工具集完善等）；
   ② 摘要内容升级为 LLM 生成（语义级压缩，需评估 run 循环外异步）
 
