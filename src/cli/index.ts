@@ -771,6 +771,12 @@ export async function handleSlashCommand(
         output(`  ${chalk.gray('Completion:')} ${usage.completionTokens.toLocaleString()}`)
         output(`  ${chalk.gray('总计:')}       ${usage.totalTokens.toLocaleString()} tokens`)
         output(`  ${chalk.gray('会话数:')}     ${usage.sessionCount}`)
+        // 按模型分解（v0.6.18：getUsageStats.perModel——用量分布/成本核算）
+        if (Array.isArray(usage.perModel) && usage.perModel.length > 0) {
+          for (const m of usage.perModel) {
+            output(`  ${chalk.gray(`模型 ${m.model}:`)} ${m.totalTokens.toLocaleString()} tokens（${m.calls} 次调用）`)
+          }
+        }
         // 当前会话用量（v0.6.17：getSessionUsage 按 session 过滤；未提供 sessionId 不显示）
         if (sessionId) {
           const mine = store.getSessionUsage(sessionId)

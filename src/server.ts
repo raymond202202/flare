@@ -586,7 +586,7 @@ export function startHostServer(opts: HostServerOptions) {
           const agent = getAgent(String(req.sessionId || 'default'))
           const stats = (typeof (agent as any).store?.getUsageStats === 'function')
             ? await (agent as any).store.getUsageStats()
-            : { promptTokens: 0, completionTokens: 0, totalTokens: 0, sessionCount: 0 }
+            : { promptTokens: 0, completionTokens: 0, totalTokens: 0, sessionCount: 0, perModel: [] }
           reply({ type: 'usage', stats })
           break
         }

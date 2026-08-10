@@ -97,6 +97,28 @@ describe('MemoryStore', () => {
     expect(stats.sessionCount).toBe(3)
   })
 
+  it('用量汇总按模型分解（perModel，v0.6.18：成本核算/用量分布）', () => {
+    store.logUsage('s1', 100, 50, 'deepseek-chat')
+    store.logUsage('s1', 200, 80, 'deepseek-chat')
+    store.logUsage('s2', 300, 120, 'qwen2.5:7b')
+    store.logUsage('s3', 10, 5) // 无模型 → unknown
+
+    const stats = store.getUsageStats()
+    expect(stats.totalTokens).toBe(865)
+    expect(stats.sessionCount).toBe(4)
+    expect(Array.isArray(stats.perModel)).toBe(true)
+    // 按调用次数降序：deepseek-chat(2) > qwen2.5:7b(1) = unknown(1)
+    const names = stats.perModel.map((m: any) => m.model)
+    expect(names[0]).toBe('deepseek-chat')
+    expect(names).toContain('qwen2.5:7b')
+    expect(names).toContain('unknown')
+    const ds = stats.perModel.find((m: any) => m.model === 'deepseek-chat')!
+    expect(ds.calls).toBe(2)
+    expect(ds.promptTokens).toBe(300)
+    expect(ds.completionTokens).toBe(130)
+    expect(ds.totalTokens).toBe(430)
+  })
+
   it('单会话用量（getSessionUsage）：按 session_id 过滤汇总', () => {
     store.logUsage('s1', 100, 50, 'deepseek-chat')
     store.logUsage('s1', 200, 80, 'deepseek-chat')

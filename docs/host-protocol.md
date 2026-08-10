@@ -116,9 +116,10 @@ flare server --profile <expert-profile-file> --storage <db-path> [--mcp <mcp-con
 {"type":"get_usage"}
 ```
 
-响应：`{"type":"usage","stats":{"promptTokens":123,"completionTokens":456,"totalTokens":579,"sessionCount":3}}`
+响应：`{"type":"usage","stats":{"promptTokens":123,"completionTokens":456,"totalTokens":579,"sessionCount":3,"perModel":[{"model":"deepseek-chat","calls":2,"promptTokens":80,"completionTokens":100,"totalTokens":180},{"model":"qwen2.5:7b","calls":1,"promptTokens":43,"completionTokens":356,"totalTokens":399}]}}`
 
 - 宿主展示用量统计（成本监控）、AI 面板显示 token 消耗时使用
+- `perModel`（v0.6.18）：按模型分组的用量分解（`model` / `calls` 调用次数 / `promptTokens` / `completionTokens` / `totalTokens`，按调用次数降序；无模型记录归 `unknown`）——成本核算/用量分布数据源
 - 与 get_messages 一样只读，不触发生成
 
 #### 9.1 session_usage — 读取单个会话 token 用量（v0.6.17，只读，不生成）
@@ -373,7 +374,7 @@ flare server --profile <expert-profile-file> --storage <db-path> [--mcp <mcp-con
 | `ok` | `sessionId, deleted?/tool?/resetSession?/mode?/title?/cleared?` | 通用确认（set_context/cancel/create_session/rename_session/clear_session/delete_session/remember/delete_memory/confirm_revoke/confirm_allow） |
 | `pong` | `ts` | ping 响应（宿主健康检查） |
 | `version` | `protocol, engine` | 版本协商（协议版本 + 引擎版本） |
-| `usage` | `stats` | token 用量统计（get_usage 响应） |
+| `usage` | `stats` | token 用量统计（get_usage 响应；v0.6.18 起 stats 含 `perModel` 按模型分解） |
 | `mcp_status` | `servers` | MCP 服务器连接状态（mcp_status 响应，v0.5.5） |
 | `confirm_status` | `sessionId, confirmTools, allowedTools, sessionAllowed, alwaysAllowed` | 确认门状态（confirm_status 响应，v0.6.8） |
 | `models` | `configured, ollama` | 可切换模型（models 响应，v0.6.9） |

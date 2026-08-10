@@ -292,6 +292,13 @@ describe('flare host server 协议', () => {
     expect(typeof msgs[0].stats.completionTokens).toBe('number')
     expect(typeof msgs[0].stats.totalTokens).toBe('number')
     expect(typeof msgs[0].stats.sessionCount).toBe('number')
+    // perModel 分解（v0.6.18）：数组，每项含 model/calls/totalTokens
+    expect(Array.isArray(msgs[0].stats.perModel)).toBe(true)
+    for (const m of msgs[0].stats.perModel) {
+      expect(typeof m.model).toBe('string')
+      expect(typeof m.calls).toBe('number')
+      expect(typeof m.totalTokens).toBe('number')
+    }
   })
 
   it('session_usage → 单会话 token 用量（v0.6.17，只读不生成；未记录会话全 0）', async () => {
