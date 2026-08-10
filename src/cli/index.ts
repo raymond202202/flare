@@ -603,9 +603,12 @@ export async function handleSlashCommand(
       } else {
         for (const s of st) {
           const mark = s.connected ? chalk.green('●') : chalk.gray('○')
-          const toolsInfo = s.connected ? chalk.gray(`（${s.toolCount} 个工具）`) : ''
+          const toolsInfo = s.connected ? chalk.gray(`（${s.toolCount} 个工具`) : ''
+          // v0.6.26：已连接时显示桥接的资源/模板数（外部 MCP 服务器资源真实暴露）
+          const resInfo = s.connected ? chalk.gray(`${s.resourceCount ? ` · ${s.resourceCount} 资源` : ''}${s.templateCount ? ` · ${s.templateCount} 模板` : ''}`) : ''
+          const closeParen = s.connected ? chalk.gray('）') : ''
           const err = s.error ? chalk.red(` [${s.error}]`) : ''
-          output(`  ${mark} ${s.name}${toolsInfo}${err}`)
+          output(`  ${mark} ${s.name}${toolsInfo}${resInfo}${closeParen}${err}`)
         }
       }
       output(chalk.gray('\n  /mcp connect <name> 连接 | /mcp disconnect <name> 断开'))

@@ -3,7 +3,7 @@
 > 供非 Node 宿主（如 Qt 应用）调用 flare 引擎的本地协议。
 > 传输：stdin/stdout · JSON Lines（每行一个 JSON 对象）
 > 实现：`src/server.ts`（`flare server` 命令）
-> 请求类型：chat / cancel / set_context / list_sessions / recent_sessions / get_messages / search_messages / get_usage / session_usage / context_status / ping / version / create_session / rename_session / clear_session / delete_session / remember / get_memories / delete_memory / tool_result / confirm_result / confirm_status / confirm_revoke / confirm_allow / models / get_config / tools / mcp_status
+> 请求类型：chat / cancel / set_context / list_sessions / recent_sessions / get_messages / search_messages / get_usage / session_usage / context_status / ping / version / create_session / rename_session / clear_session / delete_session / remember / get_memories / delete_memory / tool_result / confirm_result / confirm_status / confirm_revoke / confirm_allow / models / get_config / tools / mcp_status / mcp_resources
 
 ## 启动
 
@@ -259,10 +259,24 @@ flare server --profile <expert-profile-file> --storage <db-path> [--mcp <mcp-con
 {"type":"mcp_status"}
 ```
 
-响应：`{"type":"mcp_status","servers":[{"name":"fs","connected":true,"toolCount":8},{"name":"db","connected":false,"toolCount":0,"error":"..."}]}`
+响应：`{"type":"mcp_status","servers":[{"name":"fs","connected":true,"toolCount":8,"resourceCount":2,"templateCount":1},{"name":"db","connected":false,"toolCount":0,"error":"..."}]}`
 
 - 列出 `--mcp` 配置的每个服务器：`connected`（是否连接成功）、`toolCount`（桥接的工具数）、`error`（连接失败原因，可选）
+- v0.6.26：已连接服务器额外带 `resourceCount`（桥接的资源数）/ `templateCount`（桥接的资源模板数，均为可选字段，向后兼容）
 - 宿主 AI 面板展示/诊断外部 MCP 工具时使用；连接是启动时后台完成的，本请求会等待其落定
+
+### 16.1 mcp_resources — 查看已连接 MCP 服务器的资源/模板清单（v0.6.26）
+
+```json
+{"type":"mcp_resources"}
+```
+
+响应：`{"type":"mcp_resources","servers":[{"name":"mock","connected":true,"toolCount":3,"resources":[{"uri":"memory://preferences","name":"用户偏好","description":"用户偏好设置","mimeType":"text/plain","server":"mock"}],"templates":[{"uriTemplate":"memory://{noteId}","name":"记忆条目","description":"记忆库中的单条记忆","mimeType":"text/plain","server":"mock"}]}]}`
+
+- 资源桥接：连接外部 MCP 服务器时拉取 `resources/list` + `resources/templates/list`（服务器无资源能力/请求失败 → 空数组，不阻塞连接）
+- 已连接服务器带 `resources`（资源元数据数组，每项含来源 `server` 名）与 `templates`（动态资源 uri 模板数组）；未连接服务器不带这两个字段（仅 `connected:false` + 可选 `error`）
+- 只读，不触发生成、不创建会话；等待启动时的后台连接落定（与 `mcp_status` 一致）
+- 宿主 AI 面板「外部 MCP 资源」数据源：展示/透传外部服务器暴露的资源与动态资源形态
 
 ### 17. confirm_result — 回传用户确认决策（v0.6.1，响应 confirm 事件）
 

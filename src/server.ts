@@ -892,6 +892,25 @@ export function startHostServer(opts: HostServerOptions) {
           reply({ type: 'mcp_status', servers: mcpManager.status() })
           break
         }
+        case 'mcp_resources': {
+          // 宿主查看已连接 MCP 服务器的资源/模板清单（v0.6.26；只读，不触发生成、不创建会话）——
+          // 资源桥接：连接时拉取 resources/list + resources/templates/list，此处按服务器分组透传
+          await Promise.allSettled(mcpConnects)
+          const servers = mcpManager.status().map((s) => ({
+            name: s.name,
+            connected: s.connected,
+            toolCount: s.toolCount,
+            ...(s.connected
+              ? {
+                  resources: mcpManager.getAllResources().filter((r) => r.server === s.name),
+                  templates: mcpManager.getAllResourceTemplates().filter((t) => t.server === s.name),
+                }
+              : {}),
+            ...(s.error ? { error: s.error } : {}),
+          }))
+          reply({ type: 'mcp_resources', servers })
+          break
+        }
         default:
           reply({ type: 'error', message: `未知请求类型: ${req.type}` })
       }

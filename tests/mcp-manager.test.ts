@@ -166,6 +166,94 @@ describe('McpManager', () => {
     mgr.closeAll()
   })
 
+  // ===== v0.6.26 资源桥接：连接时拉取 resources/list + resources/templates/list =====
+
+  it('connect 资源桥接：getAllResources / getAllResourceTemplates 返回带来源的资源（mock 服务器）', async () => {
+    writeFileSync(configPath, JSON.stringify({ servers: [{ name: 'mock', command: process.execPath, args: [MOCK_SERVER] }] }))
+    const mgr = new McpManager({ configPath })
+    await mgr.connect('mock')
+    const resources = mgr.getAllResources()
+    expect(resources.length).toBe(2)
+    expect(resources[0]).toMatchObject({ server: 'mock', uri: 'memory://preferences', name: '用户偏好' })
+    expect(resources[1]).toMatchObject({ server: 'mock', uri: 'file:///etc/hosts', name: 'hosts 文件' })
+    const templates = mgr.getAllResourceTemplates()
+    expect(templates.length).toBe(1)
+    expect(templates[0]).toMatchObject({ server: 'mock', uriTemplate: 'memory://{noteId}', name: '记忆条目' })
+    // status 带资源/模板数（向后兼容：新增字段可选）
+    const st = mgr.status()
+    expect(st[0].connected).toBe(true)
+    expect(st[0].resourceCount).toBe(2)
+    expect(st[0].templateCount).toBe(1)
+    mgr.closeAll()
+  })
+
+  it('readResource：代理读取某服务器资源内容；未知 uri reject；未连接服务器 reject', async () => {
+    writeFileSync(configPath, JSON.stringify({ servers: [{ name: 'mock', command: process.execPath, args: [MOCK_SERVER] }] }))
+    const mgr = new McpManager({ configPath })
+    await mgr.connect('mock')
+    const contents = await mgr.readResource('mock', 'memory://preferences')
+    expect(contents.length).toBe(1)
+    expect(contents[0].uri).toBe('memory://preferences')
+    expect(contents[0].text).toContain('浅色')
+    await expect(mgr.readResource('mock', 'memory://ghost')).rejects.toThrow()
+    await expect(mgr.readResource('not-connected', 'memory://preferences')).rejects.toThrow(/未连接/)
+    mgr.closeAll()
+  })
+
+  it('disconnect：资源/模板随连接清理（getAllResources 空 + status 不再带资源数）', async () => {
+    writeFileSync(configPath, JSON.stringify({ servers: [{ name: 'mock', command: process.execPath, args: [MOCK_SERVER] }] }))
+    const mgr = new McpManager({ configPath })
+    await mgr.connect('mock')
+    expect(mgr.getAllResources().length).toBe(2)
+    expect(mgr.disconnect('mock')).toBe(true)
+    expect(mgr.getAllResources().length).toBe(0)
+    expect(mgr.getAllResourceTemplates().length).toBe(0)
+    const st = mgr.status()
+    expect(st[0].resourceCount).toBeUndefined()
+    mgr.closeAll()
+  })
+
+  it('connect 无 resources 能力的服务器 → 资源空数组 + status resourceCount 0（不阻塞连接）', async () => {
+    const h = await startMcpHttpServer({ tools: [echoTool] }) // 无 resources 注入
+    httpHandles.push(h)
+    writeFileSync(configPath, JSON.stringify({ servers: [{ name: 'remote', url: h.url }] }))
+    const mgr = new McpManager({ configPath })
+    const tools = await mgr.connect('remote')
+    expect(tools.length).toBe(1)
+    expect(mgr.getAllResources().length).toBe(0)
+    expect(mgr.getAllResourceTemplates().length).toBe(0)
+    const st = mgr.status()
+    expect(st[0].resourceCount).toBe(0)
+    expect(st[0].templateCount).toBe(0)
+    mgr.closeAll()
+  })
+
+  it('connect HTTP transport 资源桥接：注入 resources 的 HTTP 服务器 → 资源拉取 + 读取闭环', async () => {
+    const noteRes = {
+      uri: 'memory://note-1',
+      name: '笔记 1',
+      description: '一条记忆',
+      mimeType: 'text/plain',
+    }
+    const h = await startMcpHttpServer({
+      tools: [echoTool],
+      resources: [{
+        ...noteRes,
+        read: async () => '笔记内容: 你好',
+      }],
+    })
+    httpHandles.push(h)
+    writeFileSync(configPath, JSON.stringify({ servers: [{ name: 'remote', url: h.url }] }))
+    const mgr = new McpManager({ configPath })
+    await mgr.connect('remote')
+    const resources = mgr.getAllResources()
+    expect(resources.length).toBe(1)
+    expect(resources[0]).toMatchObject({ server: 'remote', uri: 'memory://note-1', name: '笔记 1' })
+    const contents = await mgr.readResource('remote', 'memory://note-1')
+    expect(contents[0].text).toContain('你好')
+    mgr.closeAll()
+  })
+
   it('disconnect HTTP 服务器：工具移除 + 状态断开', async () => {
     const h = await startMcpHttpServer({ tools: [echoTool] })
     httpHandles.push(h)

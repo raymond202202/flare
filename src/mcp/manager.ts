@@ -5,8 +5,11 @@
  * - 配置：~/.flare/mcp.json（或自定义路径）——`{ "servers": [{ "name", "command", "args", "env" | "url" }] }`
  *   配了 `url`（HTTP 端点，如 http://127.0.0.1:8931/mcp）走 MCPHttpClient 直连；
  *   否则按 `command` spawn stdio 子进程（MCPClient）
- * - connect(name)：连接 + initialize 握手 + 桥接工具；disconnect(name)：关闭并移除
+ * - connect(name)：连接 + initialize 握手 + 桥接工具（v0.6.26 起同时桥接资源与资源模板）；
+ *   disconnect(name)：关闭并移除
  * - getAllTools()：已连接服务器的工具并集（注入 Agent config.tools）
+ * - getAllResources() / getAllResourceTemplates()：已连接服务器的资源/模板并集（含来源，宿主展示用）
+ * - readResource(name, uri)：代理读取某服务器资源内容
  * - status()：连接状态列表（CLI /mcp、server mcp_status 用）
  *
  * 用法：
@@ -21,10 +24,25 @@ import { homedir } from 'node:os'
 import { MCPClient } from './client.js'
 import { MCPHttpClient } from './http-client.js'
 import { createMcpTools } from '../tools/mcp.js'
-import type { McpServerConfig, McpServerStatus } from './types.js'
+import type {
+  McpServerConfig,
+  McpServerStatus,
+  McpResourceInfo,
+  McpResourceRef,
+  McpResourceTemplateInfo,
+  McpResourceTemplateRef,
+  McpResourceContents,
+} from './types.js'
 import type { Tool } from '../tools/index.js'
 
 const DEFAULT_HTTP_TIMEOUT_MS = 15000
+
+/** 资源桥接依赖的最小客户端接口（stdio MCPClient 与 HTTP MCPHttpClient 都满足） */
+export interface McpResourceClient {
+  listResources(): Promise<McpResourceInfo[]>
+  listResourceTemplates(): Promise<McpResourceTemplateInfo[]>
+  readResource(uri: string): Promise<McpResourceContents[]>
+}
 
 export interface McpManagerOptions {
   /** 配置文件路径（默认 ~/.flare/mcp.json；空串表示不读文件） */
@@ -39,6 +57,9 @@ export class McpManager {
   private config: McpServerConfig[] = []
   private clients = new Map<string, MCPClient | MCPHttpClient>()
   private tools = new Map<string, Tool[]>()
+  // v0.6.26 资源桥接：已连接服务器的资源/模板（连接时拉取，断开清理）
+  private resources = new Map<string, McpResourceInfo[]>()
+  private templates = new Map<string, McpResourceTemplateInfo[]>()
   private errors = new Map<string, string>()
 
   constructor(opts: McpManagerOptions = {}) {
@@ -68,12 +89,43 @@ export class McpManager {
     return all
   }
 
+  /** 全部已连接服务器的资源并集（v0.6.26，含来源服务器名；宿主展示/透传外部 MCP 资源用） */
+  getAllResources(): McpResourceRef[] {
+    const all: McpResourceRef[] = []
+    for (const [server, list] of this.resources) {
+      for (const r of list) all.push({ ...r, server })
+    }
+    return all
+  }
+
+  /** 全部已连接服务器的资源模板并集（v0.6.26，含来源服务器名；动态资源 uri 形态声明） */
+  getAllResourceTemplates(): McpResourceTemplateRef[] {
+    const all: McpResourceTemplateRef[] = []
+    for (const [server, list] of this.templates) {
+      for (const t of list) all.push({ ...t, server })
+    }
+    return all
+  }
+
+  /** 代理读取某服务器资源内容（v0.6.26）：调该服务器 resources/read；服务器未连接 → reject 清晰错误 */
+  async readResource(name: string, uri: string): Promise<McpResourceContents[]> {
+    const client = this.clients.get(name) as McpResourceClient | undefined
+    if (!client) {
+      throw new Error(`MCP 服务器未连接: ${name}`)
+    }
+    return client.readResource(uri)
+  }
+
   /** 连接状态列表（CLI /mcp、server mcp_status 用） */
   status(): McpServerStatus[] {
     return this.config.map(c => ({
       name: c.name,
       connected: this.clients.has(c.name),
       toolCount: this.tools.get(c.name)?.length || 0,
+      // v0.6.26：已连接时带资源/模板数（无资源能力为 0）
+      ...(this.clients.has(c.name)
+        ? { resourceCount: this.resources.get(c.name)?.length || 0, templateCount: this.templates.get(c.name)?.length || 0 }
+        : {}),
       error: this.errors.get(c.name),
     }))
   }
@@ -97,8 +149,16 @@ export class McpManager {
     try {
       await client.initialize()
       const tools = await createMcpTools(client)
+      // v0.6.26 资源桥接：拉取 resources/list + resources/templates/list（容错——服务器无资源
+      // 能力/请求失败时静默降级为空数组，不阻塞连接；列表变化通知回调触发后宿主可重新连接刷新）
+      const [resources, templates] = await Promise.all([
+        safeListResources(client),
+        safeListResourceTemplates(client),
+      ])
       this.clients.set(name, client)
       this.tools.set(name, tools)
+      this.resources.set(name, resources)
+      this.templates.set(name, templates)
       return tools
     } catch (e: any) {
       this.errors.set(name, e?.message || String(e))
@@ -118,6 +178,9 @@ export class McpManager {
     } catch { /* 忽略 */ }
     this.clients.delete(name)
     this.tools.delete(name)
+    // v0.6.26：资源/模板随连接一并清理
+    this.resources.delete(name)
+    this.templates.delete(name)
     this.errors.delete(name)
     return true
   }
@@ -137,6 +200,26 @@ export function loadMcpConfig(configPath: string): McpServerConfig[] {
     const raw = readFileSync(configPath, 'utf-8')
     const parsed = JSON.parse(raw)
     return Array.isArray(parsed?.servers) ? (parsed.servers as McpServerConfig[]) : []
+  } catch {
+    return []
+  }
+}
+
+/** 容错拉取资源列表（v0.6.26）：服务器无 resources 能力 / 请求失败 → 静默降级为空数组（不阻塞连接） */
+async function safeListResources(client: McpResourceClient): Promise<McpResourceInfo[]> {
+  try {
+    const list = await client.listResources()
+    return Array.isArray(list) ? list : []
+  } catch {
+    return []
+  }
+}
+
+/** 容错拉取资源模板列表（v0.6.26）：同上，无模板能力 → 空数组 */
+async function safeListResourceTemplates(client: McpResourceClient): Promise<McpResourceTemplateInfo[]> {
+  try {
+    const list = await client.listResourceTemplates()
+    return Array.isArray(list) ? list : []
   } catch {
     return []
   }

@@ -338,6 +338,27 @@ Interactive mode commands:
 
 > 中文条目 / Chinese entries · English summary for each version
 
+#### v0.6.26 (2026-08-11) — McpManager 资源桥接 + server 协议 mcp_resources
+- 📦 **McpManager 资源桥接（src/mcp/manager.ts）**：连接外部 MCP 服务器时除桥接工具外，同时拉取
+  `resources/list` + `resources/templates/list`（容错——服务器无资源能力/请求失败静默降级为空数组，
+  不阻塞连接）——外部服务器暴露的资源/动态资源模板**真实暴露**给宿主（此前只桥接工具，资源完全没消费）
+- 🔍 **新增 `getAllResources()` / `getAllResourceTemplates()` / `readResource(name, uri)`**：带来源
+  （`server` 名）的资源与模板并集 + 代理读取资源内容（未连接服务器 reject 清晰错误）；`status()`
+  已连接时带 `resourceCount`/`templateCount`（可选字段，向后兼容）；`disconnect` 随连接清理
+- 🖥️ **server 协议 `mcp_resources`（src/server.ts）**：宿主查看已连接 MCP 服务器的资源/模板清单
+  （按服务器分组，每项含来源）；只读、不触发生成、不创建会话；等待启动时后台连接落定（与 mcp_status 一致）
+- 🎨 **CLI `/mcp` 状态行增强**：已连接服务器显示 `（N 个工具 · M 资源 · K 模板）`
+- 📚 docs/host-protocol.md §16.1 新章节 + 请求类型列表 + README Changelog + 版本号 0.6.26
+- 🧪 新增 7 项测试（McpManager 5：connect 资源桥接（mock 服务器 2 资源+1 模板+status 计数）/ readResource
+  代理读取+未知 uri reject+未连接 reject / disconnect 随连接清理 / 无资源能力服务器空数组不阻塞 /
+  HTTP transport 资源拉取+读取闭环；server 协议 e2e 2——mcp_resources 真实子进程返回资源/模板清单、
+  mcp_status 带 resourceCount/templateCount）；
+  **577/577 全绿**（570 + 7），tsc 0 错误，零 agent.ts 改动
+- EN: `McpManager` now bridges external MCP servers' `resources/list` + `resources/templates/list` on
+  connect (previously only tools were consumed) — `getAllResources()` / `getAllResourceTemplates()` /
+  `readResource(name, uri)` + new host-protocol request `mcp_resources` expose them to hosts;
+  `/mcp` status shows resource/template counts. 577/577 green, zero Agent.run changes.
+
 #### v0.6.25 (2026-08-11) — MCP 列表变化通知补齐 prompts/list_changed + CLI /memory 关键词搜索
 - 📢 **MCPServer.notifyPromptListChanged()（src/mcp/server.ts）**：MCP 标准列表变化通知**第三块对称补齐**
   （v0.6.20 只做了 tools/resources，漏了 prompts）——提示词**列表**动态变化（运行中新增/移除 prompt）时
