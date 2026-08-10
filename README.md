@@ -337,6 +337,20 @@ Interactive mode commands:
 
 > 中文条目 / Chinese entries · English summary for each version
 
+#### v0.6.23 (2026-08-11) — completion/complete 并入资源模板候选 / resource-template candidates in ref/resource completion
+- 🎯 **ref/resource 补全增强（src/mcp/server.ts）**：`completion/complete`（ref/resource）候选从**仅静态
+  资源 uri** 扩展为**静态资源 + 资源模板 uriTemplate**（v0.6.22 模板协议的自然衔接）：客户端输入 uri
+  前缀（如 `memory://`）时同时建议静态资源（`memory://preferences`）与动态资源形态
+  （`memory://{noteId}`）——静态在前、模板在后；仅模板前缀命中只回模板候选；空匹配空候选不报错。
+  零 agent.ts 改动
+- 📚 docs/mcp.md 资源模板章节「与 completion 的关系」更新（v0.6.23 起并入模板候选）
+  + README Changelog + 版本号 0.6.23
+- 🧪 新增 1 项测试（completion ref/resource 并入模板候选：静态+模板合并顺序 / 仅模板命中 / 空匹配空候选）；
+  共 **550/550 全绿**（549 + 1），tsc 0 错误，零 agent.ts 改动
+- EN: `completion/complete` (`ref/resource`) now suggests **resource-template URI templates** in addition
+  to static resource URIs (static first, templates second) — typing `memory://` surfaces both
+  `memory://preferences` and `memory://{noteId}`. 550/550 green, zero Agent.run changes.
+
 #### v0.6.22 (2026-08-11) — MCP 资源模板：resources/templates/list + matchResourceTemplate / MCP resource templates (resources/templates/list + matchResourceTemplate)
 - 📐 **服务器侧（src/mcp/server.ts）**：`MCPServerOptions.resourceTemplates?: McpResourceTemplate[]`——
   **动态资源**（uri 含变量，如 `memory://{noteId}` 的记忆条目）无法在 `resources/list` 逐条列出时，

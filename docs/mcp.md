@@ -231,7 +231,9 @@ matchResourceTemplate('file://a/b/c.txt', { uriTemplate: 'file://{path}', name: 
 ```
 
 - **与 completion 的关系**：v0.6.11 的 `completion/complete`（ref/resource）按**已暴露静态资源** uri 前缀
-  补全；模板声明的是**动态资源形态**（客户端可自行构造变量段），两者互补——静态资源可枚举、动态资源靠模板发现
+  补全；v0.6.23 起**并入资源模板 uriTemplate 候选**（静态资源在前、模板在后）——客户端输入 uri 前缀时
+  可同时发现静态资源与动态资源形态；模板声明的是**动态资源形态**（客户端可自行构造变量段），两者互补——
+  静态资源可枚举、动态资源靠模板发现
 
 ### 提示词暴露（v0.6.2）：prompts/list 真实数据 + prompts/get 渲染
 

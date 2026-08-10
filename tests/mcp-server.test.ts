@@ -550,6 +550,31 @@ describe('MCPServer（stdio NDJSON JSON-RPC，零依赖）', () => {
     h.server.close()
   })
 
+  it('completion/complete：ref/resource 并入资源模板候选（v0.6.23——静态资源 + 动态模板形态）', async () => {
+    const resources: McpResource[] = [
+      { uri: 'memory://preferences', name: '用户偏好', read: () => 'x' },
+      { uri: 'file:///etc/hosts', name: 'hosts', read: () => 'h' },
+    ]
+    const templates: McpResourceTemplate[] = [
+      { uriTemplate: 'memory://{noteId}', name: '记忆条目' },
+      { uriTemplate: 'notes://{path}', name: '任意笔记' },
+    ]
+    const h = createHarness(undefined, resources, undefined, undefined, templates)
+    // 输入 memory:// → 静态资源 + 模板候选都建议（模板提示动态资源形态）
+    h.send({ jsonrpc: '2.0', id: 1, method: 'completion/complete', params: { ref: { type: 'ref/resource', uri: 'memory://' }, argument: { name: 'uri', value: 'memory://' } } })
+    await h.flush()
+    expect(h.last().result.completion.values).toEqual(['memory://preferences', 'memory://{noteId}'])
+    // 仅模板前缀命中 → 只有模板候选
+    h.send({ jsonrpc: '2.0', id: 2, method: 'completion/complete', params: { ref: { type: 'ref/resource', uri: 'notes://' }, argument: { name: 'uri', value: 'notes://' } } })
+    await h.flush()
+    expect(h.last().result.completion.values).toEqual(['notes://{path}'])
+    // 静态资源顺序在前、模板在后；空匹配 → 空候选（不报错）
+    h.send({ jsonrpc: '2.0', id: 3, method: 'completion/complete', params: { ref: { type: 'ref/resource', uri: 'x' }, argument: { name: 'uri', value: 'zzz' } } })
+    await h.flush()
+    expect(h.last().result.completion.values).toEqual([])
+    h.server.close()
+  })
+
   it('completion/complete：无补全回调的 prompt → 空候选；未知 prompt → -32602；缺 ref → -32602', async () => {
     const prompts: McpPrompt[] = [{ name: 'plain', render: () => [] }]
     const h = createHarness(undefined, undefined, prompts)
