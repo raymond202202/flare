@@ -326,7 +326,7 @@ Interactive mode commands:
 | Command | Function |
 |---------|----------|
 | `/help` | Show help |
-| `/memory` | View persistent memories |
+| `/memory` | View persistent memories (`/memory <keyword>` searches memories, v0.6.25) |
 | `/search <关键词>` | Search chat history across sessions (v0.6.24) |
 | `/remember` | Save a memory (e.g. /remember user likes light theme) |
 | `/forget` | Delete memories by keyword (e.g. /forget light theme) |
@@ -338,21 +338,25 @@ Interactive mode commands:
 
 > 中文条目 / Chinese entries · English summary for each version
 
-#### v0.6.25 (2026-08-11) — MCP 列表变化通知补齐 prompts/list_changed / prompts list_changed notification
+#### v0.6.25 (2026-08-11) — MCP 列表变化通知补齐 prompts/list_changed + CLI /memory 关键词搜索
 - 📢 **MCPServer.notifyPromptListChanged()（src/mcp/server.ts）**：MCP 标准列表变化通知**第三块对称补齐**
   （v0.6.20 只做了 tools/resources，漏了 prompts）——提示词**列表**动态变化（运行中新增/移除 prompt）时
   推送 `notifications/prompts/list_changed`（无 id、无 params，客户端无需响应）；已关闭/写失败静默忽略
 - 📥 **MCPClient 新增 `onPromptsChanged` 回调（src/mcp/client.ts）**：收到 `notifications/prompts/list_changed`
   触发（无参，建议回调内重新拉取 prompts/list 刷新清单）；未配置静默忽略不干扰后续请求；与
   onToolsChanged/onResourcesChanged 独立互不干扰——三者同构，协议标准全覆盖
-- 📚 docs/mcp.md 列表变化通知章节更新（三通知同文档、示例含 prompts）+ README Changelog + 版本号 0.6.25
-- 🧪 新增 2 项测试（MCPServer：notifyPromptListChanged 推送结构（无 id/params）/ 三者独立互不干扰；
+- 🔍 **CLI `/memory <关键词>` 搜索记忆（src/cli/index.ts）**：原来 `/memory` 只能列出全部、`/search` 只搜
+  消息——现在 `/memory <关键词>` 复用 `store.searchMemories`（FTS5 trigram，中文友好）全文搜索持久记忆，
+  与 /search 对称；无关键词仍列出全部（零回归），无结果友好提示；`/help` 注册
+- 📚 docs/mcp.md 列表变化通知章节更新（三通知同文档、示例含 prompts）+ README CLI 表/Changelog + 版本号 0.6.25
+- 🧪 新增 7 项测试（MCPServer 2：notifyPromptListChanged 推送结构（无 id/params）/ 三者独立互不干扰；
   **真实互通 e2e**——fixture 的 notify_changed 工具改为推送三个通知，客户端三回调各收到 2 次且连接不断；
-  MCPClient list-changed 模式断言并入 prompts，已关闭静默并入既有用例）；
-  **562/562 全绿**（560 + 2），tsc 0 错误，零 agent.ts 改动
+  MCPClient list-changed 模式断言并入 prompts、已关闭静默并入既有用例；**/memory 搜索 5**——列出全部 /
+  关键词 FTS 命中（不相关不出现）/ 无记忆提示 / 无结果提示 / help 注册）；
+  **567/567 全绿**（562 + 5），tsc 0 错误，零 agent.ts 改动
 - EN: added `MCPServer.notifyPromptListChanged()` + `MCPClient.onPromptsChanged` — the missing third
-  MCP standard list-changed notification (prompts), completing the v0.6.20 tools/resources pair.
-  562/562 green, zero Agent.run changes.
+  MCP standard list-changed notification (prompts), completing the v0.6.20 tools/resources pair;
+  plus CLI `/memory <keyword>` full-text memory search. 567/567 green, zero Agent.run changes.
 
 #### v0.6.24 (2026-08-11) — server 协议 search_messages 全文搜索 + CLI /search / host-protocol search_messages + CLI /search
 - 🔍 **server 协议 `search_messages`（src/server.ts）**：宿主面板"搜索历史对话"数据源——复用记忆库
