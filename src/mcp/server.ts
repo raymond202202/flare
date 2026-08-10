@@ -491,7 +491,8 @@ export class MCPServer {
   /**
    * 参数补全（completion/complete，v0.6.11）：返回候选值供客户端交互式输入建议。
    * - ref/ref-prompt：查 prompt.complete(argumentName, value) 回调（无回调 → 空候选）
-   * - ref/ref-resource：按已暴露资源 uri 前缀建议（资源 uri 模板补全）
+   * - ref/ref-resource：按已暴露资源 uri 前缀建议（资源 uri 模板补全；v0.6.23 起并入资源模板
+   *   uriTemplate 候选——动态资源形态提示，客户端输入前缀时可发现模板声明的动态资源）
    * 未知 prompt / 未知 ref 类型 → -32602；回调异常 → -32603（服务器不崩）。
    */
   private async complete(params: any): Promise<{ completion: McpCompletionResult }> {
@@ -505,8 +506,11 @@ export class MCPServer {
     }
     let values: string[]
     if (refType === 'ref/resource') {
-      // 资源 uri 补全：已暴露资源中 uri 以当前输入为前缀的建议
-      values = this.resourceList.map(r => r.uri).filter(uri => uri.startsWith(value))
+      // 资源 uri 补全：已暴露静态资源中 uri 以当前输入为前缀 + 资源模板 uriTemplate 以当前输入为前缀
+      // （v0.6.23：模板候选提示动态资源形态——客户端输入 memory:// 时可发现 memory://{noteId}）
+      const staticUris = this.resourceList.map(r => r.uri).filter(uri => uri.startsWith(value))
+      const templateUris = this.templateList.map(t => t.uriTemplate).filter(t => t.startsWith(value))
+      values = [...staticUris, ...templateUris]
     } else {
       const prompt = this.promptList.find(p => p.name === name)
       if (!prompt) {

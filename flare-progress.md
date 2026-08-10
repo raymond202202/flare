@@ -3,15 +3,15 @@
 > 目标：flare 是 Pulse/StorySpire 依赖的 AI Agent 引擎（TS）。任何改动必须安全（tsc 0 错 + 测试全绿才 commit）。
 > 铁律：禁止 push；禁止修改 src/core/agent.ts 的 Agent.run 核心循环。
 
-> **最新状态（v0.6.22）**：MCP 资源模板协议完成——`MCPServerOptions.resourceTemplates` 注入动态资源
-> uri 模板（RFC 6570 `{var}` 占位），标准方法 `resources/templates/list` 真实暴露（未注入空列表不报错；
-> 有模板时 `capabilities.resources` 声明 `listTemplates:true`，仅静态资源保持 `{subscribe:true}` 零回归），
-> 纯函数 `matchResourceTemplate(uri, template)` 库导出，`MCPClient`/`MCPHttpClient.listResourceTemplates()`
-> stdio+HTTP 同构消费；真实子进程冒烟 PASS；549/549 全绿。下一步候选：
+> **最新状态（v0.6.23）**：两小步完成——① MCP 资源模板协议（`MCPServerOptions.resourceTemplates`
+> 注入动态资源 uri 模板，标准方法 `resources/templates/list` 真实暴露，纯函数 `matchResourceTemplate`
+> 库导出，`MCPClient`/`MCPHttpClient.listResourceTemplates()` stdio+HTTP 同构消费，零回归）；
+> ② `completion/complete`（ref/resource）并入资源模板候选（静态资源 + 模板 uriTemplate 同时建议）；
+> 真实子进程冒烟均 PASS；550/550 全绿。下一步候选：
 > ① 其他安全的外围增强（server 协议其他管理接口、CLI 交互增强、MCP 工具集完善等）；
 > ② 摘要内容升级为 LLM 生成（语义级压缩，需评估 run 循环外异步）。
 
-### 2026-08-11 第二十三轮实施（v0.6.22）——MCP 资源模板 resources/templates/list
+### 2026-08-11 第二十三轮实施（v0.6.22 + v0.6.23）——MCP 资源模板 + completion 模板候选
 
 - **P44 MCP 资源模板协议**（src/mcp/types.ts + server.ts + client.ts + http-client.ts + 测试，commit `f4e13bf`）：
   - **动态资源场景**：uri 含变量的资源（如 `memory://{noteId}` 的每条记忆）无法在 `resources/list`
@@ -40,6 +40,17 @@
     tsc 0 错误，零 agent.ts 改动
   - **冒烟实测**：真实 tsx 子进程——version 0.6.22、capabilities.resources 含 listTemplates、
     templates 列出 `memory://{noteId}`、静态资源 + readResource 正常，SMOKE PASS
+- **P45 completion/complete 并入资源模板候选**（src/mcp/server.ts + 测试，commit 待定）：
+  - **衔接自然**：v0.6.22 模板协议暴露后，v0.6.11 的 ref/resource 补全候选从**仅静态资源 uri**
+    扩展为**静态资源 + 资源模板 uriTemplate**——客户端输入 uri 前缀（如 `memory://`）时同时建议
+    静态资源（`memory://preferences`）与动态资源形态（`memory://{noteId}`）
+  - **行为**：静态在前、模板在后（数组顺序明确）；仅模板前缀命中只回模板候选；空匹配空候选不报错；
+    未注入模板时行为与旧版完全一致（零回归）；仍走既有 complete 方法体（无新接口）
+  - docs/mcp.md 资源模板章节「与 completion 的关系」更新 + README Changelog + 版本号 0.6.23
+  - **550/550 全绿**（549 + 1 新增：ref/resource 模板候选——静态+模板合并顺序 / 仅模板命中 / 空匹配
+    空候选），tsc 0 错误，零 agent.ts 改动
+  - **冒烟实测**：真实 tsx 子进程——version 0.6.23、completion ref/resource 输入 memory:// 同时建议
+    `memory://preferences` + `memory://{noteId}`，SMOKE PASS
 - **下一步候选**：① 其他安全的外围增强（server 协议其他管理接口、CLI 交互增强、MCP 工具集完善等）；
   ② 摘要内容升级为 LLM 生成（语义级压缩，需评估 run 循环外异步）
 
