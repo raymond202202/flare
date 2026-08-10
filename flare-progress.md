@@ -3,7 +3,7 @@
 > 目标：flare 是 Pulse/StorySpire 依赖的 AI Agent 引擎（TS）。任何改动必须安全（tsc 0 错 + 测试全绿才 commit）。
 > 铁律：禁止 push；禁止修改 src/core/agent.ts 的 Agent.run 核心循环。
 
-> **最新状态（v0.6.13）**：MCP logging 协议闭环（`logging/setLevel` 级别阈值 + `sendLog` 推送 `notifications/message` 通知）+ 客户端 `onLog`/`setLogLevel` 消费；426/426 全绿（commit `未提交`，未 push）。
+> **最新状态（v0.6.13）**：MCP logging 协议闭环（`logging/setLevel` 级别阈值 + `sendLog` 推送 `notifications/message` 通知）+ 客户端 `onLog`/`setLogLevel` 消费；426/426 全绿（commit `c9ba946`，未 push）。
 > 下一步候选：① agent.ts trimContext 自动裁剪（风险高仍暂缓）；② 其他安全的外围增强（MCP 更多协议特性如 sampling、server 协议其他管理接口等）。
 
 ### 2026-08-10 第十五轮实施（v0.6.13）——MCP logging 协议闭环
