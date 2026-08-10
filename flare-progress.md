@@ -3,14 +3,15 @@
 > 目标：flare 是 Pulse/StorySpire 依赖的 AI Agent 引擎（TS）。任何改动必须安全（tsc 0 错 + 测试全绿才 commit）。
 > 铁律：禁止 push；禁止修改 src/core/agent.ts 的 Agent.run 核心循环。
 
-> **最新状态（v0.6.25）**：一小步完成——MCP 列表变化通知**第三块对称补齐** `notifications/prompts/list_changed`
-> （v0.6.20 只做了 tools/resources，漏了 MCP 标准的 prompts 通知）：`MCPServer.notifyPromptListChanged()`
-> + `MCPClient.onPromptsChanged` 回调，真实子进程 e2e 三通知闭环（各收到 2 次连接不断）；
-> 562/562 全绿。下一步候选：
+> **最新状态（v0.6.25）**：两小步完成——① MCP 列表变化通知**第三块对称补齐**
+> `notifications/prompts/list_changed`（v0.6.20 只做了 tools/resources，漏了 MCP 标准的 prompts 通知）：
+> `MCPServer.notifyPromptListChanged()` + `MCPClient.onPromptsChanged` 回调，真实子进程 e2e 三通知闭环
+> （各收到 2 次连接不断）；② CLI `/memory <关键词>` 搜索持久记忆（复用 searchMemories FTS5，与 /search
+> 对称；无关键词列出全部零回归）；567/567 全绿。下一步候选：
 > ① 其他安全的外围增强（server 协议其他管理接口、CLI 交互增强、MCP 工具集完善等）；
 > ② 摘要内容升级为 LLM 生成（语义级压缩，需评估 run 循环外异步）。
 
-### 2026-08-11 第二十五轮实施（v0.6.25）——MCP 列表变化通知补齐 prompts/list_changed
+### 2026-08-11 第二十五轮实施（v0.6.25）——MCP 列表变化通知补齐 prompts/list_changed + CLI /memory 搜索
 
 - **P48 `notifications/prompts/list_changed` 对称补齐**（src/mcp/server.ts + client.ts + 测试，commit `af53cdc`）：
   - **协议缺口修复**：MCP 标准列表变化通知共三个（tools/resources/prompts），v0.6.20 只做了前两个——
@@ -28,6 +29,15 @@
     tsc 0 错误，零 agent.ts 改动
   - **冒烟实测**：真实 stdio 子进程闭环——callTool notify_all → 工具执行中推送三个列表变化通知 →
     客户端三回调各收到 1 次，serverInfo 0.6.25，SMOKE PASS
+- **P49 CLI `/memory <关键词>` 搜索记忆**（src/cli/index.ts + tests/memory-command.test.ts，commit `4ce0bcd`）：
+  - **记忆侧搜索缺口**：`/memory` 只能列出全部、`/search`（v0.6.24）只搜消息——记忆的搜索查看缺失；
+    现在 `/memory <关键词>` 复用 `store.searchMemories`（FTS5 trigram，中文友好）全文搜索持久记忆，
+    与 /search 对称（命中列表、不相关不出现）
+  - **行为**：`/memory`（无关键词）列出全部（与旧版一致，零回归）；`/memory <关键词>` 搜索最多 10 条
+    命中（🔍 记忆「kw」相关 N 条）；无结果友好提示「未找到包含…」；命令处理从前缀匹配分支进入
+    （与 /remember /search 同模式，避免带参落 switch 未知命令）；`/help` 注册说明更新
+  - **567/567 全绿**（562 + 5 新增 memory-command.test.ts：列出全部 / 关键词 FTS 命中（不相关不出现）/
+    无记忆提示 / 无结果提示 / help 注册），tsc 0 错误，零 agent.ts 改动
 - **下一步候选**：① 其他安全的外围增强（server 协议其他管理接口、CLI 交互增强、MCP 工具集完善等）；
   ② 摘要内容升级为 LLM 生成（语义级压缩，需评估 run 循环外异步）
 
