@@ -3,14 +3,47 @@
 > 目标：flare 是 Pulse/StorySpire 依赖的 AI Agent 引擎（TS）。任何改动必须安全（tsc 0 错 + 测试全绿才 commit）。
 > 铁律：禁止 push；禁止修改 src/core/agent.ts 的 Agent.run 核心循环。
 
-> **最新状态（v0.6.21）**：两小步完成——① MCP 列表变化通知闭环（`MCPServer.notifyToolListChanged`/
-> `notifyResourceListChanged` 推送 `notifications/tools/list_changed` + `notifications/resources/list_changed`，
-> 列表动态变化告知客户端重新拉取；`MCPClient` 新增 `onToolsChanged`/`onResourcesChanged` 回调）；
-> ② server 协议 `get_messages` 分页增强（`limit` 1~500 默认 50 非法回 error + `recent:true` 返回最近
-> limit 条，`MemoryStore.getRecentMessages` 新方法，缺省行为与旧版一致向后兼容）；
-> 真实子进程冒烟均 PASS；542/542 全绿。下一步候选：
+> **最新状态（v0.6.22）**：MCP 资源模板协议完成——`MCPServerOptions.resourceTemplates` 注入动态资源
+> uri 模板（RFC 6570 `{var}` 占位），标准方法 `resources/templates/list` 真实暴露（未注入空列表不报错；
+> 有模板时 `capabilities.resources` 声明 `listTemplates:true`，仅静态资源保持 `{subscribe:true}` 零回归），
+> 纯函数 `matchResourceTemplate(uri, template)` 库导出，`MCPClient`/`MCPHttpClient.listResourceTemplates()`
+> stdio+HTTP 同构消费；真实子进程冒烟 PASS；549/549 全绿。下一步候选：
 > ① 其他安全的外围增强（server 协议其他管理接口、CLI 交互增强、MCP 工具集完善等）；
 > ② 摘要内容升级为 LLM 生成（语义级压缩，需评估 run 循环外异步）。
+
+### 2026-08-11 第二十三轮实施（v0.6.22）——MCP 资源模板 resources/templates/list
+
+- **P44 MCP 资源模板协议**（src/mcp/types.ts + server.ts + client.ts + http-client.ts + 测试，commit `f4e13bf`）：
+  - **动态资源场景**：uri 含变量的资源（如 `memory://{noteId}` 的每条记忆）无法在 `resources/list`
+    逐条列出——MCP 标准用**资源模板**声明其形态，客户端据此知道如何构造/发现这类资源
+  - **服务器侧** `MCPServerOptions.resourceTemplates?: McpResourceTemplate[]`（`uriTemplate` RFC 6570
+    风格 `{var}` 占位 + `name` + 可选 `description`/`mimeType`）；dispatch 新增标准方法
+    `resources/templates/list` → 返回模板元数据；**未注入返回空列表**（方法始终可用，不报错，与
+    resources/list 同风格）；有模板时 `capabilities.resources` 声明 `{ subscribe: true, listTemplates: true }`，
+    **仅静态资源无模板仍为 `{ subscribe: true }`**（缺省行为与旧版完全一致，既有断言零回归）；
+    仅模板无静态资源也声明 resources 能力（客户端可发现模板）
+  - **纯函数 `matchResourceTemplate(uri, template)`**（库导出）：判断 uri 是否匹配某模板——模板编译
+    为正则（`{var}` 捕获组；`path`/`uri` 类变量允许任意字符含 `/`，其余变量单段不含 `/`），匹配返回
+    模板对象、不匹配返回 `null`；宿主可校验动态资源 uri 合法性/生成模板候选 uri；修复转义顺序 bug
+    （先整体转义 `{` 导致占位符无法识别 → 改按占位符分段再转义字面段）
+  - **客户端消费**：`MCPClient.listResourceTemplates()` / `MCPHttpClient.listResourceTemplates()` → 模板
+    数组（stdio / HTTP 同构，与 listResources 一致，非数组容错 []）；HTTP transport 复用 handleMessage
+    核心**自动支持**（无需额外改动）
+  - **与 completion 定位差异（文档记录）**：v0.6.11 `completion/complete`（ref/resource）按**已暴露
+    静态资源** uri 前缀补全；模板声明**动态资源形态**（客户端自行构造变量段）——静态可枚举、动态靠模板发现
+  - docs/mcp.md 资源模板章节 + README Changelog + 版本号 0.6.22
+  - **549/549 全绿**（基线 541 + 8 新增：MCPServer 5——templates/list 返回注入模板含可选字段 / 未注入
+    空列表 / capabilities 三形状（有模板+仅资源+仅模板）/ matchResourceTemplate 纯函数单段·path 含 /·
+    不匹配 null / **资源模板真实互通 e2e**——真实 MCPServer 子进程静态资源+动态模板，客户端
+    listResources+listResourceTemplates+readResource 闭环连接不断；MCPClient 1——listResourceTemplates
+    解析（mock server 新增 templates case）；MCPHttpClient 2——HTTP 消费闭环 + 未注入模板零回归），
+    tsc 0 错误，零 agent.ts 改动
+  - **冒烟实测**：真实 tsx 子进程——version 0.6.22、capabilities.resources 含 listTemplates、
+    templates 列出 `memory://{noteId}`、静态资源 + readResource 正常，SMOKE PASS
+- **下一步候选**：① 其他安全的外围增强（server 协议其他管理接口、CLI 交互增强、MCP 工具集完善等）；
+  ② 摘要内容升级为 LLM 生成（语义级压缩，需评估 run 循环外异步）
+
+---
 
 ### 2026-08-11 第二十二轮实施（v0.6.20 + v0.6.21）——MCP 列表变化通知 + get_messages 分页增强
 
