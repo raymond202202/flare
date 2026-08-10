@@ -40,7 +40,7 @@
     tsc 0 错误，零 agent.ts 改动
   - **冒烟实测**：真实 tsx 子进程——version 0.6.22、capabilities.resources 含 listTemplates、
     templates 列出 `memory://{noteId}`、静态资源 + readResource 正常，SMOKE PASS
-- **P45 completion/complete 并入资源模板候选**（src/mcp/server.ts + 测试，commit 待定）：
+- **P45 completion/complete 并入资源模板候选**（src/mcp/server.ts + 测试，commit `4f238cb`）：
   - **衔接自然**：v0.6.22 模板协议暴露后，v0.6.11 的 ref/resource 补全候选从**仅静态资源 uri**
     扩展为**静态资源 + 资源模板 uriTemplate**——客户端输入 uri 前缀（如 `memory://`）时同时建议
     静态资源（`memory://preferences`）与动态资源形态（`memory://{noteId}`）
