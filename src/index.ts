@@ -99,10 +99,12 @@ export type {
   McpCompletionResult,
   McpRoot,
   McpRootsResult,
+  McpLogLevel,
+  McpLogMessage,
 } from './mcp/types.js'
 
 // ===== MCP 服务器端（v0.5.8）：flare 工具集经 MCP 标准协议暴露给外部客户端 =====
-export { MCPServer, toMcpTool, startMcpServer } from './mcp/server.js'
+export { MCPServer, toMcpTool, startMcpServer, MCP_LOG_LEVELS, MCP_DEFAULT_LOG_LEVEL } from './mcp/server.js'
 export type { MCPServerOptions } from './mcp/server.js'
 // MCP HTTP transport（v0.6.3）：POST /mcp 同步 JSON-RPC，复用同一 MCPServer 核心
 export { startMcpHttpServer } from './mcp/http.js'

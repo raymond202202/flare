@@ -4,7 +4,7 @@ import { dirname, join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { readFileSync } from 'node:fs'
 import { MCPClient } from '../src/mcp/client.js'
-import type { McpRoot } from '../src/mcp/types.js'
+import type { McpLogMessage, McpRoot } from '../src/mcp/types.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const MOCK_SERVER = join(__dirname, 'fixtures', 'mcp-mock-server.mjs')
@@ -17,6 +17,18 @@ function spawnMock(mode?: string, timeoutMs = 5000): MCPClient {
     env: mode ? { MOCK_MODE: mode } : undefined,
     timeoutMs,
   })
+}
+
+function spawnMockWithLog(mode?: string): { client: MCPClient; received: McpLogMessage[] } {
+  const received: McpLogMessage[] = []
+  const client = new MCPClient({
+    command: process.execPath,
+    args: [MOCK_SERVER],
+    env: mode ? { MOCK_MODE: mode } : undefined,
+    timeoutMs: 5000,
+    onLog: (msg) => received.push(msg),
+  })
+  return { client, received }
 }
 
 /** 读取 JSON Lines 日志文件（fixture 事件记录） */
@@ -232,5 +244,43 @@ describe('MCPClient roots（v0.6.12：客户端暴露 roots + 响应服务器请
     await client.initialize()
     client.close()
     expect(() => client.notifyRootsChanged()).not.toThrow()
+  })
+})
+
+describe('MCPClient logging（v0.6.13：setLogLevel + onLog 接收 notifications/message）', () => {
+  it('setLogLevel：发送 logging/setLevel 请求并收到 {} 响应（不抛错）', async () => {
+    const client = spawnMock()
+    await client.initialize()
+    await expect(client.setLogLevel('debug')).resolves.toBeUndefined()
+    await expect(client.setLogLevel('warning')).resolves.toBeUndefined()
+    client.close()
+  })
+
+  it('close 后 setLogLevel → reject（客户端已关闭）', async () => {
+    const client = spawnMock()
+    await client.initialize()
+    client.close()
+    await expect(client.setLogLevel('info')).rejects.toThrow(/已关闭/)
+  })
+
+  it('onLog：服务器推送 notifications/message → 回调转发（level/logger/data 结构）', async () => {
+    const { client, received } = spawnMockWithLog('log-notify')
+    await client.initialize()
+    await client.setLogLevel('warning')
+    // mock 服务器收到 setLevel 后推送一条 notifications/message（同 level + logger + data）
+    await new Promise((r) => setTimeout(r, 300))
+    expect(received).toHaveLength(1)
+    expect(received[0]).toEqual({ level: 'warning', logger: 'mock', data: 'mock log data' })
+    client.close()
+  })
+
+  it('未配置 onLog：服务器推送日志通知 → 静默忽略（不抛错、不影响后续请求）', async () => {
+    const client = spawnMock('log-notify')
+    await client.initialize()
+    await client.setLogLevel('error')
+    // 通知被忽略，但后续请求照常工作
+    const res = await client.callTool('echo_text', { text: 'still-alive' })
+    expect(res.content[0]?.text).toBe('echo: still-alive')
+    client.close()
   })
 })

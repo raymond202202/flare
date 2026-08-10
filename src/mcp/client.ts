@@ -24,7 +24,7 @@
 import { spawn, type ChildProcess } from 'node:child_process'
 import { createInterface, type Interface } from 'node:readline'
 import { createRequire } from 'node:module'
-import type { McpTool, McpCallResult, McpPromptInfo, McpPromptResult, McpResourceInfo, McpResourceContents, McpCompletionResult, McpRoot } from './types.js'
+import type { McpTool, McpCallResult, McpPromptInfo, McpPromptResult, McpResourceInfo, McpResourceContents, McpCompletionResult, McpRoot, McpLogLevel, McpLogMessage } from './types.js'
 
 const require = createRequire(import.meta.url)
 const pkg = require('../../package.json') as { version: string }
@@ -51,6 +51,8 @@ export interface MCPClientOptions {
   /** 客户端 roots（v0.6.12 roots 协议）：暴露给服务器的命名空间/根目录；配置后 initialize 声明 capabilities.roots，
    *  服务器可发 roots/list 请求查询（响应注入的 roots），roots 变化时可发 notifications/roots/list_changed 通知 */
   roots?: McpRoot[]
+  /** 日志通知回调（v0.6.13）：服务器 sendLog 推送的 notifications/message 通知 → 按此回调转发；缺省忽略 */
+  onLog?: (msg: McpLogMessage) => void
 }
 
 export class MCPClient {
@@ -64,10 +66,12 @@ export class MCPClient {
   private closed = false
   private timeoutMs: number
   private readonly rootsList: McpRoot[]
+  private readonly onLog?: (msg: McpLogMessage) => void
 
   constructor(opts: MCPClientOptions) {
     this.timeoutMs = opts.timeoutMs || DEFAULT_TIMEOUT_MS
     this.rootsList = opts.roots || []
+    this.onLog = opts.onLog
     this.child = spawn(opts.command, opts.args || [], {
       env: opts.env ? { ...process.env, ...opts.env } : process.env,
       stdio: ['pipe', 'pipe', 'pipe'],
@@ -96,7 +100,7 @@ export class MCPClient {
     })
   }
 
-  /** 处理服务器返回的一行（匹配 pending 请求；服务器主动发来的请求 → handleServerRequest；通知类消息无 id 忽略） */
+  /** 处理服务器返回的一行（匹配 pending 请求；服务器主动发来的请求 → handleServerRequest；通知类消息无 id 按方法分发） */
   private handleLine(line: string) {
     if (!line.trim()) return
     let msg: any
@@ -117,7 +121,21 @@ export class MCPClient {
     } else if (msg && msg.id !== undefined && typeof msg.method === 'string') {
       // v0.6.12：服务器主动发来的请求（如 roots/list）——不是对 flare 请求的响应
       void this.handleServerRequest(msg)
+    } else if (msg && msg.id === undefined && typeof msg.method === 'string') {
+      // v0.6.13：通知类消息（无 id）——目前支持 notifications/message（服务器日志推送）
+      this.handleNotification(msg)
     }
+  }
+
+  /** 处理服务器通知（v0.6.13）：notifications/message → onLog 回调转发（缺省忽略；通知无需响应） */
+  private handleNotification(msg: any): void {
+    if (msg.method !== 'notifications/message' || typeof this.onLog !== 'function') return
+    const p = msg.params || {}
+    this.onLog({
+      level: p.level as McpLogLevel,
+      ...(p.logger !== undefined ? { logger: String(p.logger) } : {}),
+      data: p.data,
+    })
   }
 
   /**
@@ -219,6 +237,11 @@ export class MCPClient {
   async listResources(): Promise<McpResourceInfo[]> {
     const res = await this.request<any>('resources/list', {})
     return Array.isArray(res?.resources) ? (res.resources as McpResourceInfo[]) : []
+  }
+
+  /** 设置服务器日志级别阈值（logging/setLevel，v0.6.13）：此后服务器低于该级别的 sendLog 通知不再推送 */
+  async setLogLevel(level: McpLogLevel): Promise<void> {
+    await this.request('logging/setLevel', { level })
   }
 
   /** 读取资源内容（resources/read，v0.6.6）：按 uri 返回内容列表；未知 uri 协议错误则 reject */
