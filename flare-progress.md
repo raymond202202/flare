@@ -3,8 +3,41 @@
 > 目标：flare 是 Pulse/StorySpire 依赖的 AI Agent 引擎（TS）。任何改动必须安全（tsc 0 错 + 测试全绿才 commit）。
 > 铁律：禁止 push；禁止修改 src/core/agent.ts 的 Agent.run 核心循环。
 
-> **最新状态（v0.6.13）**：MCP logging 协议闭环（`logging/setLevel` 级别阈值 + `sendLog` 推送 `notifications/message` 通知）+ 客户端 `onLog`/`setLogLevel` 消费；426/426 全绿（commit `c9ba946`，未 push）。
-> 下一步候选：① agent.ts trimContext 自动裁剪（风险高仍暂缓）；② 其他安全的外围增强（MCP 更多协议特性如 sampling、server 协议其他管理接口等）。
+> **最新状态（v0.6.14）**：MCP sampling 协议闭环（服务器 `requestSample` 请求客户端代为调用 LLM + 客户端 `sampling` 回调消费）；439/439 全绿（commit `6d9b3c7`，未 push）。
+> 下一步候选：① agent.ts trimContext 自动裁剪（风险高仍暂缓）；② 其他安全的外围增强（MCP 更多协议特性、server 协议其他管理接口等）。
+
+### 2026-08-10 第十六轮实施（v0.6.14）——MCP sampling 协议闭环
+
+- **P31 MCP sampling 协议**（src/mcp/types.ts + client.ts + server.ts）：
+  - **协议语义**：sampling 让服务器（自身无模型/不想直接调模型）请求**客户端（宿主应用）代为调用
+    LLM** 生成内容——对 AI Agent 引擎是天然场景（flare 服务器经 MCP 复用宿主已配置的模型能力）；
+    方向与 roots 一致（服务器→客户端请求），**复用 v0.6.12 建立的主动请求通道**（pending + handleServerRequest）
+  - **服务器侧**：`MCPServer.requestSample(request, timeoutMs?)` 发 `sampling/createMessage` 请求——
+    参数含 `messages`（必填，至少一条）/ `systemPrompt` / `temperature` / `maxTokens`（必填）/
+    `stopSequences` / `modelPreferences`（hints + cost/speed/intelligence 优先级）/ `includeContext` /
+    `metadata`；等待客户端响应（带超时，默认 requestTimeoutMs）；客户端回 error / 超时 / 服务器已关闭 →
+    reject（不悬挂）；**响应缺 content.text → reject**（采样结果必须有内容才可用，与 roots 容错 [] 不同——
+    文档明确记录差异）；请求缺 messages → 立即 reject（不发请求）
+  - **客户端侧**：`MCPClient` 新增 `sampling` 回调选项——配置后 `initialize` 声明 `capabilities.sampling`
+    （未配置不声明，缺省兼容——服务器不应请求采样）；服务器发 `sampling/createMessage` 请求 → 回调
+    自动执行并回传结果（**支持异步回调**）；回调抛错 → 回 `-32603`（客户端不崩）；未配置回调却收到请求 →
+    回 `-32601`（协议错误，连接不断）
+  - **传输差异（文档记录）**：HTTP transport 一请求一响应、无服务器→客户端通道，不提供 `requestSample`
+    （stdio 专属）；MCPHttpClient 无 SSE 长连接也不声明 sampling 能力——与 roots 一致
+  - **安全**：sampling 是客户端主动授权能力——只有配置了回调的客户端才会响应，服务器无法强制调用模型
+  - `McpSamplingRequest`/`McpSamplingResult`/`McpSamplingMessage`/`McpSamplingContent`/`McpModelPreferences`
+    类型库导出；docs/mcp.md sampling 协议章节 + README Changelog + 版本号 0.6.14
+  - **439/439 全绿**（426 + 13 新增：MCPServer 7——发起+解析响应含 model/stopReason / 客户端 error reject /
+    缺 content reject / 缺 messages 立即 reject / 超时 reject 后服务器仍可用 / 已关闭 reject / sampling 真实
+    互通 e2e——真实 MCPServer 子进程 requestSample ↔ MCPClient sampling 回调 + 未配置回调回 -32601 e2e；
+    MCPClient 6——配置回调声明能力+协议闭环 / 未配置不声明 / 无回调回 -32601 连接不断 / 回调抛错 -32603 /
+    异步回调 / 请求参数完整透传），tsc 0 错误，零 agent.ts 改动
+  - **冒烟实测**：真实 stdio 子进程闭环——客户端带 sampling 回调连接真实 MCPServer，requestSample 拿到
+    确定性采样文本（含 model 回显 deepseek-chat），SMOKE PASS
+- **下一步候选**：① agent.ts trimContext 自动裁剪（风险高仍暂缓）；② 其他安全的外围增强
+  （MCP 更多协议特性、server 协议其他管理接口、CLI 交互增强等）
+
+---
 
 ### 2026-08-10 第十五轮实施（v0.6.13）——MCP logging 协议闭环
 
