@@ -8,7 +8,7 @@
 import { Message, LLMProvider, createProvider, createVisionProvider, buildImageContent, parseAttachments, type ContentPart, type ToolDefinition } from './llm.js'
 import { getToolDefinitions, executeTool, type Tool } from '../tools/index.js'
 import { getMemoryStore, MemoryStore } from '../memory/store.js'
-import { trimContextMessages } from './context.js'
+import { trimContextMessages, summarizeTrimmedMessages } from './context.js'
 import { logger } from './logger.js'
 
 export interface AgentConfig {
@@ -37,6 +37,10 @@ export interface AgentConfig {
    *  裁剪（最近优先 + 配对保护 + system 保底；与 maxContextMessages 任一先到即停）。
    *  不配置则只按条数裁剪（行为与旧版一致）。 */
   maxContextTokens?: number
+  /** 上下文压缩摘要（v0.6.19，默认 false）：裁剪时把丢弃的历史压缩成摘要消息
+   *  （条数/角色分布/涉及工具/最后话题）而非直接丢弃——AI 保留话题连续性；
+   *  纯启发式统计不调 LLM（零额外成本）；摘要可被下次裁剪识别并合并覆盖（不堆积）。 */
+  contextSummarize?: boolean
 }
 
 const DEFAULT_SYSTEM_PROMPT = `你是 Flare，一个通用能力的 AI Agent。
@@ -417,10 +421,14 @@ export class Agent {
    *     - 如果有 assistant(tool_calls)+tool 配对，整对保留
    */
   private trimContext() {
-    this.messages = trimContextMessages(this.messages, {
+    const base = {
       maxMessages: this.config.maxContextMessages ?? 30,
       maxTokens: this.config.maxContextTokens,
-    })
+    }
+    // v0.6.19：contextSummarize 开启时把丢弃历史压缩成摘要消息（纯启发式，AI 保留话题连续性）
+    this.messages = this.config.contextSummarize
+      ? summarizeTrimmedMessages(this.messages, base)
+      : trimContextMessages(this.messages, base)
   }
 
   /** 获取当前消息列表 */

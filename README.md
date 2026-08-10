@@ -148,7 +148,7 @@ cp .env.example ~/.flare/.env
 | `flare chat` | 交互模式 |
 | `flare chat -q "问题"` | 单次查询模式 |
 | `flare chat -q "问题" -i 图片.png` | 单次查询附带图片 |
-| `flare server [--profile --storage --mcp --confirm-tools --confirm-timeout --max-tokens --temperature --max-context-messages --max-context-tokens]` | 宿主协议服务（stdin/stdout JSON Lines，供 Qt 等宿主调用；v0.6.1 起写回类工具经确认门；v0.6.5 起 --max-tokens/--temperature 设 chat 默认采样参数；v0.6.17 起 --max-context-messages/--max-context-tokens 设默认上下文自动裁剪） |
+| `flare server [--profile --storage --mcp --confirm-tools --confirm-timeout --max-tokens --temperature --max-context-messages --max-context-tokens --context-summarize]` | 宿主协议服务（stdin/stdout JSON Lines，供 Qt 等宿主调用；v0.6.1 起写回类工具经确认门；v0.6.5 起 --max-tokens/--temperature 设 chat 默认采样参数；v0.6.17 起 --max-context-messages/--max-context-tokens 设默认上下文自动裁剪；v0.6.19 起 --context-summarize 默认开启上下文压缩摘要） |
 | `flare mcp-server [-t 工具名,...]` | MCP stdio 服务器：把 flare 工具集暴露给其他 AI 客户端（v0.5.8） |
 | `flare mcp call <服务器> <工具> [JSON参数]` | 调用 MCP 服务器工具（stdio 或 HTTP transport；服务器名查 `~/.flare/mcp.json`，`--url` 直连 HTTP 端点，v0.6.6） |
 | `flare mcp status` | 查看配置的 MCP 服务器（名称 + 传输类型 + 端点/命令，v0.6.6） |
@@ -335,6 +335,32 @@ Interactive mode commands:
 ### Changelog / Release Notes
 
 > 中文条目 / Chinese entries · English summary for each version
+
+#### v0.6.19 (2026-08-10) — 上下文压缩摘要：裁剪掉的历史压缩成摘要 / Context summarization: trimmed history compressed into a summary message
+- 🧩 **上下文压缩摘要（src/core/context.ts + agent.ts + server.ts + cli）**：`AgentConfig` 新增
+  `contextSummarize`（默认 false）——开启后迭代前裁剪把**丢弃的历史压缩成摘要消息**而非直接丢弃
+  （AI 保留话题连续性）：纯函数 `summarizeTrimmedMessages(messages, opts)`（在 trimContextMessages
+  基础上：未裁剪返回原引用零拷贝；裁剪后摘要紧随 system 之后）+ `buildSummaryText`（纯启发式统计
+  **不调 LLM**：被压缩条数 + 角色分布 user/assistant/tool + 估算 tokens + 涉及工具去重列表 +
+  最后话题（最新被裁消息内容片段））；**摘要链防堆积**——摘要以 `[历史摘要]` 标记开头，下次裁剪
+  无论旧摘要在保留区还是丢弃区都被识别合并覆盖（新摘要含\"更早历史\"行，多次裁剪不越滚越大）
+- ⚙️ **server 协议透传**：chat 请求带 `contextSummarize`（布尔，非法值 error 不触发生成）；
+  `HostServerOptions.defaultContextSummarize` + CLI `flare server --context-summarize` server 级
+  默认（chat 未指定时应用，请求优先；ctxOptsChanged 同机制自动重建 Agent）；
+  `get_config` 回显 `defaultContextSummarize`（只读，不含密钥）
+- 📚 docs/context-observability.md 摘要章节 + docs/host-protocol.md chat 参数表 + README Changelog/CLI 表 + 版本号 0.6.19
+- 🧪 新增 20 项测试（trimContextMessages 摘要纯函数 13：未裁剪原引用 / 摘要紧随 system+含条数统计 /
+  角色分布+涉及工具去重 / 最后话题最新被裁 / 摘要链防堆积（丢弃区+保留区旧摘要合并覆盖） / maxChars
+  截断 / role=user / includeTail:false / 无 system 摘要放最前 / maxTools 限制 / buildSummaryText 2；
+  Agent 集成 2：contextSummarize 生效 / 缺省 false 零回归；server e2e 5：默认值不破坏启动 / 非法
+  contextSummarize error / 缺省应用默认 / 合法透传流程完整 / get_config 回显）；共 **526/526 全绿**
+  （506 + 20），tsc 0 错误，**run 循环零改动**（仅 trimContext 私有方法体委托 + AgentConfig 新字段）
+- EN: When enabled (`contextSummarize`, default off), `summarizeTrimmedMessages` replaces
+  trimmed-away history with a compact heuristic summary message (counts, role distribution,
+  estimated tokens, involved tools, last topic) instead of dropping it entirely — no LLM call,
+  summary chain de-duplicated via a `[历史摘要]` marker so repeated trims don't accumulate;
+  exposed via host protocol `chat` (per-request), `--context-summarize` server default and
+  `get_config` echo. 526/526 green, zero Agent.run changes.
 
 #### v0.6.18 (2026-08-10) — server 协议 rename_session/clear_session 会话管理 / Session rename & clear via host protocol (rename_session + clear_session)
 - 📊 **server 协议 `rename_session`（src/server.ts）**：`{ sessionId, title }`——宿主面板"重命名会话"

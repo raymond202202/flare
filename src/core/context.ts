@@ -244,3 +244,185 @@ export function suggestTrim(messages: Message[], budgetTokens: number, options: 
     estimatedDroppedTokens: Math.max(0, totalTokens - keptTokens),
   }
 }
+
+/**
+ * 上下文压缩摘要（v0.6.19，纯函数）
+ *
+ * 在 trimContextMessages 基础上：发生裁剪时**把丢弃的历史压缩成摘要消息**
+ * 而非直接丢弃——AI 保留话题连续性（裁剪掉的工具调用/话题不再完全不可见）。
+ * 纯启发式统计，**不调用 LLM**（零额外成本）；可离线确定性单测。
+ *
+ * 摘要内容（buildSummaryText）：
+ *   - 被压缩的条数 + 角色分布（user/assistant/tool）+ 估算 tokens
+ *   - 涉及的工具名（去重，最多 maxTools 个）
+ *   - 最后话题：最新被裁消息的内容片段（AI 衔接最近话题用）
+ *
+ * 摘要链防堆积：
+ *   - 摘要消息以 SUMMARY_MARKER 开头（默认 role='system'）
+ *   - 下次裁剪时，旧摘要无论被保留还是被裁掉，都会被识别并合并进新摘要
+ *     （新摘要覆盖旧摘要，多次裁剪不会越滚越大）
+ *
+ * 与 trimContextMessages 的契约一致：
+ *   - 未发生裁剪 → 返回**原数组引用**（零拷贝，调用方无感知）
+ *   - 发生裁剪 → 返回新数组（system 保底在前；摘要紧随 system 之后）
+ */
+
+/** 摘要消息内容识别标记：summarizeTrimmedMessages 生成的摘要消息以此开头
+ *  （下次裁剪可识别旧摘要并合并覆盖，摘要链不堆积） */
+export const SUMMARY_MARKER = '[历史摘要]'
+
+export interface SummarizeOptions {
+  /** 摘要消息 role（默认 'system'）：置于 system 之后/最前，AI 明确知道这是压缩的历史 */
+  role?: 'system' | 'user'
+  /** 摘要文本最大字符数（默认 400）：超出截断加省略号（防止摘要反噬上下文预算） */
+  maxChars?: number
+  /** 摘要中涉及工具名最多列出的数量（默认 8） */
+  maxTools?: number
+  /** 是否提取最新被裁消息内容片段作为「最后话题」（默认 true） */
+  includeTail?: boolean
+  /** 内容片段最大字符数（默认 80） */
+  tailChars?: number
+}
+
+/** 摘要统计输入（buildSummaryText 的纯数据；summarizeTrimmedMessages 内部产出） */
+export interface TrimStats {
+  /** 被压缩的消息条数 */
+  droppedCount: number
+  /** 角色分布 */
+  userCount: number
+  assistantCount: number
+  toolCount: number
+  /** 被压缩部分的估算 tokens */
+  droppedTokens: number
+  /** 涉及的工具名（去重、按出现顺序） */
+  tools: string[]
+  /** 最新被裁消息的内容片段（最后话题） */
+  tail?: string
+  /** 更早历史摘要正文（旧摘要合并；剥离 marker 后） */
+  previousSummary?: string
+}
+
+/** 组装摘要文本（纯函数，独立可测） */
+export function buildSummaryText(stats: TrimStats, options: SummarizeOptions = {}): string {
+  const maxChars = options.maxChars ?? 400
+  const maxTools = options.maxTools ?? 8
+  const lines: string[] = [
+    `${SUMMARY_MARKER} 先前对话的 ${stats.droppedCount} 条消息已被压缩` +
+      `（user ${stats.userCount} / assistant ${stats.assistantCount} / tool ${stats.toolCount} 条，约 ${stats.droppedTokens} tokens）。`,
+  ]
+  if (stats.tools.length > 0) {
+    const shown = stats.tools.slice(0, maxTools)
+    const more = stats.tools.length > maxTools ? ` 等 ${stats.tools.length} 个` : ''
+    lines.push(`涉及工具：${shown.join('、')}${more}。`)
+  }
+  if (stats.tail) {
+    lines.push(`最后话题：${stats.tail}`)
+  }
+  if (stats.previousSummary) {
+    lines.push(`更早历史：${stats.previousSummary}`)
+  }
+  let text = lines.join('\n')
+  if (text.length > maxChars) {
+    text = text.slice(0, maxChars) + '…'
+  }
+  return text
+}
+
+/** 剥离 marker 前缀的摘要正文（旧摘要合并用；无前缀则原样 trim） */
+function stripSummaryMarker(content: string): string {
+  const rest = content.startsWith(SUMMARY_MARKER) ? content.slice(SUMMARY_MARKER.length) : content
+  return rest.trim()
+}
+
+/**
+ * 上下文压缩摘要裁剪（v0.6.19，纯函数）
+ *
+ * @param messages 原始消息列表
+ * @param options TrimContextOptions（maxMessages/maxTokens 透传给 trimContextMessages）
+ *                 + SummarizeOptions（摘要生成控制）
+ * @returns 裁剪后的消息数组；未裁剪返回原引用；裁剪后 system 保底在前、摘要紧随其后
+ */
+export function summarizeTrimmedMessages(
+  messages: Message[],
+  options: TrimContextOptions & SummarizeOptions = {}
+): Message[] {
+  if (!messages || messages.length === 0) return []
+  const kept = trimContextMessages(messages, {
+    maxMessages: options.maxMessages,
+    maxTokens: options.maxTokens,
+  })
+  // 未裁剪 → 返回原数组引用（零拷贝，与 trimContextMessages 契约一致）
+  if (kept === messages) return messages
+
+  const role = options.role ?? 'system'
+  const keptSet = new Set(kept)
+  const dropped = messages.filter((m) => !keptSet.has(m))
+
+  // 统计被裁部分：角色分布 / 涉及工具（去重）/ 最后话题（最新有文本的 user/assistant）
+  let userCount = 0
+  let assistantCount = 0
+  let toolCount = 0
+  const toolNames: string[] = []
+  const seenTools = new Set<string>()
+  let tail: string | undefined
+  const previousSummaries: string[] = []
+  const tailChars = options.tailChars ?? 80
+
+  for (const m of dropped) {
+    if (m.role === 'user') userCount++
+    else if (m.role === 'assistant') assistantCount++
+    else if (m.role === 'tool') toolCount++
+    // 旧摘要识别（role 匹配且以 marker 开头）→ 提取正文合并（摘要链防堆积）
+    if (m.role === role && typeof m.content === 'string' && m.content.startsWith(SUMMARY_MARKER)) {
+      previousSummaries.push(stripSummaryMarker(m.content))
+      continue
+    }
+    // 涉及工具：tool 响应 name / assistant.tool_calls function.name
+    if (m.role === 'tool' && typeof m.name === 'string' && m.name && !seenTools.has(m.name)) {
+      seenTools.add(m.name)
+      toolNames.push(m.name)
+    }
+    if (m.role === 'assistant' && m.tool_calls) {
+      for (const tc of m.tool_calls) {
+        const n = tc.function?.name
+        if (n && !seenTools.has(n)) {
+          seenTools.add(n)
+          toolNames.push(n)
+        }
+      }
+    }
+    // 最后话题：最新被裁的有文本 user/assistant 消息（持续覆盖 → 最后即最新）
+    if (typeof m.content === 'string' && m.content.length > 0 && (m.role === 'user' || m.role === 'assistant')) {
+      tail = m.content.slice(0, tailChars)
+    }
+  }
+
+  // 保留区里也可能留着旧摘要（本次没裁掉它）→ 一并提取并移除，用新摘要替代（不堆积）
+  const keptWithoutOldSummary: Message[] = []
+  for (const m of kept) {
+    if (m.role === role && typeof m.content === 'string' && m.content.startsWith(SUMMARY_MARKER)) {
+      previousSummaries.push(stripSummaryMarker(m.content))
+      continue
+    }
+    keptWithoutOldSummary.push(m)
+  }
+
+  const stats: TrimStats = {
+    droppedCount: dropped.length,
+    userCount,
+    assistantCount,
+    toolCount,
+    droppedTokens: estimateMessagesTokens(dropped),
+    tools: toolNames,
+    ...(options.includeTail !== false && tail !== undefined ? { tail } : {}),
+    ...(previousSummaries.length > 0 ? { previousSummary: previousSummaries.join('\n') } : {}),
+  }
+  const summaryMsg: Message = { role, content: buildSummaryText(stats, options) }
+
+  // 组装：system 保底在前 → 摘要紧随其后 → 其余保留消息
+  const first = keptWithoutOldSummary[0]
+  if (first && first.role === 'system') {
+    return [first, summaryMsg, ...keptWithoutOldSummary.slice(1)]
+  }
+  return [summaryMsg, ...keptWithoutOldSummary]
+}

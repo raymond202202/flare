@@ -100,3 +100,88 @@ describe('flare server 上下文自动裁剪参数（--max-context-messages/--ma
     expect(['done', 'error']).toContain(last.type)
   })
 })
+
+/**
+ * 上下文压缩摘要 server 参数测试（v0.6.19）
+ *
+ * spawn `flare server --context-summarize`（默认开启压缩摘要）：
+ * - 默认值不破坏启动（version 协商正常）
+ * - chat 带非法 contextSummarize → 请求校验优先回 error（默认值不掩盖请求错误）
+ * - chat 不带 contextSummarize → 应用默认值（事件流完整，不破坏流程）
+ * - chat 带合法 contextSummarize → 透传流程完整（以 done/error 结束，不挂死）
+ * - get_config 回显 defaultContextSummarize
+ */
+describe('flare server 上下文压缩摘要（--context-summarize，v0.6.19）', () => {
+  let child2: ChildProcess
+  let rl2: Interface
+  let tempDir2: string
+
+  function request2(msg: any, expectTypes: string[], timeout = 45000): Promise<any[]> {
+    return new Promise((resolve, reject) => {
+      const msgs: any[] = []
+      const timer = setTimeout(() => { cleanup(); reject(new Error(`超时（请求 ${JSON.stringify(msg).slice(0, 80)}）`)) }, timeout)
+      const handler = (line: string) => {
+        try {
+          const parsed = JSON.parse(line)
+          if (expectTypes.includes(parsed.type)) {
+            msgs.push(parsed)
+            if (parsed.type === 'done' || parsed.type === 'error' || parsed.type === 'cancelled') {
+              cleanup()
+              resolve(msgs)
+            } else if (!expectTypes.some(t => ['done', 'error', 'cancelled'].includes(t))) {
+              cleanup()
+              resolve(msgs)
+            }
+          }
+        } catch { /* 非 JSON 行忽略 */ }
+      }
+      const cleanup = () => { clearTimeout(timer); rl2.removeListener('line', handler) }
+      rl2.on('line', handler)
+      child2.stdin!.write(JSON.stringify(msg) + '\n')
+    })
+  }
+
+  beforeAll(async () => {
+    tempDir2 = mkdtempSync(path.join(os.tmpdir(), 'flare-server-ctx-summary-'))
+    const env: Record<string, string> = { ...process.env } as Record<string, string>
+    delete env.DEEPSEEK_API_KEY
+    child2 = spawn(process.execPath, [CLI, 'server', '--storage', path.join(tempDir2, 'test.db'), '--context-summarize'], { env, stdio: ['pipe', 'pipe', 'pipe'] })
+    rl2 = createInterface({ input: child2.stdout! })
+  })
+
+  afterAll(() => {
+    child2.kill()
+    rmSync(tempDir2, { recursive: true, force: true })
+  })
+
+  it('version 协商正常（--context-summarize 默认值不破坏启动）', async () => {
+    const msgs = await request2({ type: 'version' }, ['version'])
+    expect(msgs[0].type).toBe('version')
+    expect(msgs[0].engine).toBeTruthy()
+  })
+
+  it('chat 带非法 contextSummarize（非布尔）→ 请求校验优先回 error', async () => {
+    const msgs = await request2({ type: 'chat', sessionId: 's-sum-bad', input: 'hi', contextSummarize: 'yes' }, ['error'])
+    expect(msgs[0].type).toBe('error')
+    expect(msgs[0].message).toContain('contextSummarize')
+  })
+
+  it('chat 不带 contextSummarize → 应用 server 级默认（事件流完整，以 done/error 结束）', async () => {
+    const msgs = await request2({ type: 'chat', sessionId: 's-sum-dflt', input: '你好' }, ['done', 'error'])
+    expect(msgs.length).toBeGreaterThan(0)
+    const last = msgs[msgs.length - 1]
+    expect(['done', 'error']).toContain(last.type)
+  })
+
+  it('chat 带合法 contextSummarize → 透传流程完整（以 done/error 结束，不挂死）', async () => {
+    const msgs = await request2({ type: 'chat', sessionId: 's-sum-ok', input: '你好', contextSummarize: false }, ['done', 'error'])
+    const last = msgs[msgs.length - 1]
+    expect(['done', 'error']).toContain(last.type)
+  })
+
+  it('get_config 回显 defaultContextSummarize: true（server 级默认可见）', async () => {
+    const msgs = await request2({ type: 'get_config' }, ['config'])
+    expect(msgs[0].type).toBe('config')
+    expect(msgs[0].defaultContextSummarize).toBe(true)
+  })
+})
