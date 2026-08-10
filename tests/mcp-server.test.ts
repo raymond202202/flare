@@ -1165,3 +1165,79 @@ describe('MCPServer progress + cancelled 通知（v0.6.16：notifications/progre
     }
   })
 })
+
+describe('MCPServer 列表变化通知（v0.6.20：notifications/tools/list_changed + notifications/resources/list_changed）', () => {
+  it('notifyToolListChanged：推送 notifications/tools/list_changed（无 id、无 params）', async () => {
+    const h = createHarness()
+    h.server.notifyToolListChanged()
+    await h.flush()
+    const rs = h.responses()
+    expect(rs).toHaveLength(1)
+    expect(rs[0]).toEqual({ jsonrpc: '2.0', method: 'notifications/tools/list_changed' })
+    expect(rs[0].id).toBeUndefined()
+    expect(rs[0].params).toBeUndefined()
+    h.server.close()
+  })
+
+  it('notifyResourceListChanged：推送 notifications/resources/list_changed（无 id、无 params）', async () => {
+    const h = createHarness()
+    h.server.notifyResourceListChanged()
+    await h.flush()
+    const rs = h.responses()
+    expect(rs).toHaveLength(1)
+    expect(rs[0]).toEqual({ jsonrpc: '2.0', method: 'notifications/resources/list_changed' })
+    expect(rs[0].id).toBeUndefined()
+    expect(rs[0].params).toBeUndefined()
+    h.server.close()
+  })
+
+  it('两者可独立推送且互不干扰（一次调用只发对应通知）', async () => {
+    const h = createHarness()
+    h.server.notifyToolListChanged()
+    await h.flush()
+    expect(h.responses().map((r) => r.method)).toEqual(['notifications/tools/list_changed'])
+    h.server.notifyResourceListChanged()
+    await h.flush()
+    expect(h.responses().map((r) => r.method)).toEqual([
+      'notifications/tools/list_changed',
+      'notifications/resources/list_changed',
+    ])
+    h.server.close()
+  })
+
+  it('服务器已关闭 → 静默忽略（不抛错、不写）', async () => {
+    const h = createHarness()
+    h.server.close()
+    expect(() => h.server.notifyToolListChanged()).not.toThrow()
+    expect(() => h.server.notifyResourceListChanged()).not.toThrow()
+    await h.flush()
+    expect(h.writes).toHaveLength(0)
+  })
+
+  it('list_changed 真实互通 e2e：MCPClient callTool ↔ 真实 MCPServer notifyToolListChanged/notifyResourceListChanged → 回调收到', async () => {
+    let toolsChanged = 0
+    let resourcesChanged = 0
+    const client = new MCPClient({
+      command: process.execPath,
+      args: [TSK_CLI, join(__dirname, 'fixtures', 'mcp-flare-server-list-changed.ts')],
+      timeoutMs: 8000,
+      onToolsChanged: () => toolsChanged++,
+      onResourcesChanged: () => resourcesChanged++,
+    })
+    try {
+      await client.initialize()
+      // 服务器暴露 notify_changed 工具：执行时推送两个列表变化通知
+      const res = await client.callTool('notify_changed', {})
+      expect(res.content[0].text).toContain('changed-notified')
+      expect(toolsChanged).toBe(1)
+      expect(resourcesChanged).toBe(1)
+      // 通知后连接仍正常：后续请求照常工作
+      const res2 = await client.callTool('notify_changed', {})
+      expect(res2.content[0].text).toContain('changed-notified')
+      expect(toolsChanged).toBe(2)
+      expect(resourcesChanged).toBe(2)
+    } finally {
+      client.close()
+    }
+  })
+})

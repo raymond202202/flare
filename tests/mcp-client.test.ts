@@ -499,3 +499,60 @@ describe('MCPClient progress + cancelled 通知（v0.6.16：onProgress 接收 + 
     expect(() => client.notifyCancelled(1, 'after-close')).not.toThrow()
   })
 })
+
+describe('MCPClient 列表变化通知（v0.6.20：onToolsChanged/onResourcesChanged 接收 list_changed）', () => {
+  it('服务器推送 notifications/tools/list_changed + resources/list_changed → 对应回调各触发一次（list-changed 模式）', async () => {
+    let toolsChanged = 0
+    let resourcesChanged = 0
+    const client = new MCPClient({
+      command: process.execPath,
+      args: [MOCK_SERVER],
+      env: { MOCK_MODE: 'list-changed' },
+      timeoutMs: 5000,
+      onToolsChanged: () => toolsChanged++,
+      onResourcesChanged: () => resourcesChanged++,
+    })
+    await client.initialize()
+    // mock 服务器握手后立即推送两个列表变化通知
+    const deadline = Date.now() + 3000
+    while ((toolsChanged === 0 || resourcesChanged === 0) && Date.now() < deadline) {
+      await new Promise((r) => setTimeout(r, 50))
+    }
+    expect(toolsChanged).toBe(1)
+    expect(resourcesChanged).toBe(1)
+    // 通知后连接仍正常：后续请求照常工作
+    const res = await client.callTool('echo_text', { text: 'still-alive' })
+    expect(res.content[0]?.text).toBe('echo: still-alive')
+    client.close()
+  })
+
+  it('只配置其中一个回调：另一个通知被忽略（互不干扰）', async () => {
+    let toolsChanged = 0
+    const client = new MCPClient({
+      command: process.execPath,
+      args: [MOCK_SERVER],
+      env: { MOCK_MODE: 'list-changed' },
+      timeoutMs: 5000,
+      onToolsChanged: () => toolsChanged++,
+      // 不配置 onResourcesChanged → resources/list_changed 静默忽略
+    })
+    await client.initialize()
+    const deadline = Date.now() + 3000
+    while (toolsChanged === 0 && Date.now() < deadline) {
+      await new Promise((r) => setTimeout(r, 50))
+    }
+    expect(toolsChanged).toBe(1)
+    // 未配置的回调不影响后续请求
+    const res = await client.callTool('echo_text', { text: 'ok' })
+    expect(res.content[0]?.text).toBe('echo: ok')
+    client.close()
+  })
+
+  it('未配置回调：服务器推送列表变化通知 → 静默忽略（不抛错、不影响后续请求）', async () => {
+    const client = spawnMock('list-changed')
+    await client.initialize()
+    const res = await client.callTool('echo_text', { text: 'no-callback' })
+    expect(res.content[0]?.text).toBe('echo: no-callback')
+    client.close()
+  })
+})

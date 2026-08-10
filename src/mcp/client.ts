@@ -63,6 +63,12 @@ export interface MCPClientOptions {
   /** 进度通知回调（v0.6.16 progress 通知协议）：服务器处理带 progressToken 的请求期间推送的
    *  notifications/progress 通知 → 按此回调转发（按 progressToken 关联请求）；缺省忽略 */
   onProgress?: (params: McpProgressParams) => void
+  /** 工具列表变化通知回调（v0.6.20）：服务器推送 notifications/tools/list_changed（工具集动态变化）
+   *  → 按此回调触发（无参）；收到后应重新拉取 tools/list 刷新清单；缺省忽略 */
+  onToolsChanged?: () => void
+  /** 资源列表变化通知回调（v0.6.20）：服务器推送 notifications/resources/list_changed（资源列表动态变化）
+   *  → 按此回调触发（无参）；收到后应重新拉取 resources/list 刷新清单；缺省忽略 */
+  onResourcesChanged?: () => void
 }
 
 export class MCPClient {
@@ -80,6 +86,8 @@ export class MCPClient {
   private readonly onResourceUpdated?: (uri: string) => void
   private readonly sampling?: (request: McpSamplingRequest) => McpSamplingResult | Promise<McpSamplingResult>
   private readonly onProgress?: (params: McpProgressParams) => void
+  private readonly onToolsChanged?: () => void
+  private readonly onResourcesChanged?: () => void
 
   constructor(opts: MCPClientOptions) {
     this.timeoutMs = opts.timeoutMs || DEFAULT_TIMEOUT_MS
@@ -88,6 +96,8 @@ export class MCPClient {
     this.onResourceUpdated = opts.onResourceUpdated
     this.sampling = opts.sampling
     this.onProgress = opts.onProgress
+    this.onToolsChanged = opts.onToolsChanged
+    this.onResourcesChanged = opts.onResourcesChanged
     this.child = spawn(opts.command, opts.args || [], {
       env: opts.env ? { ...process.env, ...opts.env } : process.env,
       stdio: ['pipe', 'pipe', 'pipe'],
@@ -144,8 +154,9 @@ export class MCPClient {
   }
 
   /** 处理服务器通知（v0.6.13）：notifications/message → onLog 回调转发；v0.6.15：notifications/resources/updated
-   *  → onResourceUpdated 回调转发（已订阅资源更新）；v0.6.16：notifications/progress → onProgress 回调转发。
-   *  缺省忽略对应回调；通知无需响应，不干扰后续请求 */
+   *  → onResourceUpdated 回调转发（已订阅资源更新）；v0.6.16：notifications/progress → onProgress 回调转发；
+   *  v0.6.20：notifications/tools/list_changed → onToolsChanged、notifications/resources/list_changed →
+   *  onResourcesChanged（列表变化，应重新拉取）。缺省忽略对应回调；通知无需响应，不干扰后续请求 */
   private handleNotification(msg: any): void {
     if (msg.method === 'notifications/message') {
       if (typeof this.onLog !== 'function') return
@@ -172,6 +183,18 @@ export class MCPClient {
         ...(p.total !== undefined ? { total: Number(p.total) } : {}),
         ...(p.message !== undefined ? { message: String(p.message) } : {}),
       })
+      return
+    }
+    if (msg.method === 'notifications/tools/list_changed') {
+      // v0.6.20 列表变化通知：服务器工具集动态变化 → 客户端应重新拉取 tools/list
+      if (typeof this.onToolsChanged !== 'function') return
+      this.onToolsChanged()
+      return
+    }
+    if (msg.method === 'notifications/resources/list_changed') {
+      // v0.6.20 列表变化通知：服务器资源列表动态变化 → 客户端应重新拉取 resources/list
+      if (typeof this.onResourcesChanged !== 'function') return
+      this.onResourcesChanged()
     }
   }
 
