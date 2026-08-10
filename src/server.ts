@@ -505,6 +505,22 @@ export function startHostServer(opts: HostServerOptions) {
           reply({ type: 'ok', sessionId })
           break
         }
+        case 'rename_session': {
+          // 宿主重命名已有会话（v0.6.18）：{ sessionId, title }——面板\"重命名会话\"，
+          // 与 create_session（创建语义）分离；title 非空必填，非法回 error 不触发生成
+          const sessionId = String(req.sessionId || 'default')
+          const title = req.title === undefined || req.title === null ? '' : String(req.title).trim()
+          if (!title) {
+            reply({ type: 'error', message: 'rename_session 需要 title 参数（非空的新会话标题）' })
+            break
+          }
+          const agent = getAgent(sessionId)
+          if (typeof (agent as any).store?.updateSessionTitle === 'function') {
+            (agent as any).store.updateSessionTitle((agent as any).config?.sessionId || sessionId, title)
+          }
+          reply({ type: 'ok', sessionId, title })
+          break
+        }
         case 'set_context': {
           const sessionId = String(req.sessionId || 'default')
           const agent = getAgent(sessionId)

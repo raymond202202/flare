@@ -336,6 +336,17 @@ Interactive mode commands:
 
 > 中文条目 / Chinese entries · English summary for each version
 
+#### v0.6.18 (2026-08-10) — server 协议 rename_session 会话重命名 / Session rename via host protocol (rename_session)
+- 📊 **server 协议 `rename_session`（src/server.ts）**：`{ sessionId, title }`——宿主面板"重命名会话"
+  专用接口（与 create_session 创建语义分离）：title 非空必填（空白裁剪判空，缺失/空白回 error 含用法
+  提示，不触发生成）；复用 `MemoryStore.updateSessionTitle`（UPSERT——会话不存在自动创建，与
+  create_session 同语义）；响应 `ok` 回显 `title`，recent_sessions/list_sessions 立即反映新标题
+- 📚 docs/host-protocol.md §23 + 请求类型列表 + 响应表 ok 行 + README Changelog + 版本号 0.6.18
+- 🧪 新增 3 项测试（server e2e：重命名成功且 recent_sessions 反映新标题 / 缺 title·空白 title error /
+  不存在会话 UPSERT 幂等）；共 **499/499 全绿**（496 + 3），tsc 0 错误，零 agent.ts 改动
+- EN: New `rename_session` host-protocol request renames an existing session (`title` required, UPSERT
+  semantics via `MemoryStore.updateSessionTitle`), giving panel UIs a dedicated rename API. 499/499 green.
+
 #### v0.6.17 (2026-08-10) — 上下文自动裁剪：trimContext 支持 token 预算 / Context auto-trim by token budget (Agent.trimContext + trimContextMessages)
 - 🧩 **Agent 上下文自动裁剪（src/core/agent.ts + context.ts）**：`AgentConfig` 新增 `maxContextMessages`
   （条数上限，默认 30）/ `maxContextTokens`（token 预算，可选）——迭代前 `trimContext()` 自动按预算
