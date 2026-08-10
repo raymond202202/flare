@@ -93,6 +93,17 @@ describe('/mcp 命令', () => {
     expect(lines.join('\n')).toContain('3 个 MCP 工具')
   })
 
+  it('/mcp connect 摘要带资源/模板数（v0.6.26 格式透传不破坏）', async () => {
+    const lines: string[] = []
+    const { hooks, calls } = makeHooks([{ name: 'fs', connected: false, toolCount: 0 }])
+    // 真实 CLI 的 connect 摘要由 manager 组装（含桥接资源/模板数）；这里验证 handleSlashCommand 透传完整摘要
+    const withRes = { ...hooks, connect: async () => '已连接 fs（3 个 MCP 工具 · 2 个资源 · 1 个模板）' }
+    const r = await handleSlashCommand('/mcp connect fs', store, (s) => lines.push(s), undefined, withRes)
+    expect(r).toBe('continue')
+    expect(calls.changed).toBe(1)
+    expect(lines.join('\n')).toContain('已连接 fs（3 个 MCP 工具 · 2 个资源 · 1 个模板）')
+  })
+
   it('/mcp connect <未配置名> → 错误输出（hook 抛错）', async () => {
     const lines: string[] = []
     const { hooks, calls } = makeHooks([{ name: 'fs', connected: false, toolCount: 0 }])
