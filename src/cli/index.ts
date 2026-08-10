@@ -8,7 +8,7 @@
  */
 
 import { Command } from 'commander'
-import { Agent, createProvider, getMemoryStore, config, tools, McpManager, estimateMessagesTokens, ConfirmationGate, memoryStoreKv, wrapConfirmTools, describeTools, type AgentConfig, type McpServerStatus, type ConfirmDecision } from '../index.js'
+import { Agent, createProvider, getMemoryStore, config, tools, McpManager, estimateMessagesTokens, ConfirmationGate, memoryStoreKv, wrapConfirmTools, describeTools, type AgentConfig, type McpServerStatus, type ConfirmDecision, type McpResourceRef, type McpResourceTemplateRef } from '../index.js'
 import chalk from 'chalk'
 import { execSync } from 'child_process'
 import { createRequire } from 'module'
@@ -240,6 +240,15 @@ async function startInteractive(opts: { contextSummarize?: boolean } = {}) {
         return `已连接 ${name}（${mcpTools.length} 个 MCP 工具）`
       },
       disconnect: (name) => mcpManager.disconnect(name),
+      // v0.6.26：列出已桥接资源/模板（资源桥接——连接时拉取 resources/list + resources/templates/list）
+      resources: (name) => ({
+        resources: name
+          ? mcpManager.getAllResources().filter((r) => r.server === name)
+          : mcpManager.getAllResources(),
+        templates: name
+          ? mcpManager.getAllResourceTemplates().filter((t) => t.server === name)
+          : mcpManager.getAllResourceTemplates(),
+      }),
       onChanged: () => {
         // 工具集变化后重建 Agent（同 sessionId，历史从记忆库恢复），使 MCP 工具立即生效
         agent = makeAgent()
@@ -473,6 +482,14 @@ export interface McpCommandHooks {
   disconnect(name: string): boolean
   /** 工具集变化后重建 Agent（使新工具立即生效） */
   onChanged(): void
+  /** 列出已桥接资源/模板（v0.6.26）：name 缺省返回全部已连接服务器；未提供回退旧行为（提示不可用） */
+  resources?(name?: string): McpResourceListing
+}
+
+/** /mcp resources 返回的资源/模板清单（v0.6.26） */
+export interface McpResourceListing {
+  resources: McpResourceRef[]
+  templates: McpResourceTemplateRef[]
 }
 
 /** /context 命令回调（v0.5.6）：返回当前会话上下文占用；null 表示不可用 */
@@ -611,7 +628,7 @@ export async function handleSlashCommand(
           output(`  ${mark} ${s.name}${toolsInfo}${resInfo}${closeParen}${err}`)
         }
       }
-      output(chalk.gray('\n  /mcp connect <name> 连接 | /mcp disconnect <name> 断开'))
+      output(chalk.gray('\n  /mcp resources [name] 查看资源 | /mcp connect <name> 连接 | /mcp disconnect <name> 断开'))
       return 'continue'
     }
     if (sub === 'connect' && rest.length > 0) {
@@ -636,7 +653,37 @@ export async function handleSlashCommand(
       }
       return 'continue'
     }
-    output(chalk.yellow('\n  用法: /mcp | /mcp connect <name> | /mcp disconnect <name>'))
+    // /mcp resources [name]（v0.6.26）：列出已桥接资源/模板（资源桥接——外部服务器暴露的资源真实可见）
+    if (sub === 'resources') {
+      if (typeof mcp.resources !== 'function') {
+        output(chalk.yellow('\n  当前环境未提供资源桥接（MCP 管理器不支持资源拉取）'))
+        return 'continue'
+      }
+      const name = rest.join(' ').trim() || undefined
+      const { resources, templates } = mcp.resources(name)
+      const scope = name ? `「${name}」` : '全部已连接服务器'
+      if (resources.length === 0 && templates.length === 0) {
+        output(chalk.yellow(`\n  ${scope} 无已桥接资源（服务器未暴露 resources 或未连接）`))
+      } else {
+        if (resources.length > 0) {
+          output(chalk.gray(`\n  ${scope} 的资源（${resources.length}）：`))
+          for (const r of resources) {
+            const desc = r.description ? chalk.gray(` — ${r.description}`) : ''
+            output(`    📄 ${chalk.cyan(r.uri)}${desc}`)
+          }
+        }
+        if (templates.length > 0) {
+          output(chalk.gray(`\n  ${scope} 的资源模板（${templates.length}）：`))
+          for (const t of templates) {
+            const desc = t.description ? chalk.gray(` — ${t.description}`) : ''
+            output(`    🧩 ${chalk.cyan(t.uriTemplate)}${desc}`)
+          }
+        }
+      }
+      output(chalk.gray('\n  /mcp resources [name] 查看资源 | /mcp connect <name> 连接'))
+      return 'continue'
+    }
+    output(chalk.yellow('\n  用法: /mcp | /mcp resources [name] | /mcp connect <name> | /mcp disconnect <name>'))
     return 'continue'
   }
 
@@ -798,6 +845,7 @@ export async function handleSlashCommand(
       output('  /model       - 切换主模型（/model qwen2.5:7b 本地 Ollama | /model deepseek-chat 远端）')
       output('  /model list  - 查看本地 Ollama 可用模型（v0.6.9）')
       output('  /mcp         - 查看 MCP 服务器状态（~/.flare/mcp.json 配置）')
+      output('  /mcp resources [name] - 查看已桥接资源/模板（v0.6.26，外部 MCP 服务器暴露的资源）')
       output('  /mcp connect <name> - 连接 MCP 服务器并注入其工具')
       output('  /mcp disconnect <name> - 断开 MCP 服务器')
       output('  /allow     - 查看已放行的确认工具（AI 写回类工具执行前会请求确认）')

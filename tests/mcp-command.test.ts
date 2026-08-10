@@ -10,7 +10,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { MemoryStore } from '../src/memory/store.js'
 import { handleSlashCommand, type McpCommandHooks } from '../src/cli/index.js'
-import type { McpServerStatus } from '../src/mcp/types.js'
+import type { McpServerStatus, McpResourceRef, McpResourceTemplateRef } from '../src/mcp/types.js'
 
 let store: MemoryStore
 let dir: string
@@ -26,7 +26,10 @@ afterEach(() => {
 })
 
 /** fake MCP hooks：记录调用，模拟状态 */
-function makeHooks(initial: McpServerStatus[] = []): {
+function makeHooks(
+  initial: McpServerStatus[] = [],
+  resourceData: { resources: McpResourceRef[]; templates: McpResourceTemplateRef[] } = { resources: [], templates: [] },
+): {
   hooks: McpCommandHooks
   calls: { connect: string[]; disconnect: string[]; changed: number }
   setStatus: (s: McpServerStatus[]) => void
@@ -46,6 +49,10 @@ function makeHooks(initial: McpServerStatus[] = []): {
         calls.disconnect.push(name)
         return true
       },
+      resources: (name) => ({
+        resources: name ? resourceData.resources.filter((r) => r.server === name) : resourceData.resources,
+        templates: name ? resourceData.templates.filter((t) => t.server === name) : resourceData.templates,
+      }),
       onChanged: () => { calls.changed++ },
     },
   }
@@ -131,5 +138,89 @@ describe('/mcp 命令', () => {
     const r = await handleSlashCommand('/mcp', store, (s) => lines.push(s))
     expect(r).toBe('continue')
     expect(lines.join('\n')).toContain('MCP 未启用')
+  })
+
+  it('/mcp（有配置，已连接带资源数）→ 状态行显示工具/资源/模板数（v0.6.26）', async () => {
+    const lines: string[] = []
+    const { hooks } = makeHooks([
+      { name: 'fs', connected: true, toolCount: 3, resourceCount: 2, templateCount: 1 },
+      { name: 'db', connected: false, toolCount: 0 },
+    ])
+    const r = await handleSlashCommand('/mcp', store, (s) => lines.push(s), undefined, hooks)
+    expect(r).toBe('continue')
+    const text = lines.join('\n')
+    expect(text).toContain('3 个工具 · 2 资源 · 1 模板')
+    expect(text).toContain('db') // 未连接不带资源段
+  })
+
+  it('/mcp resources（无参）→ 列出全部已连接服务器的资源与模板（v0.6.26）', async () => {
+    const lines: string[] = []
+    const { hooks } = makeHooks(
+      [{ name: 'fs', connected: true, toolCount: 3 }],
+      {
+        resources: [
+          { server: 'fs', uri: 'memory://preferences', name: '用户偏好', description: '用户偏好设置' },
+          { server: 'fs', uri: 'file:///etc/hosts', name: 'hosts 文件' },
+        ],
+        templates: [{ server: 'fs', uriTemplate: 'memory://{noteId}', name: '记忆条目' }],
+      },
+    )
+    const r = await handleSlashCommand('/mcp resources', store, (s) => lines.push(s), undefined, hooks)
+    expect(r).toBe('continue')
+    const text = lines.join('\n')
+    expect(text).toContain('全部已连接服务器')
+    expect(text).toContain('memory://preferences')
+    expect(text).toContain('file:///etc/hosts')
+    expect(text).toContain('memory://{noteId}')
+    expect(text).toContain('2')
+  })
+
+  it('/mcp resources <name> → 只列该服务器的资源（过滤生效）', async () => {
+    const lines: string[] = []
+    const { hooks } = makeHooks(
+      [{ name: 'fs', connected: true, toolCount: 3 }, { name: 'db', connected: true, toolCount: 1 }],
+      {
+        resources: [
+          { server: 'fs', uri: 'memory://preferences', name: '用户偏好' },
+          { server: 'db', uri: 'db://users', name: '用户表' },
+        ],
+        templates: [],
+      },
+    )
+    const r = await handleSlashCommand('/mcp resources db', store, (s) => lines.push(s), undefined, hooks)
+    expect(r).toBe('continue')
+    const text = lines.join('\n')
+    expect(text).toContain('「db」')
+    expect(text).toContain('db://users')
+    expect(text).not.toContain('memory://preferences')
+  })
+
+  it('/mcp resources（无资源）→ 友好提示', async () => {
+    const lines: string[] = []
+    const { hooks } = makeHooks([{ name: 'fs', connected: true, toolCount: 3 }])
+    const r = await handleSlashCommand('/mcp resources', store, (s) => lines.push(s), undefined, hooks)
+    expect(r).toBe('continue')
+    const text = lines.join('\n')
+    expect(text).toContain('无已桥接资源')
+  })
+
+  it('/mcp resources（hooks 未提供 resources 方法）→ 提示不可用（向后兼容旧宿主）', async () => {
+    const lines: string[] = []
+    const { hooks } = makeHooks([{ name: 'fs', connected: true, toolCount: 3 }])
+    // 移除 resources 方法（旧版 hooks 形状）
+    const legacy = { ...hooks } as McpCommandHooks
+    delete (legacy as any).resources
+    const r = await handleSlashCommand('/mcp resources', store, (s) => lines.push(s), undefined, legacy)
+    expect(r).toBe('continue')
+    expect(lines.join('\n')).toContain('未提供资源桥接')
+  })
+
+  it('/mcp 用法错误 → 提示用法（含 resources 子命令）', async () => {
+    const lines: string[] = []
+    const { hooks } = makeHooks([])
+    const r = await handleSlashCommand('/mcp bogus', store, (s) => lines.push(s), undefined, hooks)
+    expect(r).toBe('continue')
+    expect(lines.join('\n')).toContain('用法')
+    expect(lines.join('\n')).toContain('resources')
   })
 })
