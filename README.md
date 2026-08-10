@@ -350,17 +350,21 @@ Interactive mode commands:
   `maxContextTokens`（非负整数/正整数校验，非法回 error 不触发生成；变化自动重建 Agent 立即生效，
   与 model/采样参数同机制）；`flare server --max-context-messages <n> / --max-context-tokens <n>`
   设置 server 级默认（chat 未指定时应用，请求优先）；`HostServerOptions` 对应默认字段
-- 📚 docs/context-observability.md 自动裁剪章节 + docs/host-protocol.md chat 参数表 + README Changelog + 版本号 0.6.17
-- 🧪 新增 22 项测试：trimContextMessages 纯函数 11（空/零拷贝/默认 30 条/maxMessages 可配/0 关闭条数/
+- 📊 **server 协议 `session_usage`（src/server.ts + memory/store.ts）**：单个会话 token 用量查询
+  （`MemoryStore.getSessionUsage(sessionId)` 按 session_id 过滤 usage_log，返回 prompt/completion/
+  total + callCount；无记录全 0 幂等）——宿主面板"本会话用量/成本"数据源（区别于 get_usage 全局汇总）
+- 📚 docs/context-observability.md 自动裁剪章节 + docs/host-protocol.md chat 参数表/§9.1 + README Changelog + 版本号 0.6.17
+- 🧪 新增 24 项测试：trimContextMessages 纯函数 11（空/零拷贝/默认 30 条/maxMessages 可配/0 关闭条数/
   token 预算/极小预算保底/system 保底/token+条数取紧/配对保护/tail tool 连带配对）+ Agent 集成 5
   （默认零回归 30 条/maxContextMessages 生效/0 不裁/预算裁剪/极小预算保底最新输入）+ server e2e 6
   （默认值不破坏启动/不带参数应用默认/非法 maxContextMessages·负数·非法 maxContextTokens·0/合法透传
-  流程完整）；共 **491/491 全绿**（469 + 22）
+  流程完整）+ session_usage 2（store 按会话过滤+无记录幂等 / 协议响应结构+缺省 default）；共 **493/493 全绿**
+  （469 + 24）
 - EN: Context auto-trim — `AgentConfig.maxContextMessages` / `maxContextTokens` drive the iteration-time
   `trimContext()`; new pure `trimContextMessages()` (system kept + newest-first + tool_calls pairing
   protection + tiny-budget keeps latest input, zero-copy when under limit). Chat protocol passes
-  `maxContextMessages` / `maxContextTokens` through and `flare server` gains the matching defaults.
-  491/491 tests green.
+  `maxContextMessages` / `maxContextTokens` through, `flare server` gains the matching defaults, and a
+  new `session_usage` request reports per-session token usage. 493/493 tests green.
 
 #### v0.6.16 (2026-08-10) — MCP progress + cancelled 通知协议闭环 / MCP progress & cancellation notifications (notifications/progress + notifications/cancelled)
 - 🧩 **MCP progress 通知协议（src/mcp/server.ts + client.ts + http-client.ts + types.ts）**：服务器处理

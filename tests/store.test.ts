@@ -97,6 +97,25 @@ describe('MemoryStore', () => {
     expect(stats.sessionCount).toBe(3)
   })
 
+  it('单会话用量（getSessionUsage）：按 session_id 过滤汇总', () => {
+    store.logUsage('s1', 100, 50, 'deepseek-chat')
+    store.logUsage('s1', 200, 80, 'deepseek-chat')
+    store.logUsage('s2', 300, 120, 'deepseek-chat')
+
+    const s1 = store.getSessionUsage('s1')
+    expect(s1.promptTokens).toBe(300)
+    expect(s1.completionTokens).toBe(130)
+    expect(s1.totalTokens).toBe(430)
+    expect(s1.callCount).toBe(2)
+
+    // 未记录的会话：全 0（不抛错，幂等）
+    const none = store.getSessionUsage('no_such')
+    expect(none.promptTokens).toBe(0)
+    expect(none.completionTokens).toBe(0)
+    expect(none.totalTokens).toBe(0)
+    expect(none.callCount).toBe(0)
+  })
+
   it('老库迁移：缺少 tool_call_id 列时自动补充', () => {
     // 模拟旧库：先建表不带 tool_call_id
     const oldDb = store['db']
