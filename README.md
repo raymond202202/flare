@@ -146,6 +146,7 @@ cp .env.example ~/.flare/.env
 |------|------|
 | `flare` | 交互模式（默认） |
 | `flare chat` | 交互模式 |
+| `flare chat --context-summarize` | 交互模式开启上下文压缩摘要（裁剪时把丢弃历史压缩成摘要消息，AI 保留话题连续性；v0.6.19） |
 | `flare chat -q "问题"` | 单次查询模式 |
 | `flare chat -q "问题" -i 图片.png` | 单次查询附带图片 |
 | `flare server [--profile --storage --mcp --confirm-tools --confirm-timeout --max-tokens --temperature --max-context-messages --max-context-tokens --context-summarize]` | 宿主协议服务（stdin/stdout JSON Lines，供 Qt 等宿主调用；v0.6.1 起写回类工具经确认门；v0.6.5 起 --max-tokens/--temperature 设 chat 默认采样参数；v0.6.17 起 --max-context-messages/--max-context-tokens 设默认上下文自动裁剪；v0.6.19 起 --context-summarize 默认开启上下文压缩摘要） |
@@ -355,6 +356,9 @@ Interactive mode commands:
   Agent 集成 2：contextSummarize 生效 / 缺省 false 零回归；server e2e 5：默认值不破坏启动 / 非法
   contextSummarize error / 缺省应用默认 / 合法透传流程完整 / get_config 回显）；共 **526/526 全绿**
   （506 + 20），tsc 0 错误，**run 循环零改动**（仅 trimContext 私有方法体委托 + AgentConfig 新字段）
+- 🖥️ **CLI 交互模式接入（src/cli/index.ts）**：`flare chat --context-summarize` 开启交互模式压缩摘要
+  （makeAgent 构造 Agent 时传 contextSummarize；长会话裁剪后 AI 保留话题连续性）；+1 测试
+  （chat --help 输出含 flag 说明）→ **527/527 全绿**（526 + 1）
 - EN: When enabled (`contextSummarize`, default off), `summarizeTrimmedMessages` replaces
   trimmed-away history with a compact heuristic summary message (counts, role distribution,
   estimated tokens, involved tools, last topic) instead of dropping it entirely — no LLM call,
