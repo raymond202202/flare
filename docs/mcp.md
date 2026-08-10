@@ -66,6 +66,8 @@
 - v0.6.26：已连接服务器状态行带 `（N 个工具 · M 资源 · K 模板）`——连接时同时拉取该服务器
   `resources/list` + `resources/templates/list`（资源桥接），外部服务器暴露的资源/动态资源模板
   真实暴露给宿主（`mcp_resources` 协议请求可查看/透传）
+- `/mcp resources [name]`（v0.6.26）：列出已桥接资源/模板（`📄 uri — 描述` + `🧩 uriTemplate`）；
+  带 `<name>` 只列该服务器的；无资源友好提示
 
 ### 3. 单次查询
 

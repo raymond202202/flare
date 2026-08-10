@@ -9,7 +9,8 @@
 > `readResource(name, uri)`（带来源 server 名，未连接 reject 清晰错误），`status()` 已连接时带
 > `resourceCount`/`templateCount`（可选字段向后兼容），disconnect 随连接清理；server 协议新增
 > `mcp_resources` 请求（宿主查看外部 MCP 资源/模板清单，按服务器分组，只读不触发生成）+ CLI `/mcp`
-> 状态行显示 `（N 个工具 · M 资源 · K 模板）`；577/577 全绿（570 + 7）。下一步候选：
+> 状态行显示 `（N 个工具 · M 资源 · K 模板）` + `/mcp resources [name]` 子命令；583/583 全绿
+> （577 + 6）。下一步候选：
 > ① 其他安全的外围增强（server 协议其他管理接口、CLI 交互增强、MCP 工具集完善等）；
 > ② 摘要内容升级为 LLM 生成（语义级压缩，需评估 run 循环外异步）；
 > ③ 资源桥接的宿主接线打磨（如外部 MCP 资源透传到 flare 自身 MCPServer 的 resources，需评估循环）。
@@ -35,19 +36,20 @@
     宿主面板「外部 MCP 资源」数据源（展示/透传外部服务器暴露的资源与动态资源形态）；已连接服务器带
     resources/templates（每项含来源 server），未连接不带；只读不触发生成、不创建会话；等待启动时后台
     连接落定（与 mcp_status 一致）；docs/host-protocol.md §16.1 新章节 + 请求类型列表
-  - **CLI `/mcp` 状态行增强**：已连接服务器显示 `（N 个工具 · M 资源 · K 模板）`（有资源/模板才显示
-    对应段，无资源服务器输出与旧版一致）
+  - **CLI `/mcp` 状态行增强 + `/mcp resources [name]` 子命令**：已连接服务器显示
+    `（N 个工具 · M 资源 · K 模板）`（有资源/模板才显示对应段，无资源服务器输出与旧版一致）；
+    `/mcp resources [name]`（handleSlashCommand mcp hooks 新增可选 `resources?(name?)` 方法——
+    未提供回退提示「当前环境未提供资源桥接」，向后兼容旧宿主）列出已桥接资源/模板
+    （`📄 uri — 描述` + `🧩 uriTemplate`；带 name 过滤单服务器；无资源友好提示；/help 注册）
   - docs/mcp.md 交互模式 + 编程方式章节更新（资源桥接示例）+ README Changelog + 版本号 0.6.26
-  - **577/577 全绿**（570 + 7 新增：McpManager 5——connect 资源桥接（mock 服务器 2 资源 + 1 模板 +
-    status resourceCount 2/templateCount 1）/ readResource 代理读取（memory://preferences 内容断言）+
-    未知 uri reject + 未连接服务器 reject / disconnect 随连接清理（getAllResources 空 + status 不带
-    资源数）/ 无 resources 能力服务器空数组 + status 0 不阻塞连接 / HTTP transport 资源拉取 + 读取闭环；
-    server 协议 e2e 2——`mcp_resources` 真实子进程返回 mock 服务器资源/模板清单（server 来源 + 字段断言）、
-    `mcp_status` 带 resourceCount/templateCount），tsc 0 错误，零 agent.ts 改动
-  - **冒烟实测**：真实 dist server 子进程带 `--mcp` 连接 mock fixture——version 0.6.26、
-    mcp_resources 返回 mock 服务器 2 资源（memory://preferences 用户偏好 + file:///etc/hosts hosts 文件）
-    + 1 模板（memory://{noteId} 记忆条目，均含 server:'mock' 来源）、mcp_status
-    `{toolCount:3, resourceCount:2, templateCount:1}`，SMOKE PASS
+  - **583/583 全绿**（577 + 6 新增：CLI /mcp 6——状态行资源数（已连接带 resourceCount/templateCount
+    显示、未连接不带）/ `/mcp resources` 无参列出全部（uri + 描述断言）/ 带 name 过滤单服务器 /
+    无资源友好提示 / 旧 hooks 未提供 resources 方法降级提示 / 用法提示含 resources 子命令；
+    P51 的 7 项——McpManager 5 + server 协议 e2e 2——见上），tsc 0 错误，零 agent.ts 改动
+  - **冒烟实测**：真实 mock 服务器 + 真实命令渲染组合——`/mcp` 状态行
+    `● mock（3 个工具 · 2 资源 · 1 模板）`；`/mcp resources` 列出
+    `📄 memory://preferences — 用户偏好设置` + `📄 file:///etc/hosts` +
+    `🧩 memory://{noteId} — 记忆库中的单条记忆`，SMOKE PASS
 - **下一步候选**：① 其他安全的外围增强（server 协议其他管理接口、CLI 交互增强、MCP 工具集完善等）；
   ② 摘要内容升级为 LLM 生成（语义级压缩，需评估 run 循环外异步）；
   ③ 资源桥接的宿主接线打磨（外部 MCP 资源透传 flare 自身 MCPServer 的 resources，需评估嵌套循环风险）
