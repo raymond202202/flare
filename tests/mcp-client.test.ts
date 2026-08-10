@@ -366,3 +366,53 @@ describe('MCPClient logging（v0.6.13：setLogLevel + onLog 接收 notifications
     client.close()
   })
 })
+
+describe('MCPClient resources 订阅（v0.6.15：subscribeResource/unsubscribeResource + onResourceUpdated 通知）', () => {
+  it('subscribeResource / unsubscribeResource：发送请求并收到 {} 响应（不抛错）', async () => {
+    const client = spawnMock()
+    await client.initialize()
+    await expect(client.subscribeResource('memory://preferences')).resolves.toBeUndefined()
+    await expect(client.unsubscribeResource('memory://preferences')).resolves.toBeUndefined()
+    client.close()
+  })
+
+  it('subscribeResource：未知 uri → reject（协议错误，与 readResource 一致）', async () => {
+    const client = spawnMock()
+    await client.initialize()
+    await expect(client.subscribeResource('memory://nonexist')).rejects.toThrow(/未知资源/)
+    client.close()
+  })
+
+  it('onResourceUpdated：服务器推送 notifications/resources/updated → 回调收到 uri（res-update 模式）', async () => {
+    const received: string[] = []
+    const client = new MCPClient({
+      command: process.execPath,
+      args: [MOCK_SERVER],
+      env: { MOCK_MODE: 'res-update' },
+      timeoutMs: 5000,
+      onResourceUpdated: (uri) => received.push(uri),
+    })
+    await client.initialize()
+    await client.subscribeResource('memory://preferences')
+    // mock 服务器收到订阅后推送一条 notifications/resources/updated（同 uri）
+    await new Promise((r) => setTimeout(r, 300))
+    expect(received).toEqual(['memory://preferences'])
+    client.close()
+  })
+
+  it('未配置 onResourceUpdated：订阅后服务器推送通知 → 静默忽略（不抛错、不影响后续请求）', async () => {
+    const client = spawnMock('res-update')
+    await client.initialize()
+    await client.subscribeResource('memory://preferences') // 服务器推送通知但无回调 → 忽略
+    const res = await client.callTool('echo_text', { text: 'still-alive' })
+    expect(res.content[0]?.text).toBe('echo: still-alive')
+    client.close()
+  })
+
+  it('close 后 subscribeResource → reject（客户端已关闭）', async () => {
+    const client = spawnMock()
+    await client.initialize()
+    client.close()
+    await expect(client.subscribeResource('memory://preferences')).rejects.toThrow(/已关闭/)
+  })
+})

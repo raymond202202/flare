@@ -5,6 +5,7 @@
 //   default      — 正常响应（2 个工具：echo_text / add_numbers；另有错误路径 boom / fail_tool）
 //   no-response  — 不响应 tools/call（测客户端超时）
 //   log-notify   — initialize 后推送一条 notifications/message（测客户端 onLog 转发）
+//   res-update   — 收到 resources/subscribe 后推送一条 notifications/resources/updated（测客户端 onResourceUpdated 转发）
 import readline from 'node:readline'
 
 const mode = process.env.MOCK_MODE || 'default'
@@ -80,7 +81,7 @@ rl.on('line', (line) => {
     case 'initialize':
       respond({
         protocolVersion: msg.params?.protocolVersion || '2025-03-26',
-        capabilities: { tools: {}, prompts: {}, resources: {} },
+        capabilities: { tools: {}, prompts: {}, resources: { subscribe: true } },
         serverInfo: { name: 'flare-mock', version: '1.0.0' },
       })
       break
@@ -157,6 +158,30 @@ rl.on('line', (line) => {
       }
       respond({})
       break
+    case 'resources/subscribe': {
+      const { uri } = msg.params || {}
+      if (!RESOURCES.some((r) => r.uri === uri)) {
+        respondError(-32602, `未知资源: ${uri}`)
+        break
+      }
+      // v0.6.15：res-update 模式下订阅后推送一条资源更新通知（模拟服务器资源变化）
+      if (mode === 'res-update') {
+        process.stdout.write(
+          JSON.stringify({ jsonrpc: '2.0', method: 'notifications/resources/updated', params: { uri } }) + '\n'
+        )
+      }
+      respond({})
+      break
+    }
+    case 'resources/unsubscribe': {
+      const { uri } = msg.params || {}
+      if (!RESOURCES.some((r) => r.uri === uri)) {
+        respondError(-32602, `未知资源: ${uri}`)
+        break
+      }
+      respond({})
+      break
+    }
     default:
       respondError(-32601, `未知方法: ${msg.method}`)
   }

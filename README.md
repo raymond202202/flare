@@ -336,6 +336,31 @@ Interactive mode commands:
 
 > 中文条目 / Chinese entries · English summary for each version
 
+#### v0.6.15 (2026-08-10) — MCP resources 订阅闭环：subscribe/unsubscribe + 资源更新通知 / MCP resource subscriptions (resources/subscribe + notifications/resources/updated)
+- 🧩 **MCP resources 订阅协议（src/mcp/server.ts + client.ts + http-client.ts）**：客户端订阅资源后，
+  服务器资源变化时推送更新通知——resources 闭环的最后一块（v0.6.1 暴露 + v0.6.6 消费 + 本轮订阅）
+- 🧩 **服务器侧**：`MCPServer` 新增 `resources/subscribe` / `resources/unsubscribe`（未知/缺 uri → `-32602`，
+  重复订阅幂等、未订阅退订幂等）+ `notifyResourceUpdated(uri)` 推送 `notifications/resources/updated`
+  （**仅向已订阅该 uri 的客户端推送**；未订阅/未知资源/已关闭/写失败 → 静默不抛错）；
+  capabilities.resources 升级声明 `{ subscribe: true }`（此前 `{}`，客户端可据此探测订阅能力）
+- 🧩 **客户端侧**：`MCPClient` 新增 `subscribeResource(uri)` / `unsubscribeResource(uri)` +
+  `onResourceUpdated` 回调选项（收到 `notifications/resources/updated` 自动转发 uri；未配置忽略不干扰后续请求）；
+  handleNotification 通知分流扩展（message 日志 / resources/updated 更新互不干扰）
+- 📌 **传输差异（文档记录）**：HTTP transport（startMcpHttpServer）共用 handleMessage 核心，subscribe/unsubscribe
+  一请求一响应正常；但无 SSE 长连接，服务器 `notifyResourceUpdated` 推送客户端收不到（与 roots/logging 一致）——
+  MCPHttpClient 同样可订阅但收不到更新通知，文档如实记录
+- 📚 docs/mcp.md resources 订阅章节 + README Changelog + 版本号 0.6.15
+- 🧪 新增 15 项测试：MCPServer 9（subscribe 成功+记录/未知 uri -32602/缺 uri+重复幂等/unsubscribe 成功+幂等/
+  unsubscribe 未知 -32602/notify 已订阅推送含无 id/未订阅+未知不推送/已关闭静默 + **真实互通 e2e**——真实 MCPServer
+  子进程 subscribe → bump 工具触发 notifyResourceUpdated → 客户端 onResourceUpdated 收到、unsubscribe 后不再收到）+
+  MCPClient 5（subscribe/unsubscribe 请求/未知 uri reject/onResourceUpdated 转发 res-update 模式/无回调忽略不影响/
+  close 后 reject）+ MCPHttpClient 1（HTTP subscribe/unsubscribe + 服务器记录 + 传输差异不抛错）；共 454/454；零 agent.ts 改动
+- EN: MCP resource subscriptions — `MCPServer` handles `resources/subscribe` / `resources/unsubscribe`
+  (unknown uri → -32602, idempotent) and pushes `notifications/resources/updated` via `notifyResourceUpdated(uri)`
+  only to subscribed clients (silent otherwise); `MCPClient` gains `subscribeResource` / `unsubscribeResource` and
+  an `onResourceUpdated` callback (HTTP client subscribes but can't receive pushes — no SSE); capabilities.resources
+  now advertises `{ subscribe: true }`; 454/454 tests, zero agent.ts changes.
+
 #### v0.6.14 (2026-08-10) — MCP sampling 协议闭环：服务器→客户端请求 LLM 采样 / MCP sampling (server-initiated LLM sampling via client)
 - 🧩 **MCP sampling 协议（src/mcp/types.ts + client.ts + server.ts）**：MCP sampling 让服务器（自身无模型）
   请求**客户端（宿主应用）代为调用 LLM** 生成内容——方向与 roots 一致（服务器→客户端请求），
