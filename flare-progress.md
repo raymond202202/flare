@@ -5,7 +5,8 @@
 
 > **最新状态（v0.6.19）**：上下文压缩摘要闭环——`contextSummarize` 开启后裁剪把丢弃历史压缩成
 > 摘要消息（纯启发式不调 LLM：条数/角色分布/涉及工具/最后话题；`[历史摘要]` 标记识别旧摘要合并
-> 覆盖防堆积）而非直接丢弃；526/526 全绿。下一步候选：
+> 覆盖防堆积）而非直接丢弃；server（chat 透传 + --context-summarize + get_config 回显）与 CLI
+> 交互模式（flare chat --context-summarize）均接入；527/527 全绿。下一步候选：
 > ① 其他安全的外围增强（CLI 交互增强、MCP 工具集完善、server 协议其他管理接口等）；
 > ② 摘要内容升级为 LLM 生成（语义级压缩，需评估 run 循环外异步）。
 
@@ -43,6 +44,9 @@
   - **冒烟实测**：真实 server 子进程带 --context-summarize——version 协商正常、get_config 回显
     defaultContextSummarize true、非法 contextSummarize('yes') → 「必须是布尔值」error 清晰，
     SMOKE PASS（chat 合法链路由 e2e 真实子进程覆盖）
+- **P41b CLI 交互模式接入**（src/cli/index.ts）：`flare chat --context-summarize` 开启交互模式压缩
+  摘要（makeAgent 构造 Agent 时传 `contextSummarize`；长会话裁剪后 AI 保留话题连续性，与 server 端
+  对称）——`--help` 注册测试 +1 → **527/527 全绿**（526 + 1），tsc 0 错误，零 agent.ts 改动
 - **下一步候选**：① 其他安全的外围增强（CLI 交互增强、MCP 工具集完善、server 协议其他管理接口）；
   ② 摘要内容升级为 LLM 生成（语义级压缩，需评估 run 循环外异步）
 
