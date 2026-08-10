@@ -25,7 +25,7 @@
 import { request as httpRequest } from 'node:http'
 import { request as httpsRequest } from 'node:https'
 import { createRequire } from 'node:module'
-import type { McpTool, McpCallResult, McpPromptInfo, McpPromptResult, McpResourceInfo, McpResourceContents, McpCompletionResult } from './types.js'
+import type { McpTool, McpCallResult, McpPromptInfo, McpPromptResult, McpResourceInfo, McpResourceContents, McpCompletionResult, McpLogLevel } from './types.js'
 
 const require = createRequire(import.meta.url)
 const pkg = require('../../package.json') as { version: string }
@@ -204,6 +204,11 @@ export class MCPHttpClient {
   async readResource(uri: string): Promise<McpResourceContents[]> {
     const res = await this.request<any>('resources/read', { uri })
     return Array.isArray(res?.contents) ? (res.contents as McpResourceContents[]) : []
+  }
+
+  /** 设置服务器日志级别阈值（logging/setLevel，v0.6.13）：HTTP transport 一请求一响应，可设置但收不到日志推送（无 SSE 长连接） */
+  async setLogLevel(level: McpLogLevel): Promise<void> {
+    await this.request('logging/setLevel', { level })
   }
 
   /** 健康检查（ping）：成功返回 true；服务器无响应 reject */

@@ -150,3 +150,24 @@ export interface McpRoot {
 export interface McpRootsResult {
   roots: McpRoot[]
 }
+
+/** MCP 日志级别（v0.6.13 logging 协议：logging/setLevel 与 notifications/message 用，按严重程度升序） */
+export type McpLogLevel =
+  | 'debug'
+  | 'info'
+  | 'notice'
+  | 'warning'
+  | 'error'
+  | 'critical'
+  | 'alert'
+  | 'emergency'
+
+/** MCP notifications/message 通知参数（v0.6.13）：服务器 → 客户端的结构化日志推送 */
+export interface McpLogMessage {
+  /** 日志级别 */
+  level: McpLogLevel
+  /** 日志来源（可选，如模块名 'mcp' / 'memory'） */
+  logger?: string
+  /** 日志内容（任意 JSON 可序列化值） */
+  data: unknown
+}

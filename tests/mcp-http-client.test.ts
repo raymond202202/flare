@@ -201,4 +201,17 @@ describe('MCPHttpClient（HTTP transport 消费端，与 stdio MCPClient 对称�
     clients.push(client)
     await expect(client.initialize()).rejects.toThrow(/Not found|MCP 错误/)
   })
+
+  it('setLogLevel（v0.6.13）：HTTP transport 可设置日志级别（capabilities 声明 logging；无推送通道）', async () => {
+    const h = await startMcpHttpServer({ tools: [echoTool] })
+    handles.push(h)
+    const client = new MCPHttpClient({ url: h.url })
+    clients.push(client)
+    const info = await client.initialize()
+    // 缺省声明 logging 能力（与 stdio MCPServer 一致）
+    expect(info.capabilities.logging).toBeTruthy()
+    await expect(client.setLogLevel('warning')).resolves.toBeUndefined()
+    // HTTP 无 SSE 长连接：设置可成功，但服务器日志通知无法推送（文档已记录）
+    await expect(client.setLogLevel('debug')).resolves.toBeUndefined()
+  })
 })

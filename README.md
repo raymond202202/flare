@@ -336,6 +336,28 @@ Interactive mode commands:
 
 > 中文条目 / Chinese entries · English summary for each version
 
+#### v0.6.13 (2026-08-10) — MCP logging 协议：日志级别设置 + 服务器日志推送 / MCP logging (logging/setLevel + notifications/message)
+- 🧩 **MCP logging 协议特性（src/mcp/server.ts + client.ts + http-client.ts）**：`MCPServer` 缺省声明
+  `capabilities.logging`（`logging:false` 可关闭，不声明）——客户端 `logging/setLevel` 设置日志级别阈值
+  （8 级 debug→emergency，非法级别 `-32602` 含合法值提示）；`sendLog(level, data, logger?)` 推送
+  `notifications/message` 通知（低于阈值丢弃；未设置默认 info；logging 关闭 / 服务器已关闭静默忽略）
+- 🧩 **客户端消费**：`MCPClient` 新增 `onLog` 回调选项（接收服务器日志通知，无回调忽略不干扰后续请求）+
+  `setLogLevel(level)`；通知分发与响应/服务器请求分流（无 id + method → 通知通道）；`MCPHttpClient.setLogLevel`
+  对称支持（HTTP 一请求一响应：可设置但无 SSE 长连接，收不到日志推送——文档如实记录）；
+  `McpLogLevel`/`McpLogMessage`/`MCP_LOG_LEVELS`/`MCP_DEFAULT_LOG_LEVEL` 库导出
+- 📚 docs/mcp.md logging 协议章节 + README Changelog + 版本号 0.6.13
+- 🧪 新增 13 项测试：MCPServer 8（缺省声明 / logging:false 不声明 / setLevel 合法+阈值生效 / 非法级别 -32602 /
+  默认 info 阈值 / logging:false 丢弃 / 已关闭不抛错 / logging 真实互通 e2e——真实子进程 sendLog → onLog 收到
+  info+warning+error 且 debug 被过滤）+ MCPClient 4（setLogLevel 请求 / close 后 reject / onLog 转发结构 /
+  无 onLog 忽略不干扰）+ MCPHttpClient 1（capabilities 声明 + setLogLevel 成功）；共 426/426；零 agent.ts 改动
+- 🔬 冒烟实测：真实 stdio 子进程闭环——capabilities.logging `{}`、setLogLevel('info') 后收到
+  info/warning/error（debug 被过滤，含 logger 标注）；HTTP 服务器 capabilities.logging + setLogLevel 成功
+- EN: MCP logging support — `MCPServer` declares `capabilities.logging`, honors `logging/setLevel`
+  (8-level threshold, invalid level → -32602) and pushes `notifications/message` via `sendLog()`
+  (below-threshold dropped, default info); `MCPClient` gains `onLog` + `setLogLevel()` (notifications
+  routed separately from responses/server-requests), HTTP client symmetric `setLogLevel` (set-only,
+  no push channel); 426/426 tests.
+
 #### v0.6.12 (2026-08-10) — MCP roots 协议闭环：客户端暴露根目录 + 服务器主动请求 / MCP roots round-trip (client exposure + server-initiated request)
 - 🧩 **MCP roots 协议（src/mcp/types.ts + client.ts + server.ts）**：roots 是客户端暴露给服务器的命名空间/
   根目录（方向与 resources 相反）——`MCPClient` 新增 `roots` 选项：配置后 `initialize` 声明

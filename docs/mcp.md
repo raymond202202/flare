@@ -276,6 +276,49 @@ const roots = await server.requestRoots(5000)   // [{ uri: 'file:///...', name: 
 > （e2e 测试验证 `rm -rf /` 仍被安全策略拦截）。谁连接了服务器谁就获得这些工具能力，
 > 仅对可信客户端开放（stdio 服务器由启动它的进程控制；HTTP 服务器默认只监听 127.0.0.1）。
 
+#### logging 协议（v0.6.13）：日志级别设置 + 服务器日志推送
+
+MCP **logging** 让服务器把结构化日志推送给客户端（调试 / 运行状态可观测），flare 两端都支持：
+
+**服务器侧（flare 作为 MCP 服务器）**——`MCPServer` 缺省声明 `capabilities.logging`（`logging:false` 可关闭）：
+
+```ts
+import { MCPServer } from 'flare-agent'
+
+const server = new MCPServer({ tools: builtinTools })  // 缺省 logging 开启
+server.start()
+
+// 推送结构化日志（发 notifications/message 通知，无 id，客户端无需响应）
+server.sendLog('info', 'server started')
+server.sendLog('warning', 'disk low', 'flare')         // 可选 logger 标注来源
+server.sendLog('error', { code: 500, detail: 'boom' }) // data 可为任意 JSON 可序列化值
+```
+
+- 客户端发 `logging/setLevel`（`{ level }`）设置日志级别阈值——8 级按严重程度升序：
+  `debug` < `info` < `notice` < `warning` < `error` < `critical` < `alert` < `emergency`
+  （非法级别 → `-32602`，错误信息含合法值提示）
+- 级别过滤：低于当前阈值的 `sendLog` 丢弃（未设置默认 `info`；`setLevel('warning')` 后 debug/info 不再推送）
+- `logging:false` → 不声明能力、`sendLog` 全部丢弃；服务器已关闭 / 写失败 → 静默忽略（不抛错）
+
+**客户端侧（flare 作为 MCP 客户端）**——`MCPClient` 新增 `onLog` 回调 + `setLogLevel()`：
+
+```ts
+const client = new MCPClient({
+  command: 'node', args: ['your-mcp-server-entry.js'],
+  onLog: (msg) => console.log(`[${msg.level}]`, msg.data),  // 接收服务器日志推送
+})
+await client.initialize()
+await client.setLogLevel('debug')   // 让服务器推送所有级别（含 debug）
+// 服务器 sendLog('warning', 'disk low', 'flare') → onLog({ level: 'warning', logger: 'flare', data: 'disk low' })
+```
+
+- `onLog` 未配置时日志通知被静默忽略（不干扰后续请求/响应）；通知（无 id）与响应 / 服务器请求分流处理
+- **传输差异（文档记录）**：HTTP transport（`startMcpHttpServer`）是"一请求一响应"同步子集，无服务器→客户端
+  通道——`MCPHttpClient.setLogLevel` 可正常设置级别（服务器接受），但收不到日志推送（无 SSE 长连接）
+
+> 与 `resources`/`prompts`/`completions` 的"注入才声明"不同，logging 是协议标准能力，缺省声明
+> （`logging:false` 显式关闭）——客户端可据此探测服务器是否支持日志推送。
+
 ### HTTP transport（v0.6.3）：POST /mcp
 
 除 stdio 外，MCPServer 可经 **HTTP** 暴露（`src/mcp/http.ts`，零依赖 node:http）——
@@ -298,7 +341,7 @@ await h.close()
 #### HTTP 客户端（v0.6.4）：MCPHttpClient
 
 与 stdio `MCPClient` 接口完全一致（`initialize` / `listTools` / `callTool` / `listPrompts` / `getPrompt` /
-`listResources` / `readResource` / `ping` / `close`，v0.6.6 起含 resources 消费），
+`listResources` / `readResource` / `completePrompt` / `setLogLevel` / `ping` / `close`），
 可互换使用——本地子进程服务器用 stdio，远端/HTTP 服务器用 HTTP（`src/mcp/http-client.ts`，零依赖 node:http）：
 
 ```ts

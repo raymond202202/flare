@@ -692,3 +692,108 @@ describe('MCPServer roots（v0.6.12：服务器→客户端主动请求）', () 
     }
   })
 })
+
+describe('MCPServer logging（v0.6.13：logging/setLevel + sendLog 推送 notifications/message）', () => {
+  it('initialize：缺省声明 capabilities.logging（协议标准能力）', async () => {
+    const h = createHarness()
+    h.send({ jsonrpc: '2.0', id: 1, method: 'initialize', params: {} })
+    await h.flush()
+    expect(h.last().result.capabilities).toHaveProperty('logging')
+    h.server.close()
+  })
+
+  it('initialize：logging:false 不声明 capabilities.logging（关闭）', async () => {
+    const writes: string[] = []
+    const input = new Readable({ read() {} })
+    const server = new MCPServer({ logging: false, write: (l) => writes.push(l), input })
+    server.start()
+    input.push(JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'initialize', params: {} }) + '\n')
+    await new Promise((r) => setTimeout(r, 30))
+    expect(JSON.parse(writes[writes.length - 1]).result.capabilities).not.toHaveProperty('logging')
+    server.close()
+  })
+
+  it('logging/setLevel：合法级别 → {} 且阈值生效（低于该级别 sendLog 丢弃）', async () => {
+    const h = createHarness()
+    h.send({ jsonrpc: '2.0', id: 1, method: 'logging/setLevel', params: { level: 'warning' } })
+    await h.flush()
+    expect(h.last().result).toEqual({})
+    expect(h.server.currentLogLevel).toBe('warning')
+    // 阈值生效：warning 及以上推送，info/debug 丢弃
+    h.server.sendLog('debug', 'd')
+    h.server.sendLog('info', 'i')
+    h.server.sendLog('warning', 'w', 'mcp')
+    h.server.sendLog('error', 'e')
+    await h.flush()
+    const msgs = h.responses().filter((r) => r.method === 'notifications/message')
+    expect(msgs).toHaveLength(2)
+    expect(msgs[0].params).toEqual({ level: 'warning', logger: 'mcp', data: 'w' })
+    expect(msgs[1].params).toEqual({ level: 'error', data: 'e' })
+    h.server.close()
+  })
+
+  it('logging/setLevel：非法级别 → -32602（含合法值提示），阈值不变', async () => {
+    const h = createHarness()
+    h.send({ jsonrpc: '2.0', id: 1, method: 'logging/setLevel', params: { level: 'verbose' } })
+    await h.flush()
+    const resp = h.last()
+    expect(resp.error.code).toBe(-32602)
+    expect(resp.error.message).toContain('debug')
+    expect(resp.error.message).toContain('emergency')
+    expect(h.server.currentLogLevel).toBe('info')
+    h.server.close()
+  })
+
+  it('sendLog：未 setLevel 时默认 info 阈值（debug 丢弃、info 起推送）', async () => {
+    const h = createHarness()
+    h.server.sendLog('debug', 'd')
+    h.server.sendLog('info', 'i')
+    h.server.sendLog('notice', 'n')
+    await h.flush()
+    const msgs = h.responses().filter((r) => r.method === 'notifications/message')
+    expect(msgs.map((m) => m.params.data)).toEqual(['i', 'n'])
+    h.server.close()
+  })
+
+  it('sendLog：logging:false → 丢弃（不推送）', async () => {
+    const writes: string[] = []
+    const input = new Readable({ read() {} })
+    const server = new MCPServer({ logging: false, write: (l) => writes.push(l), input })
+    server.start()
+    server.sendLog('error', 'e')
+    await new Promise((r) => setTimeout(r, 30))
+    expect(writes.filter((w) => w.includes('notifications/message'))).toHaveLength(0)
+    server.close()
+  })
+
+  it('sendLog：服务器已关闭 → 静默忽略（不抛错）', async () => {
+    const h = createHarness()
+    h.server.close()
+    expect(() => h.server.sendLog('error', 'e')).not.toThrow()
+  })
+
+  it('logging 真实互通 e2e：MCPServer sendLog → MCPClient onLog 收到通知（含级别过滤）', async () => {
+    // fixture 起真实 MCPServer 子进程，握手后延迟推送几条日志
+    const logFile = join(__dirname, 'fixtures', 'mcp-flare-server-logging.ts')
+    const received: any[] = []
+    const client = new MCPClient({
+      command: process.execPath,
+      args: [TSK_CLI, logFile],
+      timeoutMs: 8000,
+      onLog: (msg) => received.push(msg),
+    })
+    try {
+      const init = await client.initialize()
+      expect(init.capabilities).toHaveProperty('logging')
+      await client.setLogLevel('info')
+      // fixture 在 400ms 后推送 debug/info/warning/error——info 阈值下 debug 应被过滤
+      await new Promise((r) => setTimeout(r, 1200))
+      expect(received.map((m) => m.level)).toEqual(['info', 'warning', 'error'])
+      expect(received[1].logger).toBe('flare-log')
+      expect(received[1].data).toContain('warn')
+      expect(received[0].data).toContain('hello')
+    } finally {
+      client.close()
+    }
+  })
+})

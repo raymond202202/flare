@@ -4,6 +4,7 @@
 // 模式（环境变量 MOCK_MODE 控制）：
 //   default      — 正常响应（2 个工具：echo_text / add_numbers；另有错误路径 boom / fail_tool）
 //   no-response  — 不响应 tools/call（测客户端超时）
+//   log-notify   — initialize 后推送一条 notifications/message（测客户端 onLog 转发）
 import readline from 'node:readline'
 
 const mode = process.env.MOCK_MODE || 'default'
@@ -143,6 +144,19 @@ rl.on('line', (line) => {
       }
       break
     }
+    case 'logging/setLevel':
+      // v0.6.13：接受客户端日志级别设置；log-notify 模式下收到设置后推送一条日志通知
+      if (mode === 'log-notify') {
+        process.stdout.write(
+          JSON.stringify({
+            jsonrpc: '2.0',
+            method: 'notifications/message',
+            params: { level: msg.params?.level || 'info', logger: 'mock', data: 'mock log data' },
+          }) + '\n'
+        )
+      }
+      respond({})
+      break
     default:
       respondError(-32601, `未知方法: ${msg.method}`)
   }

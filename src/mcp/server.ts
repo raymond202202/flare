@@ -8,6 +8,7 @@
  * 传输：JSON-RPC 2.0 over stdio——每行一个 JSON（NDJSON），与 MCPClient 完全互通。
  * 覆盖 MCP 核心子集（工具互通所需）：
  *   initialize / notifications/initialized / tools/list / tools/call / ping
+ *   （v0.6.1 resources、v0.6.2 prompts、v0.6.11 completion/complete、v0.6.13 logging/setLevel）
  *
  * 设计：
  * - 零依赖：不引入 @modelcontextprotocol/sdk，直接手写 NDJSON 行协议
@@ -24,11 +25,22 @@
 import { createInterface, type Interface } from 'node:readline'
 import { createRequire } from 'node:module'
 import { tools, type Tool, type ToolResult } from '../tools/index.js'
-import type { McpCompletionResult, McpContentItem, McpPrompt, McpPromptMessage, McpResource, McpResourceContents, McpRoot, McpTool } from './types.js'
+import type { McpCompletionResult, McpContentItem, McpLogLevel, McpLogMessage, McpPrompt, McpPromptMessage, McpResource, McpResourceContents, McpRoot, McpTool } from './types.js'
 import { MCP_PROTOCOL_VERSION } from './client.js'
 
 const require = createRequire(import.meta.url)
 const pkg = require('../../package.json') as { version: string }
+
+/** MCP 日志级别（v0.6.13）：按严重程度升序，setLevel 阈值过滤用 */
+export const MCP_LOG_LEVELS: McpLogLevel[] = ['debug', 'info', 'notice', 'warning', 'error', 'critical', 'alert', 'emergency']
+
+/** 默认日志级别阈值（未 setLevel 时只发不低于此级别的日志） */
+export const MCP_DEFAULT_LOG_LEVEL: McpLogLevel = 'info'
+
+/** 级别权重（>= 阈值才推送） */
+function logLevelWeight(level: McpLogLevel): number {
+  return MCP_LOG_LEVELS.indexOf(level)
+}
 
 /** MCPServer 选项 */
 export interface MCPServerOptions {
@@ -38,6 +50,9 @@ export interface MCPServerOptions {
   resources?: McpResource[]
   /** MCP 提示词（v0.6.2）：prompts/list 真实暴露 + prompts/get 渲染；缺省无 prompts 能力（空列表） */
   prompts?: McpPrompt[]
+  /** MCP logging（v0.6.13）：是否声明 capabilities.logging 并支持 logging/setLevel + sendLog 推送；
+   *  缺省 true（协议标准能力，声明后客户端可设置日志级别）；false 关闭（不声明、sendLog 丢弃） */
+  logging?: boolean
   /** 服务器信息（默认 name: 'flare'，version 读 package.json 不硬编码） */
   serverInfo?: { name: string; version: string }
   /** 输出函数（默认 process.stdout.write + 换行；测试可注入收集） */
@@ -73,6 +88,10 @@ export class MCPServer {
   private pending = new Map<number, { resolve: (result: any) => void; reject: (err: Error) => void; timer: NodeJS.Timeout }>()
   private nextRequestId = 1
   private readonly requestTimeoutMs: number
+  /** logging 能力开关（v0.6.13：声明 capabilities.logging 并推送日志；缺省 true） */
+  private readonly loggingEnabled: boolean
+  /** 当前日志级别阈值（v0.6.13：客户端 logging/setLevel 设置，未设置默认 info） */
+  private logLevel: McpLogLevel = MCP_DEFAULT_LOG_LEVEL
 
   constructor(opts: MCPServerOptions = {}) {
     this.toolList = opts.tools ?? tools
@@ -82,6 +101,7 @@ export class MCPServer {
     this.write = opts.write ?? ((line) => process.stdout.write(line + '\n'))
     this.input = opts.input ?? process.stdin
     this.requestTimeoutMs = opts.requestTimeoutMs || 15000
+    this.loggingEnabled = opts.logging !== false
   }
 
   /** 开始监听输入流（幂等：重复调用不重复监听） */
@@ -171,7 +191,7 @@ export class MCPServer {
   private async dispatch(method: string, params: any): Promise<any> {
     switch (method) {
       case 'initialize':
-        // 握手：协商协议版本、声明能力（tools / 可选 resources / 可选 prompts / 可选 completions）、返回服务器信息
+        // 握手：协商协议版本、声明能力（tools / 可选 resources / 可选 prompts / 可选 completions / logging）、返回服务器信息
         return {
           protocolVersion: MCP_PROTOCOL_VERSION,
           capabilities: {
@@ -180,6 +200,8 @@ export class MCPServer {
             ...(this.promptList.length > 0 ? { prompts: {} } : {}),
             // v0.6.11：至少一个 prompt 提供补全回调时声明 completions 能力（completion/complete）
             ...(this.hasCompletions ? { completions: {} } : {}),
+            // v0.6.13：logging 能力（logging/setLevel 设置日志级别 + sendLog 推送；缺省声明，logging:false 关闭）
+            ...(this.loggingEnabled ? { logging: {} } : {}),
           },
           serverInfo: this.serverInfo,
         }
@@ -213,6 +235,9 @@ export class MCPServer {
       case 'completion/complete':
         // v0.6.11：prompt 参数补全候选值（客户端交互式输入时提供建议）
         return this.complete(params)
+      case 'logging/setLevel':
+        // v0.6.13：客户端设置日志级别阈值（此后低于该级别的 sendLog 不再推送）
+        return this.setLogLevel(params)
       case 'ping':
         // JSON-RPC 标准健康检查
         return {}
@@ -322,6 +347,40 @@ export class MCPServer {
         : []
     }
     return { completion: { values, total: values.length, hasMore: false } }
+  }
+
+  /**
+   * 客户端设置日志级别（logging/setLevel，v0.6.13）：阈值过滤生效——低于该级别的 sendLog 不再推送。
+   * 非法级别 → -32602；logging 关闭时宽容接受（返回 {}，客户端探测兼容）。
+   */
+  private setLogLevel(params: any): {} {
+    const level = String(params?.level || '')
+    if (!MCP_LOG_LEVELS.includes(level as McpLogLevel)) {
+      throw Object.assign(
+        new Error(`Invalid log level: ${level}（合法值: ${MCP_LOG_LEVELS.join(' | ')}）`),
+        { code: -32602 }
+      )
+    }
+    this.logLevel = level as McpLogLevel
+    return {}
+  }
+
+  /**
+   * 服务器推送结构化日志（v0.6.13）：发 notifications/message 通知（无 id，客户端无需响应）。
+   * - 级别低于当前阈值（logging/setLevel 设置，默认 info）→ 丢弃（不推送）
+   * - logging 关闭（logging:false）→ 丢弃
+   * - 服务器已关闭 / 写失败 → 静默忽略（不抛错）
+   */
+  sendLog(level: McpLogLevel, data: unknown, logger?: string): void {
+    if (!this.loggingEnabled || this.closed) return
+    if (logLevelWeight(level) < logLevelWeight(this.logLevel)) return
+    const msg: McpLogMessage = { level, data, ...(logger ? { logger } : {}) }
+    this.safeWrite({ jsonrpc: '2.0', method: 'notifications/message', params: msg })
+  }
+
+  /** 当前日志级别阈值（v0.6.13，测试/调试用） */
+  get currentLogLevel(): McpLogLevel {
+    return this.logLevel
   }
 
   /** 执行 flare 工具并包装为 MCP 调用结果；工具级失败 → isError（协议层不抛） */

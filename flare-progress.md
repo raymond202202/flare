@@ -3,8 +3,34 @@
 > 目标：flare 是 Pulse/StorySpire 依赖的 AI Agent 引擎（TS）。任何改动必须安全（tsc 0 错 + 测试全绿才 commit）。
 > 铁律：禁止 push；禁止修改 src/core/agent.ts 的 Agent.run 核心循环。
 
-> **最新状态（v0.6.12）**：MCP roots 协议闭环（客户端暴露根目录 + 服务器主动请求 requestRoots）+ id 空间冲突修复；413/413 全绿（commits `78954a5`/`8e566a0`，未 push）。
-> 下一步候选：① agent.ts trimContext 自动裁剪（风险高仍暂缓）；② 其他安全的外围增强（MCP 更多协议特性如 logging/sampling、server 协议其他管理接口等）。
+> **最新状态（v0.6.13）**：MCP logging 协议闭环（`logging/setLevel` 级别阈值 + `sendLog` 推送 `notifications/message` 通知）+ 客户端 `onLog`/`setLogLevel` 消费；426/426 全绿（commit `未提交`，未 push）。
+> 下一步候选：① agent.ts trimContext 自动裁剪（风险高仍暂缓）；② 其他安全的外围增强（MCP 更多协议特性如 sampling、server 协议其他管理接口等）。
+
+### 2026-08-10 第十五轮实施（v0.6.13）——MCP logging 协议闭环
+
+- **P30 MCP logging 协议**（src/mcp/server.ts + client.ts + http-client.ts + types.ts）：
+  - **服务器侧**：`MCPServer` 缺省声明 `capabilities.logging`（`logging:false` 可关闭，不声明）——客户端
+    `logging/setLevel` 设置日志级别阈值（8 级 debug→emergency 升序，非法级别 -32602 错误信息含合法值提示）；
+    `sendLog(level, data, logger?)` 推送 `notifications/message` 通知（无 id，客户端无需响应）——级别低于
+    当前阈值丢弃（未设置默认 info）；logging 关闭 / 服务器已关闭 / 写失败 → 静默忽略不抛错
+  - **客户端侧**：`MCPClient` 新增 `onLog` 回调选项（接收服务器日志通知，未配置忽略不干扰后续请求）+
+    `setLogLevel(level)`；handleLine 新增通知通道分流（无 id + method → handleNotification，与响应/
+    服务器请求分流，互不干扰）；`MCPHttpClient.setLogLevel` 对称支持（HTTP 一请求一响应：可设置但无
+    SSE 长连接收不到推送——文档如实记录，与 roots 传输差异一致）
+  - `McpLogLevel`/`McpLogMessage` 类型 + `MCP_LOG_LEVELS`/`MCP_DEFAULT_LOG_LEVEL` 常量库导出；
+    docs/mcp.md logging 协议章节 + README Changelog + 版本号 0.6.13
+  - **426/426 全绿**（413 + 13 新增：MCPServer 8——缺省声明/logging:false 不声明/setLevel 合法+阈值生效/
+    非法级别 -32602/默认 info 阈值/logging:false 丢弃/已关闭不抛错/logging 真实互通 e2e 真实子进程
+    sendLog → onLog 收到 info+warning+error 且 debug 被过滤 + MCPClient 4——setLogLevel 请求/close 后
+    reject/onLog 转发结构/无 onLog 忽略不干扰 + MCPHttpClient 1——capabilities 声明 + setLogLevel 成功），
+    tsc 0 错误，零 agent.ts 改动
+  - **冒烟实测**：真实 stdio 子进程闭环——capabilities.logging `{}`、setLogLevel('info') 后收到
+    info/warning/error（debug 被过滤，warning 带 logger 标注）；HTTP 服务器 capabilities.logging +
+    setLogLevel 成功，SMOKE PASS
+- **下一步候选**：① agent.ts trimContext 自动裁剪（风险高仍暂缓）；② 其他安全的外围增强
+  （MCP 更多协议特性如 sampling、server 协议其他管理接口、CLI 交互增强等）
+
+---
 
 ### 2026-08-10 第十四轮实施（v0.6.12）——MCP roots 协议闭环
 
