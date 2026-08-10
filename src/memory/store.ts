@@ -430,6 +430,24 @@ export class MemoryStore {
     }
   }
 
+  /** 单个会话的 token 用量（v0.6.17）：按 session_id 过滤 usage_log（宿主面板\"本会话用量\"数据源） */
+  getSessionUsage(sessionId: string) {
+    const row = this.db.prepare(
+      `SELECT
+         COALESCE(SUM(prompt_tokens), 0) as promptTokens,
+         COALESCE(SUM(completion_tokens), 0) as completionTokens,
+         COUNT(*) as callCount
+       FROM usage_log WHERE session_id = ?`
+    ).get(sessionId) as any
+    return {
+      sessionId,
+      promptTokens: row.promptTokens,
+      completionTokens: row.completionTokens,
+      totalTokens: row.promptTokens + row.completionTokens,
+      callCount: row.callCount,
+    }
+  }
+
   /**
    * 全文检索记忆（RAG，v0.5.1）
    *

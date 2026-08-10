@@ -3,7 +3,7 @@
 > 供非 Node 宿主（如 Qt 应用）调用 flare 引擎的本地协议。
 > 传输：stdin/stdout · JSON Lines（每行一个 JSON 对象）
 > 实现：`src/server.ts`（`flare server` 命令）
-> 请求类型：chat / cancel / set_context / list_sessions / recent_sessions / get_messages / get_usage / context_status / ping / version / create_session / delete_session / remember / get_memories / delete_memory / tool_result / confirm_result / confirm_status / confirm_revoke / confirm_allow / models / tools / mcp_status
+> 请求类型：chat / cancel / set_context / list_sessions / recent_sessions / get_messages / get_usage / session_usage / context_status / ping / version / create_session / delete_session / remember / get_memories / delete_memory / tool_result / confirm_result / confirm_status / confirm_revoke / confirm_allow / models / tools / mcp_status
 
 ## 启动
 
@@ -120,6 +120,18 @@ flare server --profile <expert-profile-file> --storage <db-path> [--mcp <mcp-con
 
 - 宿主展示用量统计（成本监控）、AI 面板显示 token 消耗时使用
 - 与 get_messages 一样只读，不触发生成
+
+#### 9.1 session_usage — 读取单个会话 token 用量（v0.6.17，只读，不生成）
+
+```json
+{"type":"session_usage","sessionId":"s1"}
+```
+
+响应：`{"type":"session_usage","sessionId":"s1","stats":{"sessionId":"s1","promptTokens":100,"completionTokens":50,"totalTokens":150,"callCount":2}}`
+
+- 按会话过滤 usage_log：宿主面板"本会话用量/成本"数据源（区别于 get_usage 的全局汇总）
+- `callCount`：该会话的 LLM 调用次数；无用量记录的会话返回全 0（幂等，不抛错）
+- 无 `sessionId` 时默认会话 `default`；只读，不触发生成
 
 ### 10. context_status — 读取会话上下文占用（v0.5.6，只读，不生成）
 

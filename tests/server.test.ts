@@ -241,6 +241,24 @@ describe('flare host server 协议', () => {
     expect(typeof msgs[0].stats.sessionCount).toBe('number')
   })
 
+  it('session_usage → 单会话 token 用量（v0.6.17，只读不生成；未记录会话全 0）', async () => {
+    const msgs = await request({ type: 'session_usage', sessionId: 's-usage-1' }, { expect: ['session_usage'] })
+    expect(msgs[0].type).toBe('session_usage')
+    expect(msgs[0].sessionId).toBe('s-usage-1')
+    expect(typeof msgs[0].stats).toBe('object')
+    expect(typeof msgs[0].stats.promptTokens).toBe('number')
+    expect(typeof msgs[0].stats.completionTokens).toBe('number')
+    expect(typeof msgs[0].stats.totalTokens).toBe('number')
+    expect(typeof msgs[0].stats.callCount).toBe('number')
+    // 未产生用量的会话：全 0（幂等，不抛错）
+    expect(msgs[0].stats.totalTokens).toBe(0)
+
+    // 缺省 sessionId → default 会话，结构一致
+    const dflt = await request({ type: 'session_usage' }, { expect: ['session_usage'] })
+    expect(dflt[0].sessionId).toBe('default')
+    expect(typeof dflt[0].stats.totalTokens).toBe('number')
+  })
+
   it('context_status → 消息数 + 估算 tokens（v0.5.6：上下文占用只读）', async () => {
     // 数据往返：create_session 后 context_status 必须能看到该会话的上下文
     await request({ type: 'create_session', sessionId: 's-ctx1', title: '上下文会话' }, { expect: ['ok'] })
