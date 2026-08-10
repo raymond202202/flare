@@ -327,6 +327,7 @@ Interactive mode commands:
 |---------|----------|
 | `/help` | Show help |
 | `/memory` | View persistent memories |
+| `/search <关键词>` | Search chat history across sessions (v0.6.24) |
 | `/remember` | Save a memory (e.g. /remember user likes light theme) |
 | `/forget` | Delete memories by keyword (e.g. /forget light theme) |
 | `/sessions` | View recent sessions |
