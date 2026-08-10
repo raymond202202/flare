@@ -227,3 +227,29 @@ export interface McpSamplingResult {
   /** 停止原因（可选，如 'endTurn' / 'maxTokens'） */
   stopReason?: string
 }
+
+/** MCP notifications/progress 通知参数（v0.6.16 progress 通知协议）：服务器在处理长请求期间推送的进度更新 */
+export interface McpProgressParams {
+  /** 进度令牌（客户端在请求 _meta.progressToken 中指定，服务器原样回传用于关联请求） */
+  progressToken: string | number
+  /** 当前进度值（可选，如已处理的步骤数） */
+  progress?: number
+  /** 总进度值（可选，用于百分比展示；缺省表示不确定进度） */
+  total?: number
+  /** 进度描述文本（可选） */
+  message?: string
+}
+
+/** MCP notifications/cancelled 通知参数（v0.6.16 cancelled 通知协议）：请求方通知对方取消一个已发出的请求 */
+export interface McpCancelledParams {
+  /** 被取消请求的 id（取消方自己的 id 空间，即其发出请求时使用的 id） */
+  requestId: string | number
+  /** 取消原因（可选，如 'user cancelled' / 'timeout'） */
+  reason?: string
+}
+
+/** 客户端调用工具时的附加选项（v0.6.16 progress 通知协议） */
+export interface McpCallOptions {
+  /** 进度令牌：服务器处理期间可发 notifications/progress 推送进度（onProgress 回调接收） */
+  progressToken?: string | number
+}

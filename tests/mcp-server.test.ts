@@ -7,7 +7,7 @@ import { readFileSync } from 'node:fs'
 import { MCPServer, toMcpTool } from '../src/mcp/server.js'
 import { MCPClient } from '../src/mcp/client.js'
 import { readFileTool, type Tool } from '../src/tools/index.js'
-import type { McpPrompt, McpResource } from '../src/mcp/types.js'
+import type { McpPrompt, McpResource, McpProgressParams } from '../src/mcp/types.js'
 import { MCP_PROTOCOL_VERSION } from '../src/mcp/client.js'
 import pkg from '../package.json' with { type: 'json' }
 
@@ -1036,6 +1036,130 @@ describe('MCPServer logging（v0.6.13：logging/setLevel + sendLog 推送 notifi
       expect(received[1].logger).toBe('flare-log')
       expect(received[1].data).toContain('warn')
       expect(received[0].data).toContain('hello')
+    } finally {
+      client.close()
+    }
+  })
+})
+
+describe('MCPServer progress + cancelled 通知（v0.6.16：notifications/progress + notifications/cancelled）', () => {
+  /** 进度工具：执行中 notifyProgress 两次（需闭包引用 server 实例，模拟宿主在长工具执行中推进度） */
+  let progressServer: MCPServer
+  const progressTool: Tool = {
+    definition: {
+      type: 'function',
+      function: {
+        name: 'progress',
+        description: '分步执行并推送进度',
+        parameters: { type: 'object', properties: {} },
+      },
+    },
+    execute: (async () => {
+      progressServer.notifyProgress(1, 3, 'working')
+      progressServer.notifyProgress(2, 3)
+      return { success: true, output: 'progress-done' }
+    }) as any,
+  }
+
+  it('notifyProgress：请求带 _meta.progressToken → 推送 notifications/progress（token 回传 + 进度字段 + 无 id）', async () => {
+    const h = createHarness([progressTool])
+    progressServer = h.server
+    h.send({
+      jsonrpc: '2.0',
+      id: 1,
+      method: 'tools/call',
+      params: { name: 'progress', arguments: {}, _meta: { progressToken: 'job-1' } },
+    })
+    await h.flush()
+    const rs = h.responses()
+    const notifs = rs.filter((r) => r.method === 'notifications/progress')
+    expect(notifs).toHaveLength(2)
+    expect(notifs[0].params).toEqual({ progressToken: 'job-1', progress: 1, total: 3, message: 'working' })
+    expect(notifs[1].params).toEqual({ progressToken: 'job-1', progress: 2, total: 3 })
+    // 通知无 id（无需客户端响应）；最终响应正常返回
+    expect(notifs[0].id).toBeUndefined()
+    expect(rs[rs.length - 1].id).toBe(1)
+    expect(rs[rs.length - 1].result.content[0].text).toContain('progress-done')
+    h.server.close()
+  })
+
+  it('notifyProgress：请求未带 progressToken / 无活动请求 → 静默不推送', async () => {
+    const h = createHarness([progressTool])
+    progressServer = h.server
+    h.server.notifyProgress(1, 10, 'no-token')
+    await h.flush()
+    expect(h.writes).toHaveLength(0)
+    h.server.close()
+  })
+
+  it('notifyProgress：请求完成后活动 progressToken 清除（后续推送静默）', async () => {
+    const h = createHarness([progressTool])
+    progressServer = h.server
+    h.send({
+      jsonrpc: '2.0',
+      id: 1,
+      method: 'tools/call',
+      params: { name: 'progress', arguments: {}, _meta: { progressToken: 'job-2' } },
+    })
+    await h.flush()
+    expect(h.responses().filter((r) => r.method === 'notifications/progress').length).toBeGreaterThan(0)
+    const before = h.writes.length
+    h.server.notifyProgress(5, 5, 'after-done')
+    await h.flush()
+    expect(h.writes.length).toBe(before)
+    h.server.close()
+  })
+
+  it('notifyProgress：服务器已关闭 → 静默不推送（不抛错）', async () => {
+    const h = createHarness([progressTool])
+    progressServer = h.server
+    h.server.close()
+    expect(() => h.server.notifyProgress(1, 2, 'closed')).not.toThrow()
+    await h.flush()
+    expect(h.writes).toHaveLength(0)
+  })
+
+  it('notifications/cancelled：命中 pending（服务器→客户端请求挂起）→ reject 并清理（不悬挂）', async () => {
+    const h = createHarness([], [], [], 500)
+    const p = h.server.requestRoots()
+    await h.flush()
+    // 客户端发 cancelled（模拟取消服务器发给自己的 roots/list 请求）
+    h.send({ jsonrpc: '2.0', method: 'notifications/cancelled', params: { requestId: 1, reason: 'user cancelled' } })
+    await expect(p).rejects.toThrow('请求已被客户端取消（user cancelled）')
+    h.server.close()
+  })
+
+  it('notifications/cancelled：未知 requestId 静默忽略（服务器不崩，后续请求正常）', async () => {
+    const h = createHarness()
+    h.send({ jsonrpc: '2.0', method: 'notifications/cancelled', params: { requestId: 999, reason: 'x' } })
+    await h.flush()
+    h.send({ jsonrpc: '2.0', id: 1, method: 'ping', params: {} })
+    await h.flush()
+    expect(h.last().id).toBe(1)
+    expect(h.last().result).toEqual({})
+    h.server.close()
+  })
+
+  it('progress 真实互通 e2e：MCPClient callTool 带 progressToken ↔ 真实 MCPServer notifyProgress → onProgress 收到全部进度', async () => {
+    const received: McpProgressParams[] = []
+    const client = new MCPClient({
+      command: process.execPath,
+      args: [TSK_CLI, join(__dirname, 'fixtures', 'mcp-flare-server-progress.ts')],
+      timeoutMs: 8000,
+      onProgress: (p) => received.push(p),
+    })
+    try {
+      await client.initialize()
+      const res = await client.callTool('progress_work', {}, { progressToken: 'job-e2e' })
+      expect(res.content[0].text).toContain('work-done')
+      // 3 条进度：progressToken 原样回传，progress 1→2→3，首条带 message
+      expect(received).toHaveLength(3)
+      expect(received.map((r) => r.progress)).toEqual([1, 2, 3])
+      expect(received.map((r) => r.total)).toEqual([3, 3, 3])
+      expect(received.every((r) => r.progressToken === 'job-e2e')).toBe(true)
+      expect(received[0].message).toBe('开始处理')
+      // 进度通知在响应前到达（服务器处理期间推送）
+      expect(received[2].progress).toBe(3)
     } finally {
       client.close()
     }

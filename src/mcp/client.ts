@@ -24,7 +24,7 @@
 import { spawn, type ChildProcess } from 'node:child_process'
 import { createInterface, type Interface } from 'node:readline'
 import { createRequire } from 'node:module'
-import type { McpTool, McpCallResult, McpPromptInfo, McpPromptResult, McpResourceInfo, McpResourceContents, McpCompletionResult, McpRoot, McpLogLevel, McpLogMessage, McpSamplingRequest, McpSamplingResult } from './types.js'
+import type { McpTool, McpCallResult, McpPromptInfo, McpPromptResult, McpResourceInfo, McpResourceContents, McpCompletionResult, McpRoot, McpLogLevel, McpLogMessage, McpSamplingRequest, McpSamplingResult, McpProgressParams, McpCallOptions, McpCancelledParams } from './types.js'
 
 const require = createRequire(import.meta.url)
 const pkg = require('../../package.json') as { version: string }
@@ -60,6 +60,9 @@ export interface MCPClientOptions {
    *  时按此回调执行；配置后 initialize 声明 capabilities.sampling（未配置不声明，服务器不会请求采样）。
    *  回调返回采样结果（支持异步）；回调抛错 → 回 -32603（客户端不崩） */
   sampling?: (request: McpSamplingRequest) => McpSamplingResult | Promise<McpSamplingResult>
+  /** 进度通知回调（v0.6.16 progress 通知协议）：服务器处理带 progressToken 的请求期间推送的
+   *  notifications/progress 通知 → 按此回调转发（按 progressToken 关联请求）；缺省忽略 */
+  onProgress?: (params: McpProgressParams) => void
 }
 
 export class MCPClient {
@@ -76,6 +79,7 @@ export class MCPClient {
   private readonly onLog?: (msg: McpLogMessage) => void
   private readonly onResourceUpdated?: (uri: string) => void
   private readonly sampling?: (request: McpSamplingRequest) => McpSamplingResult | Promise<McpSamplingResult>
+  private readonly onProgress?: (params: McpProgressParams) => void
 
   constructor(opts: MCPClientOptions) {
     this.timeoutMs = opts.timeoutMs || DEFAULT_TIMEOUT_MS
@@ -83,6 +87,7 @@ export class MCPClient {
     this.onLog = opts.onLog
     this.onResourceUpdated = opts.onResourceUpdated
     this.sampling = opts.sampling
+    this.onProgress = opts.onProgress
     this.child = spawn(opts.command, opts.args || [], {
       env: opts.env ? { ...process.env, ...opts.env } : process.env,
       stdio: ['pipe', 'pipe', 'pipe'],
@@ -139,7 +144,8 @@ export class MCPClient {
   }
 
   /** 处理服务器通知（v0.6.13）：notifications/message → onLog 回调转发；v0.6.15：notifications/resources/updated
-   *  → onResourceUpdated 回调转发（已订阅资源更新）。缺省忽略对应回调；通知无需响应，不干扰后续请求 */
+   *  → onResourceUpdated 回调转发（已订阅资源更新）；v0.6.16：notifications/progress → onProgress 回调转发。
+   *  缺省忽略对应回调；通知无需响应，不干扰后续请求 */
   private handleNotification(msg: any): void {
     if (msg.method === 'notifications/message') {
       if (typeof this.onLog !== 'function') return
@@ -154,6 +160,18 @@ export class MCPClient {
     if (msg.method === 'notifications/resources/updated') {
       if (typeof this.onResourceUpdated !== 'function') return
       this.onResourceUpdated(String((msg.params || {}).uri ?? ''))
+      return
+    }
+    if (msg.method === 'notifications/progress') {
+      // v0.6.16 progress 通知协议：服务器处理带 progressToken 的请求期间推送的进度更新
+      if (typeof this.onProgress !== 'function') return
+      const p = msg.params || {}
+      this.onProgress({
+        progressToken: p.progressToken as string | number,
+        ...(p.progress !== undefined ? { progress: Number(p.progress) } : {}),
+        ...(p.total !== undefined ? { total: Number(p.total) } : {}),
+        ...(p.message !== undefined ? { message: String(p.message) } : {}),
+      })
     }
   }
 
@@ -237,9 +255,14 @@ export class MCPClient {
     return Array.isArray(res?.tools) ? (res.tools as McpTool[]) : []
   }
 
-  /** 调用服务器工具（tools/call）；工具级失败以 isError 标记返回（协议层错误则 reject） */
-  async callTool(name: string, args?: Record<string, any>): Promise<McpCallResult> {
-    const res = await this.request<any>('tools/call', { name, arguments: args || {} })
+  /** 调用服务器工具（tools/call）；工具级失败以 isError 标记返回（协议层错误则 reject）。
+   *  v0.6.16：options.progressToken → 请求带 _meta.progressToken，服务器处理期间可推送进度（onProgress 回调接收） */
+  async callTool(name: string, args?: Record<string, any>, options?: McpCallOptions): Promise<McpCallResult> {
+    const params: Record<string, any> = { name, arguments: args || {} }
+    if (options?.progressToken !== undefined) {
+      params._meta = { progressToken: options.progressToken }
+    }
+    const res = await this.request<any>('tools/call', params)
     return {
       content: Array.isArray(res?.content) ? res.content : [],
       isError: !!res?.isError,
@@ -312,6 +335,21 @@ export class MCPClient {
     try {
       this.child.stdin!.write(
         JSON.stringify({ jsonrpc: '2.0', method: 'notifications/roots/list_changed' }) + '\n'
+      )
+    } catch { /* 写入失败（子进程已退出）不致命 */ }
+  }
+
+  /**
+   * 通知服务器取消一个已发出的请求（v0.6.16 cancelled 通知协议）：发 notifications/cancelled（无 id，服务器无需响应）。
+   * requestId 是**本客户端发出请求时使用的 id**（如 callTool 超时/用户取消后告知服务器停止处理）；
+   * reason 可选（如 'timeout' / 'user cancelled'）。服务器已关闭 / 写失败 → 静默不抛错。
+   */
+  notifyCancelled(requestId: string | number, reason?: string): void {
+    if (this.closed) return
+    const params: McpCancelledParams = { requestId, ...(reason ? { reason } : {}) }
+    try {
+      this.child.stdin!.write(
+        JSON.stringify({ jsonrpc: '2.0', method: 'notifications/cancelled', params }) + '\n'
       )
     } catch { /* 写入失败（子进程已退出）不致命 */ }
   }

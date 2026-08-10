@@ -26,7 +26,7 @@
 import { createInterface, type Interface } from 'node:readline'
 import { createRequire } from 'node:module'
 import { tools, type Tool, type ToolResult } from '../tools/index.js'
-import type { McpCompletionResult, McpContentItem, McpLogLevel, McpLogMessage, McpPrompt, McpPromptMessage, McpResource, McpResourceContents, McpRoot, McpSamplingRequest, McpSamplingResult, McpTool } from './types.js'
+import type { McpCancelledParams, McpCompletionResult, McpContentItem, McpLogLevel, McpLogMessage, McpProgressParams, McpPrompt, McpPromptMessage, McpResource, McpResourceContents, McpRoot, McpSamplingRequest, McpSamplingResult, McpTool } from './types.js'
 import { MCP_PROTOCOL_VERSION } from './client.js'
 
 const require = createRequire(import.meta.url)
@@ -96,6 +96,9 @@ export class MCPServer {
   /** 客户端订阅的资源 uri（v0.6.15 resources 订阅协议：resources/subscribe 加入，unsubscribe 移除；
    *  notifyResourceUpdated 只向已订阅的 uri 推送 notifications/resources/updated） */
   private readonly subscribedUris = new Set<string>()
+  /** 活动进度令牌（v0.6.16 progress 通知协议）：正在处理的请求若带 _meta.progressToken 则记录，
+   *  notifyProgress 用它在处理期间推送 notifications/progress（串行队列保证同一时刻只有一个请求） */
+  private activeProgressToken: string | number | null = null
 
   constructor(opts: MCPServerOptions = {}) {
     this.toolList = opts.tools ?? tools
@@ -168,14 +171,25 @@ export class MCPServer {
   /**
    * 处理单个 JSON-RPC 消息（v0.6.3，传输无关）：返回响应对象（或 null——通知类消息无需响应）。
    * stdio（handleLine）与 HTTP（src/mcp/http.ts）共用；错误 → JSON-RPC error 对象（不抛出）。
+   * v0.6.16：通知类消息（无 id）→ handleNotification 分流（notifications/cancelled 取消 pending）；
+   * 请求带 _meta.progressToken → 记录为活动进度令牌（notifyProgress 推送用，请求结束恢复）。
    */
   async handleMessage(msg: any): Promise<any> {
     if (msg === null || typeof msg !== 'object' || msg.id === undefined || msg.id === null) {
-      // 通知类消息（无 id）：MCP 的 notifications/initialized 等——无需响应
+      // 通知类消息（无 id）：notifications/cancelled 等——无需响应
+      this.handleNotification(msg)
       return null
     }
     const id = msg.id
     const method = typeof msg.method === 'string' ? msg.method : ''
+    // v0.6.16：请求可带 _meta.progressToken——处理期间 notifyProgress 用它在通知中回传关联
+    const meta = msg.params && typeof msg.params === 'object' && msg.params._meta
+      ? (msg.params._meta as { progressToken?: string | number })
+      : null
+    const prevToken = this.activeProgressToken
+    if (meta && meta.progressToken !== undefined) {
+      this.activeProgressToken = meta.progressToken
+    }
     try {
       const result = await this.dispatch(method, msg.params || {})
       return { jsonrpc: '2.0', id, result }
@@ -188,7 +202,29 @@ export class MCPServer {
           message: e?.message || String(e),
         },
       }
+    } finally {
+      // 请求处理完毕恢复之前的进度令牌（串行队列下同一时刻只有一个活动请求）
+      this.activeProgressToken = prevToken
     }
+  }
+
+  /** 处理客户端通知（v0.6.16）：notifications/cancelled → 若 requestId 命中 pending（服务器→客户端请求，
+   *  如 roots/list / sampling/createMessage 等待客户端响应中）→ 拒绝并清理（不悬挂）；未知/已完成请求静默忽略 */
+  private handleNotification(msg: any): void {
+    if (!msg || typeof msg.method !== 'string') return
+    if (msg.method === 'notifications/cancelled') {
+      const params = (msg.params || {}) as McpCancelledParams
+      if (params.requestId !== undefined && this.pending.has(params.requestId as number)) {
+        const p = this.pending.get(params.requestId as number)!
+        this.pending.delete(params.requestId as number)
+        clearTimeout(p.timer)
+        const reason = params.reason ? `（${params.reason}）` : ''
+        p.reject(new Error(`请求已被客户端取消${reason}`))
+      }
+      // 未命中 pending：请求已完成或 id 空间不同——静默忽略（协议错误不致命）
+      return
+    }
+    // 其余通知（notifications/initialized 等）无需处理
   }
 
   /** 方法分发（MCP 核心子集） */
@@ -472,6 +508,24 @@ export class MCPServer {
   /** 当前日志级别阈值（v0.6.13，测试/调试用） */
   get currentLogLevel(): McpLogLevel {
     return this.logLevel
+  }
+
+  /**
+   * 服务器推送进度通知（v0.6.16 progress 通知协议）：发 notifications/progress（无 id，客户端无需响应）。
+   * - 只在**正在处理的请求带 _meta.progressToken** 时推送（活动令牌；客户端 callTool 等请求可携带）
+   * - 无活动令牌 / 服务器已关闭 / 写失败 → 静默忽略（不抛错）
+   * - 进度令牌原样回传（progressToken），客户端 onProgress 按它关联请求
+   * 注意：串行队列下同一时刻只有一个活动请求；HTTP transport 无推送通道（与 sendLog 传输差异一致，文档记录）。
+   */
+  notifyProgress(progress?: number, total?: number, message?: string): void {
+    if (this.closed || this.activeProgressToken === null) return
+    const params: McpProgressParams = {
+      progressToken: this.activeProgressToken,
+      ...(progress !== undefined ? { progress } : {}),
+      ...(total !== undefined ? { total } : {}),
+      ...(message !== undefined ? { message } : {}),
+    }
+    this.safeWrite({ jsonrpc: '2.0', method: 'notifications/progress', params })
   }
 
   /** 执行 flare 工具并包装为 MCP 调用结果；工具级失败 → isError（协议层不抛） */
