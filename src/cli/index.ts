@@ -756,12 +756,33 @@ export async function handleSlashCommand(
     return 'continue'
   }
 
+  // /memory 列出全部记忆；/memory <关键词> 全文搜索记忆（v0.6.25：与 /search 对称，FTS5 中文友好）
+  if (lower === '/memory' || lower.startsWith('/memory ')) {
+    const kw = cmd.replace(/^\/memory(?:\s+|$)/, '').trim()
+    const memories = kw
+      ? store.searchMemories(kw, 10)
+      : store.getAllMemories()
+    if (memories.length === 0) {
+      output(kw
+        ? chalk.gray(`\n未找到包含「${kw}」的记忆`)
+        : chalk.yellow('\n暂无记忆'))
+    } else {
+      output(kw
+        ? chalk.cyan(`\n🔍 记忆「${kw}」相关（${memories.length} 条）:`)
+        : chalk.cyan('\n📝 记忆列表:'))
+      memories.forEach(m => {
+        output(`  ${chalk.gray(`[${m.created_at}]`)} ${m.content.slice(0, 80)}`)
+      })
+    }
+    return 'continue'
+  }
+
   switch (lower) {
     case '/help':
       output(chalk.cyan('\n可用命令:'))
       output('  /help        - 显示帮助')
       output('  /exit        - 退出')
-      output('  /memory      - 查看记忆')
+      output('  /memory [关键词] - 查看记忆；带关键词全文搜索记忆（v0.6.25）')
       output('  /search <关键词> - 搜索历史对话（跨会话，v0.6.24）')
       output('  /remember    - 保存一条记忆（如: /remember 用户喜欢浅色主题）')
       output('  /forget      - 删除记忆（如: /forget 浅色主题，删除包含该关键词的记忆）')
@@ -810,17 +831,6 @@ export async function handleSlashCommand(
     case '/exit':
     case '/quit':
       return 'exit'
-    case '/memory':
-      const memories = store.getAllMemories()
-      if (memories.length === 0) {
-        output(chalk.yellow('\n暂无记忆'))
-      } else {
-        output(chalk.cyan('\n📝 记忆列表:'))
-        memories.forEach(m => {
-          output(`  ${chalk.gray(`[${m.created_at}]`)} ${m.content.slice(0, 80)}`)
-        })
-      }
-      break
     case '/sessions':
       const sessions = store.getRecentSessions()
       if (sessions.length === 0) {
