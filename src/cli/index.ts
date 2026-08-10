@@ -21,7 +21,7 @@ import { R, O, A, Y, D, createFlameState, updateFlame, renderFlameFrame, flameBr
 const require = createRequire(import.meta.url)
 const pkg = require('../../package.json') as { version: string }
 
-async function startInteractive() {
+async function startInteractive(opts: { contextSummarize?: boolean } = {}) {
   // 非 TTY（管道/重定向输入）下无法交互，友好提示而不是崩溃
   if (!process.stdin.isTTY) {
     console.error(chalk.red('❌ 交互模式需要在终端中运行（当前输入不是终端）。'))
@@ -63,6 +63,8 @@ async function startInteractive() {
     if (savedModel) cfg.llm = createProvider({ model: savedModel })
     // 确认门（v0.6.7）：始终显式传工具集（内置 + MCP）再包装——避免 Agent 回退内置工具绕过确认门
     cfg.tools = wrapConfirmTools([...tools, ...mcpTools], gate, CLI_CONFIRM_TOOLS)
+    // 上下文压缩摘要（v0.6.19）：--context-summarize 开启后裁剪把丢弃历史压缩成摘要（AI 保留话题连续性）
+    if (opts.contextSummarize) cfg.contextSummarize = true
     return new Agent(cfg)
   }
   let agent = makeAgent()
@@ -910,12 +912,13 @@ export function main() {
     .option('-q, --query <text>', '单次查询模式，直接提问')
     .option('-i, --image <path>', '附带图片路径（可与 -q 一起用；也可在问题中直接写路径）')
     .option('-m, --max-iterations <n>', '最大工具调用迭代次数（默认30，上限50）')
-    .action(async (options: { query?: string; image?: string; maxIterations?: string }) => {
+    .option('--context-summarize', '交互模式开启上下文压缩摘要（裁剪时把丢弃历史压缩成摘要消息，AI 保留话题连续性；v0.6.19）')
+    .action(async (options: { query?: string; image?: string; maxIterations?: string; contextSummarize?: boolean }) => {
       if (options.query) {
         const maxIter = options.maxIterations ? parseInt(options.maxIterations, 10) : undefined
         await runQuery(options.query, maxIter, options.image ? [options.image] : undefined)
       } else {
-        startInteractive()
+        startInteractive({ contextSummarize: options.contextSummarize })
       }
     })
 
