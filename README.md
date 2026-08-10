@@ -337,6 +337,23 @@ Interactive mode commands:
 
 > 中文条目 / Chinese entries · English summary for each version
 
+#### v0.6.21 (2026-08-11) — get_messages 分页：limit + recent 最近消息 / get_messages paging (limit + recent)
+- 📖 **server 协议 `get_messages` 增强（src/server.ts + memory/store.ts）**：可选 `limit`
+  （1~500 整数，默认 50，非法回 error 含用法提示不触发生成）+ `recent`（布尔）——`recent:true`
+  返回**最近** limit 条（宿主面板\"最近对话/当前上下文\"数据源；长会话下默认取最早 limit 条看不到
+  最新内容），响应带 `recent:true` 标记；缺省行为与旧版完全一致（最早 50 条，向后兼容零回归）
+- 🗃️ **`MemoryStore.getRecentMessages(sessionId, limit=50)`**（新方法）：`ORDER BY created_at DESC,
+  id DESC` 取最近 limit 条后反转回正序返回（同秒插入用自增 id 次级排序保证顺序确定）——与
+  getMessages（最早 limit 条）差异明确；空/不存在会话幂等返回 []
+- 📚 docs/host-protocol.md §5 参数表 + README Changelog + 版本号 0.6.21
+- 🧪 新增 7 项测试（store 单测 3：最近 limit 条正序返回 / 与 getMessages 取最早差异明确 / 缺省 50+
+  空会话幂等；server e2e 4：limit 合法路径不破坏 / recent 标记透传 / 非法 limit（0/-1/501/非数字）
+  全 error 含提示）；共 **542/542 全绿**（535 + 7），tsc 0 错误，零 agent.ts 改动
+- EN: `get_messages` now accepts `limit` (1–500, default 50, invalid → error) and `recent:true`
+  (return the **latest** N messages, `recent` echoed in response) via new `MemoryStore.getRecentMessages`
+  (desc by created_at + id, reversed to chronological) — hosts can load the most recent context instead
+  of the oldest 50. Backward compatible. 542/542 green, zero Agent.run changes.
+
 #### v0.6.20 (2026-08-11) — MCP 列表变化通知：tools/list_changed + resources/list_changed / MCP list-changed notifications (tools + resources)
 - 🔔 **服务器侧（src/mcp/server.ts）**：`MCPServer.notifyToolListChanged()` / `notifyResourceListChanged()`
   ——工具集/资源列表**动态变化**（运行中新增或移除）时推送 MCP 标准通知 `notifications/tools/list_changed`

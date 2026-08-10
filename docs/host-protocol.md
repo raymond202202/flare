@@ -74,10 +74,16 @@ flare server --profile <expert-profile-file> --storage <db-path> [--mcp <mcp-con
 ### 5. get_messages — 读取指定会话消息历史（只读，不生成）
 
 ```json
-{"type":"get_messages","sessionId":"s1"}
+{"type":"get_messages","sessionId":"s1"}                        // 最早 50 条（时间正序，默认，向后兼容）
+{"type":"get_messages","sessionId":"s1","limit":100}            // 条数上限（1~500，默认 50）
+{"type":"get_messages","sessionId":"s1","recent":true,"limit":20}  // 返回**最近** 20 条（时间正序）
 ```
 
 响应：`{"type":"messages","sessionId":"s1","messages":[...]}`——宿主展示历史对话、会话恢复时读取。
+
+- `recent:true`（v0.6.21）：返回**最近** limit 条（面板"最近对话/当前上下文"数据源；长会话下默认
+  取最早 limit 条看不到最新内容）；响应带 `"recent":true` 标记；缺省行为与旧版完全一致
+- `limit` 非法（非 1~500 整数）→ error 含用法提示（不触发生成）
 
 ### 6. ping — 宿主健康检查（进程存活探测）
 

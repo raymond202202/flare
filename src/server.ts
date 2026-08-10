@@ -590,14 +590,30 @@ export function startHostServer(opts: HostServerOptions) {
         }
         case 'get_messages': {
           // 宿主读取指定会话的消息历史（同 list_sessions 模式，只读不生成）
+          // v0.6.21：可选 limit（正整数 1~500，默认 50，向后兼容）+ recent（布尔）——
+          //   recent:true → 返回**最近** limit 条（宿主面板\"最近对话\"数据源；长会话下 getMessages
+          //   默认取最早 limit 条看不到最新内容）；缺省行为与旧版完全一致
           const sessionId = String(req.sessionId || 'default')
+          let limit = 50
+          if (req.limit !== undefined && req.limit !== null) {
+            limit = Number(req.limit)
+            if (!Number.isInteger(limit) || limit <= 0 || limit > 500) {
+              reply({ type: 'error', message: 'get_messages 的 limit 必须是 1~500 的整数' })
+              break
+            }
+          }
           const agent = getAgent(sessionId)
           // Agent 内部 sessionId 可能带 namespace 前缀，用它查询才一致
           const sid = (agent as any).config?.sessionId || sessionId
+          const recent = req.recent === true
           const messages = (typeof (agent as any).store?.getMessages === 'function')
-            ? await (agent as any).store.getMessages(sid)
+            ? (recent
+                ? (typeof (agent as any).store?.getRecentMessages === 'function'
+                    ? await (agent as any).store.getRecentMessages(sid, limit)
+                    : [])
+                : await (agent as any).store.getMessages(sid, limit))
             : []
-          reply({ type: 'messages', sessionId, messages })
+          reply({ type: 'messages', sessionId, messages, ...(recent ? { recent: true } : {}) })
           break
         }
         case 'get_usage': {

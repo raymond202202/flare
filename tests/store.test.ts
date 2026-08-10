@@ -64,6 +64,40 @@ describe('MemoryStore', () => {
     expect(messages[1].name).toBe('read_file')
   })
 
+  it('getRecentMessages：取最近 limit 条（时间正序返回，最后一条为最新消息）', () => {
+    const sessionId = store.createSession('最近消息测试')
+    for (let i = 1; i <= 5; i++) {
+      store.saveMessage(sessionId, { role: 'user', content: `消息${i}` })
+    }
+
+    const recent = store.getRecentMessages(sessionId, 3)
+    expect(recent).toHaveLength(3)
+    // 正序返回：最早的是第 3 条，最后一条是最新的第 5 条
+    expect(recent.map((m) => m.content)).toEqual(['消息3', '消息4', '消息5'])
+  })
+
+  it('getRecentMessages vs getMessages：同 limit 一个取最早一个取最近（差异明确）', () => {
+    const sessionId = store.createSession('差异测试')
+    for (let i = 1; i <= 4; i++) {
+      store.saveMessage(sessionId, { role: 'user', content: `消息${i}` })
+    }
+
+    const oldest = store.getMessages(sessionId, 2)
+    const recent = store.getRecentMessages(sessionId, 2)
+    expect(oldest.map((m) => m.content)).toEqual(['消息1', '消息2'])
+    expect(recent.map((m) => m.content)).toEqual(['消息3', '消息4'])
+  })
+
+  it('getRecentMessages：缺省 limit=50（少于 50 条全返回）；空会话幂等返回 []', () => {
+    const sessionId = store.createSession('默认limit测试')
+    store.saveMessage(sessionId, { role: 'user', content: '仅一条' })
+    const all = store.getRecentMessages(sessionId)
+    expect(all).toHaveLength(1)
+
+    const empty = store.getRecentMessages('s-ghost-recent')
+    expect(empty).toEqual([])
+  })
+
   it('FTS 触发器同步索引', () => {
     const sessionId = store.createSession('FTS测试')
     store.saveMessage(sessionId, { role: 'user', content: 'flutter 是一个神奇的框架' })
