@@ -247,6 +247,88 @@ describe('MCPClient roots（v0.6.12：客户端暴露 roots + 响应服务器请
   })
 })
 
+describe('MCPClient sampling（v0.6.14：响应服务器 sampling/createMessage 请求）', () => {
+  const MOCK_SAMPLING_SERVER = join(__dirname, 'fixtures', 'mcp-sampling-server.mjs')
+
+  function spawnSamplingMock(logFile: string, sampling?: (req: any) => any): MCPClient {
+    return new MCPClient({
+      command: process.execPath,
+      args: [MOCK_SAMPLING_SERVER],
+      env: { SAMPLE_LOG_FILE: logFile },
+      timeoutMs: 5000,
+      ...(sampling ? { sampling } : {}),
+    })
+  }
+
+  it('配置 sampling 回调 → initialize 声明 capabilities.sampling；服务器请求 → 回调执行并返回结果（协议闭环）', async () => {
+    const logFile = join(tmpdir(), `flare-sample-init-${Date.now()}-${Math.floor(Math.random() * 1e6)}.jsonl`)
+    const received: any[] = []
+    const client = spawnSamplingMock(logFile, (request: any) => {
+      received.push(request)
+      return { role: 'assistant', content: { type: 'text', text: '采样结果: ' + request.messages[0].content.text }, model: 'mock-llm' }
+    })
+    await client.initialize()
+    // mock 服务器收到 initialize：客户端声明 sampling 能力
+    const init = await waitForEvent(logFile, 'initialize')
+    expect(init.capabilities.sampling).toEqual({})
+    // mock 服务器主动发 sampling/createMessage（id 900）→ 客户端回调执行 → 响应回传
+    const ev = await waitForEvent(logFile, 'sampling-response')
+    expect(ev.response.id).toBe(900)
+    expect(ev.response.result).toEqual({ role: 'assistant', content: { type: 'text', text: '采样结果: 请解释 MCP sampling' }, model: 'mock-llm' })
+    // 回调收到的请求参数完整（含 systemPrompt/maxTokens）
+    expect(received).toHaveLength(1)
+    expect(received[0].messages[0].content.text).toBe('请解释 MCP sampling')
+    expect(received[0].systemPrompt).toBe('你是 MCP 协议专家。')
+    expect(received[0].maxTokens).toBe(50)
+    client.close()
+  })
+
+  it('未配置 sampling 回调 → initialize 不声明 sampling 能力（缺省兼容）', async () => {
+    const logFile = join(tmpdir(), `flare-sample-noinit-${Date.now()}-${Math.floor(Math.random() * 1e6)}.jsonl`)
+    const client = spawnSamplingMock(logFile)
+    await client.initialize()
+    const init = await waitForEvent(logFile, 'initialize')
+    expect(init.capabilities.sampling).toBeUndefined()
+    client.close()
+  })
+
+  it('服务器发 sampling/createMessage 但未配置回调 → 回 -32601（协议错误，不中断连接）', async () => {
+    const logFile = join(tmpdir(), `flare-sample-nocb-${Date.now()}-${Math.floor(Math.random() * 1e6)}.jsonl`)
+    const client = spawnSamplingMock(logFile)
+    await client.initialize()
+    const ev = await waitForEvent(logFile, 'sampling-response')
+    expect(ev.response.id).toBe(900)
+    expect(ev.response.error.code).toBe(-32601)
+    // 连接未断：后续请求照常工作
+    const res = await client.callTool('echo_text', { text: 'still-alive' })
+    expect(res.content[0]?.text).toBe('echo: still-alive')
+    client.close()
+  })
+
+  it('sampling 回调抛错 → 回 -32603（客户端不崩，服务器收到错误）', async () => {
+    const logFile = join(tmpdir(), `flare-sample-throw-${Date.now()}-${Math.floor(Math.random() * 1e6)}.jsonl`)
+    const client = spawnSamplingMock(logFile, () => { throw new Error('模型服务不可用') })
+    await client.initialize()
+    const ev = await waitForEvent(logFile, 'sampling-response')
+    expect(ev.response.id).toBe(900)
+    expect(ev.response.error.code).toBe(-32603)
+    expect(ev.response.error.message).toContain('模型服务不可用')
+    client.close()
+  })
+
+  it('sampling 回调异步（返回 Promise）也支持', async () => {
+    const logFile = join(tmpdir(), `flare-sample-async-${Date.now()}-${Math.floor(Math.random() * 1e6)}.jsonl`)
+    const client = spawnSamplingMock(logFile, async (request: any) => {
+      await new Promise((r) => setTimeout(r, 20))
+      return { role: 'assistant', content: { type: 'text', text: 'async:' + request.maxTokens } }
+    })
+    await client.initialize()
+    const ev = await waitForEvent(logFile, 'sampling-response')
+    expect(ev.response.result.content.text).toBe('async:50')
+    client.close()
+  })
+})
+
 describe('MCPClient logging（v0.6.13：setLogLevel + onLog 接收 notifications/message）', () => {
   it('setLogLevel：发送 logging/setLevel 请求并收到 {} 响应（不抛错）', async () => {
     const client = spawnMock()

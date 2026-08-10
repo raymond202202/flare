@@ -25,7 +25,7 @@
 import { createInterface, type Interface } from 'node:readline'
 import { createRequire } from 'node:module'
 import { tools, type Tool, type ToolResult } from '../tools/index.js'
-import type { McpCompletionResult, McpContentItem, McpLogLevel, McpLogMessage, McpPrompt, McpPromptMessage, McpResource, McpResourceContents, McpRoot, McpTool } from './types.js'
+import type { McpCompletionResult, McpContentItem, McpLogLevel, McpLogMessage, McpPrompt, McpPromptMessage, McpResource, McpResourceContents, McpRoot, McpSamplingRequest, McpSamplingResult, McpTool } from './types.js'
 import { MCP_PROTOCOL_VERSION } from './client.js'
 
 const require = createRequire(import.meta.url)
@@ -273,6 +273,47 @@ export class MCPServer {
         timer,
       })
       this.safeWrite({ jsonrpc: '2.0', id, method: 'roots/list', params: {} })
+    })
+  }
+
+  /**
+   * 请求客户端代为采样（v0.6.14 sampling 协议）：服务器主动向客户端发 sampling/createMessage 请求，
+   * 请客户端（宿主应用）调用其 LLM 能力生成内容——服务器自身无模型时的标准 MCP 做法。
+   * 等待客户端响应（带超时，默认 requestTimeoutMs）；客户端回 error / 超时 / 服务器已关闭 → reject；
+   * 响应缺 content 或非 text → reject（不悬挂，与 roots 容错 [] 不同——采样结果必须有内容才可用）。
+   */
+  requestSample(request: McpSamplingRequest, timeoutMs?: number): Promise<McpSamplingResult> {
+    if (this.closed) {
+      return Promise.reject(new Error('MCP 服务器已关闭'))
+    }
+    if (!request || !Array.isArray(request.messages) || request.messages.length === 0) {
+      return Promise.reject(new Error('MCP sampling/createMessage 需要 messages（至少一条消息）'))
+    }
+    const id = this.nextRequestId++
+    return new Promise<McpSamplingResult>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        this.pending.delete(id)
+        reject(new Error(`MCP sampling/createMessage 请求超时（客户端未响应）`))
+      }, timeoutMs || this.requestTimeoutMs)
+      this.pending.set(id, {
+        resolve: (result: any) => {
+          // 响应必须有可用的文本内容才 resolve；否则 reject（不悬挂、不吞错）
+          const content = result?.content
+          if (!content || content.type !== 'text' || typeof content.text !== 'string') {
+            reject(new Error('MCP sampling/createMessage 响应无效（缺 content.text）'))
+            return
+          }
+          resolve({
+            role: result.role === 'user' ? 'user' : 'assistant',
+            content: { type: 'text', text: content.text },
+            ...(typeof result.model === 'string' ? { model: result.model } : {}),
+            ...(typeof result.stopReason === 'string' ? { stopReason: result.stopReason } : {}),
+          } as McpSamplingResult)
+        },
+        reject,
+        timer,
+      })
+      this.safeWrite({ jsonrpc: '2.0', id, method: 'sampling/createMessage', params: request })
     })
   }
 

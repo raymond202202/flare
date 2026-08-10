@@ -171,3 +171,59 @@ export interface McpLogMessage {
   /** 日志内容（任意 JSON 可序列化值） */
   data: unknown
 }
+
+/** MCP sampling 消息内容（v0.6.14 sampling 协议：sampling/createMessage 请求 messages[] 元素，目前规范仅 text 类型） */
+export interface McpSamplingContent {
+  type: 'text'
+  text: string
+}
+
+/** MCP sampling 消息（v0.6.14 sampling 协议：sampling/createMessage 请求 messages[] 元素） */
+export interface McpSamplingMessage {
+  role: 'user' | 'assistant'
+  content: McpSamplingContent
+}
+
+/** MCP 模型偏好（v0.6.14 sampling 协议：sampling/createMessage 请求 modelPreferences，权重 0~1 可选） */
+export interface McpModelPreferences {
+  /** 模型名提示（如 'deepseek-chat' / 'qwen2.5'；可选 name） */
+  hints?: { name?: string }[]
+  /** 成本优先级（0~1，越大越优先省钱） */
+  costPriority?: number
+  /** 速度优先级（0~1，越大越优先快） */
+  speedPriority?: number
+  /** 智能优先级（0~1，越大越优先强） */
+  intelligencePriority?: number
+}
+
+/** MCP sampling/createMessage 请求（v0.6.14 sampling 协议）：服务器 → 客户端请求代为调用 LLM 生成内容 */
+export interface McpSamplingRequest {
+  /** 对话消息序列（至少一条；由服务器构造的提示上下文） */
+  messages: McpSamplingMessage[]
+  /** 模型偏好（客户端按自身配置选择模型；缺省由客户端决定） */
+  modelPreferences?: McpModelPreferences
+  /** 系统提示词（可选） */
+  systemPrompt?: string
+  /** 上下文包含策略：none 不含额外上下文 / thisServer 含本服务器上下文 / allServers 含全部服务器上下文 */
+  includeContext?: 'none' | 'thisServer' | 'allServers'
+  /** 采样温度（0~2；缺省客户端默认） */
+  temperature?: number
+  /** 最大输出 token 数（必填） */
+  maxTokens: number
+  /** 停止序列（可选） */
+  stopSequences?: string[]
+  /** 附加元数据（可选，透传给客户端） */
+  metadata?: Record<string, unknown>
+}
+
+/** MCP sampling/createMessage 响应（v0.6.14 sampling 协议）：客户端完成采样后返回给服务器 */
+export interface McpSamplingResult {
+  /** 采样结果的扮演角色（一般 assistant） */
+  role: 'user' | 'assistant'
+  /** 生成内容（text） */
+  content: McpSamplingContent
+  /** 实际使用的模型名（可选，客户端回显） */
+  model?: string
+  /** 停止原因（可选，如 'endTurn' / 'maxTokens'） */
+  stopReason?: string
+}

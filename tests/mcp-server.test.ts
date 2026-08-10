@@ -693,6 +693,134 @@ describe('MCPServer roots（v0.6.12：服务器→客户端主动请求）', () 
   })
 })
 
+describe('MCPServer sampling（v0.6.14：服务器→客户端请求 LLM 采样）', () => {
+  const SAMPLE_REQUEST = {
+    messages: [{ role: 'user' as const, content: { type: 'text' as const, text: '介绍一下 flare' } }],
+    maxTokens: 100,
+  }
+
+  it('requestSample：发起 sampling/createMessage 请求并解析客户端响应（含 role/content/model）', async () => {
+    const h = createHarness()
+    const p = h.server.requestSample(SAMPLE_REQUEST)
+    await h.flush()
+    // 服务器向客户端写出一条 sampling/createMessage 请求（带自增 id + 完整参数透传）
+    const req = h.last()
+    expect(req.jsonrpc).toBe('2.0')
+    expect(req.method).toBe('sampling/createMessage')
+    expect(req.id).toBeGreaterThan(0)
+    expect(req.params).toEqual(SAMPLE_REQUEST)
+    // 模拟客户端返回采样结果（含可选字段 model/stopReason）
+    h.send({
+      jsonrpc: '2.0',
+      id: req.id,
+      result: { role: 'assistant', content: { type: 'text', text: 'flare 是一个 AI Agent 引擎' }, model: 'deepseek-chat', stopReason: 'endTurn' },
+    })
+    const result = await p
+    expect(result.role).toBe('assistant')
+    expect(result.content).toEqual({ type: 'text', text: 'flare 是一个 AI Agent 引擎' })
+    expect(result.model).toBe('deepseek-chat')
+    expect(result.stopReason).toBe('endTurn')
+    h.server.close()
+  })
+
+  it('requestSample：客户端回 error → reject 带错误信息（协议错误不悬挂）', async () => {
+    const h = createHarness()
+    const p = h.server.requestSample(SAMPLE_REQUEST)
+    await h.flush()
+    const req = h.last()
+    h.send({ jsonrpc: '2.0', id: req.id, error: { code: -32601, message: 'Method not found: sampling/createMessage' } })
+    await expect(p).rejects.toThrow(/MCP 错误/)
+    h.server.close()
+  })
+
+  it('requestSample：客户端响应缺 content/非 text → reject（采样结果必须有内容，不悬挂）', async () => {
+    const h = createHarness()
+    const p = h.server.requestSample(SAMPLE_REQUEST)
+    await h.flush()
+    const req = h.last()
+    h.send({ jsonrpc: '2.0', id: req.id, result: { role: 'assistant', content: {} } })
+    await expect(p).rejects.toThrow(/content\.text/)
+    h.server.close()
+  })
+
+  it('requestSample：请求缺 messages/空数组 → 立即 reject（不发请求）', async () => {
+    const h = createHarness()
+    await expect(h.server.requestSample({} as any)).rejects.toThrow(/messages/)
+    await expect(h.server.requestSample({ messages: [] })).rejects.toThrow(/messages/)
+    expect(h.writes.length).toBe(0)
+    h.server.close()
+  })
+
+  it('requestSample：超时 reject（不悬挂），服务器随后仍正常处理请求', async () => {
+    const h = createHarness(undefined, undefined, undefined, 150) // 150ms 请求超时
+    const p = h.server.requestSample(SAMPLE_REQUEST)
+    await expect(p).rejects.toThrow(/超时/)
+    // 超时后服务器仍可用（ping 正常）
+    h.send({ jsonrpc: '2.0', id: 1, method: 'ping', params: {} })
+    await h.flush()
+    expect(h.last().result).toEqual({})
+    h.server.close()
+  })
+
+  it('requestSample：服务器已关闭 → reject', async () => {
+    const h = createHarness()
+    h.server.close()
+    await expect(h.server.requestSample(SAMPLE_REQUEST)).rejects.toThrow(/已关闭/)
+  })
+
+  it('sampling 真实互通 e2e：MCPServer requestSample ↔ MCPClient sampling 回调（真实子进程）', async () => {
+    // fixture 起真实 MCPServer 子进程，握手后主动 requestSample，结果写 SAMPLE_RESULT_FILE
+    const resultFile = join(tmpdir(), `flare-sample-e2e-${Date.now()}-${Math.floor(Math.random() * 1e6)}.json`)
+    const client = new MCPClient({
+      command: process.execPath,
+      args: [TSK_CLI, join(__dirname, 'fixtures', 'mcp-flare-server-sampling.ts')],
+      env: { SAMPLE_RESULT_FILE: resultFile },
+      timeoutMs: 8000,
+      // 宿主注入采样回调（真实 LLM 由宿主负责；测试用确定性回调模拟）
+      sampling: (request) => {
+        const lastMsg = request.messages[request.messages.length - 1]
+        return {
+          role: 'assistant',
+          content: { type: 'text', text: `已采样: ${lastMsg.content.text}（maxTokens=${request.maxTokens}）` },
+          model: 'test-model',
+        }
+      },
+    })
+    try {
+      await client.initialize()
+      // sampling 是客户端声明的能力（服务器 initialize 响应不含它——见 init.capabilities 只含服务器能力）
+      const res = await waitForFile(resultFile)
+      expect(res.ok).toBe(true)
+      expect(res.role).toBe('assistant')
+      expect(res.model).toBe('test-model')
+      expect(res.text).toContain('用一句话介绍 flare 引擎')
+      expect(res.text).toContain('maxTokens=100')
+    } finally {
+      client.close()
+    }
+  })
+
+  it('sampling e2e：客户端未配置 sampling 回调 → 服务器 requestSample 收到 -32601（不悬挂）', async () => {
+    // 不带 sampling 回调的 MCPClient 不声明能力，服务器仍会请求 → 客户端回 -32601 → 服务器 reject
+    const resultFile = join(tmpdir(), `flare-sample-noop-${Date.now()}-${Math.floor(Math.random() * 1e6)}.json`)
+    const client = new MCPClient({
+      command: process.execPath,
+      args: [TSK_CLI, join(__dirname, 'fixtures', 'mcp-flare-server-sampling.ts')],
+      env: { SAMPLE_RESULT_FILE: resultFile },
+      timeoutMs: 8000,
+    })
+    try {
+      const init = await client.initialize()
+      expect(init.capabilities).not.toHaveProperty('sampling') // 未配置回调 → 不声明
+      const res = await waitForFile(resultFile)
+      expect(res.ok).toBe(false)
+      expect(res.error).toContain('MCP 错误') // 服务器收到客户端 -32601 响应 → reject
+    } finally {
+      client.close()
+    }
+  })
+})
+
 describe('MCPServer logging（v0.6.13：logging/setLevel + sendLog 推送 notifications/message）', () => {
   it('initialize：缺省声明 capabilities.logging（协议标准能力）', async () => {
     const h = createHarness()

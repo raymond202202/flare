@@ -24,7 +24,7 @@
 import { spawn, type ChildProcess } from 'node:child_process'
 import { createInterface, type Interface } from 'node:readline'
 import { createRequire } from 'node:module'
-import type { McpTool, McpCallResult, McpPromptInfo, McpPromptResult, McpResourceInfo, McpResourceContents, McpCompletionResult, McpRoot, McpLogLevel, McpLogMessage } from './types.js'
+import type { McpTool, McpCallResult, McpPromptInfo, McpPromptResult, McpResourceInfo, McpResourceContents, McpCompletionResult, McpRoot, McpLogLevel, McpLogMessage, McpSamplingRequest, McpSamplingResult } from './types.js'
 
 const require = createRequire(import.meta.url)
 const pkg = require('../../package.json') as { version: string }
@@ -53,6 +53,10 @@ export interface MCPClientOptions {
   roots?: McpRoot[]
   /** 日志通知回调（v0.6.13）：服务器 sendLog 推送的 notifications/message 通知 → 按此回调转发；缺省忽略 */
   onLog?: (msg: McpLogMessage) => void
+  /** 采样回调（v0.6.14 sampling 协议）：服务器发 sampling/createMessage 请求（请客户端代为调用 LLM 生成内容）
+   *  时按此回调执行；配置后 initialize 声明 capabilities.sampling（未配置不声明，服务器不会请求采样）。
+   *  回调返回采样结果（支持异步）；回调抛错 → 回 -32603（客户端不崩） */
+  sampling?: (request: McpSamplingRequest) => McpSamplingResult | Promise<McpSamplingResult>
 }
 
 export class MCPClient {
@@ -67,11 +71,13 @@ export class MCPClient {
   private timeoutMs: number
   private readonly rootsList: McpRoot[]
   private readonly onLog?: (msg: McpLogMessage) => void
+  private readonly sampling?: (request: McpSamplingRequest) => McpSamplingResult | Promise<McpSamplingResult>
 
   constructor(opts: MCPClientOptions) {
     this.timeoutMs = opts.timeoutMs || DEFAULT_TIMEOUT_MS
     this.rootsList = opts.roots || []
     this.onLog = opts.onLog
+    this.sampling = opts.sampling
     this.child = spawn(opts.command, opts.args || [], {
       env: opts.env ? { ...process.env, ...opts.env } : process.env,
       stdio: ['pipe', 'pipe', 'pipe'],
@@ -139,14 +145,28 @@ export class MCPClient {
   }
 
   /**
-   * 处理服务器发来的请求（v0.6.12，roots 协议方向）：目前支持 roots/list（返回注入的 roots），
-   * 未知方法回 -32601（协议错误，不中断连接）。
+   * 处理服务器发来的请求（v0.6.12 起，roots 协议方向）：支持 roots/list（返回注入的 roots）、
+   * sampling/createMessage（v0.6.14：按采样回调执行），未知方法回 -32601（协议错误，不中断连接）。
    */
   private async handleServerRequest(msg: any): Promise<void> {
     if (this.closed) return
     let resp: any
     if (msg.method === 'roots/list') {
       resp = { jsonrpc: '2.0', id: msg.id, result: { roots: this.rootsList } }
+    } else if (msg.method === 'sampling/createMessage') {
+      // v0.6.14 sampling 协议：服务器请求客户端代为调用 LLM——按注入的采样回调执行
+      if (typeof this.sampling !== 'function') {
+        // 未配置采样回调：回 -32601（能力未声明，服务器不应请求；协议错误不中断连接）
+        resp = { jsonrpc: '2.0', id: msg.id, error: { code: -32601, message: `Method not found: ${msg.method}` } }
+      } else {
+        try {
+          const result = await this.sampling((msg.params || {}) as McpSamplingRequest)
+          resp = { jsonrpc: '2.0', id: msg.id, result }
+        } catch (e: any) {
+          // 采样回调异常 → -32603（客户端不崩，服务器收到错误）
+          resp = { jsonrpc: '2.0', id: msg.id, error: { code: -32603, message: `Sampling error: ${e?.message || String(e)}` } }
+        }
+      }
     } else {
       resp = { jsonrpc: '2.0', id: msg.id, error: { code: -32601, message: `Method not found: ${msg.method}` } }
     }
@@ -183,6 +203,8 @@ export class MCPClient {
       // v0.6.12：配置了 roots 时声明客户端 roots 能力（服务器可发 roots/list 查询；缺省不声明）
       capabilities: {
         ...(this.rootsList.length > 0 ? { roots: { listChanged: true } } : {}),
+        // v0.6.14：配置了 sampling 回调时声明客户端 sampling 能力（服务器可发 sampling/createMessage 请求；缺省不声明）
+        ...(typeof this.sampling === 'function' ? { sampling: {} } : {}),
       },
       clientInfo: { name: 'flare', version: pkg.version },
     })
