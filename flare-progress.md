@@ -5,9 +5,9 @@
 
 > **最新状态（v0.6.17）**：上下文自动裁剪落地——trimContextMessages 纯函数（system 保底 + 最近优先
 > + tool_calls 配对保护 + 极小预算保底最新一条）+ AgentConfig.maxContextMessages/maxContextTokens
-> （不配置零回归）+ server 协议 chat 透传 + CLI 默认参数；491/491 全绿。下一步候选：① 上下文压缩摘要
-> （裁剪掉的历史压缩成摘要而非直接丢弃，需评估）；② 其他安全的外围增强（MCP 协议特性已基本覆盖，
-> 可考虑 server 协议其他管理接口、CLI 交互增强、MCP 工具集完善等）。
+> （不配置零回归）+ server 协议 chat 透传 + CLI 默认参数 + session_usage 单会话用量；493/493 全绿。
+> 下一步候选：① 上下文压缩摘要（裁剪掉的历史压缩成摘要而非直接丢弃，需评估）；② 其他安全的外围增强
+> （MCP 协议特性已基本覆盖，可考虑 server 协议其他管理接口、CLI 交互增强、MCP 工具集完善等）。
 
 ### 2026-08-10 第十九轮实施（v0.6.17）——上下文自动裁剪：trimContext 支持 token 预算
 
@@ -38,6 +38,15 @@
   - **冒烟实测**：真实 server 子进程——version 0.6.17、chat 协议流完整（text→done）、
     非法 maxContextMessages（-1）→「必须是非负整数」error、非法 maxContextTokens（0）→
     「必须是正整数」error、context_status 正常响应，SMOKE PASS
+- **P35 server 协议 `session_usage`**（src/server.ts + memory/store.ts）：
+  - **`MemoryStore.getSessionUsage(sessionId)`**：按 session_id 过滤 usage_log 汇总单会话用量
+    （prompt/completion/totalTokens + callCount；无记录全 0 幂等不抛错）
+  - **协议请求** `session_usage {sessionId?}` → `{ type:'session_usage', sessionId, stats }`——
+    宿主面板"本会话用量/成本"数据源（区别于 get_usage 全局汇总；namespace 前缀处理与
+    get_messages 一致）；缺省 default 会话；只读不触发生成
+  - docs/host-protocol.md §9.1 + 请求类型列表 + README Changelog 并入 v0.6.17 条目
+  - **493/493 全绿**（491 + 2 新增：store 单会话过滤+无记录幂等 / 协议响应结构+缺省 default），
+    tsc 0 错误，零 agent.ts 改动
 - **下一步候选**：① 上下文压缩摘要（裁剪掉的历史压缩成摘要而非直接丢弃，需评估）；
   ② 其他安全的外围增强（MCP 协议特性已基本覆盖，可考虑 server 协议其他管理接口、CLI 交互增强、
   MCP 工具集完善等）
