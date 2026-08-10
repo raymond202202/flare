@@ -3,14 +3,56 @@
 > 目标：flare 是 Pulse/StorySpire 依赖的 AI Agent 引擎（TS）。任何改动必须安全（tsc 0 错 + 测试全绿才 commit）。
 > 铁律：禁止 push；禁止修改 src/core/agent.ts 的 Agent.run 核心循环。
 
-> **最新状态（v0.6.25）**：三小步完成——① MCP 列表变化通知**第三块对称补齐**
-> `notifications/prompts/list_changed`（v0.6.20 只做了 tools/resources，漏了 MCP 标准的 prompts 通知）：
-> `MCPServer.notifyPromptListChanged()` + `MCPClient.onPromptsChanged` 回调，真实子进程 e2e 三通知闭环
-> （各收到 2 次连接不断）；② CLI `/memory <关键词>` 搜索持久记忆（复用 searchMemories FTS5，与 /search
-> 对称；无关键词列出全部零回归）；③ server 协议 `get_memories` 增强（`kind` 按记忆类型过滤 + limit
-> 严格校验 1~100，对齐 get_messages 风格）；570/570 全绿。下一步候选：
+> **最新状态（v0.6.26）**：**McpManager 资源桥接**——连接外部 MCP 服务器时除桥接工具外同时拉取
+> `resources/list` + `resources/templates/list`（此前只桥接工具、资源完全没消费，方向 2「resources
+> 真实暴露打磨」的客户端侧缺口）；新增 `getAllResources()` / `getAllResourceTemplates()` /
+> `readResource(name, uri)`（带来源 server 名，未连接 reject 清晰错误），`status()` 已连接时带
+> `resourceCount`/`templateCount`（可选字段向后兼容），disconnect 随连接清理；server 协议新增
+> `mcp_resources` 请求（宿主查看外部 MCP 资源/模板清单，按服务器分组，只读不触发生成）+ CLI `/mcp`
+> 状态行显示 `（N 个工具 · M 资源 · K 模板）`；577/577 全绿（570 + 7）。下一步候选：
 > ① 其他安全的外围增强（server 协议其他管理接口、CLI 交互增强、MCP 工具集完善等）；
-> ② 摘要内容升级为 LLM 生成（语义级压缩，需评估 run 循环外异步）。
+> ② 摘要内容升级为 LLM 生成（语义级压缩，需评估 run 循环外异步）；
+> ③ 资源桥接的宿主接线打磨（如外部 MCP 资源透传到 flare 自身 MCPServer 的 resources，需评估循环）。
+
+### 2026-08-11 第二十六轮实施（v0.6.26）——McpManager 资源桥接 + server 协议 mcp_resources
+
+- **P51 McpManager 资源桥接**（src/mcp/manager.ts + types.ts + index.ts + 测试，commit `1abd6ae`）：
+  - **客户端侧资源消费缺口**：flare 连接外部 MCP 服务器时只桥接工具（createMcpTools），外部服务器
+    暴露的 **resources 完全没消费**——方向 2「resources 真实暴露打磨」的天然切入点；本轮补齐：
+    连接时 `Promise.all` 拉取 `resources/list` + `resources/templates/list`
+  - **容错设计**：服务器无 resources 能力/请求失败 → 静默降级为空数组（safeListResources /
+    safeListResourceTemplates 辅助），**不阻塞连接**（与启动时后台连接失败的容错风格一致）——工具桥接
+    失败仍整体失败（工具是硬依赖），资源是展示性数据可降级
+  - **新 API**：`getAllResources()` / `getAllResourceTemplates()` → 带来源（`server` 名）的资源/
+    模板并集（`McpResourceRef` / `McpResourceTemplateRef` 类型库导出）；`readResource(name, uri)`
+    代理调对应服务器 `resources/read`（未连接服务器 reject 清晰错误「MCP 服务器未连接: <name>」）；
+    `status()` 已连接时带 `resourceCount` / `templateCount`（可选字段，旧断言零回归）；
+    `disconnect` 资源/模板随连接一并清理
+  - **接口抽象**：`McpResourceClient` 最小客户端接口（listResources/listResourceTemplates/readResource）——
+    stdio MCPClient 与 HTTP MCPHttpClient 都满足，传输无关（与 v0.6.6 工具桥同模式）
+  - **server 协议 `mcp_resources`**（src/server.ts）：`{type:'mcp_resources'}` →
+    `{type:'mcp_resources', servers:[{name, connected, toolCount, resources?, templates?, error?}]}`——
+    宿主面板「外部 MCP 资源」数据源（展示/透传外部服务器暴露的资源与动态资源形态）；已连接服务器带
+    resources/templates（每项含来源 server），未连接不带；只读不触发生成、不创建会话；等待启动时后台
+    连接落定（与 mcp_status 一致）；docs/host-protocol.md §16.1 新章节 + 请求类型列表
+  - **CLI `/mcp` 状态行增强**：已连接服务器显示 `（N 个工具 · M 资源 · K 模板）`（有资源/模板才显示
+    对应段，无资源服务器输出与旧版一致）
+  - docs/mcp.md 交互模式 + 编程方式章节更新（资源桥接示例）+ README Changelog + 版本号 0.6.26
+  - **577/577 全绿**（570 + 7 新增：McpManager 5——connect 资源桥接（mock 服务器 2 资源 + 1 模板 +
+    status resourceCount 2/templateCount 1）/ readResource 代理读取（memory://preferences 内容断言）+
+    未知 uri reject + 未连接服务器 reject / disconnect 随连接清理（getAllResources 空 + status 不带
+    资源数）/ 无 resources 能力服务器空数组 + status 0 不阻塞连接 / HTTP transport 资源拉取 + 读取闭环；
+    server 协议 e2e 2——`mcp_resources` 真实子进程返回 mock 服务器资源/模板清单（server 来源 + 字段断言）、
+    `mcp_status` 带 resourceCount/templateCount），tsc 0 错误，零 agent.ts 改动
+  - **冒烟实测**：真实 dist server 子进程带 `--mcp` 连接 mock fixture——version 0.6.26、
+    mcp_resources 返回 mock 服务器 2 资源（memory://preferences 用户偏好 + file:///etc/hosts hosts 文件）
+    + 1 模板（memory://{noteId} 记忆条目，均含 server:'mock' 来源）、mcp_status
+    `{toolCount:3, resourceCount:2, templateCount:1}`，SMOKE PASS
+- **下一步候选**：① 其他安全的外围增强（server 协议其他管理接口、CLI 交互增强、MCP 工具集完善等）；
+  ② 摘要内容升级为 LLM 生成（语义级压缩，需评估 run 循环外异步）；
+  ③ 资源桥接的宿主接线打磨（外部 MCP 资源透传 flare 自身 MCPServer 的 resources，需评估嵌套循环风险）
+
+---
 
 ### 2026-08-11 第二十五轮实施（v0.6.25）——MCP 列表变化通知补齐 prompts/list_changed + CLI /memory 搜索 + get_memories 增强
 
