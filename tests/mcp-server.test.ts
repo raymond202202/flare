@@ -288,11 +288,11 @@ describe('MCPServer（stdio NDJSON JSON-RPC，零依赖）', () => {
     h.server.close()
   })
 
-  it('initialize：配置了 resources 时 capabilities 声明 resources 能力（缺省不声明）', async () => {
+  it('initialize：配置了 resources 时 capabilities 声明 resources 能力且含 subscribe（v0.6.15；缺省不声明）', async () => {
     const withRes = createHarness(undefined, [{ uri: 'memory://preferences', name: '用户偏好', read: () => 'x' }])
     withRes.send({ jsonrpc: '2.0', id: 1, method: 'initialize', params: {} })
     await withRes.flush()
-    expect(withRes.last().result.capabilities).toHaveProperty('resources')
+    expect(withRes.last().result.capabilities.resources).toEqual({ subscribe: true })
     withRes.server.close()
 
     const withoutRes = createHarness()
@@ -300,6 +300,92 @@ describe('MCPServer（stdio NDJSON JSON-RPC，零依赖）', () => {
     await withoutRes.flush()
     expect(withoutRes.last().result.capabilities).not.toHaveProperty('resources')
     withoutRes.server.close()
+  })
+
+  it('resources/subscribe：成功订阅（返回 {}，subscribedResources 记录该 uri）', async () => {
+    const h = createHarness(undefined, [{ uri: 'memory://preferences', name: '用户偏好', read: () => 'x' }])
+    h.send({ jsonrpc: '2.0', id: 1, method: 'resources/subscribe', params: { uri: 'memory://preferences' } })
+    await h.flush()
+    expect(h.last().result).toEqual({})
+    expect(h.server.subscribedResources).toEqual(['memory://preferences'])
+    h.server.close()
+  })
+
+  it('resources/subscribe：未知 uri → -32602 协议错误（不订阅）', async () => {
+    const h = createHarness(undefined, [{ uri: 'memory://preferences', name: '用户偏好', read: () => 'x' }])
+    h.send({ jsonrpc: '2.0', id: 1, method: 'resources/subscribe', params: { uri: 'memory://nonexist' } })
+    await h.flush()
+    expect(h.last().error.code).toBe(-32602)
+    expect(h.last().error.message).toContain('Unknown resource')
+    expect(h.server.subscribedResources).toEqual([])
+    h.server.close()
+  })
+
+  it('resources/subscribe：缺 uri → -32602；重复订阅幂等（集合不重复）', async () => {
+    const h = createHarness(undefined, [{ uri: 'memory://preferences', name: '用户偏好', read: () => 'x' }])
+    h.send({ jsonrpc: '2.0', id: 1, method: 'resources/subscribe', params: {} })
+    await h.flush()
+    expect(h.last().error.code).toBe(-32602)
+    h.send({ jsonrpc: '2.0', id: 2, method: 'resources/subscribe', params: { uri: 'memory://preferences' } })
+    h.send({ jsonrpc: '2.0', id: 3, method: 'resources/subscribe', params: { uri: 'memory://preferences' } })
+    await h.flush()
+    expect(h.server.subscribedResources).toEqual(['memory://preferences'])
+    h.server.close()
+  })
+
+  it('resources/unsubscribe：成功退订（移除订阅）；未订阅（但存在）的 uri 幂等成功', async () => {
+    const h = createHarness(undefined, [{ uri: 'memory://preferences', name: '用户偏好', read: () => 'x' }])
+    h.send({ jsonrpc: '2.0', id: 1, method: 'resources/subscribe', params: { uri: 'memory://preferences' } })
+    await h.flush()
+    expect(h.server.subscribedResources).toEqual(['memory://preferences'])
+    h.send({ jsonrpc: '2.0', id: 2, method: 'resources/unsubscribe', params: { uri: 'memory://preferences' } })
+    await h.flush()
+    expect(h.last().result).toEqual({})
+    expect(h.server.subscribedResources).toEqual([])
+    // 未订阅的 uri 退订幂等成功（无副作用）
+    h.send({ jsonrpc: '2.0', id: 3, method: 'resources/unsubscribe', params: { uri: 'memory://preferences' } })
+    await h.flush()
+    expect(h.last().result).toEqual({})
+    h.server.close()
+  })
+
+  it('resources/unsubscribe：未知 uri → -32602 协议错误', async () => {
+    const h = createHarness(undefined, [{ uri: 'memory://preferences', name: '用户偏好', read: () => 'x' }])
+    h.send({ jsonrpc: '2.0', id: 1, method: 'resources/unsubscribe', params: { uri: 'memory://nonexist' } })
+    await h.flush()
+    expect(h.last().error.code).toBe(-32602)
+    h.server.close()
+  })
+
+  it('notifyResourceUpdated：已订阅的资源 → 推送 notifications/resources/updated（params.uri，无 id）', async () => {
+    const h = createHarness(undefined, [{ uri: 'memory://preferences', name: '用户偏好', read: () => 'x' }])
+    h.send({ jsonrpc: '2.0', id: 1, method: 'resources/subscribe', params: { uri: 'memory://preferences' } })
+    await h.flush()
+    h.server.notifyResourceUpdated('memory://preferences')
+    await h.flush()
+    const notify = h.responses().filter((r) => r.method === 'notifications/resources/updated')
+    expect(notify).toHaveLength(1)
+    expect(notify[0].id).toBeUndefined()
+    expect(notify[0].params).toEqual({ uri: 'memory://preferences' })
+    h.server.close()
+  })
+
+  it('notifyResourceUpdated：未订阅 / 未知资源 → 不推送（静默）', async () => {
+    const h = createHarness(undefined, [{ uri: 'memory://preferences', name: '用户偏好', read: () => 'x' }])
+    h.server.notifyResourceUpdated('memory://preferences') // 未订阅
+    h.server.notifyResourceUpdated('memory://nonexist') // 未知
+    await h.flush()
+    expect(h.responses().filter((r) => r.method === 'notifications/resources/updated')).toHaveLength(0)
+    h.server.close()
+  })
+
+  it('notifyResourceUpdated：服务器已关闭 → 静默忽略（不抛错）', async () => {
+    const h = createHarness(undefined, [{ uri: 'memory://preferences', name: '用户偏好', read: () => 'x' }])
+    h.send({ jsonrpc: '2.0', id: 1, method: 'resources/subscribe', params: { uri: 'memory://preferences' } })
+    await h.flush()
+    h.server.close()
+    expect(() => h.server.notifyResourceUpdated('memory://preferences')).not.toThrow()
+    expect(h.writes.filter((w) => w.includes('notifications/resources/updated'))).toHaveLength(0)
   })
 
   it('prompts/list：注入的提示词真实暴露（name/description/arguments 元数据）', async () => {
@@ -815,6 +901,36 @@ describe('MCPServer sampling（v0.6.14：服务器→客户端请求 LLM 采样�
       const res = await waitForFile(resultFile)
       expect(res.ok).toBe(false)
       expect(res.error).toContain('MCP 错误') // 服务器收到客户端 -32601 响应 → reject
+    } finally {
+      client.close()
+    }
+  })
+
+  it('resources 订阅真实互通 e2e：subscribe → bump 触发 notifyResourceUpdated → onResourceUpdated 收到；unsubscribe 后不再收到', async () => {
+    const received: string[] = []
+    const client = new MCPClient({
+      command: process.execPath,
+      args: [TSK_CLI, join(__dirname, 'fixtures', 'mcp-flare-server-resource-sub.ts')],
+      timeoutMs: 8000,
+      onResourceUpdated: (uri) => received.push(uri),
+    })
+    try {
+      const init = await client.initialize()
+      expect(init.capabilities.resources).toEqual({ subscribe: true }) // 服务器声明订阅能力
+      // 未订阅时 bump（服务器 notifyResourceUpdated）不发通知
+      await client.callTool('bump', {})
+      await new Promise((r) => setTimeout(r, 200))
+      expect(received).toHaveLength(0)
+      // 订阅后 bump → 客户端 onResourceUpdated 收到 uri
+      await client.subscribeResource('memory://note')
+      await client.callTool('bump', {})
+      await new Promise((r) => setTimeout(r, 300))
+      expect(received).toEqual(['memory://note'])
+      // 退订后 bump → 不再收到（通知只推给已订阅客户端）
+      await client.unsubscribeResource('memory://note')
+      await client.callTool('bump', {})
+      await new Promise((r) => setTimeout(r, 300))
+      expect(received).toEqual(['memory://note'])
     } finally {
       client.close()
     }

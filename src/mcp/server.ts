@@ -8,7 +8,8 @@
  * 传输：JSON-RPC 2.0 over stdio——每行一个 JSON（NDJSON），与 MCPClient 完全互通。
  * 覆盖 MCP 核心子集（工具互通所需）：
  *   initialize / notifications/initialized / tools/list / tools/call / ping
- *   （v0.6.1 resources、v0.6.2 prompts、v0.6.11 completion/complete、v0.6.13 logging/setLevel）
+ *   （v0.6.1 resources、v0.6.2 prompts、v0.6.11 completion/complete、v0.6.13 logging/setLevel、
+ *     v0.6.15 resources/subscribe + unsubscribe + notifications/resources/updated）
  *
  * 设计：
  * - 零依赖：不引入 @modelcontextprotocol/sdk，直接手写 NDJSON 行协议
@@ -92,6 +93,9 @@ export class MCPServer {
   private readonly loggingEnabled: boolean
   /** 当前日志级别阈值（v0.6.13：客户端 logging/setLevel 设置，未设置默认 info） */
   private logLevel: McpLogLevel = MCP_DEFAULT_LOG_LEVEL
+  /** 客户端订阅的资源 uri（v0.6.15 resources 订阅协议：resources/subscribe 加入，unsubscribe 移除；
+   *  notifyResourceUpdated 只向已订阅的 uri 推送 notifications/resources/updated） */
+  private readonly subscribedUris = new Set<string>()
 
   constructor(opts: MCPServerOptions = {}) {
     this.toolList = opts.tools ?? tools
@@ -196,7 +200,8 @@ export class MCPServer {
           protocolVersion: MCP_PROTOCOL_VERSION,
           capabilities: {
             tools: {},
-            ...(this.resourceList.length > 0 ? { resources: {} } : {}),
+            // v0.6.1 resources 暴露；v0.6.15 起声明 subscribe——支持 resources/subscribe + notifications/resources/updated
+            ...(this.resourceList.length > 0 ? { resources: { subscribe: true } } : {}),
             ...(this.promptList.length > 0 ? { prompts: {} } : {}),
             // v0.6.11：至少一个 prompt 提供补全回调时声明 completions 能力（completion/complete）
             ...(this.hasCompletions ? { completions: {} } : {}),
@@ -221,6 +226,12 @@ export class MCPServer {
         }
       case 'resources/read':
         return this.readResource(params)
+      case 'resources/subscribe':
+        // v0.6.15 资源订阅：客户端订阅后，资源变化时服务器经 notifyResourceUpdated 推送更新通知
+        return this.subscribeResource(params)
+      case 'resources/unsubscribe':
+        // v0.6.15 资源退订：停止接收该资源的更新通知
+        return this.unsubscribeResource(params)
       case 'prompts/list':
         // v0.6.2：真实暴露注入的提示词模板（元数据；渲染经 prompts/get）
         return {
@@ -332,6 +343,45 @@ export class MCPServer {
         text: String(text),
       }],
     }
+  }
+
+  /** 订阅资源（resources/subscribe，v0.6.15）：客户端订阅后，资源变化时经 notifyResourceUpdated 推送更新通知。
+   *  未知/缺 uri → -32602；重复订阅幂等（集合不重复）；返回 {} */
+  private subscribeResource(params: any): {} {
+    const uri = String(params?.uri || '')
+    if (!this.resourceList.some(r => r.uri === uri)) {
+      throw Object.assign(new Error(`Unknown resource: ${uri}`), { code: -32602 })
+    }
+    this.subscribedUris.add(uri)
+    return {}
+  }
+
+  /** 退订资源（resources/unsubscribe，v0.6.15）：停止接收该资源的更新通知。
+   *  未知/缺 uri → -32602；未订阅（但存在）的 uri 幂等成功（无副作用）；返回 {} */
+  private unsubscribeResource(params: any): {} {
+    const uri = String(params?.uri || '')
+    if (!this.resourceList.some(r => r.uri === uri)) {
+      throw Object.assign(new Error(`Unknown resource: ${uri}`), { code: -32602 })
+    }
+    this.subscribedUris.delete(uri)
+    return {}
+  }
+
+  /** 当前被订阅的资源 uri 列表（v0.6.15，测试/调试用） */
+  get subscribedResources(): string[] {
+    return [...this.subscribedUris]
+  }
+
+  /**
+   * 服务器推送资源更新通知（v0.6.15 resources 订阅协议）：发 notifications/resources/updated（无 id，客户端无需响应）。
+   * 仅向**已订阅**该 uri 的客户端推送（无订阅不发）；资源未知 / 未订阅 / 服务器已关闭 / 写失败 → 静默忽略（不抛错）。
+   * 注意传输差异：stdio（MCPServer）有服务器→客户端通道可推送；HTTP transport（startMcpHttpServer）
+   * 是一请求一响应、无推送通道——客户端收不到该通知（HTTP 客户端不声明订阅能力，文档如实记录）。
+   */
+  notifyResourceUpdated(uri: string): void {
+    if (this.closed) return
+    if (!this.subscribedUris.has(uri)) return
+    this.safeWrite({ jsonrpc: '2.0', method: 'notifications/resources/updated', params: { uri } })
   }
 
   /** 渲染提示词（prompts/get）：未知 name → -32602；render() 异常 → -32603（服务器不崩） */

@@ -206,6 +206,17 @@ export class MCPHttpClient {
     return Array.isArray(res?.contents) ? (res.contents as McpResourceContents[]) : []
   }
 
+  /** 订阅资源（resources/subscribe，v0.6.15）：一请求一响应可正常订阅；但 HTTP transport 无 SSE 长连接，
+   *  服务器 notifyResourceUpdated 的更新通知收不到（与 roots/logging 推送的传输差异一致，文档如实记录） */
+  async subscribeResource(uri: string): Promise<void> {
+    await this.request('resources/subscribe', { uri })
+  }
+
+  /** 退订资源（resources/unsubscribe，v0.6.15） */
+  async unsubscribeResource(uri: string): Promise<void> {
+    await this.request('resources/unsubscribe', { uri })
+  }
+
   /** 设置服务器日志级别阈值（logging/setLevel，v0.6.13）：HTTP transport 一请求一响应，可设置但收不到日志推送（无 SSE 长连接） */
   async setLogLevel(level: McpLogLevel): Promise<void> {
     await this.request('logging/setLevel', { level })

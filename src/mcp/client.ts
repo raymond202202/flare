@@ -53,6 +53,9 @@ export interface MCPClientOptions {
   roots?: McpRoot[]
   /** 日志通知回调（v0.6.13）：服务器 sendLog 推送的 notifications/message 通知 → 按此回调转发；缺省忽略 */
   onLog?: (msg: McpLogMessage) => void
+  /** 资源更新通知回调（v0.6.15 resources 订阅协议）：服务器 notifyResourceUpdated 推送的
+   *  notifications/resources/updated 通知 → 按此回调转发 uri（已 subscribeResource 的资源）；缺省忽略 */
+  onResourceUpdated?: (uri: string) => void
   /** 采样回调（v0.6.14 sampling 协议）：服务器发 sampling/createMessage 请求（请客户端代为调用 LLM 生成内容）
    *  时按此回调执行；配置后 initialize 声明 capabilities.sampling（未配置不声明，服务器不会请求采样）。
    *  回调返回采样结果（支持异步）；回调抛错 → 回 -32603（客户端不崩） */
@@ -71,12 +74,14 @@ export class MCPClient {
   private timeoutMs: number
   private readonly rootsList: McpRoot[]
   private readonly onLog?: (msg: McpLogMessage) => void
+  private readonly onResourceUpdated?: (uri: string) => void
   private readonly sampling?: (request: McpSamplingRequest) => McpSamplingResult | Promise<McpSamplingResult>
 
   constructor(opts: MCPClientOptions) {
     this.timeoutMs = opts.timeoutMs || DEFAULT_TIMEOUT_MS
     this.rootsList = opts.roots || []
     this.onLog = opts.onLog
+    this.onResourceUpdated = opts.onResourceUpdated
     this.sampling = opts.sampling
     this.child = spawn(opts.command, opts.args || [], {
       env: opts.env ? { ...process.env, ...opts.env } : process.env,
@@ -133,15 +138,23 @@ export class MCPClient {
     }
   }
 
-  /** 处理服务器通知（v0.6.13）：notifications/message → onLog 回调转发（缺省忽略；通知无需响应） */
+  /** 处理服务器通知（v0.6.13）：notifications/message → onLog 回调转发；v0.6.15：notifications/resources/updated
+   *  → onResourceUpdated 回调转发（已订阅资源更新）。缺省忽略对应回调；通知无需响应，不干扰后续请求 */
   private handleNotification(msg: any): void {
-    if (msg.method !== 'notifications/message' || typeof this.onLog !== 'function') return
-    const p = msg.params || {}
-    this.onLog({
-      level: p.level as McpLogLevel,
-      ...(p.logger !== undefined ? { logger: String(p.logger) } : {}),
-      data: p.data,
-    })
+    if (msg.method === 'notifications/message') {
+      if (typeof this.onLog !== 'function') return
+      const p = msg.params || {}
+      this.onLog({
+        level: p.level as McpLogLevel,
+        ...(p.logger !== undefined ? { logger: String(p.logger) } : {}),
+        data: p.data,
+      })
+      return
+    }
+    if (msg.method === 'notifications/resources/updated') {
+      if (typeof this.onResourceUpdated !== 'function') return
+      this.onResourceUpdated(String((msg.params || {}).uri ?? ''))
+    }
   }
 
   /**
@@ -270,6 +283,17 @@ export class MCPClient {
   async readResource(uri: string): Promise<McpResourceContents[]> {
     const res = await this.request<any>('resources/read', { uri })
     return Array.isArray(res?.contents) ? (res.contents as McpResourceContents[]) : []
+  }
+
+  /** 订阅资源（resources/subscribe，v0.6.15）：订阅后服务器 notifyResourceUpdated 推送更新通知 → onResourceUpdated 回调；
+   *  未知 uri 协议错误则 reject（与 readResource 一致） */
+  async subscribeResource(uri: string): Promise<void> {
+    await this.request('resources/subscribe', { uri })
+  }
+
+  /** 退订资源（resources/unsubscribe，v0.6.15）：停止接收该资源的更新通知；未知 uri 协议错误则 reject */
+  async unsubscribeResource(uri: string): Promise<void> {
+    await this.request('resources/unsubscribe', { uri })
   }
 
   /** 服务器名称（initialize 后可用） */

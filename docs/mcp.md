@@ -116,7 +116,8 @@ flare 不只可以连接外部 MCP 服务器（客户端），也可以**把自�
 
 - 实现：`src/mcp/server.ts`（MCPServer，零依赖 NDJSON JSON-RPC，与 MCPClient 完全互通）
 - 覆盖 MCP 核心子集：`initialize` / `notifications/initialized` / `tools/list` / `tools/call` / `resources/list` /
-  `resources/read` / `prompts/list` / `prompts/get` / `ping`
+  `resources/read` / `resources/subscribe` / `resources/unsubscribe` / `prompts/list` / `prompts/get` / `ping`
+  （v0.6.15 起 resources 订阅；能力声明 `resources: { subscribe: true }`）
 - 请求按到达顺序串行响应（慢工具不导致响应乱序）；工具失败 → `isError` 标记（协议层不中断）
 
 ```ts
@@ -159,6 +160,35 @@ server.start()
 - `resources/read`：调 `read()` 返回 `{ contents: [{ uri, mimeType?, text }] }`；
   未知 uri → `-32602`；`read()` 抛错 → `-32603`（服务器不崩）
 - 不注入资源时行为不变：`resources/list` 返回空列表（v0.5.9 兼容）
+
+#### 资源订阅（v0.6.15）：resources/subscribe + notifications/resources/updated
+
+客户端可**订阅**资源——订阅后服务器资源变化时推送更新通知（如记忆被修改、状态快照刷新），
+客户端无需轮询 `resources/read`：
+
+```ts
+import { MCPClient } from 'flare-agent'
+
+const client = new MCPClient({
+  command: 'npx', args: ['-y', '@modelcontextprotocol/server-filesystem', '/tmp'],
+  // 收到 resources/updated 通知 → 回调转发被更新的资源 uri（未配置忽略）
+  onResourceUpdated: (uri) => console.log('资源已更新:', uri),
+})
+await client.initialize()
+await client.subscribeResource('memory://preferences')   // 订阅（未知 uri 协议错误 reject）
+// …服务器侧 notifyResourceUpdated('memory://preferences') → 客户端收到 uri…
+await client.unsubscribeResource('memory://preferences') // 退订（停止接收该资源更新）
+```
+
+- **服务器侧**：`MCPServer` 处理 `resources/subscribe` / `resources/unsubscribe`（未知/缺 uri → `-32602`，
+  重复订阅幂等、未订阅退订幂等）；`notifyResourceUpdated(uri)` 推送 `notifications/resources/updated`——
+  **仅向已订阅该 uri 的客户端推送**（未订阅/未知资源/已关闭/写失败 → 静默不抛错）；
+  注入资源后 `capabilities.resources` 声明 `{ subscribe: true }`（v0.6.15 起，此前为 `{}`）
+- **客户端侧**：`MCPClient.subscribeResource(uri)` / `unsubscribeResource(uri)` + `onResourceUpdated` 回调
+  （stdio 客户端可接收推送；通知与日志通知分流互不干扰）
+- **传输差异（文档记录）**：HTTP transport 共用 `handleMessage` 核心，subscribe/unsubscribe 一请求一响应正常；
+  但无 SSE 长连接——服务器 `notifyResourceUpdated` 推送客户端**收不到**（MCPHttpClient 可订阅但无更新回调，
+  与 roots/logging 推送差异一致，如实记录不假装支持）
 
 ### 提示词暴露（v0.6.2）：prompts/list 真实数据 + prompts/get 渲染
 

@@ -144,8 +144,8 @@ describe('MCPHttpClient（HTTP transport 消费端，与 stdio MCPClient 对称�
     const client = new MCPHttpClient({ url: h.url })
     clients.push(client)
     const info = await client.initialize()
-    // 注入 resources → capabilities 声明 resources
-    expect(info.capabilities.resources).toBeTruthy()
+    // 注入 resources → capabilities 声明 resources（含 subscribe）
+    expect(info.capabilities.resources).toEqual({ subscribe: true })
     const resources = await client.listResources()
     expect(resources).toHaveLength(1)
     expect(resources[0].uri).toBe('memory://preferences')
@@ -157,6 +157,22 @@ describe('MCPHttpClient（HTTP transport 消费端，与 stdio MCPClient 对称�
     expect(contents[0].text).toContain('浅色')
     // 未知 uri → reject（-32602）
     await expect(client.readResource('memory://nope')).rejects.toThrow(/Unknown resource|MCP 错误/)
+  })
+
+  it('resources 订阅（v0.6.15）：HTTP 一请求一响应可正常 subscribe/unsubscribe（服务器记录订阅）', async () => {
+    const h = await startMcpHttpServer({ tools: [echoTool], resources: [prefsResource] })
+    handles.push(h)
+    const client = new MCPHttpClient({ url: h.url })
+    clients.push(client)
+    await client.initialize()
+    await expect(client.subscribeResource('memory://preferences')).resolves.toBeUndefined()
+    expect(h.server.subscribedResources).toEqual(['memory://preferences'])
+    await expect(client.unsubscribeResource('memory://preferences')).resolves.toBeUndefined()
+    expect(h.server.subscribedResources).toEqual([])
+    // 未知 uri → reject（-32602）
+    await expect(client.subscribeResource('memory://nope')).rejects.toThrow(/Unknown resource|MCP 错误/)
+    // 传输差异：HTTP 无 SSE 长连接，服务器 notifyResourceUpdated 推送客户端收不到（文档记录；此处验证服务器侧不抛错）
+    expect(() => h.server.notifyResourceUpdated('memory://preferences')).not.toThrow()
   })
 
   it('ping → 健康检查 true', async () => {
