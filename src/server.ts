@@ -718,15 +718,32 @@ export function startHostServer(opts: HostServerOptions) {
         }
         case 'get_memories': {
           // 宿主读取记忆：query 存在 → 全文搜索；否则列出全部（只读不生成）
-          const agent = getAgent(String(req.sessionId || 'default'))
+          // v0.6.25：kind 可选按记忆类型过滤（如 preference/note，宿主面板"记忆管理"筛选；
+          //  与 remember 的 kind 参数同语义）；limit 严格校验 1~100（对齐 get_messages v0.6.21
+          //  风格，非法回 error 含提示不触发生成）
           const q = req.query ? String(req.query).trim() : ''
-          const limit = Math.min(Math.max(Number(req.limit) || 50, 1), 100)
+          const kind = req.kind !== undefined && req.kind !== null ? String(req.kind).trim() : ''
+          // limit：显式提供必须 1~100 整数（缺省 50）
+          if (req.limit !== undefined && req.limit !== null) {
+            const n = Number(req.limit)
+            if (!Number.isInteger(n) || n < 1 || n > 100) {
+              reply({ type: 'error', message: 'get_memories 的 limit 必须是 1~100 的整数（要返回的记忆条数上限）' })
+              break
+            }
+          }
+          const limit = req.limit === undefined || req.limit === null ? 50 : Number(req.limit)
+          const agent = getAgent(String(req.sessionId || 'default'))
           const store = (agent as any).store
-          const memories = (q && typeof store?.searchMemories === 'function')
-            ? store.searchMemories(q, limit)
-            : (typeof store?.getAllMemories === 'function')
-              ? store.getAllMemories().slice(0, limit)
-              : []
+          let memories: any[] = []
+          if (q && typeof store?.searchMemories === 'function') {
+            memories = store.searchMemories(q, limit)
+            // 搜索 + kind 组合：结果按类型过滤（记忆行含 type 字段）
+            if (kind) memories = memories.filter((m: any) => m.type === kind)
+          } else if (kind && typeof store?.getMemoriesByType === 'function') {
+            memories = store.getMemoriesByType(kind, limit)
+          } else if (typeof store?.getAllMemories === 'function') {
+            memories = store.getAllMemories().slice(0, limit)
+          }
           reply({ type: 'memories', memories })
           break
         }
