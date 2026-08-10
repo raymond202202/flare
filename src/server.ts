@@ -521,6 +521,20 @@ export function startHostServer(opts: HostServerOptions) {
           reply({ type: 'ok', sessionId, title })
           break
         }
+        case 'clear_session': {
+          // 宿主清空会话消息（保留会话记录与用量；v0.6.18）——面板"清空对话"按钮：
+          //   销毁缓存 Agent（内存上下文同步清空，下次 chat 重建干净会话；与 delete_session 同模式）
+          const sessionId = String(req.sessionId || 'default')
+          const agent = getAgent(sessionId)
+          const sid = (agent as any).config?.sessionId || sessionId
+          let cleared = 0
+          if (typeof (agent as any).store?.clearSessionMessages === 'function') {
+            cleared = (agent as any).store.clearSessionMessages(sid)
+          }
+          agents.delete(sessionId)
+          reply({ type: 'ok', sessionId, cleared })
+          break
+        }
         case 'set_context': {
           const sessionId = String(req.sessionId || 'default')
           const agent = getAgent(sessionId)

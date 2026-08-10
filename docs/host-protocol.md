@@ -3,7 +3,7 @@
 > 供非 Node 宿主（如 Qt 应用）调用 flare 引擎的本地协议。
 > 传输：stdin/stdout · JSON Lines（每行一个 JSON 对象）
 > 实现：`src/server.ts`（`flare server` 命令）
-> 请求类型：chat / cancel / set_context / list_sessions / recent_sessions / get_messages / get_usage / session_usage / context_status / ping / version / create_session / rename_session / delete_session / remember / get_memories / delete_memory / tool_result / confirm_result / confirm_status / confirm_revoke / confirm_allow / models / tools / mcp_status
+> 请求类型：chat / cancel / set_context / list_sessions / recent_sessions / get_messages / get_usage / session_usage / context_status / ping / version / create_session / rename_session / clear_session / delete_session / remember / get_memories / delete_memory / tool_result / confirm_result / confirm_status / confirm_revoke / confirm_allow / models / tools / mcp_status
 
 ## 启动
 
@@ -330,6 +330,19 @@ flare server --profile <expert-profile-file> --storage <db-path> [--mcp <mcp-con
 - `title`：必填，非空字符串（空白裁剪后判空）——缺失/空白回 error（含用法提示），不触发生成
 - 与 `create_session`（创建语义，可幂等设标题）区分：`rename_session` 是宿主面板"重命名会话"的专用接口，语义清晰、只改标题不动其他数据
 
+### 24. clear_session — 清空会话消息（v0.6.18）
+
+```json
+{"type":"clear_session","sessionId":"s1"}
+```
+
+响应：`{"type":"ok","sessionId":"s1","cleared":3}`
+
+- `sessionId`：要清空的会话标识（缺省 `default`）
+- 清空该会话全部消息（`MemoryStore.clearSessionMessages`，返回删除条数 `cleared`），**保留会话记录与用量统计**——区别于 `delete_session`（整个会话删除）：宿主面板"清空对话"按钮数据源
+- 同时销毁该会话缓存 Agent（内存上下文同步清空；下次 chat 自动重建干净会话，与 delete_session 同模式）
+- 幂等安全：空/不存在会话 `cleared:0` 不报错；清空后仍可继续写入（会话记录未删，无外键问题）；FTS 检索索引由触发器联动清理
+
 ## 响应（服务 → 宿主，stdout 每行一个）
 
 | type | 字段 | 说明 |
@@ -346,7 +359,7 @@ flare server --profile <expert-profile-file> --storage <db-path> [--mcp <mcp-con
 | `recent_sessions` | `sessions` | 最近会话列表（含 preview，v0.6.0） |
 | `messages` | `sessionId, messages` | 指定会话的消息历史 |
 | `memories` | `memories` | 记忆列表（get_memories 响应） |
-| `ok` | `sessionId, deleted?/tool?/resetSession?/mode?/title?` | 通用确认（set_context/cancel/create_session/rename_session/delete_session/remember/delete_memory/confirm_revoke/confirm_allow） |
+| `ok` | `sessionId, deleted?/tool?/resetSession?/mode?/title?/cleared?` | 通用确认（set_context/cancel/create_session/rename_session/clear_session/delete_session/remember/delete_memory/confirm_revoke/confirm_allow） |
 | `pong` | `ts` | ping 响应（宿主健康检查） |
 | `version` | `protocol, engine` | 版本协商（协议版本 + 引擎版本） |
 | `usage` | `stats` | token 用量统计（get_usage 响应） |

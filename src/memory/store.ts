@@ -266,6 +266,17 @@ export class MemoryStore {
     return del(sessionId)
   }
 
+  /**
+   * 清空会话消息（保留会话记录与用量统计；返回删除条数；FTS 触发器联动清索引）。
+   * v0.6.18：宿主"清空对话（保留会话）"数据源——与 deleteSession（整个会话删除）区分。
+   */
+  clearSessionMessages(sessionId: string): number {
+    const res = this.db.prepare('DELETE FROM messages WHERE session_id = ?').run(sessionId)
+    // 清空后刷新会话 updated_at（会话仍在最近列表，排序反映清空操作；空/不存在会话幂等）
+    this.db.prepare("UPDATE sessions SET updated_at = datetime('now') WHERE id = ?").run(sessionId)
+    return Number(res.changes) || 0
+  }
+
   /** 保存消息到会话 */
   saveMessage(sessionId: string, message: Message) {
     // 自动创建会话（幂等）：外部应用传固定 sessionId（如 pulse-ai）时，

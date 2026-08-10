@@ -3,11 +3,42 @@
 > 目标：flare 是 Pulse/StorySpire 依赖的 AI Agent 引擎（TS）。任何改动必须安全（tsc 0 错 + 测试全绿才 commit）。
 > 铁律：禁止 push；禁止修改 src/core/agent.ts 的 Agent.run 核心循环。
 
-> **最新状态（v0.6.17）**：上下文自动裁剪落地——trimContextMessages 纯函数（system 保底 + 最近优先
-> + tool_calls 配对保护 + 极小预算保底最新一条）+ AgentConfig.maxContextMessages/maxContextTokens
-> （不配置零回归）+ server 协议 chat 透传 + CLI 默认参数 + session_usage 单会话用量；493/493 全绿。
-> 下一步候选：① 上下文压缩摘要（裁剪掉的历史压缩成摘要而非直接丢弃，需评估）；② 其他安全的外围增强
-> （MCP 协议特性已基本覆盖，可考虑 server 协议其他管理接口、CLI 交互增强、MCP 工具集完善等）。
+> **最新状态（v0.6.18）**：server 协议会话管理闭环——`rename_session` 重命名会话（title 非空必填，
+> UPSERT）+ `clear_session` 清空会话消息（保留会话记录与用量，销毁缓存 Agent 下次重建干净会话）；
+> 504/504 全绿。下一步候选：① 上下文压缩摘要（裁剪掉的历史压缩成摘要而非直接丢弃，需评估）；
+> ② 其他安全的外围增强（CLI 交互增强、MCP 工具集完善等）。
+
+### 2026-08-10 第二十轮实施（v0.6.18）——server 协议会话管理：rename_session + clear_session
+
+- **P37 server 协议 `rename_session`**（src/server.ts + tests/server.test.ts）：
+  - **协议请求** `rename_session {sessionId?, title}` → `{ type:'ok', sessionId, title }`——宿主面板
+    "重命名会话"专用接口（与 create_session 创建语义分离）：title 非空必填（空白裁剪判空，缺失/空白
+    回 error 含用法提示，不触发生成）；复用 `MemoryStore.updateSessionTitle`（UPSERT——会话不存在自动
+    创建，与 create_session 同语义）；namespace 前缀处理与 create_session 一致
+  - docs/host-protocol.md §23 + 请求类型列表 + 响应表 ok 行（title?）+ README Changelog + 版本号 0.6.18
+  - **499/499 全绿**（496 + 3 新增 server e2e：重命名成功且 recent_sessions 反映新标题 / 缺 title·空白
+    title error / 不存在会话 UPSERT 幂等），tsc 0 错误，零 agent.ts 改动
+  - **冒烟实测**：真实 server 子进程——create_session 冒烟旧标题 → rename_session 冒烟新标题 ok（回显
+    title）→ 缺 title / 空白 title 均 error「rename_session 需要 title 参数（非空的新会话标题）」→
+    不存在会话 s-ghost UPSERT ok → recent_sessions 数据往返（冒烟新标题 + 幽灵会话）→ version 0.6.18，
+    SMOKE PASS
+- **P38 server 协议 `clear_session` + store 清空方法**（src/server.ts + memory/store.ts + 测试）：
+  - **`MemoryStore.clearSessionMessages(sessionId)`**：DELETE 该会话全部消息（返回删除条数；FTS 触发器
+    联动清索引）+ 刷新会话 updated_at；空/不存在会话幂等返回 0——**保留会话记录与用量统计**（区别于
+    deleteSession 整个删除），清空后仍可继续写入（无外键问题）
+  - **协议请求** `clear_session {sessionId?}` → `{ type:'ok', sessionId, cleared }`——宿主面板"清空对话"
+    按钮数据源；同时 `agents.delete(sessionId)` 销毁缓存 Agent（内存上下文同步清空，下次 chat 重建干净
+    会话；与 delete_session 同模式）
+  - docs/host-protocol.md §24 + 请求类型列表 + 响应表 ok 行（cleared?）+ README Changelog 并入 v0.6.18
+  - **504/504 全绿**（499 + 5 新增：store 单测 3——清空指定会话+会话保留+FTS 联动 / 不影响其他会话 /
+    空会话幂等+清空后可继续写入；server e2e 2——清空保留会话+消息为空 / 幂等 cleared:0），tsc 0 错误，
+    零 agent.ts 改动
+  - **冒烟实测**：真实 server 子进程——create_session s-c → clear_session cleared:0 → 再 clear 幂等
+    cleared:0 → list_sessions s-c 保留（messageCount 0）→ version 0.6.18，SMOKE PASS
+- **下一步候选**：① 上下文压缩摘要（裁剪掉的历史压缩成摘要而非直接丢弃，需评估）；
+  ② 其他安全的外围增强（CLI 交互增强、MCP 工具集完善等）
+
+---
 
 ### 2026-08-10 第十九轮实施（v0.6.17）——上下文自动裁剪：trimContext 支持 token 预算
 
