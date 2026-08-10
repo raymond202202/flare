@@ -3,7 +3,7 @@
 > 目标：flare 是 Pulse/StorySpire 依赖的 AI Agent 引擎（TS）。任何改动必须安全（tsc 0 错 + 测试全绿才 commit）。
 > 铁律：禁止 push；禁止修改 src/core/agent.ts 的 Agent.run 核心循环。
 
-> **最新状态（v0.6.14）**：MCP sampling 协议闭环（服务器 `requestSample` 请求客户端代为调用 LLM + 客户端 `sampling` 回调消费）；439/439 全绿（commit `6d9b3c7`，未 push）。
+> **最新状态（v0.6.14）**：MCP sampling 协议闭环（服务器 `requestSample` 请求客户端代为调用 LLM + 客户端 `sampling` 回调消费）；439/439 全绿（commit `601fe78`，未 push）。
 > 下一步候选：① agent.ts trimContext 自动裁剪（风险高仍暂缓）；② 其他安全的外围增强（MCP 更多协议特性、server 协议其他管理接口等）。
 
 ### 2026-08-10 第十六轮实施（v0.6.14）——MCP sampling 协议闭环
