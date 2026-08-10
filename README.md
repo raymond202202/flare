@@ -337,6 +337,34 @@ Interactive mode commands:
 
 > 中文条目 / Chinese entries · English summary for each version
 
+#### v0.6.22 (2026-08-11) — MCP 资源模板：resources/templates/list + matchResourceTemplate / MCP resource templates (resources/templates/list + matchResourceTemplate)
+- 📐 **服务器侧（src/mcp/server.ts）**：`MCPServerOptions.resourceTemplates?: McpResourceTemplate[]`——
+  **动态资源**（uri 含变量，如 `memory://{noteId}` 的记忆条目）无法在 `resources/list` 逐条列出时，
+  注入模板声明其形态（RFC 6570 风格 `{var}` 占位）；dispatch 新增标准方法 `resources/templates/list`
+  → 返回模板元数据（`uriTemplate`/`name`/`description?`/`mimeType?`），**未注入返回空列表**（方法始终
+  可用不报错）；有模板时 `capabilities.resources` 声明 `{ subscribe: true, listTemplates: true }`
+  （仅静态资源无模板仍为 `{ subscribe: true }`，缺省行为与旧版完全一致零回归）
+- 🔍 **纯函数 `matchResourceTemplate(uri, template)`**（库导出）：判断 uri 是否匹配某模板——模板编译为
+  正则（`{var}` 捕获组；`path`/`uri` 类变量允许任意字符含 `/`，其余单段不含 `/`），匹配返回模板对象、
+  不匹配返回 `null`；宿主可校验动态资源 uri 合法性/生成模板候选 uri
+- 👂 **客户端消费**：`MCPClient.listResourceTemplates()` / `MCPHttpClient.listResourceTemplates()`
+  → 模板数组（stdio / HTTP 同构；与 listResources 一致，非数组容错 []）；HTTP transport 复用
+  handleMessage 核心自动支持（无需额外改动）
+- 📚 docs/mcp.md 资源模板章节（含与 completion/complete 的定位差异：静态资源可枚举、动态资源靠模板发现）
+  + README Changelog + 版本号 0.6.22
+- 🧪 新增 8 项测试（MCPServer 5：templates/list 返回注入模板含可选字段 / 未注入空列表 / capabilities
+  声明 listTemplates（有模板+仅资源无模板+仅模板三种形状）/ matchResourceTemplate 纯函数单段变量·path
+  含 /·不匹配 null / **resources/templates 真实互通 e2e**——真实 MCPServer 子进程静态资源+动态模板，
+  客户端 listResources+listResourceTemplates+readResource 闭环连接不断；MCPClient 1：listResourceTemplates
+  解析；MCPHttpClient 2：HTTP 消费闭环 + 未注入模板零回归）；共 **549/549 全绿**（541 + 8），
+  tsc 0 错误，零 agent.ts 改动
+- EN: `MCPServerOptions.resourceTemplates` exposes **dynamic resource URI templates** (e.g.
+  `memory://{noteId}`) via the standard `resources/templates/list` (empty list when none; `listTemplates:
+  true` in `capabilities.resources` only when templates exist — otherwise unchanged). New pure
+  `matchResourceTemplate(uri, template)` matches URIs against a template (`{var}` groups; `path`/`uri`
+  variables allow `/`). `MCPClient`/`MCPHttpClient.listResourceTemplates()` consume it (stdio + HTTP).
+  549/549 green, zero Agent.run changes.
+
 #### v0.6.21 (2026-08-11) — get_messages 分页：limit + recent 最近消息 / get_messages paging (limit + recent)
 - 📖 **server 协议 `get_messages` 增强（src/server.ts + memory/store.ts）**：可选 `limit`
   （1~500 整数，默认 50，非法回 error 含用法提示不触发生成）+ `recent`（布尔）——`recent:true`

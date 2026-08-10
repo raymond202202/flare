@@ -175,6 +175,40 @@ describe('MCPHttpClient（HTTP transport 消费端，与 stdio MCPClient 对称�
     expect(() => h.server.notifyResourceUpdated('memory://preferences')).not.toThrow()
   })
 
+  it('resources/templates（v0.6.22）：HTTP 消费资源模板——capabilities 声明 listTemplates + listResourceTemplates 闭环', async () => {
+    const h = await startMcpHttpServer({
+      tools: [echoTool],
+      resources: [prefsResource],
+      resourceTemplates: [{ uriTemplate: 'memory://{noteId}', name: '记忆条目', description: '记忆库中的单条记忆', mimeType: 'text/plain' }],
+    })
+    handles.push(h)
+    const client = new MCPHttpClient({ url: h.url })
+    clients.push(client)
+    const info = await client.initialize()
+    // 注入模板 → capabilities.resources 声明 subscribe + listTemplates
+    expect(info.capabilities.resources).toEqual({ subscribe: true, listTemplates: true })
+    const templates = await client.listResourceTemplates()
+    expect(templates).toEqual([
+      { uriTemplate: 'memory://{noteId}', name: '记忆条目', description: '记忆库中的单条记忆', mimeType: 'text/plain' },
+    ])
+    // 模板不影响静态资源读写
+    const resources = await client.listResources()
+    expect(resources).toHaveLength(1)
+    const contents = await client.readResource('memory://preferences')
+    expect(contents[0].text).toContain('浅色')
+  })
+
+  it('resources/templates（v0.6.22）：未注入模板 → capabilities 无 listTemplates + listResourceTemplates 返回 []（零回归）', async () => {
+    const h = await startMcpHttpServer({ tools: [echoTool], resources: [prefsResource] })
+    handles.push(h)
+    const client = new MCPHttpClient({ url: h.url })
+    clients.push(client)
+    const info = await client.initialize()
+    expect(info.capabilities.resources).toEqual({ subscribe: true })
+    const templates = await client.listResourceTemplates()
+    expect(templates).toEqual([])
+  })
+
   it('ping → 健康检查 true', async () => {
     const h = await startMcpHttpServer({ tools: [echoTool] })
     handles.push(h)

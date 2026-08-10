@@ -66,6 +66,16 @@ const RESOURCES = [
   },
 ]
 
+// v0.6.22：资源模板（动态资源 uri 模板声明，resources/templates/list 返回）
+const RESOURCE_TEMPLATES = [
+  {
+    uriTemplate: 'memory://{noteId}',
+    name: '记忆条目',
+    description: '记忆库中的单条记忆',
+    mimeType: 'text/plain',
+  },
+]
+
 const rl = readline.createInterface({ input: process.stdin })
 rl.on('line', (line) => {
   if (!line.trim()) return
@@ -107,6 +117,10 @@ rl.on('line', (line) => {
       break
     case 'resources/list':
       respond({ resources: RESOURCES })
+      break
+    case 'resources/templates/list':
+      // v0.6.22：返回资源模板（动态资源 uri 模板声明）
+      respond({ resourceTemplates: RESOURCE_TEMPLATES })
       break
     case 'resources/read': {
       const { uri } = msg.params || {}

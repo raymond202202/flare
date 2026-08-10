@@ -24,7 +24,7 @@
 import { spawn, type ChildProcess } from 'node:child_process'
 import { createInterface, type Interface } from 'node:readline'
 import { createRequire } from 'node:module'
-import type { McpTool, McpCallResult, McpPromptInfo, McpPromptResult, McpResourceInfo, McpResourceContents, McpCompletionResult, McpRoot, McpLogLevel, McpLogMessage, McpSamplingRequest, McpSamplingResult, McpProgressParams, McpCallOptions, McpCancelledParams } from './types.js'
+import type { McpTool, McpCallResult, McpPromptInfo, McpPromptResult, McpResourceInfo, McpResourceContents, McpResourceTemplateInfo, McpCompletionResult, McpRoot, McpLogLevel, McpLogMessage, McpSamplingRequest, McpSamplingResult, McpProgressParams, McpCallOptions, McpCancelledParams } from './types.js'
 
 const require = createRequire(import.meta.url)
 const pkg = require('../../package.json') as { version: string }
@@ -318,6 +318,13 @@ export class MCPClient {
   async listResources(): Promise<McpResourceInfo[]> {
     const res = await this.request<any>('resources/list', {})
     return Array.isArray(res?.resources) ? (res.resources as McpResourceInfo[]) : []
+  }
+
+  /** 列出服务器资源模板（resources/templates/list，v0.6.22）：动态资源 uri 模板声明
+   *  （如 memory://{noteId}）——客户端可据此构造/发现动态资源 uri；无模板返回 [] */
+  async listResourceTemplates(): Promise<McpResourceTemplateInfo[]> {
+    const res = await this.request<any>('resources/templates/list', {})
+    return Array.isArray(res?.resourceTemplates) ? (res.resourceTemplates as McpResourceTemplateInfo[]) : []
   }
 
   /** 设置服务器日志级别阈值（logging/setLevel，v0.6.13）：此后服务器低于该级别的 sendLog 通知不再推送 */
