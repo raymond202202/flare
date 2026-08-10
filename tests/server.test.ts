@@ -249,6 +249,29 @@ describe('flare host server 协议', () => {
     expect(row.title).toBe('新会话')
   })
 
+  it('clear_session → ok（清空会话消息保留会话；面板"清空对话"）', async () => {
+    await request({ type: 'create_session', sessionId: 's-clear1' }, { expect: ['ok'] })
+    const msgs = await request({ type: 'clear_session', sessionId: 's-clear1' }, { expect: ['ok'] })
+    expect(msgs[0].type).toBe('ok')
+    expect(msgs[0].sessionId).toBe('s-clear1')
+    expect(typeof msgs[0].cleared).toBe('number')
+    // 会话记录保留（区别于 delete_session）：list_sessions 全量列表仍包含（不受 limit 排序影响）
+    const list = await request({ type: 'list_sessions' }, { expect: ['sessions'] })
+    expect(list[0].sessions.some((s: any) => s.id === 's-clear1')).toBe(true)
+    // 消息为空
+    const hist = await request({ type: 'get_messages', sessionId: 's-clear1' }, { expect: ['messages'] })
+    expect(hist[0].messages).toEqual([])
+  })
+
+  it('clear_session 幂等（空会话重复清空 cleared:0 不报错）', async () => {
+    await request({ type: 'create_session', sessionId: 's-clear2' }, { expect: ['ok'] })
+    const again = await request({ type: 'clear_session', sessionId: 's-clear2' }, { expect: ['ok'] })
+    expect(again[0].cleared).toBe(0)
+    // 不影响其他会话：s-clear1（前一个测试创建）消息仍为空、可正常查询
+    const hist = await request({ type: 'get_messages', sessionId: 's-clear1' }, { expect: ['messages'] })
+    expect(hist[0].messages).toEqual([])
+  })
+
   it('delete_session → 真实删除（T1 修复：先建会话再删 deleted:true；再删 deleted:false 幂等）', async () => {
     // 修复前 memoryStore 字段错位：deleteSession 从不执行，deleted 恒 false（隐私数据删不掉）
     await request({ type: 'create_session', sessionId: 's-del2' }, { expect: ['ok'] })

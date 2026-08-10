@@ -321,6 +321,50 @@ describe('MemoryStore.deleteSession', () => {
   })
 })
 
+describe('MemoryStore.clearSessionMessages（v0.6.18 清空会话消息）', () => {
+  it('清空指定会话消息：返回删除条数、会话记录保留、FTS 索引联动清理', () => {
+    const sid = store.createSession('待清空会话')
+    store.saveMessage(sid, { role: 'user', content: '龙族故事设定：主角叫林澈' })
+    store.saveMessage(sid, { role: 'assistant', content: '好，记住了' })
+    store.saveMessage(sid, { role: 'user', content: '继续写第二章' })
+
+    // 清空前 FTS 可命中
+    expect(store.searchMessages('龙族故事').some(h => h.sessionId === sid)).toBe(true)
+    expect(store.getMessages(sid)).toHaveLength(3)
+
+    const cleared = store.clearSessionMessages(sid)
+    expect(cleared).toBe(3)
+
+    // 消息清空但会话记录保留（区别于 deleteSession：会话仍在列表）
+    expect(store.getMessages(sid)).toEqual([])
+    expect(store.getAllSessions().some(s => s.id === sid)).toBe(true)
+    // FTS 触发器联动清索引，不再命中已清空消息
+    expect(store.searchMessages('龙族故事').some(h => h.sessionId === sid)).toBe(false)
+  })
+
+  it('清空一个会话不影响其他会话', () => {
+    const keep = store.createSession('保留会话')
+    store.saveMessage(keep, { role: 'user', content: '天气怎么样' })
+    const drop = store.createSession('待清空会话')
+    store.saveMessage(drop, { role: 'user', content: '这段会被清掉' })
+
+    expect(store.clearSessionMessages(drop)).toBe(1)
+
+    expect(store.getMessages(keep)).toHaveLength(1)
+    expect(store.searchMessages('天气怎么样').some(h => h.sessionId === keep)).toBe(true)
+    expect(store.getMessages(drop)).toEqual([])
+  })
+
+  it('空/不存在会话幂等返回 0，不抛错', () => {
+    const sid = store.createSession('空会话')
+    expect(store.clearSessionMessages(sid)).toBe(0)
+    expect(store.clearSessionMessages('no_such_session')).toBe(0)
+    // 清空后仍可继续写入（会话记录未删，无外键问题）
+    store.saveMessage(sid, { role: 'user', content: '清空后再写' })
+    expect(store.getMessages(sid)).toHaveLength(1)
+  })
+})
+
 describe('MemoryStore 记忆删除（v0.5.4）', () => {
   it('deleteMemory：按 id 删除单条，FTS 索引联动清理（searchMemories 不再命中）', () => {
     store.saveMemory('用户喜欢浅色主题', 'preference')
