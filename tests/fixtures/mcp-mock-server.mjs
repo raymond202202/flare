@@ -8,7 +8,8 @@
 //   res-update   — 收到 resources/subscribe 后推送一条 notifications/resources/updated（测客户端 onResourceUpdated 转发）
 //   progress-notify — tools/call 带 _meta.progressToken 时推送 2 条 notifications/progress（测客户端 onProgress 转发）
 //   list-changed  — initialize 后推送 notifications/tools/list_changed + notifications/resources/list_changed
-//                   （测客户端 onToolsChanged / onResourcesChanged 转发）
+//                   + notifications/prompts/list_changed（测客户端 onToolsChanged / onResourcesChanged /
+//                   onPromptsChanged 转发；v0.6.25 补齐 prompts）
 //   cancel-echo  — 收到 notifications/cancelled 时把参数写入 CANCEL_LOG_FILE（测客户端 notifyCancelled 发送）
 import readline from 'node:readline'
 import { writeFileSync } from 'node:fs'
@@ -106,10 +107,12 @@ rl.on('line', (line) => {
         capabilities: { tools: {}, prompts: {}, resources: { subscribe: true } },
         serverInfo: { name: 'flare-mock', version: '1.0.0' },
       })
-      // v0.6.20：list-changed 模式下握手后立即推送列表变化通知（模拟服务器工具/资源列表动态变化）
+      // v0.6.20：list-changed 模式下握手后立即推送列表变化通知（模拟服务器工具/资源/提示词列表动态变化；
+      // v0.6.25 补齐 prompts/list_changed）
       if (mode === 'list-changed') {
         process.stdout.write(JSON.stringify({ jsonrpc: '2.0', method: 'notifications/tools/list_changed' }) + '\n')
         process.stdout.write(JSON.stringify({ jsonrpc: '2.0', method: 'notifications/resources/list_changed' }) + '\n')
+        process.stdout.write(JSON.stringify({ jsonrpc: '2.0', method: 'notifications/prompts/list_changed' }) + '\n')
       }
       break
     case 'tools/list':

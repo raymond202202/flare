@@ -10,7 +10,8 @@
  *   initialize / notifications/initialized / tools/list / tools/call / ping
  *   （v0.6.1 resources、v0.6.2 prompts、v0.6.11 completion/complete、v0.6.13 logging/setLevel、
  *     v0.6.15 resources/subscribe + unsubscribe + notifications/resources/updated、
- *     v0.6.20 notifications/tools/list_changed + notifications/resources/list_changed）
+ *     v0.6.20 notifications/tools/list_changed + notifications/resources/list_changed、
+ *     v0.6.25 notifications/prompts/list_changed）
  *
  * 设计：
  * - 零依赖：不引入 @modelcontextprotocol/sdk，直接手写 NDJSON 行协议
@@ -461,6 +462,17 @@ export class MCPServer {
   notifyResourceListChanged(): void {
     if (this.closed) return
     this.safeWrite({ jsonrpc: '2.0', method: 'notifications/resources/list_changed' })
+  }
+
+  /**
+   * 服务器推送提示词列表变化通知（v0.6.25）：发 notifications/prompts/list_changed（无 id、无 params，客户端无需响应）。
+   * 提示词**列表**动态变化（运行中新增/移除 prompt）时调用——客户端收到后应重新拉取 prompts/list 刷新清单；
+   * 与 notifyToolListChanged/notifyResourceListChanged 同为 MCP 标准列表变化通知（v0.6.20 对称补齐）。
+   * 服务器已关闭 / 写失败 → 静默忽略（不抛错）。传输差异与 notifyToolListChanged 一致（HTTP 收不到）。
+   */
+  notifyPromptListChanged(): void {
+    if (this.closed) return
+    this.safeWrite({ jsonrpc: '2.0', method: 'notifications/prompts/list_changed' })
   }
 
   /** 渲染提示词（prompts/get）：未知 name → -32602；render() 异常 → -32603（服务器不崩） */

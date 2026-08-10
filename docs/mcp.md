@@ -517,15 +517,15 @@ await httpClient.notifyCancelled(7, 'timeout') // HTTP MCPHttpClient（发通知
   故 cancelled 的主要价值是**协议完整性与客户端超时/取消后的礼貌告知**；对服务器→客户端
   pending 请求（roots/sampling）的取消则真实生效（reject 不悬挂）
 
-#### 列表变化通知协议（v0.6.20）：tools/list_changed + resources/list_changed
+#### 列表变化通知协议（v0.6.20；v0.6.25 补齐 prompts）：tools/list_changed + resources/list_changed + prompts/list_changed
 
-MCP 标准通知让服务器在**工具/资源列表动态变化**（运行中新增或移除，而非内容更新）时告知客户端，
-客户端收到后应重新拉取 `tools/list` / `resources/list` 刷新清单——与 v0.6.15 的
+MCP 标准通知让服务器在**工具/资源/提示词列表动态变化**（运行中新增或移除，而非内容更新）时告知客户端，
+客户端收到后应重新拉取 `tools/list` / `resources/list` / `prompts/list` 刷新清单——与 v0.6.15 的
 `resources/updated`（订阅的单个资源**内容**变化）互补：updated 面向已订阅的特定 uri，
 list_changed 面向**列表整体**、无需订阅（所有已连接客户端都会收到）。
 
 **服务器侧（flare 作为 MCP 服务器）**——`MCPServer.notifyToolListChanged()` /
-`notifyResourceListChanged()`：
+`notifyResourceListChanged()` / `notifyPromptListChanged()`（v0.6.25 补齐第三个）：
 
 ```ts
 let server: MCPServer
@@ -536,6 +536,8 @@ const dynamicTool: Tool = {
     server.notifyToolListChanged()      // 客户端应重新拉取 tools/list
     // ... 资源列表（uri 集合）变化后
     server.notifyResourceListChanged()  // 客户端应重新拉取 resources/list
+    // ... 提示词列表变化后
+    server.notifyPromptListChanged()    // 客户端应重新拉取 prompts/list（v0.6.25）
     return { success: true, output: 'done' }
   },
 }
@@ -543,11 +545,12 @@ server = new MCPServer({ tools: [dynamicTool] })
 ```
 
 - 推送 `{ jsonrpc: '2.0', method: 'notifications/tools/list_changed' }` /
-  `{ jsonrpc: '2.0', method: 'notifications/resources/list_changed' }`（无 id、无 params，
-  客户端无需响应）；两个方法相互独立，可分别按需调用
+  `{ jsonrpc: '2.0', method: 'notifications/resources/list_changed' }` /
+  `{ jsonrpc: '2.0', method: 'notifications/prompts/list_changed' }`（无 id、无 params，
+  客户端无需响应）；三个方法相互独立，可分别按需调用
 - 服务器已关闭 / 写失败 → 静默忽略（不抛错，与 sendLog/notifyResourceUpdated 同风格）
 
-**客户端侧（flare 作为 MCP 客户端）**——配置 `onToolsChanged` / `onResourcesChanged` 回调：
+**客户端侧（flare 作为 MCP 客户端）**——配置 `onToolsChanged` / `onResourcesChanged` / `onPromptsChanged` 回调：
 
 ```ts
 const client = new MCPClient({
@@ -557,18 +560,23 @@ const client = new MCPClient({
     console.log(`工具列表已变化，当前 ${tools.length} 个`)
   },
   onResourcesChanged: () => console.log('资源列表已变化'),
+  onPromptsChanged: async () => {
+    const prompts = await client.listPrompts()    // 重新拉取提示词清单（v0.6.25）
+    console.log(`提示词列表已变化，当前 ${prompts.length} 个`)
+  },
 })
 await client.initialize()
 ```
 
 - 服务器推送 `notifications/tools/list_changed` → `onToolsChanged()`（无参）触发；
-  `notifications/resources/list_changed` → `onResourcesChanged()`（无参）触发
+  `notifications/resources/list_changed` → `onResourcesChanged()`（无参）触发；
+  `notifications/prompts/list_changed` → `onPromptsChanged()`（无参）触发（v0.6.25）
 - 未配置对应回调 → 静默忽略不干扰后续请求（与 onLog/onResourceUpdated/onProgress 同风格）；
-  两个回调独立，只配置其一互不影响
+  三个回调独立，只配置其一互不影响
 - **传输差异（文档记录）**：stdio（MCPServer）有服务器→客户端通道可推送；HTTP transport
   （`startMcpHttpServer`）是一请求一响应、无推送通道——服务器可调用通知方法（不抛错）但客户端
   收不到（与 sendLog/notifyResourceUpdated/progress 差异一致）；MCPHttpClient 无 SSE 长连接，
-  故不提供这两个回调，文档如实记录不假装支持
+  故不提供这些回调，文档如实记录不假装支持
 
 ### HTTP transport（v0.6.3）：POST /mcp
 
