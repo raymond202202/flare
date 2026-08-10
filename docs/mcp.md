@@ -102,6 +102,10 @@ const agent = new Agent({ tools: [...builtinTools, ...tools] })
 await agent.run('帮我看看 /tmp 里有什么')
 client.close()
 
+// 健康检查（v0.6.24）：标准 ping 探测服务器存活——成功返回 true，断开/超时 reject；
+// MCPClient（stdio）与 MCPHttpClient（HTTP）接口对称
+if (await client.ping()) { /* 服务器存活，继续业务请求 */ }
+
 // 方式二：管理器（多服务器 + 配置文件）
 const mgr = new McpManager()                  // 读 ~/.flare/mcp.json
 await mgr.connect('fs')                       // 连接 + 桥接

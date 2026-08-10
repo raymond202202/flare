@@ -3,7 +3,7 @@
 > 供非 Node 宿主（如 Qt 应用）调用 flare 引擎的本地协议。
 > 传输：stdin/stdout · JSON Lines（每行一个 JSON 对象）
 > 实现：`src/server.ts`（`flare server` 命令）
-> 请求类型：chat / cancel / set_context / list_sessions / recent_sessions / get_messages / get_usage / session_usage / context_status / ping / version / create_session / rename_session / clear_session / delete_session / remember / get_memories / delete_memory / tool_result / confirm_result / confirm_status / confirm_revoke / confirm_allow / models / get_config / tools / mcp_status
+> 请求类型：chat / cancel / set_context / list_sessions / recent_sessions / get_messages / search_messages / get_usage / session_usage / context_status / ping / version / create_session / rename_session / clear_session / delete_session / remember / get_memories / delete_memory / tool_result / confirm_result / confirm_status / confirm_revoke / confirm_allow / models / get_config / tools / mcp_status
 
 ## 启动
 
@@ -84,6 +84,21 @@ flare server --profile <expert-profile-file> --storage <db-path> [--mcp <mcp-con
 - `recent:true`（v0.6.21）：返回**最近** limit 条（面板"最近对话/当前上下文"数据源；长会话下默认
   取最早 limit 条看不到最新内容）；响应带 `"recent":true` 标记；缺省行为与旧版完全一致
 - `limit` 非法（非 1~500 整数）→ error 含用法提示（不触发生成）
+
+### 5.1 search_messages — 全文搜索历史对话（只读，不生成，v0.6.24）
+
+```json
+{"type":"search_messages","query":"网络请求超时"}            // 全局跨会话搜索，默认最多 10 条
+{"type":"search_messages","query":"flare","limit":20}       // 条数上限（1~100，默认 10）
+```
+
+响应：`{"type":"search_results","query":"网络请求超时","results":[{"sessionId":"s1","role":"user","content":"...","createdAt":"..."}]}`
+
+- 宿主面板"搜索历史对话"数据源——复用记忆库 FTS5 trigram 索引（bm25 相关度排序，中文友好；
+  短查询 <3 字自动 LIKE 回退），**跨全部会话**检索（与 `get_usage` 全局统计同风格）
+- `query` 必填（空白裁剪判空）→ 缺失/空白回 error 含用法提示（不触发生成）
+- `limit` 非法（非 1~100 整数）→ error 含用法提示；无结果返回空数组（幂等不报错）
+- 只读不触发生成、不创建会话
 
 ### 6. ping — 宿主健康检查（进程存活探测）
 

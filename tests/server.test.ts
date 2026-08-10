@@ -219,6 +219,51 @@ describe('flare host server 协议', () => {
     }
   })
 
+  it('search_messages 缺 query / 空白 query → error 含用法提示（v0.6.24 搜索历史对话）', async () => {
+    const missing = await request({ type: 'search_messages' }, { expect: ['error'] })
+    expect(missing[0].type).toBe('error')
+    expect(missing[0].message).toContain('search_messages 需要 query')
+    const blank = await request({ type: 'search_messages', query: '   ' }, { expect: ['error'] })
+    expect(blank[0].message).toContain('search_messages 需要 query')
+  })
+
+  it('search_messages 非法 limit（0 / -1 / 101 / 非数字）→ error 含用法提示', async () => {
+    for (const bad of [0, -1, 101, 'abc']) {
+      const msgs = await request({ type: 'search_messages', query: '关键词', limit: bad }, { expect: ['error'] })
+      expect(msgs[0].type).toBe('error')
+      expect(msgs[0].message).toContain('limit 必须是 1~100 的整数')
+    }
+  })
+
+  it('search_messages 合法路径 → search_results 结构完整（空库空结果幂等不报错）', async () => {
+    const msgs = await request({ type: 'search_messages', query: '绝不存在的关键词xyz', limit: 5 }, { expect: ['search_results'] })
+    expect(msgs[0].type).toBe('search_results')
+    expect(msgs[0].query).toBe('绝不存在的关键词xyz')
+    expect(Array.isArray(msgs[0].results)).toBe(true)
+    expect(msgs[0].results).toEqual([])
+  })
+
+  it('search_messages 数据往返：真实写入消息后协议可搜索到（含 sessionId/role/content）', async () => {
+    // 测试进程直接打开子进程同一临时库写入消息（写操作瞬时完成；子进程搜索只读不受影响）
+    const { MemoryStore } = await import('../src/memory/store.js')
+    const store = new MemoryStore(path.join(tempDir, 'test.db'))
+    store.saveMessage('s-search', { role: 'user', content: 'flare 引擎的网络请求超时了' } as any)
+    store.saveMessage('s-search', { role: 'assistant', content: '已自动重试成功' } as any)
+    store.saveMessage('s-other', { role: 'user', content: '中午吃面' } as any)
+    const msgs = await request({ type: 'search_messages', query: '网络请求超时', limit: 5 }, { expect: ['search_results'] })
+    expect(msgs[0].type).toBe('search_results')
+    expect(msgs[0].query).toBe('网络请求超时')
+    expect(Array.isArray(msgs[0].results)).toBe(true)
+    expect(msgs[0].results.length).toBeGreaterThan(0)
+    const hit = msgs[0].results.find((r: any) => String(r.content).includes('网络请求超时'))
+    expect(hit).toBeTruthy()
+    expect(hit.sessionId).toBe('s-search')
+    expect(hit.role).toBe('user')
+    // 不相关内容不应出现在结果里（trigram 子串匹配，中文 3 字以上走 FTS）
+    const unrelated = msgs[0].results.find((r: any) => String(r.content).includes('吃面'))
+    expect(unrelated).toBeFalsy()
+  })
+
   it('version → 协议版本 + 引擎版本（宿主版本协商）', async () => {
     const msgs = await request({ type: 'version' }, { expect: ['version'] })
     expect(msgs[0].type).toBe('version')
@@ -250,7 +295,8 @@ describe('flare host server 协议', () => {
     expect(msgs[0].sessionId).toBe('s-rn1')
     expect(msgs[0].title).toBe('新标题')
     // 数据往返：recent_sessions 必须反映新标题（证明真实写入）
-    const list = await request({ type: 'recent_sessions' }, { expect: ['recent_sessions'] })
+    // limit 放宽：测试会话累积后避免被 recent_sessions 默认 10 条挤出（与下方不存在会话用例同模式）
+    const list = await request({ type: 'recent_sessions', limit: 50 }, { expect: ['recent_sessions'] })
     const row = list[0].sessions.find((s: any) => s.id === 's-rn1')
     expect(row).toBeTruthy()
     expect(row.title).toBe('新标题')

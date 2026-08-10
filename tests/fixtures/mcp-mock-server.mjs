@@ -115,6 +115,10 @@ rl.on('line', (line) => {
     case 'tools/list':
       respond({ tools: TOOLS })
       break
+    case 'ping':
+      // 标准健康检查：空 result 即存活（v0.6.24 客户端 ping 互通）
+      respond({})
+      break
     case 'resources/list':
       respond({ resources: RESOURCES })
       break
