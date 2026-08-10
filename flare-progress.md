@@ -3,13 +3,48 @@
 > 目标：flare 是 Pulse/StorySpire 依赖的 AI Agent 引擎（TS）。任何改动必须安全（tsc 0 错 + 测试全绿才 commit）。
 > 铁律：禁止 push；禁止修改 src/core/agent.ts 的 Agent.run 核心循环。
 
-> **最新状态（v0.6.23）**：两小步完成——① MCP 资源模板协议（`MCPServerOptions.resourceTemplates`
-> 注入动态资源 uri 模板，标准方法 `resources/templates/list` 真实暴露，纯函数 `matchResourceTemplate`
-> 库导出，`MCPClient`/`MCPHttpClient.listResourceTemplates()` stdio+HTTP 同构消费，零回归）；
-> ② `completion/complete`（ref/resource）并入资源模板候选（静态资源 + 模板 uriTemplate 同时建议）；
-> 真实子进程冒烟均 PASS；550/550 全绿。下一步候选：
+> **最新状态（v0.6.24）**：两小步完成——① server 协议 `search_messages` 全文搜索历史对话
+> （复用 store FTS5 trigram 索引：bm25 相关度、中文友好、短查询 LIKE 回退；跨全部会话只读检索；
+> `query` 必填、`limit` 1~100 默认 10；宿主面板"搜索历史"数据源）+ CLI 交互 `/search <关键词>`；
+> ② `MCPClient.ping()` 补齐（stdio 与 HTTP 端对称，标准保活探测，MCPServer 早已支持零改动）；
+> 真实子进程冒烟均 PASS；560/560 全绿。下一步候选：
 > ① 其他安全的外围增强（server 协议其他管理接口、CLI 交互增强、MCP 工具集完善等）；
 > ② 摘要内容升级为 LLM 生成（语义级压缩，需评估 run 循环外异步）。
+
+### 2026-08-11 第二十四轮实施（v0.6.24）——search_messages 全文搜索 + MCPClient.ping 对称补齐
+
+- **P46 server 协议 `search_messages`**（src/server.ts + cli/index.ts + 测试，commit `3162fa3`）：
+  - **宿主面板"搜索历史对话"数据源**：复用记忆库 FTS5 trigram 全文索引（`MemoryStore.searchMessages`
+    v0.5.1 已存在但协议层未暴露）——bm25 相关度排序、中文友好；短查询 <3 字自动 LIKE 回退
+  - **协议请求** `search_messages {query?, limit?}` → `{ type:'search_results', query,
+    results:[{sessionId,role,content,createdAt}] }`——**跨全部会话**检索（与 get_usage 全局统计同风格，
+    只读不触发生成、不创建会话）；`query` 必填（缺失/空白回 error 含用法提示）、`limit` 1~100 整数
+    默认 10（非法回 error 含提示）、无结果空数组幂等不报错
+  - **CLI 交互 `/search <关键词>`**：跨会话搜索历史对话（找回旧对话），显示命中消息角色/时间/内容
+    截断；无关键词用法提示、无结果友好提示；`/help` + README 命令表注册
+  - docs/host-protocol.md §5.1 新章节 + 请求类型列表 + README Changelog + 版本号 0.6.24
+  - **558/558 全绿**（550 + 8 新增：server e2e 4——缺 query/空白 error / 非法 limit（0/-1/101/非数字）/
+    合法路径空结果幂等 / **数据往返**（测试进程写入临时库消息后协议可搜索到，含 sessionId/role/content
+    断言 + 不相关内容不命中）；CLI /search 4——命中列表跨会话 / 无关键词用法提示 / 无结果提示 /
+    help 注册），tsc 0 错误，零 agent.ts 改动；另修既有 rename_session e2e 的 recent_sessions 请求
+    limit 放宽（测试会话累积防挤出，非业务改动，与 v0.6.21 同模式）
+  - **冒烟实测**：真实 server 子进程——version 0.6.24、空白 query → error「search_messages 需要
+    query 参数（搜索关键词）…」、limit:0 → 「limit 必须是 1~100 的整数」、合法路径 search_results
+    空数组，SMOKE PASS
+- **P47 MCPClient.ping() 对称补齐**（src/mcp/client.ts + 测试，同 commit）：
+  - **接口不对称修复**：`MCPHttpClient.ping()` 早有（返回 boolean），stdio `MCPClient` 却缺（头注释
+    也声明两端接口应一致）——补 `ping(): Promise<boolean>`：发 MCP 标准 `ping` 请求（服务器回空
+    result 即存活），成功返回 `true`，断开/超时/协议错误 reject；无状态保活探测不干扰后续请求
+  - **MCPServer 零改动**（dispatch 的 `case 'ping'` 早已返回 `{}`）；mock 测试 fixture 补 ping case
+  - docs/mcp.md 编程方式章节补 ping 健康检查示例（stdio/HTTP 对称声明）+ README Changelog 并入 v0.6.24
+  - **560/560 全绿**（558 + 2 新增：ping 真实互通——mock 服务器 ping 往返 + ping 后连接仍可用 /
+    close 后 reject），tsc 0 错误，零 agent.ts 改动
+  - **冒烟实测**：真实 stdio MCPClient ↔ 真实 MCPServer 子进程——initialize（flare 0.6.24）、
+    ping true ×2、ping 后 listTools 6 个正常，SMOKE PASS
+- **下一步候选**：① 其他安全的外围增强（server 协议其他管理接口、CLI 交互增强、MCP 工具集完善等）；
+  ② 摘要内容升级为 LLM 生成（语义级压缩，需评估 run 循环外异步）
+
+---
 
 ### 2026-08-11 第二十三轮实施（v0.6.22 + v0.6.23）——MCP 资源模板 + completion 模板候选
 
