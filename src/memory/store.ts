@@ -424,7 +424,7 @@ export class MemoryStore {
     ).run(sessionId, promptTokens, completionTokens, model || null)
   }
 
-  /** 汇总 token 用量 */
+  /** 汇总 token 用量（v0.6.18 起含 perModel 按模型分解：宿主成本核算数据源） */
   getUsageStats() {
     const row = this.db.prepare(
       `SELECT
@@ -433,11 +433,28 @@ export class MemoryStore {
          COUNT(*) as sessionCount
        FROM usage_log`
     ).get() as any
+    // 按模型分组（v0.6.18）：每个模型的调用次数 + token 分解（成本核算/用量分布）
+    const rows = this.db.prepare(
+      `SELECT COALESCE(model, 'unknown') as model,
+              COUNT(*) as calls,
+              COALESCE(SUM(prompt_tokens), 0) as promptTokens,
+              COALESCE(SUM(completion_tokens), 0) as completionTokens
+       FROM usage_log
+       GROUP BY model
+       ORDER BY calls DESC`
+    ).all() as any[]
     return {
       promptTokens: row.promptTokens,
       completionTokens: row.completionTokens,
       totalTokens: row.promptTokens + row.completionTokens,
       sessionCount: row.sessionCount,
+      perModel: rows.map((m) => ({
+        model: m.model,
+        calls: m.calls,
+        promptTokens: m.promptTokens,
+        completionTokens: m.completionTokens,
+        totalTokens: m.promptTokens + m.completionTokens,
+      })),
     }
   }
 

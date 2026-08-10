@@ -349,15 +349,20 @@ Interactive mode commands:
   确认门配置（名单/超时）、默认采样参数（defaultMaxTokens/defaultTemperature）、默认上下文裁剪参数
   （defaultMaxContextMessages/defaultMaxContextTokens）、工具超时、namespace、storage、MCP 服务器清单
   （名称+传输类型）；只读不触发生成、**不含任何密钥**
-- 📚 docs/host-protocol.md §23/§24/§25 + 请求类型列表 + 响应表 ok 行/config 行 + README Changelog + 版本号 0.6.18
-- 🧪 新增 9 项测试（server e2e：rename_session 重命名成功且 recent_sessions 反映新标题 / 缺 title·空白
+- 📊 **用量按模型分解（memory/store.ts + cli）**：`getUsageStats()` 新增 `perModel`（GROUP BY model：
+  调用次数 + token 分解，按次数降序，无模型归 unknown）——宿主成本核算/用量分布数据源（get_usage
+  协议响应透传）；CLI `/usage` 显示每个模型的用量行
+- 📚 docs/host-protocol.md §23/§24/§25 + 请求类型列表 + 响应表 ok 行/config 行/usage 行 + README Changelog + 版本号 0.6.18
+- 🧪 新增 10 项测试（server e2e：rename_session 重命名成功且 recent_sessions 反映新标题 / 缺 title·空白
   title error / 不存在会话 UPSERT 幂等 / clear_session 保留会话+消息清空 / clear_session 幂等 cleared:0 /
-  get_config 结构完整；store 单测：清空指定会话+FTS 联动 / 不影响其他会话 / 空会话幂等+清空后可继续写入）；
-  共 **505/505 全绿**（496 + 9），tsc 0 错误，零 agent.ts 改动
+  get_config 结构完整 / get_usage perModel 数组结构；store 单测：清空指定会话+FTS 联动 / 不影响其他会话 /
+  空会话幂等+清空后可继续写入 / 用量按模型分解；CLI /usage perModel 行）；共 **506/506 全绿**（496 + 10），
+  tsc 0 错误，零 agent.ts 改动
 - EN: New `rename_session` (rename an existing session, `title` required, UPSERT semantics),
-  `clear_session` (wipe a session's messages, keep the session record & usage, `cleared` count) and
-  `get_config` (read-only server runtime config for settings/about UIs, no secrets) host-protocol requests
-  give panel UIs dedicated session-management & config APIs. 505/505 green.
+  `clear_session` (wipe a session's messages, keep the session record & usage, `cleared` count),
+  `get_config` (read-only server runtime config for settings/about UIs, no secrets) host-protocol requests,
+  and per-model usage breakdown (`perModel` in get_usage stats + CLI /usage lines) for cost accounting.
+  506/506 green.
 
 #### v0.6.17 (2026-08-10) — 上下文自动裁剪：trimContext 支持 token 预算 / Context auto-trim by token budget (Agent.trimContext + trimContextMessages)
 - 🧩 **Agent 上下文自动裁剪（src/core/agent.ts + context.ts）**：`AgentConfig` 新增 `maxContextMessages`

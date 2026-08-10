@@ -49,6 +49,15 @@
   - **冒烟实测**：真实 server 子进程带 --max-tokens 1024 --temperature 0.3 --max-context-messages 40——
     config 正确回显（defaultMaxTokens 1024 / defaultTemperature 0.3 / defaultMaxContextMessages 40 /
     confirmTools ['memory_save'] / storage 路径 / mcpServers []），SMOKE PASS
+- **P40 用量按模型分解（perModel）**（src/memory/store.ts + cli/index.ts + server.ts）：
+  - **`getUsageStats()` 新增 `perModel`**：GROUP BY model 分组（model/calls/promptTokens/completionTokens/
+    totalTokens，按调用次数降序；无模型记录 COALESCE 'unknown'）——宿主成本核算/用量分布数据源；
+    server 协议 get_usage 响应 stats 透传（fallback 补 perModel:[]）；CLI `/usage` 每个模型一行
+  - docs/host-protocol.md §9 响应示例 + 响应表 usage 行 + README Changelog 并入 v0.6.18
+  - **506/506 全绿**（505 + 1 新增 store 单测：多模型分组/次数降序/unknown 归并/token 分解；get_usage
+    e2e 与 CLI /usage 断言补充进既有测试），tsc 0 错误，零 agent.ts 改动
+  - **冒烟实测**：真实 server 子进程——空库 get_usage perModel:[]；带数据 getUsageStats 返回
+    deepseek-chat 2 次 430 tokens + qwen2.5:7b 1 次 420 tokens（总量 850 一致），SMOKE PASS
 - **下一步候选**：① 上下文压缩摘要（裁剪掉的历史压缩成摘要而非直接丢弃，需评估——涉及 run 循环则跳过）；
   ② 其他安全的外围增强（CLI 交互增强、MCP 工具集完善等）
 

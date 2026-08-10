@@ -528,6 +528,9 @@ describe('/usage 本会话用量（v0.6.17）', () => {
     expect(out).toContain('📊 Token 用量')
     // 全局统计（3 次调用：prompt 1299 + completion 1129 = 2428）
     expect(out).toContain('2,428')
+    // 按模型分解（v0.6.18：perModel——用量分布）
+    expect(out).toContain('模型 deepseek-chat')
+    expect(out).toContain('3 次调用')
     // 本会话行：430 tokens / 2 次调用
     expect(out).toContain('本会话')
     expect(out).toContain('430 tokens')
