@@ -219,13 +219,18 @@ flare server --profile <expert-profile-file> --storage <db-path> [--mcp <mcp-con
 {"type":"get_memories"}                          // 列出全部（默认 50 条）
 {"type":"get_memories","query":"深色主题"}        // 全文搜索（trigram FTS，中文友好）
 {"type":"get_memories","query":"深色主题","limit":10}
+{"type":"get_memories","kind":"preference"}      // 按记忆类型过滤（v0.6.25）
+{"type":"get_memories","query":"偏好","kind":"preference"}  // 搜索 + 类型组合
 ```
 
 响应：`{"type":"memories","memories":[{"id":1,"content":"...","type":"preference","created_at":"..."}]}`
 
 - `query`：可选；有值 → `searchMemories`（trigram 全文检索 + bm25 排序），无值 → 列出全部
-- `limit`：可选，默认 50，上限 100
-- 宿主面板展示/管理记忆时使用
+- `kind`：可选（v0.6.25）；按记忆类型过滤（如 `preference` 偏好 / `note` 笔记；与 remember 的
+  `kind` 同语义）——只返回该类型的记忆；与 `query` 组合时先搜索再按类型过滤
+- `limit`：可选，默认 50，合法范围 1~100 整数（非法值如 0/-1/101/非数字回 error 含用法提示，
+  对齐 get_messages 校验风格，v0.6.25）
+- 宿主面板展示/管理记忆、按类型筛选记忆时使用
 
 ### 14. delete_memory — 删除记忆（隐私管理）
 

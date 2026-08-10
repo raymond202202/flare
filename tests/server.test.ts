@@ -492,6 +492,43 @@ describe('flare host server 协议', () => {
     expect(contents.some((c: string) => c.includes('苹果'))).toBe(false)
   }, 30000)
 
+  it('get_memories kind 过滤（v0.6.25）：kind=preference 只返回该类型，query+kind 组合命中', async () => {
+    await request({ type: 'remember', content: '用户偏好深色主题', kind: 'preference' }, { expect: ['ok'] })
+    await request({ type: 'remember', content: '会议记录：Q3 目标', kind: 'note' }, { expect: ['ok'] })
+    await request({ type: 'remember', content: '用户偏好浅色主题', kind: 'preference' }, { expect: ['ok'] })
+
+    // kind 过滤：只返回 preference 类型（库中可能残留其他测试的 preference，断言内容与类型）
+    const byType = await request({ type: 'get_memories', kind: 'preference' }, { expect: ['memories'] })
+    expect(byType[0].memories.length).toBeGreaterThanOrEqual(2)
+    expect(byType[0].memories.every((m: any) => m.type === 'preference')).toBe(true)
+    expect(byType[0].memories.some((m: any) => m.content === '用户偏好浅色主题')).toBe(true)
+    expect(byType[0].memories.some((m: any) => m.content === '用户偏好深色主题')).toBe(true)
+    // 不包含其他类型
+    expect(byType[0].memories.some((m: any) => m.content.includes('会议记录'))).toBe(false)
+
+    // query + kind 组合：搜索后按类型过滤
+    const combo = await request({ type: 'get_memories', query: '偏好', kind: 'preference' }, { expect: ['memories'] })
+    expect(combo[0].memories.length).toBeGreaterThanOrEqual(2)
+    expect(combo[0].memories.every((m: any) => m.type === 'preference')).toBe(true)
+    // 搜索词限定：所有命中都含「偏好」
+    expect(combo[0].memories.every((m: any) => m.content.includes('偏好'))).toBe(true)
+
+    // 无匹配类型幂等空数组
+    const none = await request({ type: 'get_memories', kind: 'ghost-type' }, { expect: ['memories'] })
+    expect(none[0].memories).toEqual([])
+  }, 30000)
+
+  it('get_memories limit 严格校验（v0.6.25）：非法值（0/-1/101/非数字）回 error 含提示，缺省仍 50', async () => {
+    for (const bad of [0, -1, 101, 'abc', 1.5]) {
+      const msgs = await request({ type: 'get_memories', limit: bad }, { expect: ['error'] })
+      expect(msgs[0].type).toBe('error')
+      expect(msgs[0].message).toContain('limit 必须是 1~100 的整数')
+    }
+    // 缺省 limit：不报错（记忆为空时返回空数组幂等）
+    const ok = await request({ type: 'get_memories' }, { expect: ['memories'] })
+    expect(Array.isArray(ok[0].memories)).toBe(true)
+  }, 30000)
+
   it('mcp_status（无 --mcp）→ 空列表（v0.5.5）', async () => {
     const msgs = await request({ type: 'mcp_status' }, { expect: ['mcp_status'] })
     expect(Array.isArray(msgs[0].servers)).toBe(true)

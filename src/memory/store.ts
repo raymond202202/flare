@@ -547,6 +547,17 @@ export class MemoryStore {
     ).all() as MemoryRow[]
   }
 
+  /** 按类型获取记忆（v0.6.25）：WHERE type = ? 过滤（如 preference 偏好 / note 笔记），
+   *  空 type 等价列出全部（与 getAllMemories 一致）；空/无匹配类型幂等返回 [] */
+  getMemoriesByType(type: string, limit = 50): MemoryRow[] {
+    const t = (type || '').trim()
+    if (!t) return this.getAllMemories().slice(0, limit)
+    // 同秒插入用自增 id 次级排序保证顺序确定（与 getRecentMessages v0.6.21 同模式）
+    return this.db.prepare(
+      'SELECT * FROM memories WHERE type = ? ORDER BY created_at DESC, id DESC LIMIT ?'
+    ).all(t, limit) as MemoryRow[]
+  }
+
   /** 读取运行时设置（key-value，如看图模型切换） */
   getSetting(key: string): string | null {
     const row = this.db.prepare('SELECT value FROM settings WHERE key = ?').get(key) as any

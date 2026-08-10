@@ -271,6 +271,29 @@ describe('MemoryStore 记忆检索增强（RAG, v0.5.1）', () => {
     expect(hits[0].content).toContain('回填测试')
   })
 
+  it('getMemoriesByType（v0.6.25）：按类型过滤 + limit 截断；空 type 列出全部；无匹配空数组', () => {
+    store.saveMemory('用户偏好深色模式', 'preference')
+    store.saveMemory('会议记录：Q3 目标', 'note')
+    store.saveMemory('用户偏好浅色主题', 'preference')
+
+    const prefs = store.getMemoriesByType('preference')
+    expect(prefs).toHaveLength(2)
+    expect(prefs.every((m) => m.type === 'preference')).toBe(true)
+    // 时间倒序（最新在前）
+    expect(prefs[0].content).toBe('用户偏好浅色主题')
+
+    // limit 截断
+    const one = store.getMemoriesByType('preference', 1)
+    expect(one).toHaveLength(1)
+
+    // 空 type → 列出全部
+    const all = store.getMemoriesByType('')
+    expect(all).toHaveLength(3)
+
+    // 无匹配类型 → 幂等空数组
+    expect(store.getMemoriesByType('ghost-type')).toEqual([])
+  })
+
   it('searchMessages：trigram FTS 检索历史消息（中文 3 字以上）', () => {
     const sid = store.createSession('消息检索')
     store.saveMessage(sid, { role: 'user', content: '帮我调试 flutter 网络请求超时问题' })
