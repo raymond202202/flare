@@ -89,6 +89,27 @@ export interface McpResourceInfo {
   mimeType?: string
 }
 
+/** MCP 资源模板（v0.6.22 resources/templates 协议）：宿主注入的 URI 模板声明——
+ *  动态资源（uri 含变量，如 memory://{noteId}）无法在 resources/list 逐条列出时，
+ *  用模板告知客户端如何构造/发现这类资源；客户端可据此生成候选 uri（配合
+ *  completion/complete 的 ref/resource 补全），或校验动态资源 uri 合法性。 */
+export interface McpResourceTemplate {
+  /** URI 模板（RFC 6570 风格：{var} 为变量占位，如 memory://{noteId}、file://{path}） */
+  uriTemplate: string
+  /** 模板名称（展示用） */
+  name: string
+  description?: string
+  mimeType?: string
+}
+
+/** MCP resources/templates/list 响应项（客户端视角 v0.6.22：元数据，与服务器注入同构） */
+export interface McpResourceTemplateInfo {
+  uriTemplate: string
+  name: string
+  description?: string
+  mimeType?: string
+}
+
 /** MCP prompt 模板参数（prompts/list 响应 arguments[] 元素） */
 export interface McpPromptArgument {
   name: string

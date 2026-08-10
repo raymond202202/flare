@@ -190,6 +190,49 @@ await client.unsubscribeResource('memory://preferences') // 退订（停止接�
   但无 SSE 长连接——服务器 `notifyResourceUpdated` 推送客户端**收不到**（MCPHttpClient 可订阅但无更新回调，
   与 roots/logging 推送差异一致，如实记录不假装支持）
 
+#### 资源模板（v0.6.22）：resources/templates/list + matchResourceTemplate
+
+**动态资源**（uri 含变量，如 `memory://{noteId}` 的每条记忆）无法在 `resources/list` 逐条列出时，
+可注入**资源模板**声明其形态——客户端据此知道如何构造/发现这类资源：
+
+```ts
+import { MCPServer } from 'flare-agent'
+
+const server = new MCPServer({
+  resources: [{ uri: 'memory://preferences', name: '用户偏好', read: () => '主题: 浅色' }],
+  resourceTemplates: [
+    {
+      uriTemplate: 'memory://{noteId}',   // RFC 6570 风格：{var} 为变量占位
+      name: '记忆条目',
+      description: '记忆库中的单条记忆（动态资源）',
+      mimeType: 'text/plain',
+    },
+  ],
+})
+server.start()
+```
+
+- 注入模板后 `initialize` 的 `capabilities.resources` 声明 `{ subscribe: true, listTemplates: true }`
+  （有模板时；仅静态资源无模板仍为 `{ subscribe: true }`，缺省行为与旧版完全一致零回归）
+- `resources/templates/list`：返回模板元数据（`uriTemplate`/`name`/`description?`/`mimeType?`）；
+  **未注入模板返回空列表**（方法始终可用，不报错）
+- 客户端消费：`MCPClient.listResourceTemplates()` / `MCPHttpClient.listResourceTemplates()` → 模板数组
+  （stdio / HTTP 同构，与 listResources 一致）
+- **纯函数 `matchResourceTemplate(uri, template)`**（库导出）：判断 uri 是否匹配某模板——把模板编译为
+  正则（`{var}` 为捕获组；`path`/`uri` 类变量允许任意字符含 `/`，其余变量为单段不含 `/`），
+  匹配返回该模板对象、不匹配返回 `null`。宿主可据此校验动态资源 uri 合法性、或生成模板候选 uri 示例
+
+```ts
+import { matchResourceTemplate } from 'flare-agent'
+matchResourceTemplate('memory://note-1', { uriTemplate: 'memory://{noteId}', name: '记忆条目' })
+// → 匹配的模板对象（noteId 单段变量：'memory://a/b' 不匹配）
+matchResourceTemplate('file://a/b/c.txt', { uriTemplate: 'file://{path}', name: '任意文件' })
+// → 匹配（path 变量允许含 /）
+```
+
+- **与 completion 的关系**：v0.6.11 的 `completion/complete`（ref/resource）按**已暴露静态资源** uri 前缀
+  补全；模板声明的是**动态资源形态**（客户端可自行构造变量段），两者互补——静态资源可枚举、动态资源靠模板发现
+
 ### 提示词暴露（v0.6.2）：prompts/list 真实数据 + prompts/get 渲染
 
 MCPServer 可注入**提示词模板**（如总结、翻译等可复用指令），经 MCP 标准 `prompts/list` / `prompts/get`

@@ -4,10 +4,10 @@ import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { readFileSync } from 'node:fs'
-import { MCPServer, toMcpTool } from '../src/mcp/server.js'
+import { MCPServer, toMcpTool, matchResourceTemplate } from '../src/mcp/server.js'
 import { MCPClient } from '../src/mcp/client.js'
 import { readFileTool, type Tool } from '../src/tools/index.js'
-import type { McpPrompt, McpResource, McpProgressParams } from '../src/mcp/types.js'
+import type { McpPrompt, McpResource, McpProgressParams, McpResourceTemplate } from '../src/mcp/types.js'
 import { MCP_PROTOCOL_VERSION } from '../src/mcp/client.js'
 import pkg from '../package.json' with { type: 'json' }
 
@@ -46,13 +46,14 @@ const slowTool: Tool = {
 }
 
 /** 进程内测试台：注入 input/write，模拟 MCP 客户端逐行发请求 */
-function createHarness(customTools?: Tool[], customResources?: McpResource[], customPrompts?: McpPrompt[], requestTimeoutMs?: number) {
+function createHarness(customTools?: Tool[], customResources?: McpResource[], customPrompts?: McpPrompt[], requestTimeoutMs?: number, customTemplates?: McpResourceTemplate[]) {
   const writes: string[] = []
   const input = new Readable({ read() {} })
   const server = new MCPServer({
     tools: customTools,
     resources: customResources,
     prompts: customPrompts,
+    resourceTemplates: customTemplates,
     write: (l) => writes.push(l),
     input,
     ...(requestTimeoutMs ? { requestTimeoutMs } : {}),
@@ -1236,6 +1237,106 @@ describe('MCPServer 列表变化通知（v0.6.20：notifications/tools/list_chan
       expect(res2.content[0].text).toContain('changed-notified')
       expect(toolsChanged).toBe(2)
       expect(resourcesChanged).toBe(2)
+    } finally {
+      client.close()
+    }
+  })
+
+  it('resources/templates/list：返回注入的资源模板（元数据含可选字段；动态资源发现）', async () => {
+    const templates: McpResourceTemplate[] = [
+      { uriTemplate: 'memory://{noteId}', name: '记忆条目', description: '记忆库中的单条记忆', mimeType: 'text/plain' },
+      { uriTemplate: 'file://{path}', name: '任意文件' },
+    ]
+    const h = createHarness(undefined, undefined, undefined, undefined, templates)
+    h.send({ jsonrpc: '2.0', id: 1, method: 'resources/templates/list', params: {} })
+    await h.flush()
+    const res = h.last()
+    expect(res.id).toBe(1)
+    expect(res.result.resourceTemplates).toEqual([
+      { uriTemplate: 'memory://{noteId}', name: '记忆条目', description: '记忆库中的单条记忆', mimeType: 'text/plain' },
+      { uriTemplate: 'file://{path}', name: '任意文件' },
+    ])
+    h.server.close()
+  })
+
+  it('resources/templates/list：未注入模板返回空列表（方法仍可用，不报错）', async () => {
+    const h = createHarness()
+    h.send({ jsonrpc: '2.0', id: 1, method: 'resources/templates/list', params: {} })
+    await h.flush()
+    const res = h.last()
+    expect(res.id).toBe(1)
+    expect(res.result.resourceTemplates).toEqual([])
+    h.server.close()
+  })
+
+  it('initialize：配置资源模板时 capabilities.resources 声明 listTemplates（仅 resources 无模板仍只有 subscribe，零回归）', async () => {
+    const withTemplates = createHarness(
+      undefined,
+      [{ uri: 'memory://preferences', name: '用户偏好', read: () => 'x' }],
+      undefined,
+      undefined,
+      [{ uriTemplate: 'memory://{noteId}', name: '记忆条目' }],
+    )
+    withTemplates.send({ jsonrpc: '2.0', id: 1, method: 'initialize', params: {} })
+    await withTemplates.flush()
+    expect(withTemplates.last().result.capabilities.resources).toEqual({ subscribe: true, listTemplates: true })
+    withTemplates.server.close()
+
+    // 仅有静态资源、无模板：声明保持旧版形状（subscribe），不额外引入 listTemplates
+    const noTemplates = createHarness(undefined, [{ uri: 'memory://preferences', name: '用户偏好', read: () => 'x' }])
+    noTemplates.send({ jsonrpc: '2.0', id: 2, method: 'initialize', params: {} })
+    await noTemplates.flush()
+    expect(noTemplates.last().result.capabilities.resources).toEqual({ subscribe: true })
+    noTemplates.server.close()
+
+    // 仅有模板、无静态资源：也声明 resources 能力（客户端可发现模板）
+    const templatesOnly = createHarness(undefined, undefined, undefined, undefined, [{ uriTemplate: 'memory://{noteId}', name: '记忆条目' }])
+    templatesOnly.send({ jsonrpc: '2.0', id: 3, method: 'initialize', params: {} })
+    await templatesOnly.flush()
+    expect(templatesOnly.last().result.capabilities.resources).toEqual({ subscribe: true, listTemplates: true })
+    templatesOnly.server.close()
+  })
+
+  it('matchResourceTemplate 纯函数：单段变量 / path 类变量含 / / 不匹配返回 null', () => {
+    const noteTpl: McpResourceTemplate = { uriTemplate: 'memory://{noteId}', name: '记忆条目' }
+    const fileTpl: McpResourceTemplate = { uriTemplate: 'file://{path}', name: '任意文件' }
+    // 单段变量：匹配单段，不匹配含 / 的
+    expect(matchResourceTemplate('memory://abc', noteTpl)).toBe(noteTpl)
+    expect(matchResourceTemplate('memory://abc/def', noteTpl)).toBeNull()
+    expect(matchResourceTemplate('memory://', noteTpl)).toBeNull()
+    expect(matchResourceTemplate('other://abc', noteTpl)).toBeNull()
+    // path 类变量允许任意字符（含 /）
+    expect(matchResourceTemplate('file://a/b/c.txt', fileTpl)).toBe(fileTpl)
+    expect(matchResourceTemplate('file://etc/hosts', fileTpl)).toBe(fileTpl)
+    // 返回匹配的模板对象（宿主可据此拿到模板元数据）
+    const matched = matchResourceTemplate('memory://note-1', noteTpl)
+    expect(matched?.name).toBe('记忆条目')
+  })
+
+  it('resources/templates 真实互通 e2e：MCPClient listResourceTemplates ↔ 真实 MCPServer 子进程（静态资源 + 动态模板）', async () => {
+    const client = new MCPClient({
+      command: process.execPath,
+      args: [TSK_CLI, join(__dirname, 'fixtures', 'mcp-flare-server-templates.ts')],
+      timeoutMs: 8000,
+    })
+    try {
+      await client.initialize()
+      // capabilities 探测：有模板 → listTemplates 声明
+      expect((client as any).capabilities?.resources?.listTemplates).toBe(true)
+      // 静态资源照常列出（模板注入不破坏 resources/list）
+      const resources = await client.listResources()
+      expect(resources.map(r => r.uri)).toEqual(['memory://preferences'])
+      // 动态模板列出：客户端据此构造/发现动态资源 uri
+      const templates = await client.listResourceTemplates()
+      expect(templates).toEqual([
+        { uriTemplate: 'memory://{noteId}', name: '记忆条目', description: '记忆库中的单条记忆（动态资源）', mimeType: 'text/plain' },
+      ])
+      // 模板 + 静态资源：readResource 仍正常（闭环不受影响）
+      const contents = await client.readResource('memory://preferences')
+      expect(contents[0].text).toBe('主题: 浅色')
+      // 连接仍正常
+      const res = await client.listResources()
+      expect(res.length).toBe(1)
     } finally {
       client.close()
     }

@@ -27,7 +27,7 @@
 import { createInterface, type Interface } from 'node:readline'
 import { createRequire } from 'node:module'
 import { tools, type Tool, type ToolResult } from '../tools/index.js'
-import type { McpCancelledParams, McpCompletionResult, McpContentItem, McpLogLevel, McpLogMessage, McpProgressParams, McpPrompt, McpPromptMessage, McpResource, McpResourceContents, McpRoot, McpSamplingRequest, McpSamplingResult, McpTool } from './types.js'
+import type { McpCancelledParams, McpCompletionResult, McpContentItem, McpLogLevel, McpLogMessage, McpProgressParams, McpPrompt, McpPromptMessage, McpResource, McpResourceContents, McpResourceTemplate, McpRoot, McpSamplingRequest, McpSamplingResult, McpTool } from './types.js'
 import { MCP_PROTOCOL_VERSION } from './client.js'
 
 const require = createRequire(import.meta.url)
@@ -50,6 +50,9 @@ export interface MCPServerOptions {
   tools?: Tool[]
   /** MCP 资源（v0.6.1）：resources/list 真实暴露 + resources/read 读取；缺省无资源能力（空列表） */
   resources?: McpResource[]
+  /** MCP 资源模板（v0.6.22）：resources/templates/list 真实暴露——动态资源（uri 含变量）的
+   *  声明模板（如 memory://{noteId}）；缺省无模板（空列表，resources/templates/list 仍可用返回空） */
+  resourceTemplates?: McpResourceTemplate[]
   /** MCP 提示词（v0.6.2）：prompts/list 真实暴露 + prompts/get 渲染；缺省无 prompts 能力（空列表） */
   prompts?: McpPrompt[]
   /** MCP logging（v0.6.13）：是否声明 capabilities.logging 并支持 logging/setLevel + sendLog 推送；
@@ -78,6 +81,7 @@ export function toMcpTool(tool: Tool): McpTool {
 export class MCPServer {
   private readonly toolList: Tool[]
   private readonly resourceList: McpResource[]
+  private readonly templateList: McpResourceTemplate[]
   private readonly promptList: McpPrompt[]
   private readonly serverInfo: { name: string; version: string }
   private readonly write: (line: string) => void
@@ -104,6 +108,7 @@ export class MCPServer {
   constructor(opts: MCPServerOptions = {}) {
     this.toolList = opts.tools ?? tools
     this.resourceList = opts.resources ?? []
+    this.templateList = opts.resourceTemplates ?? []
     this.promptList = opts.prompts ?? []
     this.serverInfo = opts.serverInfo ?? { name: 'flare', version: pkg.version }
     this.write = opts.write ?? ((line) => process.stdout.write(line + '\n'))
@@ -237,8 +242,11 @@ export class MCPServer {
           protocolVersion: MCP_PROTOCOL_VERSION,
           capabilities: {
             tools: {},
-            // v0.6.1 resources 暴露；v0.6.15 起声明 subscribe——支持 resources/subscribe + notifications/resources/updated
-            ...(this.resourceList.length > 0 ? { resources: { subscribe: true } } : {}),
+            // v0.6.1 resources 暴露；v0.6.15 起声明 subscribe——支持 resources/subscribe + notifications/resources/updated；
+            // v0.6.22 有模板时声明 listTemplates——支持 resources/templates/list（无模板不声明，与旧版一致）
+            ...(this.resourceList.length > 0 || this.templateList.length > 0
+              ? { resources: { subscribe: true, ...(this.templateList.length > 0 ? { listTemplates: true } : {}) } }
+              : {}),
             ...(this.promptList.length > 0 ? { prompts: {} } : {}),
             // v0.6.11：至少一个 prompt 提供补全回调时声明 completions 能力（completion/complete）
             ...(this.hasCompletions ? { completions: {} } : {}),
@@ -259,6 +267,16 @@ export class MCPServer {
             name: r.name,
             ...(r.description ? { description: r.description } : {}),
             ...(r.mimeType ? { mimeType: r.mimeType } : {}),
+          })),
+        }
+      case 'resources/templates/list':
+        // v0.6.22：真实暴露注入的资源模板（动态资源 uri 模板声明；无模板返回空列表）
+        return {
+          resourceTemplates: this.templateList.map(t => ({
+            uriTemplate: t.uriTemplate,
+            name: t.name,
+            ...(t.description ? { description: t.description } : {}),
+            ...(t.mimeType ? { mimeType: t.mimeType } : {}),
           })),
         }
       case 'resources/read':
@@ -585,6 +603,36 @@ export class MCPServer {
       this.write(JSON.stringify(msg))
     } catch { /* 忽略 */ }
   }
+}
+
+/**
+ * 判断 uri 是否匹配某资源模板（v0.6.22，纯函数）：把 RFC 6570 风格模板（{var} 占位）编译为
+ * 正则匹配——`memory://{noteId}` 可匹配 `memory://abc`（变量段非空、不含 /）；
+ * `file://{path}` 匹配 `file://a/b/c`（path 类变量可含 /，模板变量名决定）。
+ * 宿主可据此：① 校验动态资源 uri 是否属于声明的模板；② 生成模板的候选 uri 示例。
+ * 返回匹配的模板；无匹配返回 null。模板非法（占位符不闭合）→ 按字面量匹配。
+ */
+export function matchResourceTemplate(uri: string, template: McpResourceTemplate): McpResourceTemplate | null {
+  const t = template.uriTemplate
+  // 先按占位符分段（保留 {var} 段），字面段转义正则特殊字符、占位符段替换为捕获组——
+  // 避免先整体转义导致 { 被转义后占位符无法识别
+  const re = new RegExp(
+    '^' +
+      t
+        .split(/(\{[^}]+\})/g)
+        .map((seg) => {
+          const m = /^\{(\w+)\}$/.exec(seg)
+          if (m) {
+            // path/uri 类变量允许任意字符（含 /）；其余变量禁止 /（单段）
+            const name = m[1]
+            return name === 'path' || name === 'uri' ? '(.+)' : '([^/]+)'
+          }
+          return seg.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+        })
+        .join('') +
+      '$'
+  )
+  return re.test(uri) ? template : null
 }
 
 /**

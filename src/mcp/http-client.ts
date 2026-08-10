@@ -25,7 +25,7 @@
 import { request as httpRequest } from 'node:http'
 import { request as httpsRequest } from 'node:https'
 import { createRequire } from 'node:module'
-import type { McpTool, McpCallResult, McpPromptInfo, McpPromptResult, McpResourceInfo, McpResourceContents, McpCompletionResult, McpLogLevel, McpCallOptions, McpCancelledParams } from './types.js'
+import type { McpTool, McpCallResult, McpPromptInfo, McpPromptResult, McpResourceInfo, McpResourceContents, McpResourceTemplateInfo, McpCompletionResult, McpLogLevel, McpCallOptions, McpCancelledParams } from './types.js'
 
 const require = createRequire(import.meta.url)
 const pkg = require('../../package.json') as { version: string }
@@ -204,6 +204,13 @@ export class MCPHttpClient {
   async listResources(): Promise<McpResourceInfo[]> {
     const res = await this.request<any>('resources/list', {})
     return Array.isArray(res?.resources) ? (res.resources as McpResourceInfo[]) : []
+  }
+
+  /** 列出服务器资源模板（resources/templates/list，v0.6.22）：动态资源 uri 模板声明
+   *  （如 memory://{noteId}）——客户端可据此构造/发现动态资源 uri；无模板返回 [] */
+  async listResourceTemplates(): Promise<McpResourceTemplateInfo[]> {
+    const res = await this.request<any>('resources/templates/list', {})
+    return Array.isArray(res?.resourceTemplates) ? (res.resourceTemplates as McpResourceTemplateInfo[]) : []
   }
 
   /** 读取资源内容（resources/read，v0.6.6）：按 uri 返回内容列表；未知 uri 协议错误则 reject */

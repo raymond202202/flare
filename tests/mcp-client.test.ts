@@ -183,6 +183,18 @@ describe('MCPClient（stdio NDJSON JSON-RPC，零依赖）', () => {
     await expect(client.readResource('memory://nope')).rejects.toThrow(/未知资源/)
     client.close()
   })
+
+  it('listResourceTemplates：列出服务器资源模板（动态资源 uri 模板声明，v0.6.22）', async () => {
+    const client = spawnMock()
+    await client.initialize()
+    const templates = await client.listResourceTemplates()
+    expect(templates.length).toBe(1)
+    expect(templates[0].uriTemplate).toBe('memory://{noteId}')
+    expect(templates[0].name).toBe('记忆条目')
+    expect(templates[0].description).toContain('记忆库')
+    expect(templates[0].mimeType).toBe('text/plain')
+    client.close()
+  })
 })
 
 describe('MCPClient roots（v0.6.12：客户端暴露 roots + 响应服务器请求）', () => {
