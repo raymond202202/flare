@@ -9,8 +9,8 @@
 > `readResource(name, uri)`（带来源 server 名，未连接 reject 清晰错误），`status()` 已连接时带
 > `resourceCount`/`templateCount`（可选字段向后兼容），disconnect 随连接清理；server 协议新增
 > `mcp_resources` 请求（宿主查看外部 MCP 资源/模板清单，按服务器分组，只读不触发生成）+ CLI `/mcp`
-> 状态行显示 `（N 个工具 · M 资源 · K 模板）` + `/mcp resources [name]` 子命令；583/583 全绿
-> （577 + 6）。下一步候选：
+> 状态行显示 `（N 个工具 · M 资源 · K 模板）` + `/mcp resources [name]` 子命令；584/584 全绿
+> （583 + 1）。下一步候选：
 > ① 其他安全的外围增强（server 协议其他管理接口、CLI 交互增强、MCP 工具集完善等）；
 > ② 摘要内容升级为 LLM 生成（语义级压缩，需评估 run 循环外异步）；
 > ③ 资源桥接的宿主接线打磨（如外部 MCP 资源透传到 flare 自身 MCPServer 的 resources，需评估循环）。
@@ -36,16 +36,16 @@
     宿主面板「外部 MCP 资源」数据源（展示/透传外部服务器暴露的资源与动态资源形态）；已连接服务器带
     resources/templates（每项含来源 server），未连接不带；只读不触发生成、不创建会话；等待启动时后台
     连接落定（与 mcp_status 一致）；docs/host-protocol.md §16.1 新章节 + 请求类型列表
-  - **CLI `/mcp` 状态行增强 + `/mcp resources [name]` 子命令**：已连接服务器显示
+  - **CLI `/mcp` 状态行增强 + `/mcp resources [name]` 子命令 + connect 摘要带资源数**：已连接服务器显示
     `（N 个工具 · M 资源 · K 模板）`（有资源/模板才显示对应段，无资源服务器输出与旧版一致）；
     `/mcp resources [name]`（handleSlashCommand mcp hooks 新增可选 `resources?(name?)` 方法——
     未提供回退提示「当前环境未提供资源桥接」，向后兼容旧宿主）列出已桥接资源/模板
-    （`📄 uri — 描述` + `🧩 uriTemplate`；带 name 过滤单服务器；无资源友好提示；/help 注册）
+    （`📄 uri — 描述` + `🧩 uriTemplate`；带 name 过滤单服务器；无资源友好提示；/help 注册）；
+    `/mcp connect` 摘要带 `（N 个 MCP 工具 · M 个资源 · K 个模板）`（无资源时与旧版一致）
   - docs/mcp.md 交互模式 + 编程方式章节更新（资源桥接示例）+ README Changelog + 版本号 0.6.26
-  - **583/583 全绿**（577 + 6 新增：CLI /mcp 6——状态行资源数（已连接带 resourceCount/templateCount
-    显示、未连接不带）/ `/mcp resources` 无参列出全部（uri + 描述断言）/ 带 name 过滤单服务器 /
-    无资源友好提示 / 旧 hooks 未提供 resources 方法降级提示 / 用法提示含 resources 子命令；
-    P51 的 7 项——McpManager 5 + server 协议 e2e 2——见上），tsc 0 错误，零 agent.ts 改动
+  - **584/584 全绿**（583 + 1 新增：CLI /mcp connect 摘要带资源/模板数透传不破坏；P51 的 7 项——
+    McpManager 5 + server 协议 e2e 2；P52 的 6 项——CLI /mcp resources 系列，均见上），
+    tsc 0 错误，零 agent.ts 改动
   - **冒烟实测**：真实 mock 服务器 + 真实命令渲染组合——`/mcp` 状态行
     `● mock（3 个工具 · 2 资源 · 1 模板）`；`/mcp resources` 列出
     `📄 memory://preferences — 用户偏好设置` + `📄 file:///etc/hosts` +

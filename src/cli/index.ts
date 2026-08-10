@@ -237,7 +237,13 @@ async function startInteractive(opts: { contextSummarize?: boolean } = {}) {
       list: () => mcpManager.status(),
       connect: async (name) => {
         const mcpTools = await mcpManager.connect(name)
-        return `已连接 ${name}（${mcpTools.length} 个 MCP 工具）`
+        // v0.6.26：摘要带桥接资源/模板数（资源桥接——连接时已拉取 resources/list + templates/list）
+        const resCount = mcpManager.getAllResources().filter((r) => r.server === name).length
+        const tmplCount = mcpManager.getAllResourceTemplates().filter((t) => t.server === name).length
+        const extra = resCount || tmplCount
+          ? ` · ${resCount} 个资源${tmplCount ? ` · ${tmplCount} 个模板` : ''}`
+          : ''
+        return `已连接 ${name}（${mcpTools.length} 个 MCP 工具${extra}）`
       },
       disconnect: (name) => mcpManager.disconnect(name),
       // v0.6.26：列出已桥接资源/模板（资源桥接——连接时拉取 resources/list + resources/templates/list）

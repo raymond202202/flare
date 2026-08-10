@@ -347,21 +347,22 @@ Interactive mode commands:
   已连接时带 `resourceCount`/`templateCount`（可选字段，向后兼容）；`disconnect` 随连接清理
 - 🖥️ **server 协议 `mcp_resources`（src/server.ts）**：宿主查看已连接 MCP 服务器的资源/模板清单
   （按服务器分组，每项含来源）；只读、不触发生成、不创建会话；等待启动时后台连接落定（与 mcp_status 一致）
-- 🎨 **CLI `/mcp` 状态行增强 + `/mcp resources [name]` 子命令**：已连接服务器显示
+- 🎨 **CLI `/mcp` 状态行增强 + `/mcp resources [name]` 子命令 + connect 摘要带资源数**：已连接服务器显示
   `（N 个工具 · M 资源 · K 模板）`；`/mcp resources [name]` 列出已桥接资源/模板（uri + 描述；
-  带 name 过滤单服务器；无资源友好提示；旧 hooks 未提供 resources 方法时安全降级提示）
+  带 name 过滤单服务器；无资源友好提示；旧 hooks 未提供 resources 方法时安全降级提示）；
+  `/mcp connect` 摘要带 `（N 个 MCP 工具 · M 个资源 · K 个模板）`
 - 📚 docs/host-protocol.md §16.1 新章节 + 请求类型列表 + README Changelog + 版本号 0.6.26
-- 🧪 新增 13 项测试（McpManager 5：connect 资源桥接（mock 服务器 2 资源+1 模板+status 计数）/ readResource
+- 🧪 新增 14 项测试（McpManager 5：connect 资源桥接（mock 服务器 2 资源+1 模板+status 计数）/ readResource
   代理读取+未知 uri reject+未连接 reject / disconnect 随连接清理 / 无资源能力服务器空数组不阻塞 /
   HTTP transport 资源拉取+读取闭环；server 协议 e2e 2——mcp_resources 真实子进程返回资源/模板清单、
-  mcp_status 带 resourceCount/templateCount；CLI /mcp 6——状态行资源数、/mcp resources 无参列出全部、
-  带 name 过滤、无资源提示、旧 hooks 降级、用法提示含 resources）；
-  **583/583 全绿**（577 + 6），tsc 0 错误，零 agent.ts 改动
+  mcp_status 带 resourceCount/templateCount；CLI /mcp 7——状态行资源数、/mcp resources 无参列出全部、
+  带 name 过滤、无资源提示、旧 hooks 降级、用法提示含 resources、connect 摘要带资源数透传）；
+  **584/584 全绿**（583 + 1），tsc 0 错误，零 agent.ts 改动
 - EN: `McpManager` now bridges external MCP servers' `resources/list` + `resources/templates/list` on
   connect (previously only tools were consumed) — `getAllResources()` / `getAllResourceTemplates()` /
   `readResource(name, uri)` + new host-protocol request `mcp_resources` expose them to hosts;
   `/mcp` status shows resource/template counts + new `/mcp resources [name]` subcommand.
-  583/583 green, zero Agent.run changes.
+  584/584 green, zero Agent.run changes.
 
 #### v0.6.25 (2026-08-11) — MCP 列表变化通知补齐 prompts/list_changed + CLI /memory 关键词搜索
 - 📢 **MCPServer.notifyPromptListChanged()（src/mcp/server.ts）**：MCP 标准列表变化通知**第三块对称补齐**
