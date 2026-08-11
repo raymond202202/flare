@@ -339,6 +339,23 @@ server.start()
 - **嵌套循环风险（同资源透传）**：外部服务器若是另一个同样透传的 flare 实例，prompts/get 可能无限
   递归——部署时避免把 flare 自身 MCP 端点配为 flare 的 MCP 服务器即可
 
+#### 工具透传（v0.6.47）：CLI `mcp-server --bridge-tools`
+
+与资源/提示词透传对称，外部 MCP 服务器的**工具**也可经 flare 自身 MCPServer 暴露给客户端——
+`flare mcp-server --bridge-tools` 连接 ~/.flare/mcp.json 全部外部服务器（与 `--bridge-resources` /
+`--bridge-prompts` 可同时用，`--config` 共用），把 `McpManager.getAllTools()` 返回的 flare Tool 代理
+（createMcpTools 包装）并入工具集：
+
+- **工具并集**：`tools/list` 返回内置（`-t` 可收窄）+ 外部透传的全部工具——客户端拿到的是
+  flare 工具与外部 MCP 工具的并集（stdio 与 `--http` 双传输都支持）
+- **调用代理**：`tools/call` 调外部工具时，经 flare 转发到所属服务器的 `tools/call`（execute 代理
+  与资源读取代理转发同模式）——内容往返，isError 原样透传（工具级失败不中断请求）
+- **同名冲突**：同名工具保留原名、以先注册者（内置）为准——需要外部同名工具时可用 `-t` 收窄内置
+  避免冲突
+- **降级**：未配置服务器 / 连接失败 → 提示 + 仅暴露 flare 自身工具（不中断，与资源透传无配置降级一致）
+- **嵌套循环风险（同资源透传）**：外部服务器若是另一个同样透传的 flare 实例，tools/call 可能无限
+  递归——部署时避免把 flare 自身 MCP 端点配为 flare 的 MCP 服务器即可
+
 ### 提示词暴露（v0.6.2）：prompts/list 真实数据 + prompts/get 渲染
 
 MCPServer 可注入**提示词模板**（如总结、翻译等可复用指令），经 MCP 标准 `prompts/list` / `prompts/get`

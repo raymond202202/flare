@@ -150,7 +150,7 @@ cp .env.example ~/.flare/.env
 | `flare chat -q "问题"` | 单次查询模式 |
 | `flare chat -q "问题" -i 图片.png` | 单次查询附带图片 |
 | `flare server [--profile --storage --mcp --confirm-tools --confirm-timeout --max-tokens --temperature --max-context-messages --max-context-tokens --context-summarize --tool-output-policy]` | 宿主协议服务（stdin/stdout JSON Lines，供 Qt 等宿主调用；v0.6.1 起写回类工具经确认门；v0.6.5 起 --max-tokens/--temperature 设 chat 默认采样参数；v0.6.17 起 --max-context-messages/--max-context-tokens 设默认上下文自动裁剪；v0.6.19 起 --context-summarize 默认开启上下文压缩摘要；v0.6.34 起 --tool-output-policy 设默认工具输出治理策略） |
-| `flare mcp-server [-t 工具名,...]` | MCP stdio 服务器：把 flare 工具集暴露给其他 AI 客户端（v0.5.8） |
+| `flare mcp-server [-t 工具名,...] [--bridge-resources] [--bridge-prompts] [--bridge-tools]` | MCP stdio 服务器：把 flare 工具集暴露给其他 AI 客户端（v0.5.8；v0.6.28/0.6.37/0.6.47 起可透传外部 MCP 服务器资源/提示词/工具） |
 | `flare mcp call <服务器> <工具> [JSON参数]` | 调用 MCP 服务器工具（stdio 或 HTTP transport；服务器名查 `~/.flare/mcp.json`，`--url` 直连 HTTP 端点，v0.6.6） |
 | `flare mcp status` | 查看配置的 MCP 服务器（名称 + 传输类型 + 端点/命令，v0.6.6） |
 | `flare mcp resources <服务器> [--read <uri>]` | 查看/读取 MCP 服务器暴露的资源（v0.6.10） |
@@ -340,6 +340,30 @@ Interactive mode commands:
 ### Changelog / Release Notes
 
 > 中文条目 / Chinese entries · English summary for each version
+
+#### v0.6.47 (2026-08-12) — CLI `mcp-server --bridge-tools`（外部 MCP 工具透传 flare 自身 MCPServer，与 v0.6.28/0.6.37 --bridge-resources/--bridge-prompts 对称）
+
+- ✨ **CLI `flare mcp-server --bridge-tools`（src/cli/index.ts + 测试）**：
+-  MCP 三大列表（tools/resources/prompts）中资源/提示词已能透传（v0.6.28/0.6.37），唯独**工具**还
+-  不能——外部 MCP 服务器工具只能注入 Agent（库级 getAllTools），无法经 flare 自身 MCPServer 暴露给
+-  其他 AI 客户端；本轮补齐（纯外围 CLI，零 agent.ts 改动）
+- - **新 flag**：`mcp-server --bridge-tools`（与 `--bridge-resources` / `--bridge-prompts` 可同时用；
+-  `--config` 共用）——连接 ~/.flare/mcp.json 全部服务器（Promise.allSettled 容错，与资源透传同分支
+-  共用连接），把 `McpManager.getAllTools()` 返回的 flare Tool 代理（createMcpTools 包装）并入工具集：
+-  **工具并集 = 内置（-t 收窄）+ 外部透传**（stdio 与 `--http` 双传输都支持）；**调用实时代理转发**——
+-  客户端 `tools/call` 经 flare 转发到外部服务器（内容往返，isError 原样透传）；同名工具保留原名、
+-  以先注册者为准（可用 `-t` 收窄内置避免冲突）
+- - **能力声明**：透传不改变 initialize 能力声明（工具能力本就默认声明）；无配置/连接失败 → 提示 +
+-  仅暴露 flare 自身工具（不中断，与资源透传无配置降级一致）
+- - 📚 docs/mcp.md（工具透传章节 + 嵌套循环风险同资源透传）+ README Changelog + 版本号 0.6.47
+- - 🧪 **802/802 全绿**（800 + 2 新增 tests/mcp-cli-server.test.ts：--bridge-tools 真实子进程全链路——
+-  外部 mock 服务器（echo_text/add_numbers/fail_tool）经 flare 透传：listTools 并集 9 个（6 内置 + 3
+-  外部）+ callTool 代理转发往返（add_numbers → 5、echo_text → echo: hi）；无配置降级（仅 6 内置工具，
+-  不中断）），tsc 0 错误，**零 agent.ts 改动**
+- - **冒烟实测**（真实 dist CLI 0.6.47 子进程 + 真实 mock 服务器 + 真实 MCPClient）：serverInfo flare
+-  0.6.47 → 工具集并集 `read_file...memory_save, echo_text, add_numbers, fail_tool`（9 个）→
+-  callTool add_numbers `{a:2,b:3}` → `5` → echo_text → `echo: hi` → fail_tool → isError true
+-  「出错了」，SMOKE PASS
 
 #### v0.6.46 (2026-08-12) — CLI `/trim` 智能裁剪 + `/context` 裁剪提示（方向④ suggestTrim 宿主接线 CLI 侧）
 

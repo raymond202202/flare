@@ -16,6 +16,7 @@ const CLI = path.join(__dirname, '..', 'dist', 'cli', 'index.js')
 const TSK_CLI = path.join(__dirname, '..', 'node_modules', 'tsx', 'dist', 'cli.mjs')
 const EXT_FIXTURE = path.join(__dirname, 'fixtures', 'mcp-flare-server-templates.ts')
 const PROMPTS_FIXTURE = path.join(__dirname, 'fixtures', 'mcp-flare-server-prompts-bridge.ts')
+const MOCK_SERVER = path.join(__dirname, 'fixtures', 'mcp-mock-server.mjs')
 
 function spawnCli(args: string[], timeoutMs = 10000): MCPClient {
   return new MCPClient({
@@ -162,6 +163,51 @@ describe('CLI mcp-server 命令（MCP stdio 服务器）', () => {
       expect(prompts).toEqual([])
       const tools = await client.listTools()
       expect(tools.length).toBe(6)
+    } finally {
+      client.close()
+    }
+  })
+
+  it('flare mcp-server --bridge-tools：外部 MCP 服务器工具经 flare 透传给客户端（调用代理转发）', async () => {
+    // 临时 MCP 配置：外部 stdio MCP 服务器（mcp-mock-server.mjs，暴露 echo_text / add_numbers / fail_tool）
+    const dir = mkdtempSync(path.join(tmpdir(), 'flare-mcp-bridge-tools-'))
+    const configPath = path.join(dir, 'mcp.json')
+    writeFileSync(configPath, JSON.stringify({
+      servers: [
+        { name: 'ext', command: process.execPath, args: [MOCK_SERVER] },
+      ],
+    }))
+
+    const client = spawnCli(['mcp-server', '--bridge-tools', '--config', configPath], 15000)
+    try {
+      const init = await client.initialize()
+      expect(init.serverInfo?.name).toBe('flare')
+      // 外部工具透传：listTools 能看到外部服务器的工具（并集 = 内置 6 + 外部 3）
+      const tools = await client.listTools()
+      const names = tools.map((t) => t.name)
+      expect(names).toContain('echo_text')
+      expect(names).toContain('add_numbers')
+      expect(names).toContain('fail_tool')
+      expect(names).toContain('read_file') // flare 自身工具照常
+      expect(names.length).toBe(9)
+      // 调用外部工具：flare 代理转发到外部服务器（内容往返）
+      const res = await client.callTool('add_numbers', { a: 2, b: 3 })
+      expect(res.isError).toBe(false)
+      expect(res.content[0]?.text).toBe('5')
+      const echo = await client.callTool('echo_text', { text: 'hello' })
+      expect(echo.content[0]?.text).toBe('echo: hello')
+    } finally {
+      client.close()
+    }
+  })
+
+  it('flare mcp-server --bridge-tools（无配置）：提示 + 仅暴露 flare 自身工具（不中断）', async () => {
+    const client = spawnCli(['mcp-server', '--bridge-tools', '--config', path.join(tmpdir(), 'flare-mcp-nonexistent.json')])
+    try {
+      await client.initialize()
+      const tools = await client.listTools()
+      expect(tools.length).toBe(6)
+      expect(tools.map((t) => t.name)).not.toContain('echo_text')
     } finally {
       client.close()
     }
