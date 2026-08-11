@@ -298,10 +298,11 @@ flare server --profile <expert-profile-file> --storage <db-path> [--mcp <mcp-con
 {"type":"mcp_status"}
 ```
 
-响应：`{"type":"mcp_status","servers":[{"name":"fs","connected":true,"toolCount":8,"resourceCount":2,"templateCount":1,"promptCount":2},{"name":"db","connected":false,"toolCount":0,"error":"..."}]}`
+响应：`{"type":"mcp_status","servers":[{"name":"fs","connected":true,"toolCount":8,"transport":"stdio","target":"npx @modelcontextprotocol/server-filesystem /tmp","resourceCount":2,"templateCount":1,"promptCount":2},{"name":"db","connected":false,"toolCount":0,"transport":"http","target":"http://127.0.0.1:8931/mcp","error":"..."}]}`
 
 - 列出 `--mcp` 配置的每个服务器：`connected`（是否连接成功）、`toolCount`（桥接的工具数）、`error`（连接失败原因，可选）
 - v0.6.26：已连接服务器额外带 `resourceCount`（桥接的资源数）/ `templateCount`（桥接的资源模板数，均为可选字段，向后兼容）
+- v0.6.50：每个服务器带 `transport`（`stdio` 或 `http`——配置 url 走 HTTP，command 走 stdio）与 `target`（http 为端点 url，stdio 为 command + args）——宿主面板可区分两种连接方式并直接展示连接目标（必填字段，与旧协议兼容性：新增字段不破坏旧客户端）
 - 宿主 AI 面板展示/诊断外部 MCP 工具时使用；连接是启动时后台完成的，本请求会等待其落定
 
 ### 16.1 mcp_resources — 查看已连接 MCP 服务器的资源/模板清单（v0.6.26）

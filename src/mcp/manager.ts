@@ -165,18 +165,27 @@ export class McpManager {
 
   /** 连接状态列表（CLI /mcp、server mcp_status 用） */
   status(): McpServerStatus[] {
-    return this.config.map(c => ({
-      name: c.name,
-      connected: this.clients.has(c.name),
-      toolCount: this.tools.get(c.name)?.length || 0,
-      // v0.6.26：已连接时带资源/模板数（无资源能力为 0）
-      ...(this.clients.has(c.name)
-        ? { resourceCount: this.resources.get(c.name)?.length || 0, templateCount: this.templates.get(c.name)?.length || 0 }
-        : {}),
-      // v0.6.36：已连接时带提示词数（无 prompts 能力为 0）
-      ...(this.clients.has(c.name) ? { promptCount: this.prompts.get(c.name)?.length || 0 } : {}),
-      error: this.errors.get(c.name),
-    }))
+    return this.config.map(c => {
+      // v0.6.50：传输类型 + 目标端点/命令（宿主面板区分 stdio/HTTP 并直接展示连接目标）
+      const transport: 'stdio' | 'http' = c.url ? 'http' : 'stdio'
+      const target = c.url
+        ? c.url
+        : `${c.command || ''}${c.args?.length ? ' ' + c.args.join(' ') : ''}`
+      return {
+        name: c.name,
+        connected: this.clients.has(c.name),
+        toolCount: this.tools.get(c.name)?.length || 0,
+        transport,
+        target,
+        // v0.6.26：已连接时带资源/模板数（无资源能力为 0）
+        ...(this.clients.has(c.name)
+          ? { resourceCount: this.resources.get(c.name)?.length || 0, templateCount: this.templates.get(c.name)?.length || 0 }
+          : {}),
+        // v0.6.36：已连接时带提示词数（无 prompts 能力为 0）
+        ...(this.clients.has(c.name) ? { promptCount: this.prompts.get(c.name)?.length || 0 } : {}),
+        error: this.errors.get(c.name),
+      }
+    })
   }
 
   /** 连接指定服务器（幂等：已连接直接返回已有工具） */

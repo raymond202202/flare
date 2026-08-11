@@ -27,7 +27,7 @@ afterEach(() => {
 
 /** fake MCP hooks：记录调用，模拟状态 */
 function makeHooks(
-  initial: McpServerStatus[] = [],
+  initial: (Partial<McpServerStatus> & { name: string; connected: boolean; toolCount: number })[] = [],
   resourceData: { resources: McpResourceRef[]; templates: McpResourceTemplateRef[] } = { resources: [], templates: [] },
   promptData: McpPromptRef[] = [],
   readData: Record<string, { uri: string; mimeType?: string; text: string }[]> = {},
@@ -38,7 +38,12 @@ function makeHooks(
   calls: { connect: string[]; disconnect: string[]; changed: number; reads: string[]; renders: string[]; calls: string[] }
   setStatus: (s: McpServerStatus[]) => void
 } {
-  let status = initial
+  let status = initial.map((s) => ({
+    // v0.6.50：旧形状 status（缺 transport/target）补默认值——CLI 渲染向后兼容
+    transport: 'stdio' as const,
+    target: '',
+    ...s,
+  })) as McpServerStatus[]
   const calls = { connect: [] as string[], disconnect: [] as string[], changed: 0, reads: [] as string[], renders: [] as string[], calls: [] as string[] }
   return {
     calls,
@@ -105,6 +110,37 @@ describe('/mcp 命令', () => {
     expect(text).toContain('fs')
     expect(text).toContain('3 个工具')
     expect(text).toContain('db')
+  })
+
+  it('/mcp 显示传输类型与目标端点（v0.6.50：stdio/HTTP 区分 + 连接目标可见）', async () => {
+    const lines: string[] = []
+    const { hooks } = makeHooks([
+      { name: 'local', connected: true, toolCount: 2, transport: 'stdio', target: 'npx @modelcontextprotocol/server-filesystem /tmp' },
+      { name: 'remote', connected: false, toolCount: 0, transport: 'http', target: 'http://127.0.0.1:8931/mcp' },
+    ])
+    const r = await handleSlashCommand('/mcp', store, (s) => lines.push(s), undefined, hooks)
+    expect(r).toBe('continue')
+    const text = lines.join('\n')
+    // stdio 服务器：标记 [stdio] + 命令目标
+    expect(text).toContain('local')
+    expect(text).toContain('[stdio]')
+    expect(text).toContain('server-filesystem')
+    // HTTP 服务器：标记 [HTTP] + 端点 url（未连接也显示传输与端点——配置即可见）
+    expect(text).toContain('remote')
+    expect(text).toContain('[HTTP]')
+    expect(text).toContain('http://127.0.0.1:8931/mcp')
+  })
+
+  it('/mcp 旧形状 status（缺 transport/target）→ 默认 stdio + 不崩溃（向后兼容）', async () => {
+    const lines: string[] = []
+    const { hooks } = makeHooks([
+      { name: 'legacy', connected: true, toolCount: 1 },
+    ])
+    const r = await handleSlashCommand('/mcp', store, (s) => lines.push(s), undefined, hooks)
+    expect(r).toBe('continue')
+    const text = lines.join('\n')
+    expect(text).toContain('legacy')
+    expect(text).toContain('[stdio]') // 缺省传输标记 stdio
   })
 
   it('/mcp connect <name> → 调用 connect + onChanged 重建回调', async () => {

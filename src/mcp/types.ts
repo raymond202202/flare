@@ -59,6 +59,10 @@ export interface McpServerStatus {
   name: string
   connected: boolean
   toolCount: number
+  /** 传输类型（v0.6.50：stdio 或 http——宿主面板区分两种连接方式） */
+  transport: 'stdio' | 'http'
+  /** 目标端点/命令（v0.6.50：http 显示 url，stdio 显示 command + args——宿主面板直接展示） */
+  target: string
   /** 桥接的资源数（v0.6.26 资源桥接：连接时拉取 resources/list；服务器无资源能力为 0） */
   resourceCount?: number
   /** 桥接的资源模板数（v0.6.26：resources/templates/list；无模板为 0） */
