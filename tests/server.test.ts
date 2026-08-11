@@ -588,6 +588,52 @@ describe('flare host server 协议', () => {
     }
   }, 30000)
 
+  it('get_config（--mcp 配 HTTP url + headers）→ mcpServers 带 auth 标记；stdio 无 auth（v0.6.73）', async () => {
+    // 独立子进程：--mcp 配置 HTTP 鉴权服务器（url 不可达不影响——get_config 只读配置不触发生成）
+    const dir = mkdtempSync(path.join(os.tmpdir(), 'flare-mcp-cfg-test-'))
+    const mcpCfg = path.join(dir, 'mcp.json')
+    writeFileSync(mcpCfg, JSON.stringify({
+      servers: [
+        { name: 'secure', url: 'http://127.0.0.1:9/mcp', headers: { Authorization: 'Bearer x' } },
+        { name: 'mock', command: process.execPath, args: ['nope'] },
+      ],
+    }))
+    const env: Record<string, string> = { ...process.env } as Record<string, string>
+    delete env.DEEPSEEK_API_KEY
+    const c = spawn(process.execPath, [CLI, 'server', '--storage', path.join(dir, 'test.db'), '--mcp', mcpCfg], { env, stdio: ['pipe', 'pipe', 'pipe'] })
+    const rl2 = createInterface({ input: c.stdout! })
+    try {
+      const msgs = await new Promise<any[]>((resolve, reject) => {
+        const timer = setTimeout(() => { cleanup(); reject(new Error('超时（get_config mcpServers）')) }, 15000)
+        const handler = (line: string) => {
+          try {
+            const parsed = JSON.parse(line)
+            if (parsed.type === 'config') {
+              cleanup()
+              resolve([parsed])
+            }
+          } catch { /* 非 JSON 行忽略 */ }
+        }
+        const cleanup = () => { clearTimeout(timer); rl2.removeListener('line', handler) }
+        rl2.on('line', handler)
+        c.stdin!.write(JSON.stringify({ type: 'get_config' }) + '\n')
+      })
+      const servers = msgs[0].mcpServers
+      expect(Array.isArray(servers)).toBe(true)
+      const secure = servers.find((s: any) => s.name === 'secure')
+      expect(secure.transport).toBe('http')
+      expect(secure.auth).toBe(true) // 只传布尔不传 token
+      expect(JSON.stringify(msgs[0])).not.toContain('Bearer')
+      const mock = servers.find((s: any) => s.name === 'mock')
+      expect(mock.transport).toBe('stdio')
+      expect(mock.auth).toBeUndefined()
+    } finally {
+      c.kill()
+      rl2.close()
+      rmSync(dir, { recursive: true, force: true })
+    }
+  }, 30000)
+
   it('mcp_connect 缺 server → error（v0.6.56 控制面补齐）', async () => {
     const msgs = await request({ type: 'mcp_connect' }, { expect: ['error'] })
     expect(msgs[0].message).toContain('mcp_connect')
