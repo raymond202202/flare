@@ -3,12 +3,14 @@
 > 目标：flare 是 Pulse/StorySpire 依赖的 AI Agent 引擎（TS）。任何改动必须安全（tsc 0 错 + 测试全绿才 commit）。
 > 铁律：禁止 push；禁止修改 src/core/agent.ts 的 Agent.run 核心循环。
 
-> **最新状态（v0.6.32）**：**CLI 会话归档命令落地**（候选③）——`/archived` 列出归档会话
-> （含首条消息预览+会话ID+友好时间）/ `archive [会话ID]` 归档（缺省当前会话，复用既有 sessionId
-> 参数；数据保留可恢复）/ `/restore <会话ID>` 恢复（无参列出归档+用法）；三者幂等安全，与 server
-> 协议 end_session/restore_session/list_archived_sessions 语义对称；/help 注册；677/677 全绿
-> （664 + 13 新增），tsc 0 错误，零 agent.ts 改动。另修 v0.6.31 遗留 session-archive e2e chat 测试
-> vitest 超时放宽 45s（dotenv 注入真实 key 走远端 API，网络慢超默认 5s——与 server.test.ts 同模式）。
+> **最新状态（v0.6.32 + v0.6.33）**：**CLI 会话归档命令 + terminal 退出码落地**——
+> `v0.6.32`：`/archived` 列出归档会话（含首条消息预览+会话ID+友好时间）/ `archive [会话ID]` 归档
+> （缺省当前会话，复用既有 sessionId 参数；数据保留可恢复）/ `/restore <会话ID>` 恢复（无参列出
+> 归档+用法）；三者幂等安全，与 server 协议 end_session/restore_session/list_archived_sessions
+> 语义对称；`v0.6.33`：terminal 工具失败错误信息带退出码（127 命令不存在/1 一般错误）或信号
+> （超时 SIGTERM），AI 可判断失败性质；681/681 全绿（664 + 17 新增），tsc 0 错误，零 agent.ts 改动。
+> 另修 v0.6.31 遗留 session-archive e2e chat 测试 vitest 超时放宽 45s（dotenv 注入真实 key 走
+> 远端 API，网络慢超默认 5s——与 server.test.ts 同模式）。
 > （v0.6.31 会话归档 API 已落地：end_session / restore_session / list_archived_sessions，664/664。）
 
 > 【🔴 当前最高优先级方向（2026-08-11 用户拍板）】**prompt caching 基建 P0 已基本落地**：
@@ -18,12 +20,12 @@
 
 > 下一步候选（按优先级）：
 > ① 【P1】分层上下文（Layer 1 异步滚动摘要——摘要内容升级为 LLM 生成语义级压缩，需评估 run 循环外异步）
-> ② 【P1】工具输出治理补强（terminal 工具侧暴露退出码后截断带退出码；或策略可配置化透传 server 协议）
-> ③ 其他安全的外围增强（server 协议其他管理接口、MCP 工具集完善、测试稳定性等）
+> ② 其他安全的外围增强（server 协议其他管理接口、MCP 工具集完善、工具输出治理策略可配置化透传
+>   server 协议、测试稳定性等）
 
 > ---
 
-### 2026-08-11 第三十二轮实施（v0.6.32）——CLI 会话归档命令（候选③，端侧对称接线 v0.6.31 归档 API）
+### 2026-08-11 第三十二轮实施（v0.6.32 + v0.6.33）——CLI 会话归档命令 + terminal 工具退出码
 
 - **P61 CLI 会话归档命令**（src/cli/index.ts + tests/session-archive-cli.test.ts，commit `3051acd`）：
   - **缺口定位**：v0.6.31 归档 API 只暴露在 server 协议（end_session / restore_session /
@@ -55,9 +57,20 @@
     出现 → restore_session restored:true → recent_sessions 重新出现；CLI 命令组合
     `/archive`（缺省当前会话）→ `/archived` 列出「[07:57] 这是一条冒烟测试消息 (flare_…)」→
     `/restore` 无参列出 + 用法 → `/restore <id>` ✅ 已恢复 → `/sessions` 重新出现，SMOKE PASS
+- **P62 terminal 工具退出码暴露**（src/tools/index.ts + tests/terminal-exitcode.test.ts，commit `24a3758`）：
+  - **缺口定位**：候选②「工具输出治理补强（terminal 工具侧暴露退出码）」——命令失败时错误信息
+    只有 `e.message`（如「Command failed: /bin/bash exit status 3」），退出码藏在 message 里
+    不直观；AI 无法一眼判断失败性质（127 命令不存在 vs 1 一般错误 vs 超时）
+  - **实现**：catch 分支按 `e.status`（execSync 退出码，number）→ `（退出码 N）`；status 非数值
+    但 `e.signal` 存在（超时 SIGTERM / 被信号终止）→ `（信号 SIGTERM，可能超时）`；两者都无 →
+    不带括号（与旧版逐字符一致零回归）；错误格式 `命令执行失败${reason}: ${e.message.slice(0,500)}`
+  - **681/681 全绿**（677 + 4 新增：成功路径零回归 / exit 3 → 「命令执行失败（退出码 3）」 /
+    命令不存在 → 127 / exit 0 成功不误报），tsc 0 错误，**零 agent.ts 改动**
+  - **冒烟实测**（真实库调用）：`exit 3` →「命令执行失败（退出码 3）」、`flare_nonexistent_…` →
+    「（退出码 127）」、`echo` 成功、`exit 0` success:true，SMOKE PASS
 - **下一步候选**：① 【P1】分层上下文（Layer 1 异步滚动摘要——LLM 语义级摘要，需评估 run 循环外异步）；
-  ② 【P1】工具输出治理补强（terminal 工具侧暴露退出码 / 策略可配置化透传 server 协议）；
-  ③ 其他安全的外围增强（server 协议其他管理接口、MCP 工具集完善、测试稳定性等）
+  ② 其他安全的外围增强（server 协议其他管理接口、MCP 工具集完善、工具输出治理策略可配置化透传
+  server 协议、测试稳定性等）
 
 ---
 
