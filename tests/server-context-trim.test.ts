@@ -69,36 +69,38 @@ describe('flare server 上下文自动裁剪参数（--max-context-messages/--ma
     expect(msgs[0].engine).toBeTruthy()
   })
 
+  // 注：chat 走真实远端 API（dotenv 从 ~/.flare/.env 注入 key，即使 delete DEEPSEEK_API_KEY），
+  // 网络慢可能超 vitest 默认 5s——与 server.test.ts/session-archive.test.ts 同模式放宽 45s
   it('chat 不带裁剪参数 → 应用默认值（事件流完整，以 done/error 结束）', async () => {
-    const msgs = await request({ type: 'chat', sessionId: 's-ctx-dflt', input: '你好' }, ['done', 'error'])
+    const msgs = await request({ type: 'chat', sessionId: 's-ctx-dflt', input: '你好' }, ['done', 'error'], 45000)
     expect(msgs.length).toBeGreaterThan(0)
     const last = msgs[msgs.length - 1]
     expect(['done', 'error']).toContain(last.type)
-  })
+  }, 45000)
 
   it('chat 带非法 maxContextMessages → 请求校验优先回 error（默认值不掩盖请求错误）', async () => {
-    const msgs = await request({ type: 'chat', sessionId: 's-ctx-bad1', input: 'hi', maxContextMessages: 'abc' }, ['error'])
+    const msgs = await request({ type: 'chat', sessionId: 's-ctx-bad1', input: 'hi', maxContextMessages: 'abc' }, ['error'], 45000)
     expect(msgs[0].type).toBe('error')
     expect(msgs[0].message).toContain('maxContextMessages')
-  })
+  }, 45000)
 
   it('chat 带负数 maxContextMessages → error', async () => {
-    const msgs = await request({ type: 'chat', sessionId: 's-ctx-bad2', input: 'hi', maxContextMessages: -3 }, ['error'])
+    const msgs = await request({ type: 'chat', sessionId: 's-ctx-bad2', input: 'hi', maxContextMessages: -3 }, ['error'], 45000)
     expect(msgs[0].type).toBe('error')
     expect(msgs[0].message).toContain('maxContextMessages')
-  })
+  }, 45000)
 
   it('chat 带非法 maxContextTokens（0）→ error', async () => {
-    const msgs = await request({ type: 'chat', sessionId: 's-ctx-bad3', input: 'hi', maxContextTokens: 0 }, ['error'])
+    const msgs = await request({ type: 'chat', sessionId: 's-ctx-bad3', input: 'hi', maxContextTokens: 0 }, ['error'], 45000)
     expect(msgs[0].type).toBe('error')
     expect(msgs[0].message).toContain('maxContextTokens')
-  })
+  }, 45000)
 
   it('chat 带合法裁剪参数 → 透传流程完整（以 done/error 结束，不挂死）', async () => {
-    const msgs = await request({ type: 'chat', sessionId: 's-ctx-ok', input: '你好', maxContextMessages: 8, maxContextTokens: 500 }, ['done', 'error'])
+    const msgs = await request({ type: 'chat', sessionId: 's-ctx-ok', input: '你好', maxContextMessages: 8, maxContextTokens: 500 }, ['done', 'error'], 45000)
     const last = msgs[msgs.length - 1]
     expect(['done', 'error']).toContain(last.type)
-  })
+  }, 45000)
 })
 
 /**
@@ -166,18 +168,20 @@ describe('flare server 上下文压缩摘要（--context-summarize，v0.6.19）'
     expect(msgs[0].message).toContain('contextSummarize')
   })
 
+  // 注：chat 走真实远端 API（dotenv 从 ~/.flare/.env 注入 key，即使 delete DEEPSEEK_API_KEY），
+  // 网络慢可能超 vitest 默认 5s——与 server.test.ts/session-archive.test.ts 同模式放宽 45s
   it('chat 不带 contextSummarize → 应用 server 级默认（事件流完整，以 done/error 结束）', async () => {
-    const msgs = await request2({ type: 'chat', sessionId: 's-sum-dflt', input: '你好' }, ['done', 'error'])
+    const msgs = await request2({ type: 'chat', sessionId: 's-sum-dflt', input: '你好' }, ['done', 'error'], 45000)
     expect(msgs.length).toBeGreaterThan(0)
     const last = msgs[msgs.length - 1]
     expect(['done', 'error']).toContain(last.type)
-  })
+  }, 45000)
 
   it('chat 带合法 contextSummarize → 透传流程完整（以 done/error 结束，不挂死）', async () => {
-    const msgs = await request2({ type: 'chat', sessionId: 's-sum-ok', input: '你好', contextSummarize: false }, ['done', 'error'])
+    const msgs = await request2({ type: 'chat', sessionId: 's-sum-ok', input: '你好', contextSummarize: false }, ['done', 'error'], 45000)
     const last = msgs[msgs.length - 1]
     expect(['done', 'error']).toContain(last.type)
-  })
+  }, 45000)
 
   it('get_config 回显 defaultContextSummarize: true（server 级默认可见）', async () => {
     const msgs = await request2({ type: 'get_config' }, ['config'])

@@ -149,7 +149,7 @@ cp .env.example ~/.flare/.env
 | `flare chat --context-summarize` | 交互模式开启上下文压缩摘要（裁剪时把丢弃历史压缩成摘要消息，AI 保留话题连续性；v0.6.19） |
 | `flare chat -q "问题"` | 单次查询模式 |
 | `flare chat -q "问题" -i 图片.png` | 单次查询附带图片 |
-| `flare server [--profile --storage --mcp --confirm-tools --confirm-timeout --max-tokens --temperature --max-context-messages --max-context-tokens --context-summarize]` | 宿主协议服务（stdin/stdout JSON Lines，供 Qt 等宿主调用；v0.6.1 起写回类工具经确认门；v0.6.5 起 --max-tokens/--temperature 设 chat 默认采样参数；v0.6.17 起 --max-context-messages/--max-context-tokens 设默认上下文自动裁剪；v0.6.19 起 --context-summarize 默认开启上下文压缩摘要） |
+| `flare server [--profile --storage --mcp --confirm-tools --confirm-timeout --max-tokens --temperature --max-context-messages --max-context-tokens --context-summarize --tool-output-policy]` | 宿主协议服务（stdin/stdout JSON Lines，供 Qt 等宿主调用；v0.6.1 起写回类工具经确认门；v0.6.5 起 --max-tokens/--temperature 设 chat 默认采样参数；v0.6.17 起 --max-context-messages/--max-context-tokens 设默认上下文自动裁剪；v0.6.19 起 --context-summarize 默认开启上下文压缩摘要；v0.6.34 起 --tool-output-policy 设默认工具输出治理策略） |
 | `flare mcp-server [-t 工具名,...]` | MCP stdio 服务器：把 flare 工具集暴露给其他 AI 客户端（v0.5.8） |
 | `flare mcp call <服务器> <工具> [JSON参数]` | 调用 MCP 服务器工具（stdio 或 HTTP transport；服务器名查 `~/.flare/mcp.json`，`--url` 直连 HTTP 端点，v0.6.6） |
 | `flare mcp status` | 查看配置的 MCP 服务器（名称 + 传输类型 + 端点/命令，v0.6.6） |
@@ -337,6 +337,39 @@ Interactive mode commands:
 ### Changelog / Release Notes
 
 > 中文条目 / Chinese entries · English summary for each version
+
+#### v0.6.34 (2026-08-11) — 工具输出治理策略可配置化（AgentConfig + server 协议 + CLI）
+- 🎛️ **工具输出治理策略全链路可配置（src/core/tool-output.ts + core/agent.ts + server.ts + cli/index.ts）**：
+-  v0.6.30 的按工具类型截断（探索型留头尾/终端型留尾部/长度预算/省略标记）策略此前是硬编码默认值——
+-  宿主无法按产品场景定制（如长日志终端型多留尾部、读文件少留头部）。本轮打通全链路：
+- - **库级**：`AgentConfig.toolOutputPolicy`（可选）——run 循环截断表达式一行参数化
+-  （`truncateToolOutput(name, result, this.config.toolOutputPolicy)`），缺省 undefined 等价默认策略
+-  （与旧版逐字符一致零回归），控制流零改动
+- - **server 协议**：chat 请求带 `toolOutputPolicy`（对象，字段全部可选：maxOutputChars /
+-  maxErrorChars / headChars / tailChars / ellipsis；未知字段忽略）——非法值（非对象/字符数字段非
+-  正整数/ellipsis 非字符串）回 error 含字段名，不触发生成；`validateToolOutputPolicy` 纯函数
+-  （库导出，单测覆盖）协议与 CLI 共用单一策略形状来源；策略变化经 ctxOptsChanged 同机制自动重建
+-  Agent 立即生效（JSON 序列化比较，字段顺序稳定可复现）；`HostServerOptions.defaultToolOutputPolicy`
+-  + CLI `flare server --tool-output-policy '<json>'` server 级默认（chat 未指定时应用，请求优先）；
+-  `get_config` 回显 `defaultToolOutputPolicy`（只读，不含密钥）
+- - 📚 docs/host-protocol.md chat 参数表 + get_config 响应 + README Changelog/CLI 表 + 版本号 0.6.34
+- - 🧪 **699/699 全绿**（681 + 18 新增：validateToolOutputPolicy 纯函数 7——合法完整对象归一化 /
+-  null·undefined 空策略 / 非对象 fail / 四整数字段非法值（0/-1/1.5/非数字）fail 含字段名 /
+-  数字字符串可转（对齐 Number 转换风格）/ ellipsis 非字符串 fail / 未知字段忽略+空对象 ok；
+-  Agent 集成 2——终端型策略可配置（maxOutputChars/tailChars/ellipsis 生效，tool_result 事件与
+-  LLM 上下文同策略治理）/ 默认工具 maxOutputChars 预算生效；server e2e 9——version 启动不崩 /
+-  get_config 回显默认策略 / 非法非对象 / maxOutputChars 0 / headChars 'abc' / ellipsis 数字 /
+-  合法请求覆盖默认流程完整 / 空对象等价缺省 / 不带应用 server 默认），tsc 0 错误，
+-  **run 循环零改动**（仅截断表达式参数化）；另修 server-context-trim.test.ts 既有 chat e2e
+-  vitest 超时放宽 45s（dotenv 注入真实 key 走远端 API 网络慢超默认 5s，与 server.test.ts 同模式）
+- - **冒烟实测**：真实 dist CLI 子进程 `server --tool-output-policy '{"maxOutputChars":800,"tailChars":200}'`
+-  ——version 0.6.34、get_config 回显默认策略、chat 非法 maxOutputChars(0) → 「toolOutputPolicy 的
+-  maxOutputChars 必须是正整数」error、合法请求事件流完整，SMOKE PASS
+- - EN: Tool-output policy is now fully configurable end-to-end — `AgentConfig.toolOutputPolicy`,
+-   host-protocol `chat` param `toolOutputPolicy` (validated by exported pure fn
+-   `validateToolOutputPolicy`; invalid values error without generation), CLI server default
+-   `--tool-output-policy '<json>'`, and `get_config` echo; missing policy keeps the exact legacy
+-   uniform slice behavior (zero regression). 699/699 green, zero Agent.run control-flow changes.
 
 #### v0.6.33 (2026-08-11) — terminal 工具错误信息带退出码/信号（失败可诊断）
 - 🖥️ **terminalTool 失败诊断（src/tools/index.ts）**：命令失败时错误信息带退出码

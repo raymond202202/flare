@@ -107,3 +107,40 @@ export function truncateToolOutput(
   }
   return output.slice(0, maxOutputChars)
 }
+
+/**
+ * 校验/归一化工具输出治理策略（v0.6.34，纯函数，库导出）
+ *
+ * 供 server 协议 chat 请求 toolOutputPolicy 参数与 CLI --tool-output-policy 复用——
+ * 与 truncateToolOutput 同模块保证策略形状单一来源；非法值返回 { ok:false, message }（含字段名），
+ * 调用方回 error 不触发生成。未知字段忽略（宽松，宿主可携带额外字段）。
+ *
+ * @param v 任意输入（协议 JSON / CLI 解析结果）
+ * @returns 合法 → { ok:true, value }（仅含已提供字段的归一化策略）；非法 → { ok:false, message }
+ */
+export function validateToolOutputPolicy(
+  v: unknown,
+): { ok: true; value: ToolOutputPolicy } | { ok: false; message: string } {
+  if (v === undefined || v === null) return { ok: true, value: {} }
+  if (typeof v !== 'object' || Array.isArray(v)) {
+    return { ok: false, message: 'toolOutputPolicy 必须是对象（工具输出治理策略：maxOutputChars/maxErrorChars/headChars/tailChars/ellipsis）' }
+  }
+  const raw = v as Record<string, unknown>
+  const value: ToolOutputPolicy = {}
+  const intFields = ['maxOutputChars', 'maxErrorChars', 'headChars', 'tailChars'] as const
+  for (const f of intFields) {
+    if (raw[f] === undefined || raw[f] === null) continue
+    const n = Number(raw[f])
+    if (!Number.isInteger(n) || n <= 0) {
+      return { ok: false, message: `toolOutputPolicy 的 ${f} 必须是正整数（字符数预算）` }
+    }
+    value[f] = n
+  }
+  if (raw.ellipsis !== undefined && raw.ellipsis !== null) {
+    if (typeof raw.ellipsis !== 'string') {
+      return { ok: false, message: 'toolOutputPolicy 的 ellipsis 必须是字符串（省略标记模板，含 {omitted} 会被替换为省略字符数）' }
+    }
+    value.ellipsis = raw.ellipsis
+  }
+  return { ok: true, value }
+}

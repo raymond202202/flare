@@ -9,7 +9,7 @@ import { Message, LLMProvider, createProvider, createVisionProvider, buildImageC
 import { getToolDefinitions, executeTool, type Tool } from '../tools/index.js'
 import { getMemoryStore, MemoryStore } from '../memory/store.js'
 import { trimContextMessages, summarizeTrimmedMessages } from './context.js'
-import { truncateToolOutput } from './tool-output.js'
+import { truncateToolOutput, type ToolOutputPolicy } from './tool-output.js'
 import { logger } from './logger.js'
 
 export interface AgentConfig {
@@ -42,6 +42,10 @@ export interface AgentConfig {
    *  （条数/角色分布/涉及工具/最后话题）而非直接丢弃——AI 保留话题连续性；
    *  纯启发式统计不调 LLM（零额外成本）；摘要可被下次裁剪识别并合并覆盖（不堆积）。 */
   contextSummarize?: boolean
+  /** 工具输出治理策略（v0.6.34，可选）：按工具类型定制工具结果截断——探索型（read_file/
+   *  search_files）留头尾、终端型（terminal）留尾部、默认前 maxOutputChars（失败前
+   *  maxErrorChars）、省略标记可定制；缺省与旧版统一 slice 完全一致（零回归）。 */
+  toolOutputPolicy?: ToolOutputPolicy
 }
 
 const DEFAULT_SYSTEM_PROMPT = `你是 Flare，一个通用能力的 AI Agent。
@@ -395,7 +399,8 @@ export class Agent {
           
           // 截断工具结果（防止上下文爆炸；v0.6.30 起按工具类型定制策略——
           // 读文件类留头尾、终端类留尾部，默认与旧版逐字符一致，控制流不变）
-          const truncatedOutput = truncateToolOutput(tc.function.name, result)
+          // v0.6.34：策略可配置（AgentConfig.toolOutputPolicy）——缺省 undefined 等价默认策略（零回归）
+          const truncatedOutput = truncateToolOutput(tc.function.name, result, this.config.toolOutputPolicy)
 
           yield {
             type: 'tool_result',

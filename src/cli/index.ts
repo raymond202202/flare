@@ -8,7 +8,7 @@
  */
 
 import { Command } from 'commander'
-import { Agent, createProvider, getMemoryStore, config, tools, McpManager, estimateMessagesTokens, ConfirmationGate, memoryStoreKv, wrapConfirmTools, describeTools, type AgentConfig, type McpServerStatus, type ConfirmDecision, type McpResourceRef, type McpResourceTemplateRef } from '../index.js'
+import { Agent, createProvider, getMemoryStore, config, tools, McpManager, estimateMessagesTokens, ConfirmationGate, memoryStoreKv, wrapConfirmTools, describeTools, validateToolOutputPolicy, type AgentConfig, type McpServerStatus, type ConfirmDecision, type McpResourceRef, type McpResourceTemplateRef, type ToolOutputPolicy } from '../index.js'
 import chalk from 'chalk'
 import { execSync } from 'child_process'
 import { createRequire } from 'module'
@@ -1118,7 +1118,8 @@ export function main() {
     .option('--max-context-messages <n>', '默认上下文裁剪条数上限（chat 请求未指定时应用；0 = 不按条数裁剪，v0.6.17）')
     .option('--max-context-tokens <n>', '默认上下文裁剪 token 预算（chat 请求未指定时应用；超过则迭代前自动裁剪，v0.6.17）')
     .option('--context-summarize', '默认开启上下文压缩摘要（chat 请求未指定时应用；裁剪时把丢弃历史压缩成摘要消息，v0.6.19）')
-    .action(async (options: { profile?: string; storage?: string; namespace?: string; mcp?: string; confirmTools?: string; confirmTimeout?: string; maxTokens?: string; temperature?: string; maxContextMessages?: string; maxContextTokens?: string; contextSummarize?: boolean }) => {
+    .option('--tool-output-policy <json>', '默认工具输出治理策略 JSON（chat 请求未指定时应用，如 {"maxOutputChars":800,"tailChars":300}；探索型留头尾/终端型留尾部/长度预算/省略标记可定制，v0.6.34）')
+    .action(async (options: { profile?: string; storage?: string; namespace?: string; mcp?: string; confirmTools?: string; confirmTimeout?: string; maxTokens?: string; temperature?: string; maxContextMessages?: string; maxContextTokens?: string; contextSummarize?: boolean; toolOutputPolicy?: string }) => {
       const { startHostServer } = await import('../server.js')
       const fs = await import('fs/promises')
       let profile: Record<string, unknown> = {}
@@ -1135,6 +1136,22 @@ export function main() {
       const confirmTools = options.confirmTools !== undefined
         ? options.confirmTools.split(',').map((s) => s.trim()).filter(Boolean)
         : undefined
+      // --tool-output-policy <json>（v0.6.34）：JSON 解析 + 校验，作为 server 级默认工具输出治理策略
+      let defaultToolOutputPolicy: ToolOutputPolicy | undefined
+      if (options.toolOutputPolicy !== undefined) {
+        try {
+          const parsed = JSON.parse(options.toolOutputPolicy)
+          const v = validateToolOutputPolicy(parsed)
+          if (!v.ok) {
+            console.error(chalk.red(`❌ --tool-output-policy 无效: ${v.message}`))
+            process.exit(1)
+          }
+          defaultToolOutputPolicy = v.value
+        } catch (e: any) {
+          console.error(chalk.red(`❌ --tool-output-policy 必须是合法 JSON 对象: ${e?.message || e}`))
+          process.exit(1)
+        }
+      }
       startHostServer({
         profile: profile as any,
         storage: options.storage,
@@ -1147,6 +1164,7 @@ export function main() {
         ...(options.maxContextMessages !== undefined ? { defaultMaxContextMessages: Number(options.maxContextMessages) } : {}),
         ...(options.maxContextTokens !== undefined ? { defaultMaxContextTokens: Number(options.maxContextTokens) } : {}),
         ...(options.contextSummarize !== undefined ? { defaultContextSummarize: options.contextSummarize } : {}),
+        ...(defaultToolOutputPolicy !== undefined ? { defaultToolOutputPolicy } : {}),
       })
     })
 

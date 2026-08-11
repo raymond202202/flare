@@ -4,7 +4,7 @@
  */
 import { describe, it, expect } from 'vitest'
 import { Agent } from '../src/index.js'
-import { truncateToolOutput, toolOutputKind, DEFAULT_ELLIPSIS } from '../src/index.js'
+import { truncateToolOutput, toolOutputKind, DEFAULT_ELLIPSIS, validateToolOutputPolicy } from '../src/index.js'
 import { Message, LLMResponse, ToolCall } from '../src/index.js'
 
 // Mock LLM：按队列返回预设响应
@@ -255,5 +255,130 @@ describe('Agent.run 集成（v0.6.30 工具输出治理生效）', () => {
     expect(toolResults[0].endsWith('BUILD_OK')).toBe(true)
     expect(toolResults[0]).toContain('中间省略')
     expect(toolResults[0].length).toBeLessThanOrEqual(2000)
+  })
+})
+
+describe('validateToolOutputPolicy 校验（v0.6.34，纯函数）', () => {
+  it('合法完整对象 → ok 归一化（字段透传）', () => {
+    const r = validateToolOutputPolicy({ maxOutputChars: 800, maxErrorChars: 500, headChars: 300, tailChars: 200, ellipsis: '[省略 {omitted}]' })
+    expect(r.ok).toBe(true)
+    if (r.ok) {
+      expect(r.value).toEqual({ maxOutputChars: 800, maxErrorChars: 500, headChars: 300, tailChars: 200, ellipsis: '[省略 {omitted}]' })
+    }
+  })
+  it('null/undefined → ok 空策略（等价缺省）', () => {
+    expect(validateToolOutputPolicy(undefined).ok).toBe(true)
+    expect(validateToolOutputPolicy(null).ok).toBe(true)
+  })
+  it('非对象（字符串/数组/数字/布尔）→ fail 含提示', () => {
+    for (const bad of ['800', [1, 2], 800, true]) {
+      const r = validateToolOutputPolicy(bad)
+      expect(r.ok).toBe(false)
+      if (!r.ok) expect(r.message).toContain('必须是对象')
+    }
+  })
+  it('整数字段非法值（0/-1/1.5/非数字）→ fail 含字段名', () => {
+    for (const f of ['maxOutputChars', 'maxErrorChars', 'headChars', 'tailChars']) {
+      for (const bad of [0, -1, 1.5, 'abc']) {
+        const r = validateToolOutputPolicy({ [f]: bad })
+        expect(r.ok).toBe(false)
+        if (!r.ok) expect(r.message).toContain(f)
+      }
+    }
+  })
+  it('数字字符串可转（对齐既有 Number 转换风格）', () => {
+    const r = validateToolOutputPolicy({ maxOutputChars: '800' })
+    expect(r.ok).toBe(true)
+    if (r.ok) expect(r.value.maxOutputChars).toBe(800)
+  })
+  it('ellipsis 非字符串 → fail 含字段名', () => {
+    const r = validateToolOutputPolicy({ ellipsis: 123 })
+    expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.message).toContain('ellipsis')
+  })
+  it('未知字段忽略（宽松），空对象 ok', () => {
+    const r = validateToolOutputPolicy({ foo: 'bar', maxOutputChars: 100 })
+    expect(r.ok).toBe(true)
+    if (r.ok) expect(r.value).toEqual({ maxOutputChars: 100 })
+  })
+})
+
+describe('Agent 集成：toolOutputPolicy 可配置（v0.6.34）', () => {
+  it('终端型策略可配置：maxOutputChars/tailChars/ellipsis 生效（缺省默认策略零回归由既有用例覆盖）', async () => {
+    const longOutput = 'x'.repeat(5000) + '\nTAIL_MARK'
+    const mockLLM = new MockLLM()
+    mockLLM.setResponses([
+      {
+        tool_calls: [{
+          id: 'call_term2',
+          type: 'function',
+          function: { name: 'terminal', arguments: '{"command":"make"}' },
+        }],
+      },
+      { content: '完成' },
+    ])
+    const agent = new Agent({
+      llm: mockLLM,
+      maxIterations: 3,
+      toolOutputPolicy: { maxOutputChars: 300, tailChars: 150, ellipsis: '[省略]' },
+      tools: [{
+        definition: {
+          type: 'function',
+          function: { name: 'terminal', description: '执行命令', parameters: { type: 'object', properties: { command: { type: 'string' } } } },
+        },
+        execute: () => ({ success: true, output: longOutput }),
+      }],
+    })
+
+    const toolResults: string[] = []
+    for await (const chunk of agent.run('构建')) {
+      if (chunk.type === 'tool_result') toolResults.push(chunk.content)
+    }
+    // 自定义省略标记在前（非默认「中间省略」）、尾部保留、总长 ≤ 预算 300
+    expect(toolResults[0].startsWith('[省略]')).toBe(true)
+    expect(toolResults[0].endsWith('TAIL_MARK')).toBe(true)
+    expect(toolResults[0]).not.toContain('中间省略')
+    expect(toolResults[0].length).toBeLessThanOrEqual(300)
+
+    // 进入 LLM 上下文的消息同样按策略治理
+    const toolMsg = agent.getMessages().find(m => m.role === 'tool' && m.tool_call_id === 'call_term2')
+    expect(toolMsg).toBeTruthy()
+    expect(typeof toolMsg!.content).toBe('string')
+    expect((toolMsg!.content as string).startsWith('[省略]')).toBe(true)
+    expect((toolMsg!.content as string).endsWith('TAIL_MARK')).toBe(true)
+  })
+
+  it('默认工具长度预算可配置：maxOutputChars 生效', async () => {
+    const longOutput = 'y'.repeat(5000)
+    const mockLLM = new MockLLM()
+    mockLLM.setResponses([
+      {
+        tool_calls: [{
+          id: 'call_cfg',
+          type: 'function',
+          function: { name: 'my_tool', arguments: '{}' },
+        }],
+      },
+      { content: '完成' },
+    ])
+    const agent = new Agent({
+      llm: mockLLM,
+      maxIterations: 3,
+      toolOutputPolicy: { maxOutputChars: 100 },
+      tools: [{
+        definition: {
+          type: 'function',
+          function: { name: 'my_tool', description: '自定义工具', parameters: { type: 'object', properties: {} } },
+        },
+        execute: () => ({ success: true, output: longOutput }),
+      }],
+    })
+
+    const toolResults: string[] = []
+    for await (const chunk of agent.run('跑一下')) {
+      if (chunk.type === 'tool_result') toolResults.push(chunk.content)
+    }
+    expect(toolResults[0]).toBe('y'.repeat(100))
+    expect(toolResults[0].length).toBeLessThanOrEqual(100)
   })
 })
