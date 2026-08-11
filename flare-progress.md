@@ -3,26 +3,32 @@
 > 目标：flare 是 Pulse/StorySpire 依赖的 AI Agent 引擎（TS）。任何改动必须安全（tsc 0 错 + 测试全绿才 commit）。
 > 铁律：禁止 push；禁止修改 src/core/agent.ts 的 Agent.run 核心循环。
 
-> **最新状态（v0.6.44）**：**CLI `/sessions <关键词>` 会话搜索**（方向② 其他安全的外围增强，
-> v0.6.43 search_sessions 的 CLI 对称）——`/search`（v0.6.24）只搜**消息**、`/sessions` 只能
-> **全量**列出最近会话，「记不清哪个会话聊过 X」无从下手：本轮补齐（纯 CLI 外围，零 agent.ts
-> 改动）——`/sessions <关键词>` 调用 store.searchSessions（与协议同源）：按**标题或会话内任意
-> 消息内容** LIKE 匹配，显示 `[时间] 标题（N 条消息）`（formatSessionTime 复用 /sessions 时间
-> 格式；归档会话带 `（已归档）` 标记仍可搜到）；无匹配友好提示；`/sessions` 无关键词走原
-> switch 分支逐字符零回归；**781/781 全绿**（774 + 7 新增），tsc 0 错误，零 agent.ts 改动；
-> 冒烟实测真实 MemoryStore + dist handleSlashCommand，SMOKE PASS。
-> （v0.6.43：server 协议 search_sessions；v0.6.42：CLI /usage perModel 缓存命中显示；
-> v0.6.41：CLI /mcp call；v0.6.40：server 协议 mcp_call + McpManager.callTool。）
+> **最新状态（v0.6.45）**：**`flare cache-check` prompt caching 验收工具**（方向① P0 验收
+> 自动化，最高优先级）——P0 验收标准「连续两轮调用（间隔<5min）第二轮 cache_read_tokens>0」
+> 此前只能手工对比 /usage：本轮自动化（纯外围，零 agent.ts run 循环改动）——
+> `runCacheCheck(llm?)`（库级导出，llm 依赖注入）：构造**稳定长前缀**（12 块重复 ≈1.2K 字符）
+> 连续两次调用（仅末尾 user 数字不同），第一轮 miss 基准、第二轮期望命中；兼容 DeepSeek
+> `prompt_cache_hit_tokens` / OpenAI `cached_tokens`；DeepSeek 系列按命中价估算节省；调用失败
+> 不抛；CLI `flare cache-check [--model]` → PASS/未命中 exit 1；**顺带修 bug**：
+> `extractUsageCache` 只读原始格式字段，但 `OpenAIProvider.chat` 归一化后丢弃
+> `prompt_cache_hit_tokens` 只留 `usage.cache_read_tokens` → 读不到恒 0（真实冒烟暴露），补
+> 归一化字段回退；**789/789 全绿**（781 + 7 + 1），tsc 0 错误；冒烟实测真实 DeepSeek API——
+> deepseek-v4-flash prompt 971 第二轮命中 896 tokens ✅ PASS（两轮均命中说明缓存跨进程持久），
+> SMOKE PASS。
+> （v0.6.44：CLI /sessions 关键词搜索；v0.6.43：server 协议 search_sessions；v0.6.42：
+> CLI /usage perModel 缓存命中显示；v0.6.41：CLI /mcp call。）
 
-> 【🔴 当前最高优先级方向（2026-08-11 用户拍板）】**prompt caching 基建 P0 已基本落地**：
-> P0-1 前缀稳定 + P0-2 usage 回传（v0.6.29 完成）。验收：连续两轮调用（间隔<5min）第二轮
-> cache_read_tokens > 0——前缀稳定已保证命中基础，实际命中还取决于 DeepSeek 服务端缓存（外部因素）。
+> 【🔴 当前最高优先级方向（2026-08-11 用户拍板）】**prompt caching 基建 P0 已基本落地 + 验收工具化**：
+> P0-1 前缀稳定 + P0-2 usage 回传（v0.6.29 完成）。验收：`flare cache-check` 一键验收
+> （v0.6.45，真实 API 冒烟 PASS：第二轮命中 896 tokens）——前缀稳定已保证命中基础，实际命中
+> 还取决于 DeepSeek 服务端缓存（外部因素）。
 > 剩余方向：P1 分层上下文（Layer 1 异步滚动摘要，需评估 run 循环外异步）、P2 模型路由钩子。
 
 > 下一步候选（按优先级）：
 > ① 【P1】分层上下文（Layer 1 异步滚动摘要——摘要内容升级为 LLM 生成语义级压缩，需评估 run 循环外异步）
 > ② 其他安全的外围增强（server 协议其他管理接口、MCP 工具集完善、测试稳定性等）
->    已覆盖：CLI /sessions 关键词搜索（v0.6.44）✓ /
+>    已覆盖：cache-check 验收工具（v0.6.45）✓ /
+>    CLI /sessions 关键词搜索（v0.6.44）✓ /
 >    search_sessions 会话搜索（v0.6.43）✓ /
 >    /usage perModel 缓存命中显示（v0.6.42）✓ /
 >    /mcp call 交互命令（v0.6.41）✓ /
@@ -34,6 +40,44 @@
 >    terminal 退出码（v0.6.33）✓ / CLI 归档命令（v0.6.32）✓ / 归档 API（v0.6.31）✓ /
 >    工具输出治理（v0.6.30）✓ / prompt caching P0（v0.6.29）✓ / MCP 动态资源提供器（v0.6.28）✓ /
 >    confirm 描述（v0.6.27）✓
+
+> ---
+
+> ### 2026-08-12 第四十四轮实施（v0.6.45）——flare cache-check prompt caching 验收工具（方向① P0 验收自动化）
+
+> - **P74 `flare cache-check` 验收工具**（src/core/cache-check.ts + src/core/llm.ts +
+>   src/cli/index.ts + 测试，commit `782407d`）：
+>   - **缺口定位**：方向①（最高优先级）P0 验收标准是「连续两轮调用（间隔 <5min）第二轮
+>     cache_read_tokens > 0」，但此前只能靠宿主/开发者**手工对比 /usage**——验收不可复现、
+>     门槛高；本轮把验收自动化（纯外围，零 agent.ts run 循环改动）
+>   - **`runCacheCheck(llm?)`**（库级导出，llm 依赖注入便于测试）：构造**稳定长前缀**
+>     （4 句填充块 ×12 ≈1.2K 字符，模拟真实会话稳定 system 前缀）连续两次调用（仅末尾
+>     user 内容「数字 1/2」不同）——第一轮 miss 基准、第二轮期望命中；**兼容 DeepSeek
+>     `prompt_cache_hit_tokens` 与 OpenAI `prompt_tokens_details.cached_tokens`**（复用
+>     extractUsageCache）；DeepSeek 系列按命中价 vs 未命中价估算节省成本（无法定价 null）；
+>     **调用失败不抛**（返回 ok:false + 原因，CLI 报错不崩）
+>   - **CLI**：`flare cache-check [--model <模型>]`——显示模型/两轮 prompt 与命中量/估算
+>     节省/✅ PASS 或 ⚠️ 未命中（exit 1）；`--help` 注册；真实调用走 ~/.flare/.env 配置密钥
+>     （本地诊断，不输出任何密钥）
+>   - **【顺带修 bug】extractUsageCache 归一化字段缺失**：`OpenAIProvider.chat` 归一化后
+>     只保留 `usage.cache_read_tokens`（原始 `prompt_cache_hit_tokens` 被丢弃），但
+>     `extractUsageCache` 只读原始格式字段 → 对 LLMResponse.usage 恒 0（**真实冒烟暴露**：
+>     原始调用第二轮命中 896 而 CLI 显示 0）；补归一化字段回退
+>     （`usage.cache_read_tokens` / `usage.cache_write_tokens`），llm.ts 纯函数改动零回归
+>   - docs/flare-token-architecture.md（验收标准加 cache-check）+ README Changelog +
+>     版本号 0.6.45
+>   - **789/789 全绿**（781 + 7 新增 tests/cache-check.test.ts：第二轮命中（DeepSeek 格式）
+>     → ok:true + 命中量 + **前缀逐字节一致断言**（两次 system 相同、仅 user 数字不同、前缀
+>     长度 >500 字符）/ OpenAI cached_tokens 格式兼容 / 未命中 ok:false + 外部因素 detail /
+>     第一次调用失败不抛 / 第二次调用失败不抛 / DeepSeek 节省成本 > 0 / 无法定价模型
+>     savedUsd null；+1 tests/llm.test.ts 归一化格式 extractUsageCache），tsc 0 错误，
+>     **零 agent.ts 改动**
+>   - **冒烟实测**（真实 DeepSeek API + dist CLI）：flare cache-check → deepseek-v4-flash
+>     prompt 971 → 第二轮命中 896 tokens → ✅ PASS（真实缓存命中，P0 验收通过；两轮均命中
+>     说明缓存跨进程持久，前缀已写入服务端），SMOKE PASS
+> - **下一步候选**：① 【P1】分层上下文（Layer 1 异步滚动摘要——摘要内容升级为 LLM 生成语义级压缩，
+>   需评估 run 循环外异步）；② 其他安全的外围增强（server 协议其他管理接口、MCP 工具集完善、测试
+>   稳定性等）
 
 > ---
 
