@@ -131,6 +131,27 @@ describe('CLI flare mcp call', () => {
     expect(stdout).toMatch(/mock/)
     expect(stdout).toMatch(/stdio/)
     expect(stdout).toMatch(/127\.0\.0\.1:8931/)
+    // v0.6.51：连接标记（未连接 ○）+ 传输/端点 + 无工具数（未连接）
+    expect(stdout).toMatch(/○/)
+    expect(stdout).not.toMatch(/个工具/)
+  }, 20000)
+
+  it('mcp status --connect：连接真实服务器显示 ● 连接标记 + 工具数（v0.6.51 统一 status()）', async () => {
+    const h = await startMcpHttpServer({ tools: [echoTool] })
+    handles.push(h)
+    const cfgPath = join(dir, 'mcp.json')
+    writeFileSync(cfgPath, JSON.stringify({
+      servers: [
+        { name: 'remote', url: h.url },
+      ],
+    }))
+    const { code, stdout } = await runCli(['mcp', 'status', '--connect', '--config', cfgPath])
+    expect(code).toBe(0)
+    // 已连接：● 标记 + 端点 url + 工具数（HTTP transport 服务器连接成功）
+    expect(stdout).toMatch(/●/)
+    expect(stdout).toMatch(/HTTP/)
+    expect(stdout).toMatch(new RegExp(h.url.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')))
+    expect(stdout).toMatch(/1 个工具/)
   }, 20000)
 
   it('mcp status：无配置 → 未配置提示（退出码 0）', async () => {

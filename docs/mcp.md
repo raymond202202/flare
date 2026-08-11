@@ -773,8 +773,10 @@ flare mcp call remote read_file '{"path":"/tmp/a.txt"}' --url http://127.0.0.1:8
 flare mcp call local-fs read_file '{"path":"/tmp/a.txt"}'          # 默认 ~/.flare/mcp.json
 flare mcp call mock add_numbers '{"a":2,"b":3}' --config ./mcp.json
 
-# 查看配置的服务器（名称 + 传输类型 + 端点/命令）
+# 查看配置的服务器（名称 + 传输类型 + 端点/命令；v0.6.51：统一走 status() 显示连接标记 ●/○ +
+# 工具数；--connect 先连接全部配置服务器再显示真实连接状态，失败不阻塞、错误可见）
 flare mcp status [--config ./mcp.json]
+flare mcp status --connect [--config ./mcp.json]
 
 # 调超时（毫秒）
 flare mcp call remote ping --url http://127.0.0.1:8931/mcp --timeout 30000
