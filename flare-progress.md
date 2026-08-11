@@ -3,23 +3,21 @@
 > 目标：flare 是 Pulse/StorySpire 依赖的 AI Agent 引擎（TS）。任何改动必须安全（tsc 0 错 + 测试全绿才 commit）。
 > 铁律：禁止 push；禁止修改 src/core/agent.ts 的 Agent.run 核心循环。
 
-> **最新状态（v0.6.61）**：**MCP 命令提示面补全**（方向③ MCP 增强）：
-> v0.6.58~v0.6.60 连补工具清单/参数补全入口，但**两处提示文本没跟上**——交互 `/mcp` 状态行提示
-> 只有 resources/prompts/connect/disconnect（缺 tools）、`flare mcp status` 提示行只有 call 和
-> status --connect（缺 tools/complete）；本轮补齐（纯外围，零 agent.ts 改动）——交互 `/mcp`
-> 状态行提示加 `/mcp tools [name] 查看工具`；`flare mcp status` 提示行加 `mcp tools <服务器>
-> 查看工具` + `mcp complete <服务器> <提示词> <参数> 补全候选`。
-> **846/846 全绿**（新增 2 断言：/mcp 状态行提示含 tools / mcp status 提示含 tools+complete），
-> tsc 0 错误，**零 agent.ts 改动**。
-> （v0.6.60：flare mcp complete 单次命令；v0.6.59：flare mcp tools 单次命令；v0.6.58：mcp_tools
-> 工具清单桥接三层；v0.6.57：mcp_complete 提示词参数补全桥接；v0.6.56：server
-> mcp_connect/mcp_disconnect 控制面；v0.6.55：/mcp connect 摘要 transport/target；v0.6.54：
-> cache-check --rounds 多轮验收；v0.6.53：CLI /usage 本会话 perModel 子行；v0.6.52：session_usage
-> perModel；v0.6.51：CLI mcp status 统一 status()+--connect；v0.6.50：MCP 连接状态
-> transport/target；v0.6.49：CLI /usage 本会话行缓存命中；v0.6.48：cache-check --json 结构化
-> 输出；v0.6.47：mcp-server --bridge-tools 工具透传；v0.6.46：CLI /trim 智能裁剪 + /context 裁剪
-> 提示；v0.6.45：flare cache-check 验收工具；v0.6.44：CLI /sessions 关键词搜索；v0.6.43：server
-> 协议 search_sessions；v0.6.42：CLI /usage perModel 缓存命中显示。）
+> **最新状态（v0.6.62）**：**MCP 单次命令文档补齐**（方向③ MCP 增强）：
+> v0.6.59/v0.6.60 补了 `flare mcp tools`/`flare mcp complete` 命令，但**单次命令文档示例没跟上**
+> （章节标题仍只列 call/status/resources/prompts，示例缺 tools/complete）；本轮补齐（纯文档，
+> 零 agent.ts 改动）——docs/mcp.md 标题加 tools/complete；示例加 `flare mcp tools <server>`
+> （配合 call 使用）与 `flare mcp complete <server> <prompt> <argument> [value]`（前缀收窄示例）。
+> **846/846 全绿**（纯文档改动，无代码变更），tsc 0 错误，**零 agent.ts 改动**。
+> （v0.6.61：MCP 命令提示面补全；v0.6.60：flare mcp complete 单次命令；v0.6.59：flare mcp tools
+> 单次命令；v0.6.58：mcp_tools 工具清单桥接三层；v0.6.57：mcp_complete 提示词参数补全桥接；
+> v0.6.56：server mcp_connect/mcp_disconnect 控制面；v0.6.55：/mcp connect 摘要 transport/target；
+> v0.6.54：cache-check --rounds 多轮验收；v0.6.53：CLI /usage 本会话 perModel 子行；v0.6.52：
+> session_usage perModel；v0.6.51：CLI mcp status 统一 status()+--connect；v0.6.50：MCP 连接
+> 状态 transport/target；v0.6.49：CLI /usage 本会话行缓存命中；v0.6.48：cache-check --json
+> 结构化输出；v0.6.47：mcp-server --bridge-tools 工具透传；v0.6.46：CLI /trim 智能裁剪 + /context
+> 裁剪提示；v0.6.45：flare cache-check 验收工具；v0.6.44：CLI /sessions 关键词搜索；v0.6.43：
+> server 协议 search_sessions；v0.6.42：CLI /usage perModel 缓存命中显示。）
 
 > 【🔴 当前最高优先级方向（2026-08-11 用户拍板）】**prompt caching 基建 P0 已基本落地 + 验收工具化**：
 > P0-1 前缀稳定 + P0-2 usage 回传（v0.6.29 完成）。验收：`flare cache-check` 一键验收
@@ -31,7 +29,8 @@
 > 下一步候选（按优先级）：
 > ① 【P1】分层上下文（Layer 1 异步滚动摘要——摘要内容升级为 LLM 生成语义级压缩，需评估 run 循环外异步）
 > ② 其他安全的外围增强（server 协议其他管理接口、MCP 工具集完善、测试稳定性等）
->    已覆盖：MCP 命令提示面补全（v0.6.61）✓ /
+>    已覆盖：MCP 单次命令文档补齐（v0.6.62）✓ /
+>    MCP 命令提示面补全（v0.6.61）✓ /
 >    flare mcp complete 单次命令（v0.6.60）✓ /
 >    flare mcp tools 单次命令（v0.6.59）✓ /
 >    mcp_tools 工具清单查看（v0.6.58）✓ /
@@ -60,6 +59,22 @@
 >    terminal 退出码（v0.6.33）✓ / CLI 归档命令（v0.6.32）✓ / 归档 API（v0.6.31）✓ /
 >    工具输出治理（v0.6.30）✓ / prompt caching P0（v0.6.29）✓ / MCP 动态资源提供器（v0.6.28）✓ /
 >    confirm 描述（v0.6.27）✓
+
+> ---
+
+> ### 2026-08-12 第六十一轮实施（v0.6.62）——MCP 单次命令文档补齐（方向③ MCP 增强）
+
+> - **P91 docs/mcp.md 单次命令章节补 tools/complete 用法**（纯文档，零 agent.ts 改动）：
+>   - **缺口定位**：v0.6.59/v0.6.60 补了 `flare mcp tools`/`flare mcp complete` 命令，但**单次命令
+>     文档示例没跟上**——章节标题仍只列 call/status/resources/prompts，示例缺 tools/complete；
+>     本轮补齐
+>   - 标题加 tools/complete（v0.6.59/v0.6.60 标注）；示例加 `flare mcp tools <server>`（配合
+>     call 使用）与 `flare mcp complete <server> <prompt> <argument> [value]`（前缀收窄示例）
+>   - README Changelog + 版本号 0.6.62
+>   - **846/846 全绿**（纯文档改动，无代码变更），tsc 0 错误，**零 agent.ts 改动**
+> - **下一步候选**：① 【P1】分层上下文（Layer 1 异步滚动摘要——摘要内容升级为 LLM 生成语义级压缩，
+>   需评估 run 循环外异步）；② 其他安全的外围增强（server 协议其他管理接口、MCP 工具集完善、测试
+>   稳定性等）
 
 > ---
 

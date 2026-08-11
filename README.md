@@ -341,6 +341,16 @@ Interactive mode commands:
 
 > 中文条目 / Chinese entries · English summary for each version
 
+#### v0.6.62 (2026-08-12) — MCP 单次命令文档补齐（方向③ MCP 增强）
+
+- ✨ **docs/mcp.md 单次命令章节补 tools/complete 用法**：
+-  v0.6.59/v0.6.60 补了 `flare mcp tools`/`flare mcp complete` 命令，但**单次命令文档示例没跟上**
+-  （章节标题仍只列 call/status/resources/prompts，示例缺 tools/complete）；本轮补齐（纯文档，
+-  零 agent.ts 改动）：标题加 tools/complete；示例加 `flare mcp tools <server>`（配合 call 使用）
+-  与 `flare mcp complete <server> <prompt> <argument> [value]`（前缀收窄示例）
+- - README Changelog + 版本号 0.6.62
+- - 🧪 **846/846 全绿**（纯文档改动，无代码变更），tsc 0 错误，**零 agent.ts 改动**
+
 #### v0.6.61 (2026-08-12) — MCP 命令提示面补全（方向③ MCP 增强）
 
 - ✨ **提示文本补全（src/cli/index.ts + 测试）**：
