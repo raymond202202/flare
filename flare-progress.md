@@ -3,25 +3,62 @@
 > 目标：flare 是 Pulse/StorySpire 依赖的 AI Agent 引擎（TS）。任何改动必须安全（tsc 0 错 + 测试全绿才 commit）。
 > 铁律：禁止 push；禁止修改 src/core/agent.ts 的 Agent.run 核心循环。
 
-> **最新状态（v0.6.30）**：**工具输出治理落地**（候选②）——按工具类型定制工具结果截断：
-> read_file/search_files 长输出**留头尾**（头部 1200 + 省略标记（含被省略字符数）+ 尾部 700，
-> 总长严格 ≤ 预算）、terminal **留尾部**（尾部 2000 + 省略标记在前）、其他工具默认与旧版 slice
-> 逐字符一致（零回归）；`truncateToolOutput`/`toolOutputKind` 纯函数 + `ToolOutputPolicy` 类型
-> 库导出；run 循环仅截断表达式一行等价替换（控制流零改动）；654/654 全绿（630 + 24），tsc 0 错误。
+> **最新状态（v0.6.31）**：**会话归档 API 落地**（候选② P1）——server 协议
+> `end_session`（标记归档、数据保留、从最近会话隐藏、销毁缓存 Agent）/ `restore_session`（恢复）/
+> `list_archived_sessions`（已归档清单）；sessions 表加 archived 列（老库自动迁移），getRecentSessions
+> 排除归档、getAllSessions 带 archived 字段；664/664 全绿（654 + 10），tsc 0 错误，零 agent.ts 改动。
+> （v0.6.30 工具输出治理已落地：read_file/search_files 留头尾、terminal 留尾部、默认零回归。）
 
 > 【🔴 当前最高优先级方向（2026-08-11 用户拍板）】**prompt caching 基建 P0 已基本落地**：
 > P0-1 前缀稳定 + P0-2 usage 回传（v0.6.29 完成）。验收：连续两轮调用（间隔<5min）第二轮
 > cache_read_tokens > 0——前缀稳定已保证命中基础，实际命中还取决于 DeepSeek 服务端缓存（外部因素）。
-> 剩余方向：P1 分层上下文（Layer 1 异步滚动摘要，需评估 run 循环外异步）、P1 会话归档 API
-> （server 协议 endSession）、P2 模型路由钩子。
+> 剩余方向：P1 分层上下文（Layer 1 异步滚动摘要，需评估 run 循环外异步）、P2 模型路由钩子。
 
 > 下一步候选（按优先级）：
 > ① 【P1】分层上下文（Layer 1 异步滚动摘要——摘要内容升级为 LLM 生成语义级压缩，需评估 run 循环外异步）
-> ② 【P1】会话归档 API（server 协议 endSession：标记归档 + list_sessions 过滤 + 恢复/清除）
-> ③ 【P1】工具输出治理补强（terminal 工具侧暴露退出码后截断带退出码；或策略可配置化透传 server 协议）
-> ④ 其他安全的外围增强（server 协议其他管理接口、CLI 交互增强、MCP 工具集完善等）
+> ② 【P1】工具输出治理补强（terminal 工具侧暴露退出码后截断带退出码；或策略可配置化透传 server 协议）
+> ③ CLI /server 交互增强（/archive /restore 命令；/sessions 显示归档标记）
+> ④ 其他安全的外围增强（server 协议其他管理接口、MCP 工具集完善等）
 
 > ---
+
+### 2026-08-11 第三十一轮实施（v0.6.31）——会话归档 API（候选② P1，end_session / restore_session / list_archived_sessions）
+
+- **P60 会话归档 API**（src/memory/store.ts + server.ts + 测试，commit 见下）：
+  - **缺口定位**：宿主面板缺「归档会话」能力——现有 delete_session 是**整个删除**（消息/用量全清，
+    不可找回），没有「先收起来、以后还能恢复」的中间态；候选② P1「会话归档 API（server 协议
+    endSession）」落地
+  - **store 层**：sessions 表加 `archived INTEGER NOT NULL DEFAULT 0` 列（新库建表直接带，老库
+    migrate() PRAGMA table_info 检查后 ALTER 幂等补列，老数据读 0 不报错）——`archiveSession(sid)`
+    （UPDATE archived=1 + 刷新 updated_at；已归档/不存在返回 false 幂等）/ `restoreSession(sid)`
+    （对称）/ `listArchivedSessions(limit=50)`（结构同 getRecentSessions 含首条 user 消息预览）/
+    `getRecentSessions` 加 `WHERE archived=0`（归档从「最近会话」隐藏；未归档会话返回与旧版一致
+    零回归）/ `getAllSessions` 每项加 `archived` 布尔（增量字段向后兼容，宿主列表可显示归档标记）
+  - **server 协议**（三接口，全部幂等安全）：
+    - `end_session {sessionId?}` → `{type:'ok', sessionId, archived}`——**数据保留**（消息/用量都在，
+      区别于 delete_session 整个删除）、从 recent_sessions 隐藏、销毁缓存 Agent（agents.delete，
+      下次 chat 重建）；会话不存在幂等 archived:false；不触发生成
+    - `restore_session {sessionId?}` → `{type:'ok', sessionId, restored}`——恢复标记，重新出现在
+      最近会话；不存在幂等 restored:false
+    - `list_archived_sessions {}` → `{type:'archived_sessions', sessions:[{id,title,updatedAt,preview}]}`
+      （同 recent_sessions 结构）——宿主面板「已归档」视图数据源；只读不触发生成、不创建会话
+  - docs/host-protocol.md §25.1 新章节 + 请求类型列表更新 + README Changelog + 版本号 0.6.31
+  - **664/664 全绿**（654 + 10 新增 tests/session-archive.test.ts：store 单测 6——归档标记+重复归档
+    幂等 false / 会话不存在幂等 false / 恢复+未归档 restore false / recent 排除归档 + listArchived
+    只列归档（含首条预览）/ 归档不删数据（消息+用量保留，恢复后继续可用）/ 老库迁移（旧 sessions
+    无 archived 列打开自动补列、老数据读 false 不报错、补列后可归档）；server e2e 4——end→ok
+    archived:true→recent_sessions 不出现→list_archived_sessions 出现→restore→回最近→archived 列表
+    消失 / end 后 get_messages 仍可读（数据保留）/ 不存在会话 end/restore 幂等 false 不报错 / end 后
+    chat 重建 Agent 正常流程），tsc 0 错误，**零 agent.ts 改动**
+  - **冒烟实测**（真实 server 子进程）：create_session arch1 → end_session ok archived:true →
+    recent_sessions 无 arch1 → list_archived_sessions 含 arch1 → restore_session ok restored:true →
+    recent_sessions 重新出现 → list_archived_sessions 消失；get_messages arch2 归档后仍可读；
+    ghost 会话幂等 false，SMOKE PASS
+- **下一步候选**：① 【P1】分层上下文（Layer 1 异步滚动摘要——LLM 语义级摘要，需评估 run 循环外异步）；
+  ② 工具输出治理补强（terminal 工具侧暴露退出码 / 策略可配置化透传 server 协议）；③ CLI 交互增强
+  （/archive /restore）；④ 其他安全的外围增强
+
+---
 
 ### 2026-08-11 第三十轮实施（v0.6.30）——工具输出治理（候选②，按工具类型定制截断）
 

@@ -554,6 +554,47 @@ export function startHostServer(opts: HostServerOptions) {
           reply({ type: 'ok', sessionId, deleted })
           break
         }
+        case 'end_session': {
+          // 会话归档（v0.6.31）：标记 archived=1（数据保留），从「最近会话」隐藏；
+          // 销毁缓存 Agent（下次 chat 重建）；list_archived_sessions 找回 / restore_session 恢复。
+          // 会话不存在幂等 ok（archived:false），不触发生成
+          const sessionId = String(req.sessionId || 'default')
+          const agent = getAgent(sessionId)
+          const sid = (agent as any).config?.sessionId || sessionId
+          const archived = (typeof (agent as any).store?.archiveSession === 'function')
+            ? await (agent as any).store.archiveSession(sid)
+            : false
+          agents.delete(sessionId)
+          reply({ type: 'ok', sessionId, archived })
+          break
+        }
+        case 'restore_session': {
+          // 恢复归档会话（v0.6.31）：标记 archived=0，重新出现在最近会话；销毁缓存 Agent
+          const sessionId = String(req.sessionId || 'default')
+          const agent = getAgent(sessionId)
+          const sid = (agent as any).config?.sessionId || sessionId
+          const restored = (typeof (agent as any).store?.restoreSession === 'function')
+            ? await (agent as any).store.restoreSession(sid)
+            : false
+          agents.delete(sessionId)
+          reply({ type: 'ok', sessionId, restored })
+          break
+        }
+        case 'list_archived_sessions': {
+          // 列出归档会话（v0.6.31）：宿主面板\"已归档\"视图数据源（只读不触发生成）
+          const agent = getAgent(String(req.sessionId || 'default'))
+          const rows = (typeof (agent as any).store?.listArchivedSessions === 'function')
+            ? (agent as any).store.listArchivedSessions(50)
+            : []
+          const sessions = rows.map((r: any) => ({
+            id: r.id,
+            title: r.title || '新会话',
+            updatedAt: r.updated_at || '',
+            preview: (r.first_user_msg || '').replace(/\s+/g, ' ').trim().slice(0, 120),
+          }))
+          reply({ type: 'archived_sessions', sessions })
+          break
+        }
         case 'create_session': {
           // 宿主显式创建会话（带标题；UPSERT 幂等——已存在则更新标题）
           const sessionId = String(req.sessionId || 'default')

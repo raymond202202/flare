@@ -338,6 +338,22 @@ Interactive mode commands:
 
 > 中文条目 / Chinese entries · English summary for each version
 
+#### v0.6.31 (2026-08-11) — 会话归档 API：server 协议 end_session / restore_session / list_archived_sessions
+- 📦 **会话归档（src/memory/store.ts + server.ts）**：sessions 表加 `archived` 列（新库直接建 +
+  老库 migrate 自动补列，幂等）——`archiveSession` / `restoreSession`（幂等：不存在 false 不抛错）、
+  `listArchivedSessions`（结构同 recent_sessions 含首条 user 消息预览）、`getRecentSessions` 排除归档、
+  `getAllSessions` 每项带 `archived` 布尔（增量字段向后兼容）
+- 🔌 **server 协议**：`end_session {sessionId?}` → `{type:'ok', archived:true}`（数据保留、从最近会话
+  隐藏、销毁缓存 Agent，下次 chat 重建）；`restore_session` → 恢复；`list_archived_sessions` →
+  `archived_sessions` 清单（只读不触发生成）；宿主面板「归档/已归档/恢复」完整闭环，与
+  delete_session（整个删除）语义清晰区分
+- 📚 docs/host-protocol.md §25.1 + 请求类型列表 + README Changelog + 版本号 0.6.31
+- 🧪 **664/664 全绿**（654 + 10 新增 tests/session-archive.test.ts：store 单测 6——归档标记+重复幂等 /
+  不存在幂等 / 恢复+未归档幂等 / recent 排除归档 + listArchived 只列归档（含预览）/ 归档不删数据
+  （消息+用量保留可恢复继续用）/ 老库迁移补列不报错可归档；server e2e 4——end→recent 隐藏→
+  list_archived 出现→restore 回最近 / end 后数据保留 get_messages 仍可读 / 不存在会话幂等 /
+  end 后 chat 重建 Agent 正常流程），tsc 0 错误，零 agent.ts 改动
+
 #### v0.6.30 (2026-08-11) — 工具输出治理：按工具类型定制截断（读文件留头尾、终端留尾部）
 - ✂️ **`truncateToolOutput` 纯函数（src/core/tool-output.ts，库导出）**：原来 run 循环对所有工具统一
   `output.slice(0, 2000)`——探索型工具（read_file/search_files）长输出只留头部**尾部丢掉**（AI 常需

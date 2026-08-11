@@ -3,7 +3,7 @@
 > 供非 Node 宿主（如 Qt 应用）调用 flare 引擎的本地协议。
 > 传输：stdin/stdout · JSON Lines（每行一个 JSON 对象）
 > 实现：`src/server.ts`（`flare server` 命令）
-> 请求类型：chat / cancel / set_context / list_sessions / recent_sessions / get_messages / search_messages / get_usage / session_usage / context_status / ping / version / create_session / rename_session / clear_session / delete_session / remember / get_memories / delete_memory / tool_result / confirm_result / confirm_status / confirm_revoke / confirm_allow / models / get_config / tools / mcp_status / mcp_resources
+> 请求类型：chat / cancel / set_context / list_sessions / recent_sessions / get_messages / search_messages / get_usage / session_usage / context_status / ping / version / create_session / rename_session / clear_session / delete_session / end_session / restore_session / list_archived_sessions / remember / get_memories / delete_memory / tool_result / confirm_result / confirm_status / confirm_revoke / confirm_allow / models / get_config / tools / mcp_status / mcp_resources
 
 ## 启动
 
@@ -388,6 +388,21 @@ flare server --profile <expert-profile-file> --storage <db-path> [--mcp <mcp-con
 - 清空该会话全部消息（`MemoryStore.clearSessionMessages`，返回删除条数 `cleared`），**保留会话记录与用量统计**——区别于 `delete_session`（整个会话删除）：宿主面板"清空对话"按钮数据源
 - 同时销毁该会话缓存 Agent（内存上下文同步清空；下次 chat 自动重建干净会话，与 delete_session 同模式）
 - 幂等安全：空/不存在会话 `cleared:0` 不报错；清空后仍可继续写入（会话记录未删，无外键问题）；FTS 检索索引由触发器联动清理
+
+### 25.1 会话归档（v0.6.31）：end_session / restore_session / list_archived_sessions
+
+```json
+{"type":"end_session","sessionId":"s1"}
+{"type":"restore_session","sessionId":"s1"}
+{"type":"list_archived_sessions"}
+```
+
+响应：`{"type":"ok","sessionId":"s1","archived":true}` / `{"type":"ok","sessionId":"s1","restored":true}` / `{"type":"archived_sessions","sessions":[{"id":"s1","title":"标题","updatedAt":"...","preview":"..."}]}`
+
+- `end_session`：归档会话——标记 `archived=1`（**数据保留**：消息/用量都在，区别于 `delete_session` 整个删除），从 `recent_sessions` 隐藏；同时销毁缓存 Agent（下次 chat 自动重建）；宿主面板"归档会话"按钮数据源；会话不存在幂等 `archived:false` 不报错
+- `restore_session`：恢复归档会话——标记 `archived=0`，重新出现在最近会话；不存在幂等 `restored:false`
+- `list_archived_sessions`：列出归档会话（结构同 `recent_sessions` 含首条 user 消息预览），宿主面板"已归档"视图数据源；只读不触发生成、不创建会话
+- `list_sessions` 响应每项带 `archived` 布尔字段（增量字段，向后兼容；宿主可据此在会话列表显示归档标记/筛选）
 
 ### 25. get_config — 查询服务器运行配置（v0.6.18，只读）
 
