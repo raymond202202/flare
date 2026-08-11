@@ -341,6 +341,15 @@ Interactive mode commands:
 
 > 中文条目 / Chinese entries · English summary for each version
 
+#### v0.6.75 (2026-08-12) — cache-check 多轮验收 savedUsd 累加所有命中轮（prompt caching 基建深化）
+
+- ✨ **`cache-check --rounds >2` 时 `savedUsd` 从「只算最后一轮」改为「累加所有命中轮」**：
+-  修复此前多轮验收时宿主/CI 消费 `--json` 看到的总节省被低估（第 2..N-1 轮的节省漏算）；
+-  rounds=2（默认）时只有一个命中轮，结果与旧版完全一致（向后兼容）
+- - 未命中轮不计节省（该轮无命中价差）；任一轮无法定价 → 整体 null（语义不变）
+- - README Changelog + 版本号 0.6.75
+- - 🧪 **871/871 全绿**（新增 2 用例：3 轮两命中 → 总节省 ≈ 2×单轮；中间轮 miss → 只累加命中轮），tsc 0 错误，**零 agent.ts 改动**
+
 #### v0.6.74 (2026-08-12) — README 命令行摘要表补齐 v0.6.54/68/69/70 能力（文档对称）
 
 - ✨ **README 命令表补 `mcp-server --http/--http-auth-token-env`、`mcp call --header`、

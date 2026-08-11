@@ -117,12 +117,21 @@ export async function runCacheCheck(llm: LLMProvider = createProvider(), opts: {
   const ok = hitRuns.length > 0 && hitRuns.every((u) => u.cacheReadTokens > 0)
 
   // 节省估算：命中部分按命中价 vs 未命中价的差（复用定价表；无法定价 → null）
+  // v0.6.75：多轮验收（--rounds>2）时**累加所有命中轮**的节省——修复此前只按最后一轮计算，
+  // 导致宿主/CI 消费 cache-check --json 时总节省被低估（rounds=2 时只有一个命中轮，行为不变）
   let savedUsd: number | null = null
   try {
     const { estimateCostUsd } = await import('./llm.js')
-    const miss = estimateCostUsd(model, last.promptTokens, last.completionTokens, 0)
-    const hit = estimateCostUsd(model, last.promptTokens, last.completionTokens, last.cacheReadTokens)
-    if (miss !== null && hit !== null) savedUsd = Math.round((miss - hit) * 1e6) / 1e6
+    let total = 0
+    let priced = true
+    for (const u of usages.slice(1)) {
+      if (u.cacheReadTokens <= 0) continue // 未命中轮没有节省
+      const miss = estimateCostUsd(model, u.promptTokens, u.completionTokens, 0)
+      const hit = estimateCostUsd(model, u.promptTokens, u.completionTokens, u.cacheReadTokens)
+      if (miss === null || hit === null) { priced = false; break }
+      total += miss - hit
+    }
+    if (priced) savedUsd = Math.round(total * 1e6) / 1e6
   } catch { /* 定价不可用 → null */ }
 
   const detail = ok

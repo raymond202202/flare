@@ -115,6 +115,46 @@ describe('runCacheCheck（v0.6.45）', () => {
     expect(r.savedUsd).toBeNull()
   })
 
+  it('多轮验收 savedUsd 累加所有命中轮（v0.6.75：修复此前只算最后一轮）', async () => {
+    // 3 轮：第 1 轮 miss 基准，第 2/3 轮都命中 → 总节省 ≈ 两轮命中节省之和
+    const { llm } = makeFake([
+      { model: 'deepseek-chat', usage: { prompt_tokens: 1000, completion_tokens: 10, prompt_cache_hit_tokens: 0 } },
+      { model: 'deepseek-chat', usage: { prompt_tokens: 1000, completion_tokens: 10, prompt_cache_hit_tokens: 900 } },
+      { model: 'deepseek-chat', usage: { prompt_tokens: 1000, completion_tokens: 10, prompt_cache_hit_tokens: 900 } },
+    ])
+    const r = await runCacheCheck(llm, { rounds: 3 })
+    expect(r.ok).toBe(true)
+    expect(r.rounds).toBe(3)
+    expect(r.hitTokens).toBe(900)
+    expect(r.savedUsd).not.toBeNull()
+    // 对照组：2 轮（单命中轮）的节省——3 轮两轮命中 → 总节省 ≈ 2 × 单轮节省
+    const single = await runCacheCheck(makeFake([
+      { model: 'deepseek-chat', usage: { prompt_tokens: 1000, completion_tokens: 10, prompt_cache_hit_tokens: 0 } },
+      { model: 'deepseek-chat', usage: { prompt_tokens: 1000, completion_tokens: 10, prompt_cache_hit_tokens: 900 } },
+    ]).llm)
+    expect(single.savedUsd).not.toBeNull()
+    expect(single.savedUsd!).toBeGreaterThan(0)
+    expect(r.savedUsd!).toBeCloseTo(single.savedUsd! * 2, 4)
+  })
+
+  it('多轮验收中间某轮未命中 → 节省只累加命中轮（v0.6.75）', async () => {
+    // 3 轮：第 2 轮命中、第 3 轮 miss（ok:false）→ 节省只算第 2 轮（与 2 轮单命中轮相当）
+    const { llm } = makeFake([
+      { model: 'deepseek-chat', usage: { prompt_tokens: 1000, completion_tokens: 10, prompt_cache_hit_tokens: 0 } },
+      { model: 'deepseek-chat', usage: { prompt_tokens: 1000, completion_tokens: 10, prompt_cache_hit_tokens: 900 } },
+      { model: 'deepseek-chat', usage: { prompt_tokens: 1000, completion_tokens: 10, prompt_cache_hit_tokens: 0 } },
+    ])
+    const r = await runCacheCheck(llm, { rounds: 3 })
+    expect(r.ok).toBe(false)
+    const single = await runCacheCheck(makeFake([
+      { model: 'deepseek-chat', usage: { prompt_tokens: 1000, completion_tokens: 10, prompt_cache_hit_tokens: 0 } },
+      { model: 'deepseek-chat', usage: { prompt_tokens: 1000, completion_tokens: 10, prompt_cache_hit_tokens: 900 } },
+    ]).llm)
+    expect(single.savedUsd).not.toBeNull()
+    expect(r.savedUsd).not.toBeNull()
+    expect(r.savedUsd!).toBeCloseTo(single.savedUsd!, 4)
+  })
+
   it('cacheCheckToJson（v0.6.48）：合法 JSON + 全部结构化字段（宿主/CI 消费）', async () => {
     const { llm } = makeFake([
       { model: 'deepseek-chat', usage: { prompt_tokens: 800, completion_tokens: 10, prompt_cache_hit_tokens: 0 } },
