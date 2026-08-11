@@ -3,7 +3,7 @@
 > 供非 Node 宿主（如 Qt 应用）调用 flare 引擎的本地协议。
 > 传输：stdin/stdout · JSON Lines（每行一个 JSON 对象）
 > 实现：`src/server.ts`（`flare server` 命令）
-> 请求类型：chat / cancel / set_context / list_sessions / recent_sessions / get_messages / search_messages / get_usage / session_usage / context_status / apply_trim / ping / version / create_session / rename_session / clear_session / delete_session / end_session / restore_session / list_archived_sessions / remember / get_memories / delete_memory / tool_result / confirm_result / confirm_status / confirm_revoke / confirm_allow / models / get_config / tools / mcp_status / mcp_resources / mcp_prompts
+> 请求类型：chat / cancel / set_context / list_sessions / recent_sessions / get_messages / search_messages / get_usage / session_usage / context_status / apply_trim / ping / version / create_session / rename_session / clear_session / delete_session / end_session / restore_session / list_archived_sessions / remember / get_memories / delete_memory / tool_result / confirm_result / confirm_status / confirm_revoke / confirm_allow / models / get_config / tools / mcp_status / mcp_resources / mcp_prompts / mcp_read_resource / mcp_get_prompt
 
 ## 启动
 
@@ -316,6 +316,35 @@ flare server --profile <expert-profile-file> --storage <db-path> [--mcp <mcp-con
 - 只读，不触发生成、不创建会话；等待启动时的后台连接落定（与 `mcp_status` 一致）
 - 宿主 AI 面板「外部 MCP 提示词」数据源：展示/透传外部服务器暴露的提示词模板
 
+### 16.3 mcp_read_resource — 读取已连接 MCP 服务器的资源内容（v0.6.38）
+
+```json
+{"type":"mcp_read_resource","server":"mock","uri":"memory://preferences"}
+```
+
+响应：`{"type":"mcp_read_resource","server":"mock","uri":"memory://preferences","contents":[{"uri":"memory://preferences","mimeType":"text/plain","text":"主题: 浅色"}]}`
+
+- `server`：必填，MCP 服务器名（`mcp_status`/`mcp_resources` 清单里的名称）
+- `uri`：必填，资源唯一标识（`mcp_resources` 清单里的 `uri`，或动态模板匹配的 uri）
+- 代理转发 `resources/read`（McpManager.readResource）——与 `mcp_resources`（清单）配套：清单只能看到元数据，本接口取**真实内容**，宿主面板可展示外部资源内容/把资源喂给 AI
+- 错误：缺 `server`/`uri` → error 含用法；服务器未连接 → error「MCP 服务器未连接: <name>」；未知资源/读取失败 → 透传外部服务器错误（服务不崩）
+- 只读，不触发生成、不创建会话；等待启动时的后台连接落定（与 `mcp_status` 一致）
+
+### 16.4 mcp_get_prompt — 渲染已连接 MCP 服务器的提示词（v0.6.38）
+
+```json
+{"type":"mcp_get_prompt","server":"mock","prompt":"summarize","args":{"topic":"flare 引擎"}}
+```
+
+响应：`{"type":"mcp_get_prompt","server":"mock","prompt":"summarize","description":"总结内容","messages":[{"role":"user","content":{"type":"text","text":"请总结关于「flare 引擎」的内容"}}]}`
+
+- `server`：必填，MCP 服务器名（`mcp_status`/`mcp_prompts` 清单里的名称）
+- `prompt`：必填，提示词名（`mcp_prompts` 清单里的 `name`）
+- `args`：可选，提示词参数（对象；按服务器 `arguments` 声明补全，如 `{topic: "..."}`）
+- 代理转发 `prompts/get`（McpManager.getPrompt）——与 `mcp_prompts`（清单）配套：清单只能看到元数据，本接口返回**渲染后的消息序列**（`description` 可选、`messages` 每项 `{role, content:{type:'text',text}}`），宿主可把外部提示词注入对话/展示
+- 错误：缺 `server`/`prompt` → error 含用法；服务器未连接 → error「MCP 服务器未连接: <name>」；未知提示词 → 透传外部服务器错误（服务不崩）
+- 只读，不触发生成、不创建会话；等待启动时的后台连接落定（与 `mcp_status` 一致）
+
 ### 17. confirm_result — 回传用户确认决策（v0.6.1，响应 confirm 事件）
 
 ```json
@@ -475,6 +504,8 @@ flare server --profile <expert-profile-file> --storage <db-path> [--mcp <mcp-con
 | `models` | `configured, ollama` | 可切换模型（models 响应，v0.6.9） |
 | `tools` | `sessionId, tools, confirmTools` | Agent 工具清单（tools 响应，v0.6.11） |
 | `config` | `confirmTools, confirmTimeoutMs, defaultMaxTokens, defaultTemperature, defaultMaxContextMessages, defaultMaxContextTokens, toolTimeoutMs, namespace, storage, mcpServers` | 服务器运行配置（get_config 响应，v0.6.18，只读） |
+| `mcp_read_resource` | `server, uri, contents` | 外部 MCP 资源内容（mcp_read_resource 响应，v0.6.38） |
+| `mcp_get_prompt` | `server, prompt, description?, messages` | 外部 MCP 提示词渲染结果（mcp_get_prompt 响应，v0.6.38） |
 
 ## 工具执行流（宿主代理工具）
 

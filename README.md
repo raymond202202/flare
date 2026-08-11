@@ -338,6 +338,34 @@ Interactive mode commands:
 
 > 中文条目 / Chinese entries · English summary for each version
 
+#### v0.6.38 (2026-08-12) — server 协议 MCP 资源内容读取 + 提示词渲染代理（mcp_read_resource / mcp_get_prompt）
+
+- ✨ **server 协议两个只读代理接口（src/server.ts + 测试）**：
+-  v0.6.26 `mcp_resources` 与 v0.6.36 `mcp_prompts` 只提供外部 MCP 服务器的资源/提示词**清单**
+-  （元数据），宿主（如 Qt 面板）**无法经协议取资源真实内容 / 渲染提示词**——文档只能指到
+-  库级 McpManager.readResource/getPrompt，宿主协议用不上；本轮补齐「列表 → 读取/渲染」闭环：
+- - **`mcp_read_resource {server, uri}`** → `{type:'mcp_read_resource', server, uri, contents:
+-   [{uri, mimeType?, text}]}`——代理转发 `resources/read`（McpManager.readResource），宿主面板
+-  可展示外部资源内容/把资源喂给 AI；缺参 error 含用法；服务器未连接 error「MCP 服务器未连接:
+-  <name>」；未知资源/读取失败透传外部服务器错误（服务不崩）
+- - **`mcp_get_prompt {server, prompt, args?}`** → `{type:'mcp_get_prompt', server, prompt,
+-  description?, messages:[{role, content:{type:'text',text}}]}`——代理转发 `prompts/get`
+-  （McpManager.getPrompt），宿主可把外部提示词注入对话/展示；`args` 按服务器 arguments 声明
+-  补全（可选，非对象忽略）；缺参 error 含用法；未连接/未知提示词 error（服务不崩）
+- - 两者都只读：不触发生成、不创建会话；等待启动时的后台连接落定（与 mcp_status 一致）；
+-  **零 agent.ts 改动**（纯 server 协议 + 测试 + 文档）
+- - 📚 docs/host-protocol.md（请求类型列表 + §16.3/§16.4 新章节 + 响应表）+ README Changelog + 版本号 0.6.38
+- - 🧪 **735/735 全绿**（726 + 9 新增 tests/server-mcp-resources.test.ts：mcp_read_resource 成功闭环
+-  （真实子进程 + 真实 mock 服务器，contents 内容往返）/ 未知资源 error 透传 / 缺 server·uri error
+-  含用法 / 未连接 error；mcp_get_prompt 成功渲染闭环（greet 无参）/ 带参数渲染（summarize +
+-  topic 补全 + description）/ 未知提示词 error / 缺 server·prompt error / 未连接 error），tsc 0 错误，
+-  **零 agent.ts 改动**
+- - **冒烟实测**（真实 dist CLI 子进程 + 真实 mock 服务器）：mcp_read_resource
+-  `{server:'mock', uri:'memory://preferences'}` → contents `[{uri, mimeType:'text/plain',
+-  text:'主题: 浅色'}]`；mcp_get_prompt `{server:'mock', prompt:'summarize',
+-  args:{topic:'flare 引擎'}}` → description「总结内容」+ messages「请总结关于「flare 引擎」的内容」；
+-  未知资源/未知提示词/未连接均 error，SMOKE PASS
+
 #### v0.6.37 (2026-08-12) — CLI `mcp-server --bridge-prompts`（外部 MCP 提示词透传 flare 自身 MCPServer，与 v0.6.28 --bridge-resources 对称）
 - ✨ **CLI `flare mcp-server --bridge-prompts`（src/cli/index.ts + 测试）**：
 -  v0.6.28 的 `--bridge-resources` 只透传外部 MCP 服务器的资源/模板；v0.6.36 补齐了 McpManager 的
