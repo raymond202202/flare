@@ -153,7 +153,7 @@ const prompts = mgr.getAllPrompts()           // [{ name, description?, argument
 const rendered = await mgr.getPrompt('fs', 'summarize', { topic: 'flare' }) // 代理渲染 prompts/get
 //   → { description?, messages: [{ role: 'user', content: { type: 'text', text: '...' } }] }
 
-mgr.status()                                  // 已连接时带 resourceCount/templateCount/promptCount
+mgr.status()                                  // v0.6.50 起每个服务器带 transport（stdio/http）+ target（端点/命令）
 mgr.closeAll()
 ```
 

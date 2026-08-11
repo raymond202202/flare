@@ -341,6 +341,25 @@ Interactive mode commands:
 
 > 中文条目 / Chinese entries · English summary for each version
 
+#### v0.6.50 (2026-08-12) — MCP 连接状态带传输类型/端点（方向③ MCP 增强，HTTP transport 观测面补齐）
+
+- ✨ **`McpServerStatus.transport` / `.target` + CLI /mcp + server mcp_status（src/mcp/types.ts +
+-  src/mcp/manager.ts + src/cli/index.ts + 测试）**：
+-  `mcp_status`（v0.5.5）只有 name/connected/toolCount，宿主面板**无法区分 stdio/HTTP 两种连接
+-  方式、看不到端点/命令**（配了 url 的 HTTP transport 服务器与 stdio 服务器长得一样）；本轮补齐
+-  （纯外围，零 agent.ts 改动）：
+- - **`transport: 'stdio' | 'http'`**（配置 url 走 http，command 走 stdio）+ **`target`**（http 为
+-  端点 url，stdio 为 command + args）——`McpManager.status()` 直接填充（CLI /mcp 与 server
+-  `mcp_status` 同源，宿主面板可区分两种连接并直接展示连接目标）
+- - **CLI 交互模式 `/mcp`**：状态行显示 `[stdio]`/`[HTTP]` 标记 + 目标端点/命令（未连接也显示——
+-  配置即可见）；旧形状 status（缺字段）降级默认 `[stdio]` 不崩溃
+- - docs/host-protocol.md（§16 mcp_status 响应结构含 transport/target 示例）+ docs/mcp.md +
+-  README Changelog + 版本号 0.6.50
+- - 🧪 **808/808 全绿**（806 + 2 新增 mcp-command.test.ts：/mcp 显示 [stdio]+命令目标 / [HTTP]+端点
+-  url（未连接也显示）/ 旧形状 status 缺字段默认 stdio 不崩溃；mcp-manager 既有测试补 transport/target
+-  断言（stdio=stdio+target 含 MOCK_SERVER 路径、HTTP=http+target=端点 url）），tsc 0 错误，
+-  **零 agent.ts 改动**
+
 #### v0.6.49 (2026-08-12) — CLI `/usage` 本会话行缓存命中显示（方向① prompt caching 基建深化，观测面补齐）
 
 - ✨ **CLI `/usage` 本会话行追加缓存命中（src/cli/index.ts + 测试）**：

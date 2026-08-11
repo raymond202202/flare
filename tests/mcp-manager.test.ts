@@ -74,6 +74,9 @@ describe('McpManager', () => {
     expect(st[0].connected).toBe(true)
     expect(st[0].toolCount).toBe(3)
     expect(st[0].error).toBeUndefined()
+    // v0.6.50：传输类型 + 目标命令（stdio 服务器显示 command + args）
+    expect(st[0].transport).toBe('stdio')
+    expect(st[0].target).toContain(MOCK_SERVER)
     mgr.closeAll()
   })
 
@@ -141,6 +144,9 @@ describe('McpManager', () => {
     expect(st[0].connected).toBe(true)
     expect(st[0].toolCount).toBe(1)
     expect(st[0].error).toBeUndefined()
+    // v0.6.50：HTTP transport 服务器标记 http + 端点 url
+    expect(st[0].transport).toBe('http')
+    expect(st[0].target).toBe(h.url)
     mgr.closeAll()
   })
 
