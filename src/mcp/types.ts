@@ -22,6 +22,8 @@ export interface McpServerConfig {
   url?: string
   /** 单请求超时毫秒（HTTP transport 用，默认 15s；McpManager({ httpTimeoutMs }) 可全局覆盖） */
   timeoutMs?: number
+  /** HTTP transport 附加请求头（v0.6.67，如 { "Authorization": "Bearer <token>" } 鉴权；仅 url 模式生效） */
+  headers?: Record<string, string>
   /** 是否默认连接（CLI 启动时自动连接；预留） */
   default?: boolean
 }

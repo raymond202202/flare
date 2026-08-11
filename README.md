@@ -341,6 +341,21 @@ Interactive mode commands:
 
 > 中文条目 / Chinese entries · English summary for each version
 
+#### v0.6.67 (2026-08-12) — MCP HTTP transport 鉴权请求头支持（方向③ MCP 增强）
+
+- ✨ **`MCPHttpClient({ headers })` + `McpServerConfig.headers` + `McpManager.connect` 透传（src/mcp/http-client.ts + src/mcp/types.ts + src/mcp/manager.ts + 测试）**：
+-  v0.6.4 起的 HTTP transport 客户端**只能匿名访问**——`postJson` 硬编码 Content-Type/
+-  Content-Length，无法携带 `Authorization: Bearer <token>` 等鉴权头；真实世界远程 MCP 服务器
+-  （HTTP transport 主要价值）几乎都需要鉴权，否则 `flare mcp call --url` 远程调用必失败；本轮补齐
+-  （纯外围，零 agent.ts 改动）
+- - **客户端**：`MCPHttpClientOptions.headers`（每次 POST 都携带，含 initialize/通知/清单/调用；
+-  Content-Length 以实际字节为准强制覆盖——用户传入不可信）；不传 → 行为与旧版完全一致（向后兼容）
+- - **配置**：`~/.flare/mcp.json` 的 servers 项加 `headers`（如 `{ "Authorization": "Bearer <token>" }`）——
+-  `McpManager.connect` 透传；stdio 模式忽略（env 已覆盖子进程环境变量）
+- - docs/mcp.md（McpManager 接入 headers 说明）+ README Changelog + 版本号 0.6.67
+- - 🧪 **854/854 全绿**（新增 3 用例：客户端 headers 全请求携带 / 无 headers 不发送向后兼容 /
+-  manager 配置 headers 透传 + 桥接工具执行带鉴权），tsc 0 错误，**零 agent.ts 改动**
+
 #### v0.6.66 (2026-08-12) — /help 同步 /usage 描述（方向① prompt caching 基建深化，观察面对齐）
 
 - ✨ **`/help` 的 `/usage` 行补「含缓存命中/节省」说明（src/cli/index.ts + 测试）**：

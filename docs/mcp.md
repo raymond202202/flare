@@ -762,6 +762,9 @@ client.close()
 - 配了 `url` → `MCPHttpClient` 直连（HTTP transport）；否则按 `command` → stdio spawn（行为不变）
 - 同时配了 `url` 与 `command` → `url` 优先；既无 `url` 也无 `command` → connect 抛清晰错误
 - `timeoutMs` 可单独覆盖单服务器超时；`McpManager({ httpTimeoutMs })` 全局默认 15s
+- **`headers`（v0.6.67）**：HTTP transport 附加请求头（每次 POST 都携带）——远程/受保护服务器
+  鉴权用（如 `{ "Authorization": "Bearer <token>" }`）；stdio 模式忽略；`MCPHttpClient({ headers })`
+  库级同样支持
 - `createMcpTools` 参数放宽为 `McpToolClient` 接口——stdio/HTTP 客户端都满足，工具桥传输无关
 
 ```ts
