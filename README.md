@@ -341,6 +341,17 @@ Interactive mode commands:
 
 > 中文条目 / Chinese entries · English summary for each version
 
+#### v0.6.71 (2026-08-12) — host-protocol.md `--mcp` 配置文档补齐 url/headers/timeoutMs（方向③ 收尾，纯文档）
+
+- ✨ **docs/host-protocol.md 启动章节 `--mcp` 配置补 url/headers/timeoutMs 说明**（纯文档，零代码变更）：
+-  `McpServerConfig` 的 `url`（v0.6.6）/ `headers`（v0.6.67）/ `timeoutMs` 扩展后，`flare server
+-  --mcp`（`mcpManager.setConfig`）早已自动支持，但**宿主文档示例仍停在 name/command/args/env**——
+-  宿主开发者不知道可配 HTTP transport + 鉴权头；本轮补齐（与 v0.6.62 纯文档先例一致）
+- - `--mcp` 配置项说明：`url` → HTTP 直连（不 spawn）；`headers` → HTTP 鉴权头（仅 url 模式，
+-  stdio 用 `env`）；`timeoutMs` → 单服务器超时覆盖；示例含 stdio + HTTP 鉴权双服务器
+- - README Changelog + 版本号 0.6.71
+- - 🧪 **866/866 全绿**（纯文档改动，无代码变更），tsc 0 错误，**零 agent.ts 改动**
+
 #### v0.6.70 (2026-08-12) — MCP 连接状态带 auth 鉴权标记（方向③ MCP 增强，v0.6.67~69 鉴权闭环的观测面收尾）
 
 - ✨ **`McpServerStatus.auth` + server `mcp_status` 透传 + CLI `/mcp` / `flare mcp status` 显示 `[auth]`**（src/mcp/types.ts + src/mcp/manager.ts + src/cli/index.ts + 测试）：
