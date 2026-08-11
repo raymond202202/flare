@@ -3,25 +3,25 @@
 > 目标：flare 是 Pulse/StorySpire 依赖的 AI Agent 引擎（TS）。任何改动必须安全（tsc 0 错 + 测试全绿才 commit）。
 > 铁律：禁止 push；禁止修改 src/core/agent.ts 的 Agent.run 核心循环。
 
-> **最新状态（v0.6.74）**：**README 命令行摘要表补齐 v0.6.54/68/69/70 能力**（文档对称）：
-> v0.6.54/68/69/70 的能力在 README 命令行摘要表未同步——用户看不到多轮验收/HTTP 服务端鉴权/
-> --header 鉴权头/[auth] 标记入口；本轮补齐（纯文档，与 v0.6.62 先例一致）——mcp-server
-> --http/--http-auth-token-env、mcp call --header、mcp status [auth]、cache-check --rounds。
-> **868/868 全绿**（纯文档改动），tsc 0 错误，**零 agent.ts 改动**。
-> （v0.6.73：get_config mcpServers 带 auth 标记；v0.6.72：/mcp connect 摘要带 [auth]；v0.6.71：
-> host-protocol --mcp 配置文档补齐；v0.6.70：MCP 状态带 auth 标记；v0.6.69：HTTP 服务端 Bearer
-> 鉴权；v0.6.68：CLI mcp 单次命令 --header；v0.6.67：HTTP transport 鉴权请求头支持；v0.6.66：
-> /help 同步 /usage 描述；v0.6.65：/usage perModel 行带缓存节省金额；v0.6.64：usage 统计带缓存
-> 节省金额估算；v0.6.63：MCP 子命令提示对称补齐；v0.6.62：MCP 单次命令文档补齐；v0.6.61：MCP
-> 命令提示面补全；v0.6.60：flare mcp complete 单次命令；v0.6.59：flare mcp tools 单次命令；
-> v0.6.58：mcp_tools 工具清单桥接三层；v0.6.57：mcp_complete 提示词参数补全桥接；v0.6.56：
-> server mcp_connect/mcp_disconnect 控制面；v0.6.55：/mcp connect 摘要 transport/target；
-> v0.6.54：cache-check --rounds 多轮验收；v0.6.53：CLI /usage 本会话 perModel 子行；v0.6.52：
-> session_usage perModel；v0.6.51：CLI mcp status 统一 status()+--connect；v0.6.50：MCP 连接状态
-> transport/target；v0.6.49：CLI /usage 本会话行缓存命中；v0.6.48：cache-check --json 结构化输出；
-> v0.6.47：mcp-server --bridge-tools 工具透传；v0.6.46：CLI /trim 智能裁剪 + /context 裁剪提示；
-> v0.6.45：flare cache-check 验收工具；v0.6.44：CLI /sessions 关键词搜索；v0.6.43：server 协议
-> search_sessions；v0.6.42：CLI /usage perModel 缓存命中显示。）
+> **最新状态（v0.6.75）**：**cache-check 多轮验收 savedUsd 累加所有命中轮**（方向① prompt
+> caching 基建深化）：--rounds>2 时总节省此前只按最后一轮计算（第 2..N-1 命中轮漏算，宿主/CI
+> 消费 --json 看到的总节省被低估）——本轮改为累加所有命中轮（未命中轮不计、无法定价仍整体 null、
+> rounds=2 行为不变向后兼容）。**871/871 全绿**，tsc 0 错误，**零 agent.ts 改动**。
+> （v0.6.74：README 命令行摘要表补齐；v0.6.73：get_config mcpServers 带 auth 标记；v0.6.72：
+> /mcp connect 摘要带 [auth]；v0.6.71：host-protocol --mcp 配置文档补齐；v0.6.70：MCP 状态带
+> auth 标记；v0.6.69：HTTP 服务端 Bearer 鉴权；v0.6.68：CLI mcp 单次命令 --header；v0.6.67：
+> HTTP transport 鉴权请求头支持；v0.6.66：/help 同步 /usage 描述；v0.6.65：/usage perModel
+> 行带缓存节省金额；v0.6.64：usage 统计带缓存节省金额估算；v0.6.63：MCP 子命令提示对称补齐；
+> v0.6.62：MCP 单次命令文档补齐；v0.6.61：MCP 命令提示面补全；v0.6.60：flare mcp complete
+> 单次命令；v0.6.59：flare mcp tools 单次命令；v0.6.58：mcp_tools 工具清单桥接三层；v0.6.57：
+> mcp_complete 提示词参数补全桥接；v0.6.56：server mcp_connect/mcp_disconnect 控制面；v0.6.55：
+> /mcp connect 摘要 transport/target；v0.6.54：cache-check --rounds 多轮验收；v0.6.53：CLI
+> /usage 本会话 perModel 子行；v0.6.52：session_usage perModel；v0.6.51：CLI mcp status
+> 统一 status()+--connect；v0.6.50：MCP 连接状态 transport/target；v0.6.49：CLI /usage 本会话
+> 行缓存命中；v0.6.48：cache-check --json 结构化输出；v0.6.47：mcp-server --bridge-tools
+> 工具透传；v0.6.46：CLI /trim 智能裁剪 + /context 裁剪提示；v0.6.45：flare cache-check
+> 验收工具；v0.6.44：CLI /sessions 关键词搜索；v0.6.43：server 协议 search_sessions；
+> v0.6.42：CLI /usage perModel 缓存命中显示。）
 
 > 【🔴 当前最高优先级方向（2026-08-11 用户拍板）】**prompt caching 基建 P0 已基本落地 + 验收工具化**：
 > P0-1 前缀稳定 + P0-2 usage 回传（v0.6.29 完成）。验收：`flare cache-check` 一键验收
@@ -67,6 +67,25 @@
 >    terminal 退出码（v0.6.33）✓ / CLI 归档命令（v0.6.32）✓ / 归档 API（v0.6.31）✓ /
 >    工具输出治理（v0.6.30）✓ / prompt caching P0（v0.6.29）✓ / MCP 动态资源提供器（v0.6.28）✓ /
 >    confirm 描述（v0.6.27）✓
+
+> ---
+
+> ### 2026-08-12 第七十四轮实施（v0.6.75）——cache-check 多轮 savedUsd 累加（方向① prompt caching 基建深化）
+
+> - **P104 `runCacheCheck` 多轮验收 savedUsd 累加所有命中轮**（src/core/cache-check.ts + 测试，
+>   commit `6ccd9a5`）：
+>   - **缺口定位**：v0.6.54 加 --rounds 多轮验收后，savedUsd 仍只按**最后一轮**计算——第 2..N-1
+>     命中轮的节省漏算，宿主/CI 消费 `cache-check --json` 看到的总节省被低估（3 轮两命中只报了
+>     最后一轮的节省）；本轮修复（纯外围，零 agent.ts 改动）
+>   - **累加语义**：对第 2..N 轮中 cacheReadTokens > 0 的每一轮，按该轮自身 prompt/completion/
+>     hit tokens 计算 miss 价 − hit 价并累加；未命中轮不计（无命中价差）；任一轮无法定价 → 整体
+>     null（语义不变）；rounds=2（默认）只有一个命中轮 → 结果与旧版完全一致（向后兼容）
+>   - README Changelog + 版本号 0.6.75
+>   - **871/871 全绿**（新增 2 用例：3 轮两命中 → 总节省 ≈ 2×单轮节省（toBeCloseTo 4 位）；
+>     中间轮 miss → 只累加命中轮，与单命中轮相当），tsc 0 错误，**零 agent.ts 改动**
+> - **下一步候选**：① 【P1】分层上下文（Layer 1 异步滚动摘要——需评估 run 循环外异步）；② 其他
+>   安全的外围增强（server 协议其他管理接口、MCP 工具集完善、测试稳定性等）；③ 方向①继续：
+>   cache-check 人类可读输出加每轮节省明细 / 失败诊断建议（边际价值中等，可选）
 
 > ---
 
