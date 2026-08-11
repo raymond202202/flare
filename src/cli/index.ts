@@ -1211,8 +1211,9 @@ export function main() {
     .option('--http', '用 HTTP transport 替代 stdio（POST /mcp，JSON-RPC over HTTP，v0.6.3）')
     .option('-p, --port <port>', 'HTTP 监听端口（默认 0 = 随机；仅监听 127.0.0.1 本机）')
     .option('--bridge-resources', '透传外部 MCP 服务器资源（v0.6.28：连接 ~/.flare/mcp.json 全部服务器，外部资源/模板经 flare 暴露给客户端，读取实时代理转发）')
-    .option('--config <path>', 'MCP 配置文件路径（--bridge-resources 用，默认 ~/.flare/mcp.json）')
-    .action(async (options: { tools?: string; http?: boolean; port?: string; bridgeResources?: boolean; config?: string }) => {
+    .option('--bridge-prompts', '透传外部 MCP 服务器提示词（v0.6.37：连接 ~/.flare/mcp.json 全部服务器，外部提示词经 flare 暴露给客户端，渲染实时代理转发）')
+    .option('--config <path>', 'MCP 配置文件路径（--bridge-resources / --bridge-prompts 用，默认 ~/.flare/mcp.json）')
+    .action(async (options: { tools?: string; http?: boolean; port?: string; bridgeResources?: boolean; bridgePrompts?: boolean; config?: string }) => {
       const { MCPServer, startMcpHttpServer, tools: builtinTools, McpManager } = await import('../index.js')
       const names = options.tools
         ? options.tools.split(',').map((s) => s.trim()).filter(Boolean)
@@ -1222,24 +1223,42 @@ export function main() {
         : builtinTools
       // v0.6.28：--bridge-resources 把外部 MCP 服务器资源透传给 flare 自身 MCPServer 的客户端——
       // 连接配置的全部服务器，外部资源/模板实时合并进 resources/list，读取时按 uri 找到所属服务器代理转发
+      // v0.6.37：--bridge-prompts 对称透传提示词（prompts/list 元数据 + prompts/get 渲染代理）
       let resourceProvider: import('../index.js').McpResourceProvider | undefined
-      if (options.bridgeResources) {
+      let bridgedPrompts: import('../index.js').McpPrompt[] | undefined
+      if (options.bridgeResources || options.bridgePrompts) {
         const mgr = new McpManager({ configPath: options.config })
         const servers = mgr.servers
         if (servers.length === 0) {
-          console.error(chalk.yellow('--bridge-resources 但未配置 MCP 服务器（~/.flare/mcp.json 的 servers 列表），仅暴露 flare 自身资源'))
+          console.error(chalk.yellow(`${options.bridgeResources ? '--bridge-resources' : '--bridge-prompts'} 但未配置 MCP 服务器（~/.flare/mcp.json 的 servers 列表），仅暴露 flare 自身能力`))
         } else {
           await Promise.allSettled(servers.map((s) => mgr.connect(s.name)))
           const connected = mgr.status().filter((s) => s.connected).length
           console.error(chalk.gray(`资源透传：已连接 ${connected}/${servers.length} 个外部 MCP 服务器`))
-          resourceProvider = {
-            listResources: () => mgr.getAllResources().map((r) => ({ uri: r.uri, name: r.name, ...(r.description ? { description: r.description } : {}), ...(r.mimeType ? { mimeType: r.mimeType } : {}) })),
-            listResourceTemplates: () => mgr.getAllResourceTemplates().map((t) => ({ uriTemplate: t.uriTemplate, name: t.name, ...(t.description ? { description: t.description } : {}), ...(t.mimeType ? { mimeType: t.mimeType } : {}) })),
-            readResource: async (uri) => {
-              const ref = mgr.getAllResources().find((r) => r.uri === uri)
-              if (!ref) return null
-              return mgr.readResource(ref.server, uri)
-            },
+          if (options.bridgeResources) {
+            resourceProvider = {
+              listResources: () => mgr.getAllResources().map((r) => ({ uri: r.uri, name: r.name, ...(r.description ? { description: r.description } : {}), ...(r.mimeType ? { mimeType: r.mimeType } : {}) })),
+              listResourceTemplates: () => mgr.getAllResourceTemplates().map((t) => ({ uriTemplate: t.uriTemplate, name: t.name, ...(t.description ? { description: t.description } : {}), ...(t.mimeType ? { mimeType: t.mimeType } : {}) })),
+              readResource: async (uri) => {
+                const ref = mgr.getAllResources().find((r) => r.uri === uri)
+                if (!ref) return null
+                return mgr.readResource(ref.server, uri)
+              },
+            }
+          }
+          if (options.bridgePrompts) {
+            // 外部提示词包装成 McpPrompt（render 按 prompt 名找到所属服务器代理转发 prompts/get）
+            bridgedPrompts = mgr.getAllPrompts().map((p) => ({
+              name: p.name,
+              ...(p.description ? { description: p.description } : {}),
+              ...(Array.isArray(p.arguments) && p.arguments.length > 0 ? { arguments: p.arguments } : {}),
+              render: async (args) => {
+                const ref = mgr.getAllPrompts().find((x) => x.name === p.name)
+                if (!ref) return []
+                const res = await mgr.getPrompt(ref.server, p.name, args)
+                return res.messages
+              },
+            }))
           }
         }
       }
@@ -1248,13 +1267,18 @@ export function main() {
         const h = await startMcpHttpServer({
           tools: selected,
           resourceProvider,
+          ...(bridgedPrompts ? { prompts: bridgedPrompts } : {}),
           port: options.port ? Number(options.port) : undefined,
         })
         console.log(`MCP HTTP 服务器已启动: ${h.url}（POST JSON-RPC；Ctrl+C 退出）`)
         return
       }
       // 常驻监听 stdin（MCP 客户端经 stdio 连接），直到 EOF 退出
-      const server = new MCPServer({ tools: selected, resourceProvider })
+      const server = new MCPServer({
+        tools: selected,
+        resourceProvider,
+        ...(bridgedPrompts ? { prompts: bridgedPrompts } : {}),
+      })
       server.start()
       // 保持进程存活：stdin 未关闭前不退出（start 已注册监听；无需额外动作）
     })

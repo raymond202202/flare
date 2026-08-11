@@ -15,6 +15,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const CLI = path.join(__dirname, '..', 'dist', 'cli', 'index.js')
 const TSK_CLI = path.join(__dirname, '..', 'node_modules', 'tsx', 'dist', 'cli.mjs')
 const EXT_FIXTURE = path.join(__dirname, 'fixtures', 'mcp-flare-server-templates.ts')
+const PROMPTS_FIXTURE = path.join(__dirname, 'fixtures', 'mcp-flare-server-prompts-bridge.ts')
 
 function spawnCli(args: string[], timeoutMs = 10000): MCPClient {
   return new MCPClient({
@@ -111,6 +112,54 @@ describe('CLI mcp-server 命令（MCP stdio 服务器）', () => {
       await client.initialize()
       const resources = await client.listResources()
       expect(resources).toEqual([])
+      const tools = await client.listTools()
+      expect(tools.length).toBe(6)
+    } finally {
+      client.close()
+    }
+  })
+
+  it('flare mcp-server --bridge-prompts：外部 MCP 服务器提示词经 flare 透传给客户端（渲染代理转发）', async () => {
+    // 临时 MCP 配置：外部 stdio MCP 服务器（mcp-flare-server-prompts fixture，暴露 greet + summarize 提示词）
+    const dir = mkdtempSync(path.join(tmpdir(), 'flare-mcp-bridge-prompts-'))
+    const configPath = path.join(dir, 'mcp.json')
+    writeFileSync(configPath, JSON.stringify({
+      servers: [
+        { name: 'ext', command: process.execPath, args: [TSK_CLI, PROMPTS_FIXTURE] },
+      ],
+    }))
+
+    const client = spawnCli(['mcp-server', '--bridge-prompts', '--config', configPath], 15000)
+    try {
+      const init = await client.initialize()
+      expect(init.serverInfo?.name).toBe('flare')
+      // 有提示词 → prompts 能力声明
+      expect((client as any).capabilities?.prompts).toBeTruthy()
+      // 外部提示词透传：listPrompts 能看到外部服务器的提示词（元数据 + 参数声明）
+      const prompts = await client.listPrompts()
+      expect(prompts).toEqual([
+        { name: 'greet', description: '打招呼' },
+        { name: 'summarize', description: '总结内容', arguments: [{ name: 'topic', description: '主题', required: true }] },
+      ])
+      // 渲染外部提示词：flare 代理转发到外部服务器（内容往返，带参数补全）
+      const greet = await client.getPrompt('greet')
+      expect(greet.messages[0]?.content?.text).toBe('你好')
+      const summary = await client.getPrompt('summarize', { topic: 'flare' })
+      expect(summary.messages[0]?.content?.text).toContain('flare')
+      // flare 自身工具照常可用（透传不破坏工具）
+      const tools = await client.listTools()
+      expect(tools.map((t) => t.name)).toContain('read_file')
+    } finally {
+      client.close()
+    }
+  })
+
+  it('flare mcp-server --bridge-prompts（无配置）：提示 + 仅暴露 flare 自身能力（prompts 空，不中断）', async () => {
+    const client = spawnCli(['mcp-server', '--bridge-prompts', '--config', path.join(tmpdir(), 'flare-mcp-nonexistent.json')])
+    try {
+      await client.initialize()
+      const prompts = await client.listPrompts()
+      expect(prompts).toEqual([])
       const tools = await client.listTools()
       expect(tools.length).toBe(6)
     } finally {
