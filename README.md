@@ -338,6 +338,29 @@ Interactive mode commands:
 
 > 中文条目 / Chinese entries · English summary for each version
 
+#### v0.6.40 (2026-08-12) — server 协议 mcp_call（宿主直接调用外部 MCP 工具）
+
+- ✨ **McpManager.callTool + server 协议 `mcp_call`（src/mcp/manager.ts + server.ts + 测试）**：
+-  宿主已能**列** MCP 工具（`tools` 请求，`source:"mcp"` 标注）、读资源（mcp_read_resource）、
+-  渲染提示词（mcp_get_prompt），但**无法经协议直接调用外部 MCP 工具**——MCP 三大列表的
+-  「清单 → 操作」闭环缺最后一环；本轮补齐（纯外围，零 agent.ts 改动）：
+- - **`McpManager.callTool(name, toolName, args?)`**：代理调用某服务器工具（tools/call）——
+-  与 readResource/getPrompt 同模式：未连接服务器 reject 清晰错误「MCP 服务器未连接: <name>」；
+-  工具级失败（isError）原样透传不抛；stdio 与 HTTP transport 双传输（McpToolClient 最小接口）
+- - **server 协议 `mcp_call {server, tool, args?}`** → `{type:'mcp_call', server, tool,
+-  success:true, output}`——文本内容提取拼接；工具级失败 → `success:false` + `error`（服务不崩）；
+-  缺参 error 含用法；未知工具/协议层错误透传外部服务器错误；不触发生成、不创建会话、等待后台
+-  连接落定
+- - 📚 docs/host-protocol.md（请求类型列表 + §16.5 新章节 + 响应表）+ docs/mcp.md（三大列表操作
+-  闭环说明）+ README Changelog + 版本号 0.6.40
+- - 🧪 **752/752 全绿**（745 + 7 新增：manager 2——callTool 成功参数透传 + 工具级失败 isError
+-  透传 + 未知工具 reject + 未连接 reject / HTTP transport 调用闭环；server e2e 5——成功参数透传
+-  真实子进程闭环 / 工具级失败 success:false+error / 未知工具 error 透传 / 缺 server·tool error
+-  含用法 / 未连接 error），tsc 0 错误，**零 agent.ts 改动**
+- - **冒烟实测**（真实 dist CLI 0.6.40 + 真实 mock 服务器）：mcp_call
+-  `{server:'mock', tool:'add_numbers', args:{a:2,b:3}}` → `success:true, output:'5'`；
+-  fail_tool → `success:false, error:'出错了'`；ghost_tool/未连接 → error，SMOKE PASS
+
 #### v0.6.39 (2026-08-12) — CLI 交互模式 `/mcp read` / `/mcp render`（资源内容读取 + 提示词渲染）
 
 - ✨ **CLI 交互模式两个 /mcp 子命令（src/cli/index.ts + 测试）**：

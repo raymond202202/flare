@@ -1128,6 +1128,34 @@ export function startHostServer(opts: HostServerOptions) {
           })
           break
         }
+        case 'mcp_call': {
+          // 宿主直接调用已连接 MCP 服务器的工具（v0.6.40；不触发生成、不创建会话）——
+          // 与 tools（清单）配套：tools 只能看到工具元数据，无法执行；本接口代理转发
+          // tools/call（McpManager.callTool），宿主面板可一键触发外部 MCP 工具
+          await Promise.allSettled(mcpConnects)
+          const server = req.server === undefined || req.server === null ? '' : String(req.server).trim()
+          const tool = req.tool === undefined || req.tool === null ? '' : String(req.tool).trim()
+          if (!server || !tool) {
+            reply({ type: 'error', message: 'mcp_call 需要 server 和 tool 参数（调用外部 MCP 工具）' })
+            break
+          }
+          const args = req.args && typeof req.args === 'object' && !Array.isArray(req.args)
+            ? req.args as Record<string, any>
+            : undefined
+          const res = await mcpManager.callTool(server, tool, args)
+          const text = Array.isArray(res.content)
+            ? res.content.filter((c) => c.type === 'text' && typeof c.text === 'string').map((c) => c.text).join('\n')
+            : ''
+          reply({
+            type: 'mcp_call',
+            server,
+            tool,
+            success: !res.isError,
+            ...(res.isError ? { error: text || `MCP 工具 ${tool} 执行失败` } : {}),
+            output: text,
+          })
+          break
+        }
         default:
           reply({ type: 'error', message: `未知请求类型: ${req.type}` })
       }

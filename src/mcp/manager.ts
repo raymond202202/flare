@@ -12,6 +12,7 @@
  * - readResource(name, uri)：代理读取某服务器资源内容
  * - getAllPrompts()（v0.6.36 prompts 桥接）：已连接服务器的提示词并集（含来源，宿主展示/透传用）
  * - getPrompt(name, promptName, args?)：代理渲染某服务器提示词
+ * - callTool(name, toolName, args?)（v0.6.40）：代理调用某服务器工具
  * - status()：连接状态列表（CLI /mcp、server mcp_status 用）
  *
  * 用法：
@@ -37,6 +38,7 @@ import type {
   McpPromptInfo,
   McpPromptRef,
   McpPromptResult,
+  McpCallResult,
 } from './types.js'
 import type { Tool } from '../tools/index.js'
 
@@ -53,6 +55,11 @@ export interface McpResourceClient {
 export interface McpPromptClient {
   listPrompts(): Promise<McpPromptInfo[]>
   getPrompt(name: string, args?: Record<string, string>): Promise<McpPromptResult>
+}
+
+/** 工具调用代理依赖的最小客户端接口（v0.6.40；stdio MCPClient 与 HTTP MCPHttpClient 都满足） */
+export interface McpToolClient {
+  callTool(name: string, args?: Record<string, any>): Promise<McpCallResult>
 }
 
 export interface McpManagerOptions {
@@ -145,6 +152,15 @@ export class McpManager {
       throw new Error(`MCP 服务器未连接: ${name}`)
     }
     return client.getPrompt(promptName, args)
+  }
+
+  /** 代理调用某服务器工具（v0.6.40）：调该服务器 tools/call；服务器未连接 → reject 清晰错误 */
+  async callTool(name: string, toolName: string, args?: Record<string, any>): Promise<McpCallResult> {
+    const client = this.clients.get(name) as McpToolClient | undefined
+    if (!client) {
+      throw new Error(`MCP 服务器未连接: ${name}`)
+    }
+    return client.callTool(toolName, args)
   }
 
   /** 连接状态列表（CLI /mcp、server mcp_status 用） */

@@ -303,6 +303,37 @@ describe('McpManager', () => {
     mgr.closeAll()
   })
 
+  it('callTool：代理调用某服务器工具（带参数）；工具失败 isError 透传；未连接服务器 reject', async () => {
+    writeFileSync(configPath, JSON.stringify({ servers: [{ name: 'mock', command: process.execPath, args: [MOCK_SERVER] }] }))
+    const mgr = new McpManager({ configPath })
+    await mgr.connect('mock')
+    // 成功路径（参数透传）
+    const ok = await mgr.callTool('mock', 'add_numbers', { a: 2, b: 3 })
+    expect(ok.isError).toBeFalsy()
+    const text = ok.content.filter((c) => c.type === 'text' && typeof c.text === 'string').map((c) => c.text).join('\n')
+    expect(text).toBe('5')
+    // 工具级失败（isError 透传，不抛）
+    const fail = await mgr.callTool('mock', 'fail_tool')
+    expect(fail.isError).toBe(true)
+    // 协议层错误（未知工具）→ reject
+    await expect(mgr.callTool('mock', 'ghost_tool')).rejects.toThrow()
+    // 未连接服务器 → 清晰错误
+    await expect(mgr.callTool('not-connected', 'echo_text')).rejects.toThrow(/未连接/)
+    mgr.closeAll()
+  })
+
+  it('callTool HTTP transport：代理调用注入工具的 HTTP 服务器', async () => {
+    const h = await startMcpHttpServer({ tools: [echoTool] })
+    httpHandles.push(h)
+    writeFileSync(configPath, JSON.stringify({ servers: [{ name: 'remote', url: h.url }] }))
+    const mgr = new McpManager({ configPath })
+    await mgr.connect('remote')
+    const res = await mgr.callTool('remote', 'echo', { text: 'hi' })
+    const text = res.content.filter((c) => c.type === 'text' && typeof c.text === 'string').map((c) => c.text).join('\n')
+    expect(text).toContain('hi')
+    mgr.closeAll()
+  })
+
   it('disconnect：提示词随连接清理（getAllPrompts 空 + status 不再带提示词数）', async () => {
     writeFileSync(configPath, JSON.stringify({ servers: [{ name: 'mock', command: process.execPath, args: [MOCK_SERVER] }] }))
     const mgr = new McpManager({ configPath })
