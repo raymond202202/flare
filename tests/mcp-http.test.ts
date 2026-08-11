@@ -239,4 +239,17 @@ describe('CLI flare mcp-server --http', () => {
     expect(authed.status).toBe(200)
     expect(authed.json.result.tools).toBeDefined()
   }, 15000)
+
+  it('--http-auth-token-env 指定的环境变量未设置 → 报错退出码 1（不启动服务器，v0.6.69）', async () => {
+    const child = spawn(process.execPath, [CLI, 'mcp-server', '--http', '--http-auth-token-env', 'FLARE_MISSING_TOKEN_VAR'], {
+      stdio: ['ignore', 'pipe', 'pipe'],
+      env: { ...process.env, FLARE_MISSING_TOKEN_VAR: '' },
+    })
+    children.push(child)
+    let err = ''
+    child.stderr.on('data', (d: Buffer) => { err += d.toString() })
+    const code = await new Promise<number | null>((resolve) => child.on('close', resolve))
+    expect(code).toBe(1)
+    expect(err).toMatch(/环境变量 FLARE_MISSING_TOKEN_VAR 未设置/)
+  }, 15000)
 })
