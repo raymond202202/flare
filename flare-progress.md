@@ -3,14 +3,67 @@
 > 目标：flare 是 Pulse/StorySpire 依赖的 AI Agent 引擎（TS）。任何改动必须安全（tsc 0 错 + 测试全绿才 commit）。
 > 铁律：禁止 push；禁止修改 src/core/agent.ts 的 Agent.run 核心循环。
 
-> **最新状态（v0.6.27）**：**confirm 事件带工具描述**——宿主弹窗确认流程打磨（方向 1「CLI/server 接入
-> ConfirmationGate」的收尾：确认流/写回类工具经确认门早已就绪，缺口是弹窗只能看到工具名+参数、无法说明
-> 「AI 想做什么」）；server 协议 confirm 事件可选带 `description`（getAgent 构建工具集时从工具定义填充，
-> 无描述不输出字段向后兼容）；CLI 终端确认弹窗同样带说明行（内置+MCP 工具实时查描述）；`buildConfirmEvent`
-> 纯函数库导出；593/593 全绿（584 + 9）。下一步候选：
-> ① 其他安全的外围增强（server 协议其他管理接口、CLI 交互增强、MCP 工具集完善等）；
-> ② 摘要内容升级为 LLM 生成（语义级压缩，需评估 run 循环外异步）；
-> ③ 资源桥接的宿主接线打磨（如外部 MCP 资源透传到 flare 自身 MCPServer 的 resources，需评估循环）。
+> **最新状态（v0.6.28）**：**外部 MCP 资源透传**（候选 ④ 资源桥接宿主接线的落地）——MCPServer 新增动态
+> 资源提供器 `resourceProvider`：resources/list 实时合并静态+动态（静态优先去重）、resources/read 代理
+> 读取（文本包 contents/数组透传/null→-32602）、动态 uri 可订阅退订、有提供器声明 capabilities.resources
+> （subscribe+listTemplates）、提供器抛错降级不中断请求；CLI `flare mcp-server --bridge-resources` 一键
+> 连接 ~/.flare/mcp.json 外部服务器并透传资源（stdio+--http 双传输；提示走 stderr 不污染协议通道）；
+> 605/605 全绿（593 + 12）。
+>
+> 【🔴 当前最高优先级方向（2026-08-11 用户拍板，下一轮先做这个）】**prompt caching 基建**：
+> 完整架构见 `docs/flare-token-architecture.md`（双机方案整合定稿）。核心：缓存命中 0.02元/M vs 未命中
+> 1元/M（50 倍差价），比任何压缩都省钱。P0 第一步 = **system 前缀稳定**（agent.ts 现在把记忆拼进 system
+> 前缀，记忆一变缓存全失效 → 把身份/记忆拆成独立 system 消息放稳定前缀之后）；P0 第二步 = **usage 回传增强**
+> （llm.ts 已记录 prompt/completion，补 cache_read/cache_write 字段 + estimated_cost_usd，宿主可见缓存命中率）。
+> 验收：连续两轮调用（间隔<5min）第二轮 cache_read_tokens > 0。
+>
+> 下一步候选（按优先级）：
+> ① 【最高优先】prompt caching 基建（P0，见 docs/flare-token-architecture.md 第二/六节，先做 system 前缀稳定 + usage 回传增强，禁止改 Agent.run 核心循环）
+> ② 其他安全的外围增强（server 协议其他管理接口、CLI 交互增强、MCP 工具集完善等）；
+> ③ 摘要内容升级为 LLM 生成（语义级压缩，需评估 run 循环外异步）。
+>
+> ---
+>
+> ### 2026-08-11 第二十八轮实施（v0.6.28）——外部 MCP 资源透传（动态资源提供器，候选 ④ 资源桥接宿主接线落地）
+>
+> - **P55 MCPServer 动态资源提供器 `resourceProvider`**（src/mcp/server.ts + index.ts + 测试，commit 见下）：
+>   - **缺口定位**：候选 ④「外部 MCP 资源透传 flare 自身 MCPServer 的 resources」——flare 同时作为 MCP
+>     客户端（连接外部服务器，v0.6.26 资源桥接）与 MCP 服务器（被宿主/其他客户端连接）时，外部服务器的
+>     **资源/模板无法经 flare 中转暴露给 flare 自身 MCPServer 的客户端**（宿主只能经 server 协议
+>     mcp_resources 查看，无法经 MCP resources/list 消费）；本轮给 MCPServer 挂动态资源提供器补齐
+>   - **接口**：`MCPServerOptions.resourceProvider?: McpResourceProvider`（库导出）——`listResources()` /
+>     `listResourceTemplates()`（异步可注入）/ `readResource(uri)`（返回文本→包成 text contents、返回
+>     **内容数组→原样透传**、不存在→null）；资源/模板均**实时拉取合并**（静态在前、同 uri/uriTemplate
+>     去重、静态优先）
+>   - **容错设计**：提供器抛错 / 返回非数组 → **降级只返回静态**（列表请求不中断）；读取提供器返回
+>     null / 抛错 → `-32602` Unknown resource（与静态未知一致，服务器不崩）——与 v0.6.26 连接外部
+>     MCP 的容错风格一致（资源是展示性数据，外部服务器不可用不影响 flare 自身能力）
+>   - **订阅闭环**：动态提供器资源同样可 `resources/subscribe` / `unsubscribe`（isKnownResource 实时查
+>     静态+动态；提供器失败视为未知）；**能力声明**：有提供器时 `initialize` 声明
+>     `resources: { subscribe: true, listTemplates: true }`（动态列表可能非空；**无提供器时行为与旧版
+>     完全一致**——零回归，既有断言覆盖）
+>   - **嵌套循环风险评估（文档记录）**：外部服务器若是另一个同样透传的 flare 实例，resources/read 可能
+>     无限递归——实际部署宿主不把 flare 自身 MCP 端点配为 flare 的 MCP 服务器即可避免（docs/mcp.md 如实记录）
+> - **P56 CLI `flare mcp-server --bridge-resources`**（src/cli/index.ts + 测试，同 commit）：
+>   - 一键接线：连接 ~/.flare/mcp.json 全部外部服务器（McpManager，Promise.allSettled 容错），构造
+>     resourceProvider 透传（getAllResources/getAllResourceTemplates 剥 server 字段 + readResource 按
+>     uri 找所属服务器代理转发）；**stdio 与 --http 双传输都支持**（HTTP 分支同样传 provider）；
+>     提示走 **stderr**（stdio 模式 stdout 是协议通道，console.log 会污染 JSON-RPC 流——实测发现并修复）；
+>     未配置服务器 → stderr 提示 + 仅暴露 flare 自身资源（不中断）
+>   - docs/mcp.md「动态资源提供器」子章节（编程方式示例 + 合并/读取/订阅/声明规则 + 嵌套循环风险）+
+>     README Changelog + 版本号 0.6.28；`McpResourceProvider` 类型库导出
+>   - **605/605 全绿**（593 + 12 新增：MCPServer 10——列表合并异步+静态优先去重 / 提供器抛错·非数组降级
+>     不中断 / 模板合并 / 读取文本包 contents·数组透传 / 未知·抛错 -32602 / 静态优先读 / 动态订阅退订 /
+>     initialize 声明 + 无提供器零回归；**真实互通 e2e**——MCPClient ↔ 带提供器真实子进程：合并列表 +
+>     动态读取闭环 + 未知 reject 连接不断；CLI 2——--bridge-resources 全链路透传（资源/模板/读取往返/
+>     工具不受影响）、无配置降级），tsc 0 错误，零 agent.ts 改动
+>   - **冒烟实测**：真实 dist CLI 子进程 `mcp-server --bridge-resources` + 真实外部服务器 fixture——
+>     version 0.6.28、capabilities.resources {subscribe,listTemplates}、resources/list 透传外部资源
+>     memory://preferences、templates/list 透传 memory://{noteId}、readResource 内容往返「主题: 浅色」、
+>     未知 uri -32602，SMOKE PASS
+> - **下一步候选**：① 【最高优先】prompt caching 基建（P0，见 docs/flare-token-architecture.md）；② 其他
+>   安全的外围增强（server 协议其他管理接口、CLI 交互增强、MCP 工具集完善等）；③ 摘要内容升级为 LLM 生成
+>   （语义级压缩，需评估 run 循环外异步）
 
 ### 2026-08-11 第二十七轮实施（v0.6.27）——confirm 事件带工具描述（宿主弹窗确认流程打磨）
 

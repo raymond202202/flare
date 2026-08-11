@@ -251,6 +251,48 @@ matchResourceTemplate('file://a/b/c.txt', { uriTemplate: 'file://{path}', name: 
   可同时发现静态资源与动态资源形态；模板声明的是**动态资源形态**（客户端可自行构造变量段），两者互补——
   静态资源可枚举、动态资源靠模板发现
 
+#### 动态资源提供器（v0.6.28）：外部 MCP 资源透传
+
+MCPServer 除构造时注入的**静态资源**外，可挂一个**动态资源提供器**（`resourceProvider`）——
+`resources/list` 实时拉取合并、`resources/read` 代理读取。典型场景：**flare 同时作为 MCP 客户端
+连接外部 MCP 服务器（McpManager 资源桥接）时，把外部服务器的资源/模板透传给 flare 自身 MCPServer
+的客户端（宿主）**——外部资源经 flare 中转暴露，宿主无需直连外部服务器：
+
+```ts
+import { MCPServer, McpManager, type McpResourceProvider } from 'flare-agent'
+
+const mgr = new McpManager()                 // 读 ~/.flare/mcp.json
+await mgr.connect('filesystem')              // 连接外部服务器（stdio/HTTP）
+
+const provider: McpResourceProvider = {
+  // 外部资源/模板实时合并（静态优先、同 uri/uriTemplate 去重；异步可注入）
+  listResources: () => mgr.getAllResources().map(({ server, ...r }) => r),
+  listResourceTemplates: () => mgr.getAllResourceTemplates().map(({ server, ...t }) => t),
+  // 读取代理转发：按 uri 找到所属服务器，调该服务器 resources/read；找不到返回 null（→ Unknown resource）
+  readResource: async (uri) => {
+    const ref = mgr.getAllResources().find((r) => r.uri === uri)
+    return ref ? mgr.readResource(ref.server, uri) : null
+  },
+}
+
+const server = new MCPServer({ tools: [...], resourceProvider: provider })
+server.start()
+```
+
+- **合并规则**：`resources/list` 返回静态资源在前 + 提供器动态资源（同 uri 去重，静态优先）；
+  `resources/templates/list` 同理合并模板；**提供器抛错/返回非数组 → 降级只返回静态**（请求不中断，
+  与连接外部 MCP 容错风格一致）
+- **读取规则**：静态命中先读；否则问提供器——返回文本 → 包成 `{ uri, text }` contents，返回数组 →
+  原样透传；返回 `null` / 抛错 → `-32602` Unknown resource（服务器不崩）
+- **订阅**：动态提供器资源同样可 `resources/subscribe` / `unsubscribe`（提供器失败视为未知）
+- **能力声明**：有提供器时 `initialize` 声明 `resources: { subscribe: true, listTemplates: true }`
+  （动态列表可能非空；无提供器时行为与旧版完全一致）
+- **CLI 一键接线**：`flare mcp-server --bridge-resources` 连接 ~/.flare/mcp.json 全部外部服务器并透传
+  资源（stdio 与 `--http` 双传输都支持；提示走 stderr 不污染协议通道；未配置服务器时提示 + 仅暴露
+  flare 自身资源）
+- **嵌套循环风险（文档记录）**：若外部服务器恰好是另一个也做了同样透传的 flare 实例，
+  `resources/read` 可能无限递归——实际部署宿主不把 flare 自身 MCP 端点配为 flare 的 MCP 服务器即可避免
+
 ### 提示词暴露（v0.6.2）：prompts/list 真实数据 + prompts/get 渲染
 
 MCPServer 可注入**提示词模板**（如总结、翻译等可复用指令），经 MCP 标准 `prompts/list` / `prompts/get`

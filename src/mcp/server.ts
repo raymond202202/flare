@@ -28,7 +28,7 @@
 import { createInterface, type Interface } from 'node:readline'
 import { createRequire } from 'node:module'
 import { tools, type Tool, type ToolResult } from '../tools/index.js'
-import type { McpCancelledParams, McpCompletionResult, McpContentItem, McpLogLevel, McpLogMessage, McpProgressParams, McpPrompt, McpPromptMessage, McpResource, McpResourceContents, McpResourceTemplate, McpRoot, McpSamplingRequest, McpSamplingResult, McpTool } from './types.js'
+import type { McpCancelledParams, McpCompletionResult, McpContentItem, McpLogLevel, McpLogMessage, McpProgressParams, McpPrompt, McpPromptMessage, McpResource, McpResourceContents, McpResourceInfo, McpResourceTemplate, McpResourceTemplateInfo, McpRoot, McpSamplingRequest, McpSamplingResult, McpTool } from './types.js'
 import { MCP_PROTOCOL_VERSION } from './client.js'
 
 const require = createRequire(import.meta.url)
@@ -45,6 +45,25 @@ function logLevelWeight(level: McpLogLevel): number {
   return MCP_LOG_LEVELS.indexOf(level)
 }
 
+/**
+ * 动态资源提供器（v0.6.28）：MCPServer 的 resources 除构造时注入的静态列表外，
+ * 可挂一个动态提供器——resources/list 实时拉取、resources/read 代理读取。
+ * 典型场景：flare 同时作为 MCP 客户端连接外部 MCP 服务器（McpManager 资源桥接）时，
+ * 把外部服务器的资源透传给 flare 自身 MCPServer 的客户端（宿主）——外部资源经 flare
+ * 中转暴露，宿主无需直连外部服务器。
+ * 注意嵌套循环风险：若外部服务器恰好是另一个也做了同样透传的 flare 实例，resources/read
+ * 可能无限递归——实际部署宿主不把 flare 自身 MCP 端点配为 flare 的 MCP 服务器即可避免
+ * （文档如实记录）。提供器方法抛错 → 降级（列表返回空/读取视为 Unknown resource），不中断请求。
+ */
+export interface McpResourceProvider {
+  /** 动态资源列表（与静态资源合并；静态优先、同 uri 去重；异步可注入） */
+  listResources(): McpResourceInfo[] | Promise<McpResourceInfo[]>
+  /** 动态资源模板列表（与静态模板合并；异步可注入） */
+  listResourceTemplates(): McpResourceTemplateInfo[] | Promise<McpResourceTemplateInfo[]>
+  /** 代理读取资源内容：返回纯文本（包成 text contents）或内容数组原样透传；资源不存在返回 null */
+  readResource(uri: string): string | McpResourceContents[] | null | Promise<string | McpResourceContents[] | null>
+}
+
 /** MCPServer 选项 */
 export interface MCPServerOptions {
   /** flare 工具集（默认内置工具 tools：read_file/write_file/search_files/terminal/memory_search/memory_save） */
@@ -54,6 +73,9 @@ export interface MCPServerOptions {
   /** MCP 资源模板（v0.6.22）：resources/templates/list 真实暴露——动态资源（uri 含变量）的
    *  声明模板（如 memory://{noteId}）；缺省无模板（空列表，resources/templates/list 仍可用返回空） */
   resourceTemplates?: McpResourceTemplate[]
+  /** 动态资源提供器（v0.6.28）：resources/list 实时合并 + resources/read 代理读取——外部 MCP
+   *  资源透传 flare 自身 MCPServer 的接线点；提供器抛错 → 降级（列表空/读取 Unknown），不中断请求 */
+  resourceProvider?: McpResourceProvider
   /** MCP 提示词（v0.6.2）：prompts/list 真实暴露 + prompts/get 渲染；缺省无 prompts 能力（空列表） */
   prompts?: McpPrompt[]
   /** MCP logging（v0.6.13）：是否声明 capabilities.logging 并支持 logging/setLevel + sendLog 推送；
@@ -84,6 +106,7 @@ export class MCPServer {
   private readonly resourceList: McpResource[]
   private readonly templateList: McpResourceTemplate[]
   private readonly promptList: McpPrompt[]
+  private readonly resourceProvider?: McpResourceProvider
   private readonly serverInfo: { name: string; version: string }
   private readonly write: (line: string) => void
   private readonly input: NodeJS.ReadableStream
@@ -111,6 +134,7 @@ export class MCPServer {
     this.resourceList = opts.resources ?? []
     this.templateList = opts.resourceTemplates ?? []
     this.promptList = opts.prompts ?? []
+    this.resourceProvider = opts.resourceProvider
     this.serverInfo = opts.serverInfo ?? { name: 'flare', version: pkg.version }
     this.write = opts.write ?? ((line) => process.stdout.write(line + '\n'))
     this.input = opts.input ?? process.stdin
@@ -244,9 +268,10 @@ export class MCPServer {
           capabilities: {
             tools: {},
             // v0.6.1 resources 暴露；v0.6.15 起声明 subscribe——支持 resources/subscribe + notifications/resources/updated；
-            // v0.6.22 有模板时声明 listTemplates——支持 resources/templates/list（无模板不声明，与旧版一致）
-            ...(this.resourceList.length > 0 || this.templateList.length > 0
-              ? { resources: { subscribe: true, ...(this.templateList.length > 0 ? { listTemplates: true } : {}) } }
+            // v0.6.22 有模板时声明 listTemplates——支持 resources/templates/list（无模板不声明，与旧版一致）；
+            // v0.6.28 有动态提供器时也声明（resources/list 实时合并，可能有动态资源/模板）
+            ...(this.resourceList.length > 0 || this.templateList.length > 0 || this.resourceProvider
+              ? { resources: { subscribe: true, ...(this.templateList.length > 0 || this.resourceProvider ? { listTemplates: true } : {}) } }
               : {}),
             ...(this.promptList.length > 0 ? { prompts: {} } : {}),
             // v0.6.11：至少一个 prompt 提供补全回调时声明 completions 能力（completion/complete）
@@ -261,25 +286,13 @@ export class MCPServer {
       case 'tools/call':
         return this.callTool(params)
       case 'resources/list':
-        // v0.6.1：真实暴露注入的资源（元数据；内容经 resources/read 读取）
-        return {
-          resources: this.resourceList.map(r => ({
-            uri: r.uri,
-            name: r.name,
-            ...(r.description ? { description: r.description } : {}),
-            ...(r.mimeType ? { mimeType: r.mimeType } : {}),
-          })),
-        }
+        // v0.6.1：真实暴露注入的资源（元数据；内容经 resources/read 读取）；
+        // v0.6.28：有动态提供器时实时合并（提供器抛错降级只返回静态，不中断请求）
+        return { resources: await this.collectResources() }
       case 'resources/templates/list':
-        // v0.6.22：真实暴露注入的资源模板（动态资源 uri 模板声明；无模板返回空列表）
-        return {
-          resourceTemplates: this.templateList.map(t => ({
-            uriTemplate: t.uriTemplate,
-            name: t.name,
-            ...(t.description ? { description: t.description } : {}),
-            ...(t.mimeType ? { mimeType: t.mimeType } : {}),
-          })),
-        }
+        // v0.6.22：真实暴露注入的资源模板（动态资源 uri 模板声明；无模板返回空列表）；
+        // v0.6.28：有动态提供器时实时合并模板
+        return { resourceTemplates: await this.collectTemplates() }
       case 'resources/read':
         return this.readResource(params)
       case 'resources/subscribe':
@@ -384,28 +397,101 @@ export class MCPServer {
     })
   }
 
-  /** 读取资源（resources/read）：未知 uri → -32602；read() 异常 → -32603（服务器不崩） */
+  /** 读取资源（resources/read）：静态命中先读；否则问动态提供器（v0.6.28）——
+   *  提供器返回文本 → 包成 text contents，返回数组 → 原样透传；未知 uri / 提供器返回
+   *  null / 提供器抛错 → -32602（与静态未知 uri 一致，服务器不崩） */
   private async readResource(params: any): Promise<{ contents: McpResourceContents[] }> {
     const uri = String(params?.uri || '')
     const resource = this.resourceList.find(r => r.uri === uri)
-    if (!resource) {
-      throw Object.assign(new Error(`Unknown resource: ${uri}`), { code: -32602 })
+    if (resource) {
+      const text = await resource.read()
+      return {
+        contents: [{
+          uri: resource.uri,
+          ...(resource.mimeType ? { mimeType: resource.mimeType } : {}),
+          text: String(text),
+        }],
+      }
     }
-    const text = await resource.read()
-    return {
-      contents: [{
-        uri: resource.uri,
-        ...(resource.mimeType ? { mimeType: resource.mimeType } : {}),
-        text: String(text),
-      }],
+    if (this.resourceProvider) {
+      try {
+        const result = await this.resourceProvider.readResource(uri)
+        if (result !== null && result !== undefined) {
+          const contents = Array.isArray(result)
+            ? result
+            : [{ uri, text: String(result) }]
+          return { contents }
+        }
+      } catch { /* 提供器读取失败 → Unknown resource（与静态未知一致） */ }
+    }
+    throw Object.assign(new Error(`Unknown resource: ${uri}`), { code: -32602 })
+  }
+
+  /** 合并资源列表（v0.6.28）：静态资源在前 + 动态提供器资源（同 uri 去重，静态优先）；
+   *  提供器缺失/抛错/返回非数组 → 只返回静态（不中断请求，与连接外部 MCP 容错风格一致） */
+  private async collectResources(): Promise<McpResourceInfo[]> {
+    const list: McpResourceInfo[] = this.resourceList.map(r => ({
+      uri: r.uri,
+      name: r.name,
+      ...(r.description ? { description: r.description } : {}),
+      ...(r.mimeType ? { mimeType: r.mimeType } : {}),
+    }))
+    if (!this.resourceProvider) return list
+    try {
+      const extra = await this.resourceProvider.listResources()
+      if (Array.isArray(extra)) {
+        const seen = new Set(list.map(r => r.uri))
+        for (const r of extra) {
+          if (!r || typeof r.uri !== 'string' || seen.has(r.uri)) continue
+          seen.add(r.uri)
+          list.push({ uri: r.uri, name: r.name, ...(r.description ? { description: r.description } : {}), ...(r.mimeType ? { mimeType: r.mimeType } : {}) })
+        }
+      }
+    } catch { /* 提供器失败 → 降级只返回静态 */ }
+    return list
+  }
+
+  /** 合并资源模板列表（v0.6.28）：静态模板 + 动态提供器模板（uriTemplate 去重，静态优先）；
+   *  提供器缺失/抛错/返回非数组 → 只返回静态 */
+  private async collectTemplates(): Promise<McpResourceTemplateInfo[]> {
+    const list: McpResourceTemplateInfo[] = this.templateList.map(t => ({
+      uriTemplate: t.uriTemplate,
+      name: t.name,
+      ...(t.description ? { description: t.description } : {}),
+      ...(t.mimeType ? { mimeType: t.mimeType } : {}),
+    }))
+    if (!this.resourceProvider) return list
+    try {
+      const extra = await this.resourceProvider.listResourceTemplates()
+      if (Array.isArray(extra)) {
+        const seen = new Set(list.map(t => t.uriTemplate))
+        for (const t of extra) {
+          if (!t || typeof t.uriTemplate !== 'string' || seen.has(t.uriTemplate)) continue
+          seen.add(t.uriTemplate)
+          list.push({ uriTemplate: t.uriTemplate, name: t.name, ...(t.description ? { description: t.description } : {}), ...(t.mimeType ? { mimeType: t.mimeType } : {}) })
+        }
+      }
+    } catch { /* 提供器失败 → 降级只返回静态 */ }
+    return list
+  }
+
+  /** uri 是否已知资源（静态列表或动态提供器，v0.6.28）：提供器失败 → false（视为未知） */
+  private async isKnownResource(uri: string): Promise<boolean> {
+    if (this.resourceList.some(r => r.uri === uri)) return true
+    if (!this.resourceProvider) return false
+    try {
+      const list = await this.resourceProvider.listResources()
+      return Array.isArray(list) && list.some(r => r && r.uri === uri)
+    } catch {
+      return false
     }
   }
 
   /** 订阅资源（resources/subscribe，v0.6.15）：客户端订阅后，资源变化时经 notifyResourceUpdated 推送更新通知。
-   *  未知/缺 uri → -32602；重复订阅幂等（集合不重复）；返回 {} */
-  private subscribeResource(params: any): {} {
+   *  未知/缺 uri → -32602；重复订阅幂等（集合不重复）；返回 {}。v0.6.28：动态提供器资源同样可订阅。 */
+  private async subscribeResource(params: any): Promise<{}> {
     const uri = String(params?.uri || '')
-    if (!this.resourceList.some(r => r.uri === uri)) {
+    if (!(await this.isKnownResource(uri))) {
       throw Object.assign(new Error(`Unknown resource: ${uri}`), { code: -32602 })
     }
     this.subscribedUris.add(uri)
@@ -414,9 +500,9 @@ export class MCPServer {
 
   /** 退订资源（resources/unsubscribe，v0.6.15）：停止接收该资源的更新通知。
    *  未知/缺 uri → -32602；未订阅（但存在）的 uri 幂等成功（无副作用）；返回 {} */
-  private unsubscribeResource(params: any): {} {
+  private async unsubscribeResource(params: any): Promise<{}> {
     const uri = String(params?.uri || '')
-    if (!this.resourceList.some(r => r.uri === uri)) {
+    if (!(await this.isKnownResource(uri))) {
       throw Object.assign(new Error(`Unknown resource: ${uri}`), { code: -32602 })
     }
     this.subscribedUris.delete(uri)
