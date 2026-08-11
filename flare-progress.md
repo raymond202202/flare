@@ -3,23 +3,27 @@
 > 目标：flare 是 Pulse/StorySpire 依赖的 AI Agent 引擎（TS）。任何改动必须安全（tsc 0 错 + 测试全绿才 commit）。
 > 铁律：禁止 push；禁止修改 src/core/agent.ts 的 Agent.run 核心循环。
 
-> **最新状态（v0.6.63）**：**MCP 子命令提示对称补齐**（方向③ MCP 增强）：
-> v0.6.61 只补了 `/mcp` 状态行与 `flare mcp status` 的提示，但 **resources/prompts 两个子命令的
-> 尾部提示行仍只有 resources/prompts/connect**——用户看完资源/提示词后不知道还能看工具清单；
-> 本轮补齐（纯外围，零 agent.ts 改动）——交互 `/mcp resources`/`/mcp prompts` 分支提示行均加
-> `/mcp tools [name] 查看工具`。
-> **846/846 全绿**（新增 2 断言：/mcp resources 分支提示含 tools / /mcp prompts 分支提示含 tools），
-> tsc 0 错误，**零 agent.ts 改动**。
-> （v0.6.62：MCP 单次命令文档补齐；v0.6.61：MCP 命令提示面补全；v0.6.60：flare mcp complete
-> 单次命令；v0.6.59：flare mcp tools 单次命令；v0.6.58：mcp_tools 工具清单桥接三层；v0.6.57：
-> mcp_complete 提示词参数补全桥接；v0.6.56：server mcp_connect/mcp_disconnect 控制面；v0.6.55：
-> /mcp connect 摘要 transport/target；v0.6.54：cache-check --rounds 多轮验收；v0.6.53：CLI /usage
-> 本会话 perModel 子行；v0.6.52：session_usage perModel；v0.6.51：CLI mcp status 统一
-> status()+--connect；v0.6.50：MCP 连接状态 transport/target；v0.6.49：CLI /usage 本会话行缓存
-> 命中；v0.6.48：cache-check --json 结构化输出；v0.6.47：mcp-server --bridge-tools 工具透传；
-> v0.6.46：CLI /trim 智能裁剪 + /context 裁剪提示；v0.6.45：flare cache-check 验收工具；v0.6.44：
-> CLI /sessions 关键词搜索；v0.6.43：server 协议 search_sessions；v0.6.42：CLI /usage perModel
-> 缓存命中显示。）
+> **最新状态（v0.6.64）**：**usage 统计带缓存节省金额估算**（方向① prompt caching 基建深化）：
+> v0.6.29/42 起 /usage 显示缓存命中 tokens 但**看不到价值**——cache-check 单次验收有 savedUsd
+> （v0.6.45）而运行期统计缺失，宿主面板只看到命中量、不知道命中价 vs 未命中价的差距；
+> 本轮补齐（纯外围，零 agent.ts 改动）——store getUsageStats/getSessionUsage 新增
+> `cacheSavedUsd`（按 perModel 逐模型 estimateCostUsd 未命中价−命中价差值求和，定价线性聚合后
+> 计算精确；无法定价模型跳过；无命中→0）；server get_usage/session_usage 透传（fallback 补 0）；
+> CLI /usage 总览缓存命中行下追加 `缓存节省: $X.XXXX` + 本会话行追加 `· 缓存节省`（>0 才显示，
+> 本地模型命中只显示命中量不显示节省，向后兼容）。
+> **849/849 全绿**（新增 3 用例：store 差值求和+无法定价不计入 / CLI 总览+本会话行节省显示 /
+> 本地模型命中不显示节省；server e2e 补 2 断言 cacheSavedUsd=0 透传），tsc 0 错误，
+> **零 agent.ts 改动**。
+> （v0.6.63：MCP 子命令提示对称补齐；v0.6.62：MCP 单次命令文档补齐；v0.6.61：MCP 命令提示面补全；
+> v0.6.60：flare mcp complete 单次命令；v0.6.59：flare mcp tools 单次命令；v0.6.58：mcp_tools
+> 工具清单桥接三层；v0.6.57：mcp_complete 提示词参数补全桥接；v0.6.56：server mcp_connect/
+> mcp_disconnect 控制面；v0.6.55：/mcp connect 摘要 transport/target；v0.6.54：cache-check
+> --rounds 多轮验收；v0.6.53：CLI /usage 本会话 perModel 子行；v0.6.52：session_usage perModel；
+> v0.6.51：CLI mcp status 统一 status()+--connect；v0.6.50：MCP 连接状态 transport/target；
+> v0.6.49：CLI /usage 本会话行缓存命中；v0.6.48：cache-check --json 结构化输出；v0.6.47：
+> mcp-server --bridge-tools 工具透传；v0.6.46：CLI /trim 智能裁剪 + /context 裁剪提示；v0.6.45：
+> flare cache-check 验收工具；v0.6.44：CLI /sessions 关键词搜索；v0.6.43：server 协议
+> search_sessions；v0.6.42：CLI /usage perModel 缓存命中显示。）
 
 > 【🔴 当前最高优先级方向（2026-08-11 用户拍板）】**prompt caching 基建 P0 已基本落地 + 验收工具化**：
 > P0-1 前缀稳定 + P0-2 usage 回传（v0.6.29 完成）。验收：`flare cache-check` 一键验收
@@ -62,6 +66,33 @@
 >    terminal 退出码（v0.6.33）✓ / CLI 归档命令（v0.6.32）✓ / 归档 API（v0.6.31）✓ /
 >    工具输出治理（v0.6.30）✓ / prompt caching P0（v0.6.29）✓ / MCP 动态资源提供器（v0.6.28）✓ /
 >    confirm 描述（v0.6.27）✓
+
+> ---
+
+> ### 2026-08-12 第六十三轮实施（v0.6.64）——usage 统计带缓存节省金额估算（方向① prompt caching 基建深化）
+
+> - **P93 `cacheSavedUsd`：运行期用量统计量化「缓存命中省了多少钱」**（src/memory/store.ts +
+>   src/cli/index.ts + src/server.ts + 测试，commit `9047552`）：
+>   - **缺口定位**：/usage 已显示缓存命中 tokens（v0.6.29/42）但**看不到价值**——cache-check 单次
+>     验收有 savedUsd（v0.6.45）而运行期统计缺失；宿主面板只看到命中量、不知道命中价 vs 未命中价
+>     的差距；本轮补齐（纯外围，零 agent.ts 改动）
+>   - **store 层**：`getUsageStats()` / `getSessionUsage()` 新增 `cacheSavedUsd`——按 perModel
+>     逐模型用 `estimateCostUsd` 算「未命中成本 − 命中成本」差值求和（定价线性，聚合后计算精确）；
+>     无法定价的模型（本地 Ollama）跳过不计入；无命中/无定价 → 0（幂等）
+>   - **server 协议**：`get_usage` / `session_usage` 透传 `cacheSavedUsd`（fallback 补 0）——宿主
+>     面板可显示「缓存已节省 $X」
+>   - **CLI /usage**：总览缓存命中行下追加 `缓存节省: $X.XXXX`；本会话行追加 ` · 缓存节省 $X.XXXX`
+>     （>0 才显示；本地模型命中只显示命中量不显示节省，向后兼容）
+>   - docs/host-protocol.md（§9 / §9.1 响应结构 + cacheSavedUsd 说明）+ README Changelog + 版本号 0.6.64
+>   - **849/849 全绿**（新增 3 用例：store 缓存节省差值求和+无法定价不计入 / CLI 总览+本会话行节省
+>     显示 / 本地模型命中不显示节省；server e2e 补 2 断言透传 cacheSavedUsd=0），tsc 0 错误，
+>     **零 agent.ts 改动**
+>   - **冒烟实测**（真实 MemoryStore + dist CLI）：/usage 显示总览 `缓存节省: $0.0001` + 本会话行
+>     `· 缓存节省 $0.0001`；全局/单会话 cacheSavedUsd=0.00012、本地模型会话=0，SMOKE PASS
+> - **下一步候选**：① 【P1】分层上下文（Layer 1 异步滚动摘要——摘要内容升级为 LLM 生成语义级压缩，
+>   需评估 run 循环外异步）；② 其他安全的外围增强（server 协议其他管理接口、MCP 工具集完善、测试
+>   稳定性等）；③ 对称补齐：/usage perModel 行（总览+本会话）也显示节省金额（v0.6.64 只给了汇总
+>   级，perModel 行只有命中量）
 
 > ---
 
