@@ -71,6 +71,8 @@
 >     config.storage 而非 config.store，冒烟脚本踩坑修正）：/trim 300 →
 >     `✅ 已智能裁剪: 保留 2 条，删除 4 条`（system 保底 + 最新消息保留；重建 Agent 后仍
 >     2 条——store 同步删除被裁消息）；/trim abc → 用法提示，SMOKE PASS
+> - **（文档补记 commit `9a25353`）**：README CLI 命令表补齐 cache-check 子命令 + /trim +
+>   /sessions 关键词搜索（中英文表与 v0.6.44/45/46 功能对齐），纯文档零代码
 > - **下一步候选**：① 【P1】分层上下文（Layer 1 异步滚动摘要——摘要内容升级为 LLM 生成语义级压缩，
 >   需评估 run 循环外异步）；② 其他安全的外围增强（server 协议其他管理接口、MCP 工具集完善、测试
 >   稳定性等）
