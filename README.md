@@ -152,7 +152,7 @@ cp .env.example ~/.flare/.env
 | `flare server [--profile --storage --mcp --confirm-tools --confirm-timeout --max-tokens --temperature --max-context-messages --max-context-tokens --context-summarize --tool-output-policy]` | 宿主协议服务（stdin/stdout JSON Lines，供 Qt 等宿主调用；v0.6.1 起写回类工具经确认门；v0.6.5 起 --max-tokens/--temperature 设 chat 默认采样参数；v0.6.17 起 --max-context-messages/--max-context-tokens 设默认上下文自动裁剪；v0.6.19 起 --context-summarize 默认开启上下文压缩摘要；v0.6.34 起 --tool-output-policy 设默认工具输出治理策略） |
 | `flare mcp-server [-t 工具名,...] [--http [--port <端口>] [--http-auth-token-env <VAR>]] [--bridge-resources] [--bridge-prompts] [--bridge-tools]` | MCP stdio 服务器：把 flare 工具集暴露给其他 AI 客户端（v0.5.8；v0.6.3 起 --http 起 HTTP transport；v0.6.28/0.6.37/0.6.47 起可透传外部 MCP 服务器资源/提示词/工具；v0.6.69 起 --http-auth-token-env 从环境变量读 Bearer 鉴权 token） |
 | `flare mcp call <服务器> <工具> [JSON参数]` | 调用 MCP 服务器工具（stdio 或 HTTP transport；服务器名查 `~/.flare/mcp.json`，`--url` 直连 HTTP 端点，v0.6.6；`--header <k:v>` 可重复附加鉴权请求头，v0.6.68） |
-| `flare mcp status` | 查看配置的 MCP 服务器（名称 + 传输类型 + 端点/命令 + [auth] 鉴权标记，v0.6.6/v0.6.70） |
+| `flare mcp status` | 查看配置的 MCP 服务器（名称 + 传输类型 + 端点/命令 + [auth] 鉴权标记；--json 结构化输出 v0.6.80；v0.6.6/v0.6.70） |
 | `flare mcp resources <服务器> [--read <uri>]` | 查看/读取 MCP 服务器暴露的资源（v0.6.10） |
 | `flare mcp prompts <服务器> [--get <名称>]` | 查看/渲染 MCP 服务器暴露的提示词（v0.6.10） |
 | `flare cache-check [--model <模型>] [--json] [--rounds <N>]` | prompt caching 验收：连续两轮调用验证第二轮 cache_read_tokens > 0（v0.6.45；v0.6.48 起 --json 结构化输出供宿主/CI 消费；v0.6.54 起 --rounds 2~5 多轮连续命中验收；v0.6.75 起多轮 savedUsd 累加所有命中轮；v0.6.76 起 --json/输出含 runSavedUsd 每轮节省明细） |
@@ -340,6 +340,14 @@ Interactive mode commands:
 ### Changelog / Release Notes
 
 > 中文条目 / Chinese entries · English summary for each version
+
+#### v0.6.81 (2026-08-12) — README/docs 同步 mcp status --json（文档对称，纯文档）
+
+- ✨ **README 命令表 `flare mcp status` 行 + docs/mcp.md CLI 章节补 `--json`**（纯文档，
+-  零代码变更）：v0.6.80 的 --json 能力在命令表/文档未同步——用户从 README/docs 看不到
+-  结构化输出入口；本轮补齐（与 v0.6.74/0.6.77 纯文档先例一致）
+- - README Changelog + 版本号 0.6.81
+- - 🧪 **877/877 全绿**（纯文档改动，无代码变更），tsc 0 错误，**零 agent.ts 改动**
 
 #### v0.6.80 (2026-08-12) — `flare mcp status --json` 结构化输出（方向② 外围增强）
 
