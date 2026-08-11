@@ -121,6 +121,8 @@ describe('/mcp 命令', () => {
     expect(text).toContain('fs')
     expect(text).toContain('3 个工具')
     expect(text).toContain('db')
+    // v0.6.61：状态行提示含 tools 子命令入口
+    expect(text).toContain('/mcp tools [name] 查看工具')
   })
 
   it('/mcp 显示传输类型与目标端点（v0.6.50：stdio/HTTP 区分 + 连接目标可见）', async () => {

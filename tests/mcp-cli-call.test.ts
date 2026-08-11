@@ -134,6 +134,9 @@ describe('CLI flare mcp call', () => {
     // v0.6.51：连接标记（未连接 ○）+ 传输/端点 + 无工具数（未连接）
     expect(stdout).toMatch(/○/)
     expect(stdout).not.toMatch(/个工具/)
+    // v0.6.61：提示行含 tools/complete 子命令入口
+    expect(stdout).toMatch(/mcp tools/)
+    expect(stdout).toMatch(/mcp complete/)
   }, 20000)
 
   it('mcp status --connect：连接真实服务器显示 ● 连接标记 + 工具数（v0.6.51 统一 status()）', async () => {

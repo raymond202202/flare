@@ -736,7 +736,7 @@ export async function handleSlashCommand(
           output(`  ${mark} ${s.name} ${transportTag}${toolsInfo}${resInfo}${promptInfo}${closeParen}${targetInfo}${err}`)
         }
       }
-      output(chalk.gray('\n  /mcp resources [name] 查看资源 | /mcp prompts [name] 查看提示词 | /mcp connect <name> 连接 | /mcp disconnect <name> 断开'))
+      output(chalk.gray('\n  /mcp resources [name] 查看资源 | /mcp prompts [name] 查看提示词 | /mcp tools [name] 查看工具 | /mcp connect <name> 连接 | /mcp disconnect <name> 断开'))
       return 'continue'
     }
     if (sub === 'connect' && rest.length > 0) {
@@ -1610,7 +1610,7 @@ export function main() {
       })
       console.log(chalk.cyan('配置的 MCP 服务器:'))
       console.log(lines.join('\n'))
-      console.log(chalk.gray('  提示: flare mcp call <服务器> <工具> [JSON参数] 调用工具；flare mcp status --connect 查看连接状态'))
+      console.log(chalk.gray('  提示: flare mcp call <服务器> <工具> [JSON参数] 调用工具；flare mcp tools <服务器> 查看工具；flare mcp complete <服务器> <提示词> <参数> 补全候选；flare mcp status --connect 查看连接状态'))
     })
 
   mcpCmd
