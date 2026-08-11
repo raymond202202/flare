@@ -9,6 +9,7 @@ import { Message, LLMProvider, createProvider, createVisionProvider, buildImageC
 import { getToolDefinitions, executeTool, type Tool } from '../tools/index.js'
 import { getMemoryStore, MemoryStore } from '../memory/store.js'
 import { trimContextMessages, summarizeTrimmedMessages } from './context.js'
+import { truncateToolOutput } from './tool-output.js'
 import { logger } from './logger.js'
 
 export interface AgentConfig {
@@ -392,10 +393,9 @@ export class Agent {
             ? await injectedTool.execute(args)
             : await executeTool(tc.function.name, args)
           
-          // 截断工具结果（防止上下文爆炸）
-          const truncatedOutput = result.success
-            ? result.output.slice(0, 2000)
-            : (result.error || '执行失败').slice(0, 1000)
+          // 截断工具结果（防止上下文爆炸；v0.6.30 起按工具类型定制策略——
+          // 读文件类留头尾、终端类留尾部，默认与旧版逐字符一致，控制流不变）
+          const truncatedOutput = truncateToolOutput(tc.function.name, result)
 
           yield {
             type: 'tool_result',

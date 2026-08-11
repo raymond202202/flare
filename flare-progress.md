@@ -3,28 +3,60 @@
 > 目标：flare 是 Pulse/StorySpire 依赖的 AI Agent 引擎（TS）。任何改动必须安全（tsc 0 错 + 测试全绿才 commit）。
 > 铁律：禁止 push；禁止修改 src/core/agent.ts 的 Agent.run 核心循环。
 
-> **最新状态（v0.6.29）**：**prompt caching 基建 P0 落地**（用户拍板最高优先级，
-> docs/flare-token-architecture.md 第二/六节）——P0-1 system 前缀稳定：system 拆成独立消息序列
-> （稳定前缀 / 身份段 / 记忆段），记忆变化只影响最后一条 system，稳定前缀 + 工具定义永远命中
-> DeepSeek 前缀缓存；setContext 状态快照改为独立 system 消息追加消息末尾（动态区）；trim/suggestTrim
-> 开头 system 块全保底；summarize 摘要紧随 system 块。P0-2 usage 回传增强：usage 补
-> cache_read/cache_write + estimated_cost_usd（DeepSeek/OpenAI 双格式提取 + 按模型定价估算），
-> usage_log 加列 + 老库迁移，get_usage/session_usage 透传，CLI /usage 显示缓存命中率；
-> 630/630 全绿（605 + 25），tsc 0 错误，run 循环零改动。
+> **最新状态（v0.6.30）**：**工具输出治理落地**（候选②）——按工具类型定制工具结果截断：
+> read_file/search_files 长输出**留头尾**（头部 1200 + 省略标记（含被省略字符数）+ 尾部 700，
+> 总长严格 ≤ 预算）、terminal **留尾部**（尾部 2000 + 省略标记在前）、其他工具默认与旧版 slice
+> 逐字符一致（零回归）；`truncateToolOutput`/`toolOutputKind` 纯函数 + `ToolOutputPolicy` 类型
+> 库导出；run 循环仅截断表达式一行等价替换（控制流零改动）；654/654 全绿（630 + 24），tsc 0 错误。
 
 > 【🔴 当前最高优先级方向（2026-08-11 用户拍板）】**prompt caching 基建 P0 已基本落地**：
 > P0-1 前缀稳定 + P0-2 usage 回传（v0.6.29 完成）。验收：连续两轮调用（间隔<5min）第二轮
 > cache_read_tokens > 0——前缀稳定已保证命中基础，实际命中还取决于 DeepSeek 服务端缓存（外部因素）。
-> 剩余方向：P1 分层上下文（Layer 1 异步滚动摘要，需评估 run 循环外异步）、P1 工具输出治理
-> （按工具类型定制截断）、P1 会话归档 API（server 协议 endSession）、P2 模型路由钩子。
+> 剩余方向：P1 分层上下文（Layer 1 异步滚动摘要，需评估 run 循环外异步）、P1 会话归档 API
+> （server 协议 endSession）、P2 模型路由钩子。
 
 > 下一步候选（按优先级）：
 > ① 【P1】分层上下文（Layer 1 异步滚动摘要——摘要内容升级为 LLM 生成语义级压缩，需评估 run 循环外异步）
-> ② 【P1】工具输出治理（按工具类型定制截断：读文件留头尾、终端留尾部+退出码）
-> ③ 【P1】会话归档 API（server 协议 endSession）
+> ② 【P1】会话归档 API（server 协议 endSession：标记归档 + list_sessions 过滤 + 恢复/清除）
+> ③ 【P1】工具输出治理补强（terminal 工具侧暴露退出码后截断带退出码；或策略可配置化透传 server 协议）
 > ④ 其他安全的外围增强（server 协议其他管理接口、CLI 交互增强、MCP 工具集完善等）
 
 > ---
+
+### 2026-08-11 第三十轮实施（v0.6.30）——工具输出治理（候选②，按工具类型定制截断）
+
+- **P59 工具输出治理**（src/core/tool-output.ts + core/agent.ts + index.ts + 测试，commit 见下）：
+  - **缺口定位**：run 循环对所有工具统一 `output.slice(0, 2000)`——探索型工具（read_file/search_files）
+    长输出只留头部**尾部丢掉**（AI 常需看文件结尾/匹配列表末尾，得额外调一次工具）、终端型工具
+    （terminal）输出最有价值的**结果/报错在尾部**却先被裁掉——两种场景都是「裁掉的恰是最有用的部分」
+  - **`truncateToolOutput(toolName, result, opts?)` 纯函数**（新模块 src/core/tool-output.ts，库导出）：
+    按工具名分类定制截断——**探索型**（read_file/search_files）**留头尾**：头部 headChars（默认
+    1200）+ 省略标记 + 尾部 tailChars（默认 700），**总长严格 ≤ 预算**（标记计入预算）；**终端型**
+    （terminal）**留尾部**：尾部 tailChars（默认跟随 maxOutputChars 2000）+ 省略标记在前（提示有内容
+    被裁）；**其他工具默认**：成功前 2000 / 失败前 1000——与旧版 slice **逐字符一致零回归**
+  - **省略标记带被省略字符数**：默认 `\n…[中间省略 {omitted} 字符]…\n`（`{omitted}` 模板可替换、
+    无占位符直接使用）——AI 看到省略数可判断是否值得用 offset/limit 重新读取
+  - **全可配**：`maxOutputChars/maxErrorChars/headChars/tailChars/ellipsis`（ToolOutputPolicy 类型
+    库导出）；`toolOutputKind(toolName)` 分类纯函数（'default'|'exploratory'|'terminal'）库导出
+  - **Agent 集成**：run 循环内截断表达式**一行等价替换**为 `truncateToolOutput(tc.function.name, result)`
+    （import + 表达式替换，**控制流零改动**，与 v0.6.29 logUsage 传参扩展同量级）；失败分支行为
+    不变（错误信息前 1000 字符）；yield 事件与 LLM 上下文消息共用治理后输出
+  - **654/654 全绿**（630 + 24 新增 tests/tool-output.test.ts：分类 3——探索型/终端型/默认（含空名）；
+    默认策略 6——成功 2000 与旧版 slice 逐字符一致/短输出原样/失败 1000 一致/error 缺省「执行失败」/
+    成功 output 缺省空串/可配上限；探索型 5——短输出原样/长输出留头尾+省略数（正则）+不超预算/
+    search_files 同策略/可配头尾/失败分支；终端型 4——短输出原样/留尾部+省略标记在前+不超预算/
+    可配 tailChars/失败分支；省略标记 3——无占位符直接使用/自定义 {omitted} 替换（尾部 2000 省略
+    3000）/默认含占位符；**Agent 集成 3**——read_file 超长输出进上下文（tool_result 事件 + LLM
+    消息均留头尾带省略标记）/默认工具超长输出仍前 2000 零回归/terminal 超长输出留尾部），tsc 0 错误
+  - **冒烟实测**（dist 构建后真实库调用）：read_file 模拟 503 行长文件——头部带行号保留 +
+    尾部 `503|LAST LINE` 保留，总长 1918 ≤ 2000；terminal 输出——省略标记
+    `…[中间省略 1923 字符]…` 在前 + `Build succeeded in 2.1s` 保留；默认工具前 2000 零回归；
+    错误分支原文返回；分类 exploratory/terminal/default，SMOKE PASS
+- **下一步候选**：① 【P1】分层上下文（Layer 1 异步滚动摘要——LLM 语义级摘要，需评估 run 循环外异步）；
+  ② 【P1】会话归档 API（endSession）；③ 工具输出治理补强（terminal 工具侧暴露退出码 / 策略可配置化
+  透传 server 协议）；④ 其他安全的外围增强
+
+---
 
 ### 2026-08-11 第二十九轮实施（v0.6.29）——prompt caching 基建 P0（system 前缀稳定 + usage 缓存回传）
 
