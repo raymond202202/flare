@@ -155,6 +155,7 @@ cp .env.example ~/.flare/.env
 | `flare mcp status` | 查看配置的 MCP 服务器（名称 + 传输类型 + 端点/命令，v0.6.6） |
 | `flare mcp resources <服务器> [--read <uri>]` | 查看/读取 MCP 服务器暴露的资源（v0.6.10） |
 | `flare mcp prompts <服务器> [--get <名称>]` | 查看/渲染 MCP 服务器暴露的提示词（v0.6.10） |
+| `flare cache-check [--model <模型>]` | prompt caching 验收：连续两轮调用验证第二轮 cache_read_tokens > 0（v0.6.45） |
 
 交互模式命令：
 
@@ -176,8 +177,9 @@ cp .env.example ~/.flare/.env
 | `/remember` | 保存一条记忆（如: /remember 用户喜欢浅色主题） |
 | `/forget` | 删除记忆（如: /forget 浅色主题，删除包含该关键词的记忆） |
 | `/usage` | 查看 token 用量（v0.6.17 起含本会话用量行） |
-| `/context` | 查看当前会话上下文占用（消息数/估算 tokens，v0.5.6） |
-| `/sessions` | 查看最近会话 |
+| `/context` | 查看当前会话上下文占用（消息数/估算 tokens，v0.5.6；超预算提示 /trim，v0.6.46） |
+| `/trim [预算tokens]` | 智能裁剪上下文（v0.6.46：system 保底 + 最近消息 + 配对保护；缺省用配置预算） |
+| `/sessions` | 查看最近会话；带关键词搜索会话（如: `/sessions 缓存`，按标题/消息内容，v0.6.44） |
 | `/clear` | 清屏 |
 | `/exit` | 退出 |
 
@@ -330,7 +332,8 @@ Interactive mode commands:
 | `/search <关键词>` | Search chat history across sessions (v0.6.24) |
 | `/remember` | Save a memory (e.g. /remember user likes light theme) |
 | `/forget` | Delete memories by keyword (e.g. /forget light theme) |
-| `/sessions` | View recent sessions |
+| `/sessions` | View recent sessions; `/sessions <keyword>` searches sessions by title/content (v0.6.44) |
+| `/trim [budgetTokens]` | Smart context trim (v0.6.46: keeps stable system prefix + recent messages) |
 | `/clear` | Clear screen |
 | `/exit` | Exit |
 
