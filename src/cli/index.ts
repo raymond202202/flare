@@ -2003,7 +2003,7 @@ export function main() {
 
   program
     .command('cache-check')
-    .description('prompt caching 验收：连续调用验证 cache_read_tokens > 0（v0.6.45，P0 验收自动化；v0.6.48 起 --json 结构化输出；v0.6.54 起 --rounds 多轮连续命中验收）')
+    .description('prompt caching 验收：连续调用验证 cache_read_tokens > 0（v0.6.45，P0 验收自动化；v0.6.48 起 --json 结构化输出；v0.6.54 起 --rounds 多轮连续命中验收；v0.6.76 起 --json 含每轮节省明细）')
     .option('-m, --model <model>', '指定模型（缺省用默认路由；如 deepseek-chat）')
     .option('-j, --json', 'JSON 结构化输出（宿主/CI 程序化消费：ok/model/hitTokens/savedUsd/detail/rounds/runs/两轮用量；exit code 语义不变）')
     .option('-r, --rounds <n>', '验收轮数（默认 2；2~5——第 1 轮为 miss 基准，第 2..N 轮全部命中才算 PASS，多轮更严格验证缓存稳定性）')
@@ -2035,7 +2035,10 @@ export function main() {
       r.runs.forEach((u, i) => {
         const label = i === 0 ? '第一轮' : `第${i + 1}轮`
         const note = i === 0 ? '（miss 基准）' : ''
-        console.log(`  ${label}: prompt ${u.promptTokens} · 命中 ${u.cacheReadTokens} tokens${note}`)
+        // v0.6.76：每轮节省明细（>0 才显示，与总节省同口径；无法定价/无节省不显示）
+        const saved = r.runSavedUsd?.[i]
+        const savedNote = saved !== undefined && saved !== null && saved > 0 ? `（节省 $${saved.toFixed(6)}）` : ''
+        console.log(`  ${label}: prompt ${u.promptTokens} · 命中 ${u.cacheReadTokens} tokens${note}${savedNote}`)
       })
       if (r.savedUsd !== null) {
         console.log(chalk.gray(`  估算节省: $${r.savedUsd.toFixed(6)}（命中价 vs 未命中价）`))

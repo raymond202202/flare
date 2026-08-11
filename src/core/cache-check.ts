@@ -39,6 +39,9 @@ export interface CacheCheckResult {
   hitTokens: number
   /** 估算节省成本 USD（命中部分按命中价计 vs 未命中价；模型无法定价时为 null） */
   savedUsd: number | null
+  /** 每轮节省明细（v0.6.76：与 runs 对齐；第 i 项 = 第 i+1 轮 miss 价 − hit 价，
+   *  无法定价 → null；基准轮/未命中轮通常为 0） */
+  runSavedUsd: (number | null)[]
 }
 
 /** 稳定前缀填充段（重复 N 次构成数百 token 的可命中前缀；内容本身无意义，只求稳定） */
@@ -103,6 +106,7 @@ export async function runCacheCheck(llm: LLMProvider = createProvider(), opts: {
         detail: `${failLabel}调用失败: ${(e?.message || String(e)).slice(0, 200)}`,
         hitTokens: 0,
         savedUsd: null,
+        runSavedUsd: [...usages.map(() => null), null],
       }
     }
     model = resp.model || model
@@ -119,20 +123,29 @@ export async function runCacheCheck(llm: LLMProvider = createProvider(), opts: {
   // 节省估算：命中部分按命中价 vs 未命中价的差（复用定价表；无法定价 → null）
   // v0.6.75：多轮验收（--rounds>2）时**累加所有命中轮**的节省——修复此前只按最后一轮计算，
   // 导致宿主/CI 消费 cache-check --json 时总节省被低估（rounds=2 时只有一个命中轮，行为不变）
+  // v0.6.76：同时产出每轮节省明细 runSavedUsd（与 runs 对齐；基准轮/未命中轮通常为 0）
+  const runSavedUsd: (number | null)[] = []
   let savedUsd: number | null = null
   try {
     const { estimateCostUsd } = await import('./llm.js')
     let total = 0
     let priced = true
-    for (const u of usages.slice(1)) {
-      if (u.cacheReadTokens <= 0) continue // 未命中轮没有节省
+    for (let i = 0; i < usages.length; i++) {
+      const u = usages[i]
       const miss = estimateCostUsd(model, u.promptTokens, u.completionTokens, 0)
       const hit = estimateCostUsd(model, u.promptTokens, u.completionTokens, u.cacheReadTokens)
-      if (miss === null || hit === null) { priced = false; break }
-      total += miss - hit
+      if (miss === null || hit === null) {
+        runSavedUsd.push(null)
+        if (i > 0) priced = false // 汇总只依赖命中轮（第 2..N 轮）；基准轮不可定价不影响
+      } else {
+        runSavedUsd.push(Math.round((miss - hit) * 1e6) / 1e6)
+        if (i > 0 && u.cacheReadTokens > 0) total += miss - hit // 未命中轮没有节省
+      }
     }
     if (priced) savedUsd = Math.round(total * 1e6) / 1e6
-  } catch { /* 定价不可用 → null */ }
+  } catch {
+    for (let i = 0; i < usages.length; i++) runSavedUsd.push(null) // 定价不可用 → 全部 null
+  }
 
   const detail = ok
     ? rounds === 2
@@ -152,6 +165,7 @@ export async function runCacheCheck(llm: LLMProvider = createProvider(), opts: {
     detail,
     hitTokens,
     savedUsd,
+    runSavedUsd,
   }
 }
 
@@ -161,8 +175,8 @@ export async function runCacheCheck(llm: LLMProvider = createProvider(), opts: {
  *
  * 结构化字段与 CacheCheckResult 一致：ok / model / hitTokens / savedUsd / detail /
  * rounds / runs / first / second（各含 promptTokens/completionTokens/cacheReadTokens/
- * cacheWriteTokens）。纯函数不触网、不读密钥；CLI 只负责打印与 exit code（ok → 0，
- * 未命中/失败 → 1）。
+ * cacheWriteTokens；v0.6.76 起含 runSavedUsd 每轮节省明细）。纯函数不触网、不读密钥；
+ * CLI 只负责打印与 exit code（ok → 0，未命中/失败 → 1）。
  */
 export function cacheCheckToJson(r: CacheCheckResult): string {
   return JSON.stringify(
@@ -176,6 +190,7 @@ export function cacheCheckToJson(r: CacheCheckResult): string {
       runs: r.runs,
       first: r.first,
       second: r.second,
+      runSavedUsd: r.runSavedUsd,
     },
     null,
     2

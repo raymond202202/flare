@@ -173,6 +173,40 @@ describe('runCacheCheck（v0.6.45）', () => {
     expect(parsed.first).toEqual({ promptTokens: 800, completionTokens: 10, cacheReadTokens: 0, cacheWriteTokens: 0 })
     expect(parsed.second.cacheReadTokens).toBe(650)
     expect(parsed.second.promptTokens).toBe(800)
+    // v0.6.76：--json 含每轮节省明细（与 runs 对齐：基准轮 0、命中轮 >0）
+    expect(parsed.runSavedUsd).toHaveLength(2)
+    expect(parsed.runSavedUsd![0]).toBe(0)
+    expect(parsed.runSavedUsd![1]).toBeGreaterThan(0)
+  })
+
+  it('runSavedUsd 每轮节省明细（v0.6.76：多轮时每轮独立计算，与总节省同口径）', async () => {
+    // 3 轮：基准 miss + 第 2/3 轮同 tokens 命中 → 两轮明细相等，且各 = 2 轮单命中轮的节省
+    const { llm } = makeFake([
+      { model: 'deepseek-chat', usage: { prompt_tokens: 1000, completion_tokens: 10, prompt_cache_hit_tokens: 0 } },
+      { model: 'deepseek-chat', usage: { prompt_tokens: 1000, completion_tokens: 10, prompt_cache_hit_tokens: 900 } },
+      { model: 'deepseek-chat', usage: { prompt_tokens: 1000, completion_tokens: 10, prompt_cache_hit_tokens: 900 } },
+    ])
+    const r = await runCacheCheck(llm, { rounds: 3 })
+    const single = await runCacheCheck(makeFake([
+      { model: 'deepseek-chat', usage: { prompt_tokens: 1000, completion_tokens: 10, prompt_cache_hit_tokens: 0 } },
+      { model: 'deepseek-chat', usage: { prompt_tokens: 1000, completion_tokens: 10, prompt_cache_hit_tokens: 900 } },
+    ]).llm)
+    expect(r.runSavedUsd).toHaveLength(3)
+    expect(r.runSavedUsd[0]).toBe(0) // 基准轮 miss → 无节省
+    // 两命中轮 tokens 相同 → 每轮节省精确相等（同 round 同输入）
+    expect(r.runSavedUsd[1]).toBe(single.savedUsd)
+    expect(r.runSavedUsd[2]).toBe(single.savedUsd)
+    expect(r.savedUsd).toBeCloseTo((r.runSavedUsd[1] as number) * 2, 6)
+  })
+
+  it('runSavedUsd 无法定价模型 → 全部 null（v0.6.76，与 savedUsd null 一致）', async () => {
+    const { llm } = makeFake([
+      { model: 'qwen2.5:7b', usage: { prompt_tokens: 1000, completion_tokens: 10 } },
+      { model: 'qwen2.5:7b', usage: { prompt_tokens: 1000, completion_tokens: 10, prompt_cache_hit_tokens: 500 } },
+    ])
+    const r = await runCacheCheck(llm)
+    expect(r.savedUsd).toBeNull()
+    expect(r.runSavedUsd).toEqual([null, null])
   })
 
   it('cacheCheckToJson（v0.6.48）：失败结果也结构化（ok:false + detail），不抛异常', async () => {
