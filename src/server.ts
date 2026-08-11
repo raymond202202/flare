@@ -31,6 +31,7 @@ import {
   listOllamaModels,
   config,
   tools as builtinTools,
+  validateToolOutputPolicy,
   type ExpertProfile,
   type ToolDefinition,
   type Tool,
@@ -38,6 +39,7 @@ import {
   type McpServerConfig,
   type ConfirmDecision,
   type OllamaModelsResult,
+  type ToolOutputPolicy,
 } from './index.js'
 
 // 从 package.json 读取引擎版本（不硬编码；宿主 version 协商用）
@@ -72,6 +74,9 @@ export interface HostServerOptions {
   defaultMaxContextTokens?: number
   /** 默认上下文压缩摘要开关（v0.6.19）：chat 请求未指定 contextSummarize 时应用（CLI --context-summarize） */
   defaultContextSummarize?: boolean
+  /** 默认工具输出治理策略（v0.6.34）：chat 请求未指定 toolOutputPolicy 时应用（CLI --tool-output-policy）；
+   *  缺省与旧版统一 slice 截断完全一致。 */
+  defaultToolOutputPolicy?: ToolOutputPolicy
 }
 
 /** 默认需确认的工具（v0.6.1）：AI 写持久记忆前经确认门（宿主弹窗"AI 想记住…"，用户知情授权） */
@@ -254,12 +259,15 @@ interface LlmChatOpts {
 }
 
 /** chat 请求可透传的上下文自动裁剪控制（v0.6.17：maxContextMessages/maxContextTokens，Agent 构造时生效；
- *  v0.6.19：contextSummarize 压缩摘要开关） */
+ *  v0.6.19：contextSummarize 压缩摘要开关；v0.6.34：toolOutputPolicy 工具输出治理策略） */
 interface CtxChatOpts {
   maxContextMessages?: number
   maxContextTokens?: number
   /** 上下文压缩摘要（v0.6.19）：裁剪时把丢弃历史压缩成摘要（AI 保留话题连续性） */
   contextSummarize?: boolean
+  /** 工具输出治理策略（v0.6.34）：按工具类型定制工具结果截断（探索型留头尾/终端型留尾部/
+   *  长度预算/省略标记）；缺省与旧版统一 slice 截断一致。 */
+  toolOutputPolicy?: ToolOutputPolicy
 }
 
 const llmOptsChanged = (a?: LlmChatOpts, b?: LlmChatOpts): boolean =>
@@ -269,7 +277,9 @@ const llmOptsChanged = (a?: LlmChatOpts, b?: LlmChatOpts): boolean =>
 const ctxOptsChanged = (a?: CtxChatOpts, b?: CtxChatOpts): boolean =>
   (a?.maxContextMessages ?? undefined) !== (b?.maxContextMessages ?? undefined) ||
   (a?.maxContextTokens ?? undefined) !== (b?.maxContextTokens ?? undefined) ||
-  (a?.contextSummarize ?? undefined) !== (b?.contextSummarize ?? undefined)
+  (a?.contextSummarize ?? undefined) !== (b?.contextSummarize ?? undefined) ||
+  // 策略是对象：JSON 序列化比较（validateToolOutputPolicy 归一化后字段顺序固定，稳定可复现）
+  JSON.stringify(a?.toolOutputPolicy ?? null) !== JSON.stringify(b?.toolOutputPolicy ?? null)
 
 /** 启动宿主协议服务（阻塞读 stdin） */
 export function startHostServer(opts: HostServerOptions) {
@@ -390,6 +400,8 @@ export function startHostServer(opts: HostServerOptions) {
           ...(ctxOpts?.maxContextTokens !== undefined ? { maxContextTokens: ctxOpts.maxContextTokens } : {}),
           // 上下文压缩摘要（v0.6.19）：contextSummarize 透传到 Agent
           ...(ctxOpts?.contextSummarize !== undefined ? { contextSummarize: ctxOpts.contextSummarize } : {}),
+          // 工具输出治理策略（v0.6.34）：toolOutputPolicy 透传到 Agent（缺省与旧版统一 slice 一致）
+          ...(ctxOpts?.toolOutputPolicy !== undefined ? { toolOutputPolicy: ctxOpts.toolOutputPolicy } : {}),
         }),
         model,
         llmOpts,
@@ -480,8 +492,17 @@ export function startHostServer(opts: HostServerOptions) {
             }
             ctxOpts = { ...ctxOpts, contextSummarize: req.contextSummarize }
           }
-          // chat 未指定裁剪控制时应用 server 级默认（CLI --max-context-messages/--max-context-tokens/--context-summarize）
-          if (!ctxOpts && (opts.defaultMaxContextMessages !== undefined || opts.defaultMaxContextTokens !== undefined || opts.defaultContextSummarize !== undefined)) {
+          // v0.6.34：工具输出治理策略（toolOutputPolicy）——非法值直接 error，不触发生成
+          if (req.toolOutputPolicy !== undefined && req.toolOutputPolicy !== null) {
+            const v = validateToolOutputPolicy(req.toolOutputPolicy)
+            if (!v.ok) {
+              reply({ type: 'error', message: v.message })
+              break
+            }
+            ctxOpts = { ...ctxOpts, toolOutputPolicy: v.value }
+          }
+          // chat 未指定裁剪控制时应用 server 级默认（CLI --max-context-messages/--max-context-tokens/--context-summarize/--tool-output-policy）
+          if (!ctxOpts && (opts.defaultMaxContextMessages !== undefined || opts.defaultMaxContextTokens !== undefined || opts.defaultContextSummarize !== undefined || opts.defaultToolOutputPolicy !== undefined)) {
             ctxOpts = {}
             if (opts.defaultMaxContextMessages !== undefined) {
               const v = Number(opts.defaultMaxContextMessages)
@@ -501,6 +522,9 @@ export function startHostServer(opts: HostServerOptions) {
             }
             if (opts.defaultContextSummarize !== undefined) {
               ctxOpts = { ...ctxOpts, contextSummarize: opts.defaultContextSummarize }
+            }
+            if (opts.defaultToolOutputPolicy !== undefined) {
+              ctxOpts = { ...ctxOpts, toolOutputPolicy: opts.defaultToolOutputPolicy }
             }
           }
           const agent = getAgent(sessionId, req.tools, req.model ? String(req.model) : undefined, llmOpts, ctxOpts)
@@ -958,6 +982,7 @@ export function startHostServer(opts: HostServerOptions) {
             defaultMaxContextMessages: opts.defaultMaxContextMessages ?? null,
             defaultMaxContextTokens: opts.defaultMaxContextTokens ?? null,
             defaultContextSummarize: opts.defaultContextSummarize ?? null,
+            defaultToolOutputPolicy: opts.defaultToolOutputPolicy ?? null,
             toolTimeoutMs,
             namespace: namespace ?? null,
             storage: typeof storage === 'string' ? storage : null,

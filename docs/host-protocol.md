@@ -38,6 +38,7 @@ flare server --profile <expert-profile-file> --storage <db-path> [--mcp <mcp-con
 - `maxContextMessages`：可选（v0.6.17），上下文自动裁剪条数上限（非负整数，0 = 不按条数裁剪）——Agent 每次迭代前自动裁剪到最近 N 条（system 保底 + tool_calls 配对保护）；缺省 30（或 server 以 `--max-context-messages` 启动的默认）；非法值（非负整数之外）回 error，不触发生成
 - `maxContextTokens`：可选（v0.6.17），上下文自动裁剪 token 预算（正整数）——估算 tokens 超过预算时迭代前自动裁剪（最近优先 + 配对保护 + system 保底）；缺省不启用 token 裁剪（或 server 以 `--max-context-tokens` 启动的默认）；非法值（非正整数）回 error，不触发生成；与 `maxContextMessages` 任一先到即停
 - `contextSummarize`：可选（v0.6.19），上下文压缩摘要开关（布尔）——开启后裁剪时把丢弃的历史压缩成摘要消息（纯启发式统计，不调 LLM：条数/角色分布/涉及工具/最后话题；摘要链防堆积）而非直接丢弃；缺省不开启（或 server 以 `--context-summarize` 启动的默认）；非法值（非布尔）回 error，不触发生成
+- `toolOutputPolicy`：可选（v0.6.34），工具输出治理策略（对象）——按工具类型定制工具结果截断：`maxOutputChars`（成功输出最大字符数，默认 2000）/ `maxErrorChars`（失败错误最大字符数，默认 1000）/ `headChars`（探索型 read_file/search_files 头部保留，默认 1200）/ `tailChars`（探索型/终端型尾部保留）/ `ellipsis`（省略标记模板，含 `{omitted}` 替换为省略字符数）；探索型留头尾、终端型 terminal 留尾部、默认前 maxOutputChars（与旧版统一 slice 一致）；字段全部可选、未知字段忽略；非法值（非对象 / 字符数字段非正整数 / ellipsis 非字符串）回 error 含字段名，不触发生成；缺省不配置（或 server 以 `--tool-output-policy` 启动的默认）
 - 请求只带其中一个参数时，另一个不用 server 默认补（请求优先，行为可预期）
 
 ### 2. cancel — 取消当前生成
@@ -410,9 +411,9 @@ flare server --profile <expert-profile-file> --storage <db-path> [--mcp <mcp-con
 {"type":"get_config"}
 ```
 
-响应：`{"type":"config","confirmTools":["memory_save"],"confirmTimeoutMs":30000,"defaultMaxTokens":null,"defaultTemperature":null,"defaultMaxContextMessages":null,"defaultMaxContextTokens":null,"defaultContextSummarize":null,"toolTimeoutMs":30000,"namespace":null,"storage":"/path/flare.db","mcpServers":[{"name":"fs","transport":"stdio"}]}`
+响应：`{"type":"config","confirmTools":["memory_save"],"confirmTimeoutMs":30000,"defaultMaxTokens":null,"defaultTemperature":null,"defaultMaxContextMessages":null,"defaultMaxContextTokens":null,"defaultContextSummarize":null,"defaultToolOutputPolicy":null,"toolTimeoutMs":30000,"namespace":null,"storage":"/path/flare.db","mcpServers":[{"name":"fs","transport":"stdio"}]}`
 
-- 宿主面板"设置/关于"数据源：确认门配置（`confirmTools` 名单 / `confirmTimeoutMs` 超时）、默认采样参数（`defaultMaxTokens` / `defaultTemperature`，未配置为 null）、默认上下文裁剪参数（`defaultMaxContextMessages` / `defaultMaxContextTokens` / `defaultContextSummarize` 压缩摘要开关（v0.6.19），未配置为 null）、`toolTimeoutMs` 工具超时、`namespace` 记忆隔离标识（无则 null）、`storage` 存储路径（非字符串配置为 null）、`mcpServers` MCP 服务器清单（名称 + 传输类型 http/stdio）
+- 宿主面板"设置/关于"数据源：确认门配置（`confirmTools` 名单 / `confirmTimeoutMs` 超时）、默认采样参数（`defaultMaxTokens` / `defaultTemperature`，未配置为 null）、默认上下文裁剪参数（`defaultMaxContextMessages` / `defaultMaxContextTokens` / `defaultContextSummarize` 压缩摘要开关（v0.6.19），未配置为 null）、默认工具输出治理策略（`defaultToolOutputPolicy`，v0.6.34，未配置为 null）、`toolTimeoutMs` 工具超时、`namespace` 记忆隔离标识（无则 null）、`storage` 存储路径（非字符串配置为 null）、`mcpServers` MCP 服务器清单（名称 + 传输类型 http/stdio）
 - 只读查询：不触发生成、不创建会话；**不含任何密钥/敏感配置**
 
 ## 响应（服务 → 宿主，stdout 每行一个）
