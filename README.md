@@ -338,6 +338,22 @@ Interactive mode commands:
 
 > 中文条目 / Chinese entries · English summary for each version
 
+#### v0.6.32 (2026-08-11) — CLI 会话归档命令：/archived /archive /restore（端侧对称接线）
+- 🗄️ **CLI 接线 v0.6.31 归档 API（src/cli/index.ts）**：`/archived` 列出归档会话（结构同 /sessions
+-  含首条消息预览 + 会话ID + 友好时间，空归档友好提示）；`/archive [会话ID]` 归档（缺省归档当前
+-  会话——handleSlashCommand 既有 sessionId 参数；数据保留可恢复）；`/restore <会话ID>` 恢复
+-  （无参时列出归档会话 + 用法提示）；三者均幂等安全（不存在/已归档/已恢复黄色提示不报错）——
+-  与 server 协议 end_session / restore_session / list_archived_sessions 语义对称；`/help` 注册
+- 📚 README Changelog + 版本号 0.6.32
+- 🧪 **677/677 全绿**（664 + 13 新增 tests/session-archive-cli.test.ts：/archive 指定 id 归档成功
+-  （recent 隐藏 + 进归档 + 数据保留）/ 缺省归档当前会话 / 无参无 sessionId 用法提示 / 不存在幂等 /
+-  重复归档幂等；/restore 恢复成功回最近 / 无参列出 + 用法 / 无归档用法提示 / 不存在幂等；/archived
+-  列出含预览 + id / 无归档提示 / 只列归档不列活跃；/help 注册三行）；另修 v0.6.31 遗留的
+-  session-archive e2e chat 测试 vitest 超时放宽到 45s（dotenv 注入真实 key 走远端 API 网络慢时
+-  超默认 5s，与 server.test.ts chat 测试同模式），tsc 0 错误，零 agent.ts 改动
+- **冒烟实测**：真实 dist server 子进程 + CLI 命令组合——create_session → /archive 归档 →
+-  /archived 列出 → /restore 恢复 → /sessions 重新出现，SMOKE PASS（见 flare-progress.md）
+
 #### v0.6.31 (2026-08-11) — 会话归档 API：server 协议 end_session / restore_session / list_archived_sessions
 - 📦 **会话归档（src/memory/store.ts + server.ts）**：sessions 表加 `archived` 列（新库直接建 +
   老库 migrate 自动补列，幂等）——`archiveSession` / `restoreSession`（幂等：不存在 false 不抛错）、

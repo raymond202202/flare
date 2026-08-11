@@ -518,6 +518,22 @@ export type ContextInfoGetter = () => { messageCount: number; estimatedTokens: n
 /** /tools 命令回调（v0.6.11）：返回当前 Agent 可用工具清单元数据；null 表示不可用 */
 export type ToolsInfoGetter = () => import('../index.js').ToolMeta[] | null
 
+/** 会话时间友好显示（v0.6.32，/archived 等用）：今天 HH:MM / 昨天 / M月D日；解析失败回退原始字符串 */
+function formatSessionTime(updatedAt: string, now = new Date()): string {
+  try {
+    const d = new Date(updatedAt.replace(' ', 'T'))
+    const isToday = d.toDateString() === now.toDateString()
+    const yesterday = new Date(now)
+    yesterday.setDate(now.getDate() - 1)
+    const isYesterday = d.toDateString() === yesterday.toDateString()
+    if (isToday) return d.toTimeString().slice(0, 5)
+    if (isYesterday) return '昨天'
+    return `${d.getMonth() + 1}月${d.getDate()}日`
+  } catch {
+    return updatedAt
+  }
+}
+
 export async function handleSlashCommand(
   cmd: string,
   store: ReturnType<typeof getMemoryStore>,
@@ -847,6 +863,58 @@ export async function handleSlashCommand(
     return 'continue'
   }
 
+  // 会话归档（v0.6.32）：/archived 查看归档会话、/archive [id] 归档、/restore [id] 恢复
+  // ——CLI 端接线 v0.6.31 归档 API（archiveSession/restoreSession/listArchivedSessions），
+  // 与 server 协议 end_session/restore_session/list_archived_sessions 对称；数据保留可恢复
+  if (lower === '/archived') {
+    const archived = store.listArchivedSessions()
+    if (archived.length === 0) {
+      output(chalk.gray('\n🗄️ 暂无归档会话（/archive 可归档当前会话）'))
+    } else {
+      output(chalk.cyan(`\n🗄️ 已归档会话（${archived.length} 个）:`))
+      archived.forEach(s => {
+        const msg = (s as any).first_user_msg || '（空会话）'
+        const preview = msg.replace(/\s+/g, ' ').trim().slice(0, 30)
+        output(`  ${chalk.gray(`[${formatSessionTime(s.updated_at)}]`)} ${preview} ${chalk.gray(`(${s.id})`)}`)
+      })
+      output(chalk.gray('  提示: /restore <会话ID> 恢复会话'))
+    }
+    return 'continue'
+  }
+  if (lower === '/archive' || lower.startsWith('/archive ')) {
+    const target = cmd.replace(/^\/archive(?:\s+|$)/, '').trim()
+    const sid = target || sessionId
+    if (!sid) {
+      output(chalk.yellow('\n用法: /archive [会话ID]（缺省归档当前会话；数据保留，/archived 可查看、/restore 恢复）'))
+    } else if (store.archiveSession(sid)) {
+      output(chalk.green(`\n🗄️ 已归档会话: ${sid}（数据保留，/archived 可查看、/restore 恢复）`))
+    } else {
+      output(chalk.yellow(`\n未归档: ${sid}（会话不存在或已归档）`))
+    }
+    return 'continue'
+  }
+  if (lower === '/restore' || lower.startsWith('/restore ')) {
+    const target = cmd.replace(/^\/restore(?:\s+|$)/, '').trim()
+    if (!target) {
+      const archived = store.listArchivedSessions()
+      if (archived.length === 0) {
+        output(chalk.yellow('\n用法: /restore <会话ID>（恢复归档会话；当前无归档会话）'))
+      } else {
+        output(chalk.cyan('\n🗄️ 归档会话（/restore <会话ID> 可恢复）:'))
+        archived.forEach(s => {
+          const msg = (s as any).first_user_msg || '（空会话）'
+          const preview = msg.replace(/\s+/g, ' ').trim().slice(0, 30)
+          output(`  ${chalk.gray(`[${formatSessionTime(s.updated_at)}]`)} ${preview} ${chalk.gray(`(${s.id})`)}`)
+        })
+      }
+    } else if (store.restoreSession(target)) {
+      output(chalk.green(`\n✅ 已恢复会话: ${target}（重新出现在最近会话）`))
+    } else {
+      output(chalk.yellow(`\n未恢复: ${target}（会话不存在或未归档）`))
+    }
+    return 'continue'
+  }
+
   switch (lower) {
     case '/help':
       output(chalk.cyan('\n可用命令:'))
@@ -859,6 +927,9 @@ export async function handleSlashCommand(
       output('  /usage       - 查看 token 用量')
       output('  /context     - 查看当前会话上下文占用（消息数/估算 tokens）')
       output('  /sessions    - 查看会话列表')
+      output('  /archived    - 查看归档会话（v0.6.32，/archive 归档的会话）')
+      output('  /archive [会话ID] - 归档会话（缺省当前会话；数据保留，/restore 可恢复）')
+      output('  /restore <会话ID> - 恢复归档会话')
       output('  /clear       - 清屏')
       output('  /image       - 显式看图（如: /image ~/Pictures/a.png 这张图里有什么）')
       output('  /vision      - 切换看图模型（/vision 3b 快速 | /vision 7b 质量）')
