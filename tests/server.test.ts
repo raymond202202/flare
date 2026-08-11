@@ -665,6 +665,64 @@ describe('flare host server 协议', () => {
     }
   }, 30000)
 
+  it('mcp_complete 缺参数 → error（v0.6.57 参数补全桥接）', async () => {
+    const msgs = await request({ type: 'mcp_complete', server: 'mock', prompt: 'summarize' }, { expect: ['error'] })
+    expect(msgs[0].message).toContain('mcp_complete')
+    expect(msgs[0].message).toContain('argument')
+  }, 30000)
+
+  it('mcp_complete（--mcp mock 配置）→ 返回参数补全候选（completion/complete 代理）', async () => {
+    // 独立子进程：--mcp mock 配置（本地子进程，无网络）
+    const dir = mkdtempSync(path.join(os.tmpdir(), 'flare-mcp-complete-test-'))
+    const mcpCfg = path.join(dir, 'mcp.json')
+    const mockServer = path.join(__dirname, 'fixtures', 'mcp-mock-server.mjs')
+    writeFileSync(mcpCfg, JSON.stringify({ servers: [{ name: 'mock', command: process.execPath, args: [mockServer] }] }))
+    const env: Record<string, string> = { ...process.env } as Record<string, string>
+    delete env.DEEPSEEK_API_KEY
+    const c = spawn(process.execPath, [CLI, 'server', '--storage', path.join(dir, 'test.db'), '--mcp', mcpCfg], { env, stdio: ['pipe', 'pipe', 'pipe'] })
+    const rl2 = createInterface({ input: c.stdout! })
+    const ask = (msg: any, expectTypes: string[]): Promise<any> => new Promise((resolve, reject) => {
+      const timer = setTimeout(() => { cleanup(); reject(new Error(`超时（mcp_complete ${JSON.stringify(msg).slice(0, 80)}）`)) }, 15000)
+      const handler = (line: string) => {
+        try {
+          const parsed = JSON.parse(line)
+          if (expectTypes.includes(parsed.type)) {
+            cleanup()
+            resolve(parsed)
+          }
+        } catch { /* 非 JSON 行忽略 */ }
+      }
+      const cleanup = () => { clearTimeout(timer); rl2.removeListener('line', handler) }
+      rl2.on('line', handler)
+      c.stdin!.write(JSON.stringify(msg) + '\n')
+    })
+    try {
+      // 启动时后台已连接 → summarize 的 topic 参数补全
+      const comp = await ask({ type: 'mcp_complete', server: 'mock', prompt: 'summarize', argument: 'topic', value: 'flare' }, ['mcp_complete', 'error'])
+      expect(comp.type).toBe('mcp_complete')
+      expect(comp.server).toBe('mock')
+      expect(comp.prompt).toBe('summarize')
+      expect(comp.argument).toBe('topic')
+      expect(comp.value).toBe('flare')
+      expect(Array.isArray(comp.values)).toBe(true)
+      expect(comp.values).toContain('flare 缓存')
+      expect(comp.values.length).toBe(4)
+      expect(comp.total).toBe(4)
+      // 前缀收窄
+      const narrow = await ask({ type: 'mcp_complete', server: 'mock', prompt: 'summarize', argument: 'topic', value: 'flare M' }, ['mcp_complete', 'error'])
+      expect(narrow.type).toBe('mcp_complete')
+      expect(narrow.values).toEqual(['flare MCP'])
+      // 未知引用 → error 透传（服务不崩）
+      const bad = await ask({ type: 'mcp_complete', server: 'mock', prompt: 'ghost', argument: 'topic', value: 'x' }, ['mcp_complete', 'error'])
+      expect(bad.type).toBe('error')
+      expect(bad.message).toContain('未知补全引用')
+    } finally {
+      c.kill()
+      rl2.close()
+      rmSync(dir, { recursive: true, force: true })
+    }
+  }, 30000)
+
   it('confirm_result 缺 id → error（v0.6.1 确认门协议校验）', async () => {
     const msgs = await request({ type: 'confirm_result', decision: 'allow_once' }, { expect: ['error'] })
     expect(msgs[0].message).toContain('id')

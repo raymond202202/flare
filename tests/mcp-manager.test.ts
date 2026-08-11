@@ -328,6 +328,27 @@ describe('McpManager', () => {
     mgr.closeAll()
   })
 
+  it('completePrompt：代理请求提示词参数补全（v0.6.57）；未知引用 reject；未连接 reject', async () => {
+    writeFileSync(configPath, JSON.stringify({ servers: [{ name: 'mock', command: process.execPath, args: [MOCK_SERVER] }] }))
+    const mgr = new McpManager({ configPath })
+    await mgr.connect('mock')
+    // summarize 的 topic 参数：前缀 "flare" → 4 个候选
+    const res = await mgr.completePrompt('mock', 'summarize', 'topic', 'flare')
+    expect(res.values.length).toBe(4)
+    expect(res.values).toContain('flare 缓存')
+    expect(res.total).toBe(4)
+    expect(res.hasMore).toBe(false)
+    // 前缀过滤：'flare M' → 1 个
+    const narrow = await mgr.completePrompt('mock', 'summarize', 'topic', 'flare M')
+    expect(narrow.values).toEqual(['flare MCP'])
+    // 未知提示词/参数 → 协议错误 reject
+    await expect(mgr.completePrompt('mock', 'ghost', 'topic', 'x')).rejects.toThrow()
+    await expect(mgr.completePrompt('mock', 'summarize', 'nope', 'x')).rejects.toThrow()
+    // 未连接服务器 → 清晰错误
+    await expect(mgr.completePrompt('not-connected', 'summarize', 'topic', 'x')).rejects.toThrow(/未连接/)
+    mgr.closeAll()
+  })
+
   it('callTool HTTP transport：代理调用注入工具的 HTTP 服务器', async () => {
     const h = await startMcpHttpServer({ tools: [echoTool] })
     httpHandles.push(h)

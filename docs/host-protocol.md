@@ -3,7 +3,7 @@
 > 供非 Node 宿主（如 Qt 应用）调用 flare 引擎的本地协议。
 > 传输：stdin/stdout · JSON Lines（每行一个 JSON 对象）
 > 实现：`src/server.ts`（`flare server` 命令）
-> 请求类型：chat / cancel / set_context / list_sessions / recent_sessions / search_sessions / get_messages / search_messages / get_usage / session_usage / context_status / apply_trim / ping / version / create_session / rename_session / clear_session / delete_session / end_session / restore_session / list_archived_sessions / remember / get_memories / delete_memory / tool_result / confirm_result / confirm_status / confirm_revoke / confirm_allow / models / get_config / tools / mcp_status / mcp_resources / mcp_prompts / mcp_read_resource / mcp_get_prompt / mcp_call / mcp_connect / mcp_disconnect
+> 请求类型：chat / cancel / set_context / list_sessions / recent_sessions / search_sessions / get_messages / search_messages / get_usage / session_usage / context_status / apply_trim / ping / version / create_session / rename_session / clear_session / delete_session / end_session / restore_session / list_archived_sessions / remember / get_memories / delete_memory / tool_result / confirm_result / confirm_status / confirm_revoke / confirm_allow / models / get_config / tools / mcp_status / mcp_resources / mcp_prompts / mcp_read_resource / mcp_get_prompt / mcp_call / mcp_complete / mcp_connect / mcp_disconnect
 
 ## 启动
 
@@ -412,6 +412,24 @@ flare server --profile <expert-profile-file> --storage <db-path> [--mcp <mcp-con
 - 未连接的服务器 → `disconnected:false`（幂等，不回 error）；缺 `server` → error 含用法
 - 等待启动时的后台连接落定（与 `mcp_status`/`mcp_call` 一致，保证断开的是真实连接）
 
+### 16.8 mcp_complete — 请求 MCP 提示词参数补全候选（v0.6.57）
+
+```json
+{"type":"mcp_complete","server":"mock","prompt":"summarize","argument":"topic","value":"flare"}
+```
+
+响应：`{"type":"mcp_complete","server":"mock","prompt":"summarize","argument":"topic","value":"flare","values":["flare 缓存","flare MCP","flare 上下文","flare 用量"],"total":4,"hasMore":false}`
+
+- `server`：必填，MCP 服务器名（见 `mcp_status` 列表）
+- `prompt`：必填，提示词名（见 `mcp_prompts` 清单）
+- `argument`：必填，要补全的参数名（该提示词声明了补全能力的参数；无补全能力 → 空 values 或协议错误透传）
+- `value`：可选，当前已输入值（服务器按前缀建议候选；缺省空串）
+- 代理转发 `completion/complete`（McpManager.completePrompt）——与 `mcp_get_prompt`（渲染）配套：
+  宿主渲染提示词时对带补全声明的参数给出候选值，可做参数自动补全输入
+- 错误：缺 `server`/`prompt`/`argument` → error 含用法；服务器未连接 → error「MCP 服务器未连接: <name>」；
+  未知提示词/参数（服务器协议错误）→ 透传（服务不崩）
+- 不触发生成、不创建会话；等待启动时的后台连接落定（与 `mcp_status` 一致）
+
 ### 17. confirm_result — 回传用户确认决策（v0.6.1，响应 confirm 事件）
 
 ```json
@@ -577,6 +595,7 @@ flare server --profile <expert-profile-file> --storage <db-path> [--mcp <mcp-con
 | `mcp_call` | `server, tool, success, output?, error?` | 外部 MCP 工具调用结果（mcp_call 响应，v0.6.40） |
 | `mcp_connect` | `server, connected, toolCount, transport, target, resourceCount?, templateCount?, promptCount?` | MCP 服务器动态连接结果（v0.6.56，与 mcp_status 同源） |
 | `mcp_disconnect` | `server, disconnected` | MCP 服务器动态断开结果（v0.6.56） |
+| `mcp_complete` | `server, prompt, argument, value?, values, total?, hasMore?` | MCP 提示词参数补全候选（v0.6.57） |
 
 ## 工具执行流（宿主代理工具）
 

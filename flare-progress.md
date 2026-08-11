@@ -3,23 +3,25 @@
 > 目标：flare 是 Pulse/StorySpire 依赖的 AI Agent 引擎（TS）。任何改动必须安全（tsc 0 错 + 测试全绿才 commit）。
 > 铁律：禁止 push；禁止修改 src/core/agent.ts 的 Agent.run 核心循环。
 
-> **最新状态（v0.6.56）**：**server 协议补 MCP 控制面 `mcp_connect`/`mcp_disconnect`**（方向③ MCP 增强）：
-> v0.6.40 起宿主协议有 mcp_status（观测）/ mcp_resources / mcp_prompts / mcp_read_resource /
-> mcp_get_prompt / mcp_call（清单+读取+执行），但**只能看、不能动**——启动时后台连接，宿主无法让
-> 「配置了但启动时未连上/想按需连接」的服务器连上、也无法按需断开；本轮补齐控制面（纯外围，零
-> agent.ts 改动）——`mcp_connect` 代理转发 McpManager.connect（幂等：已连接直接返回已有工具），
-> 响应与 mcp_status **同源**（connected/toolCount/transport/target + 已连接时资源/模板/提示词数），
-> 连接后宿主立即可见连到哪种传输、连到哪；成功清空缓存 Agent（下次 chat 重建并入新工具，与 CLI
-> /mcp connect onChanged 语义一致）；`mcp_disconnect` 断开并清缓存，未连接 disconnected:false 幂等
-> 不回 error，等待启动连接落定（断开的是真实连接）；错误路径缺 server/未配置 → error 含用法。
-> **821/821 全绿**（816 + 5 新增，tsc 0 错误，零 agent.ts 改动）；闭环测试真实 mock MCP 子进程：
-> 断开→status 未连接→重连→已连接+工具数 3+transport stdio+target 含脚本路径→error 清空→幂等重连。
-> （v0.6.55：/mcp connect 摘要 transport/target；v0.6.54：cache-check --rounds 多轮验收；v0.6.53：
-> CLI /usage 本会话 perModel 子行；v0.6.52：session_usage perModel；v0.6.51：CLI mcp status 统一
-> status()+--connect；v0.6.50：MCP 连接状态 transport/target；v0.6.49：CLI /usage 本会话行缓存命中；
-> v0.6.48：cache-check --json 结构化输出；v0.6.47：mcp-server --bridge-tools 工具透传；v0.6.46：
-> CLI /trim 智能裁剪 + /context 裁剪提示；v0.6.45：flare cache-check 验收工具；v0.6.44：CLI /sessions
-> 关键词搜索；v0.6.43：server 协议 search_sessions；v0.6.42：CLI /usage perModel 缓存命中显示。）
+> **最新状态（v0.6.57）**：**MCP 提示词参数补全桥接 `mcp_complete`**（方向③ MCP 增强）：
+> MCP 协议 `completion/complete`（提示词参数补全候选）在客户端层 v0.6.11 已实现（MCPClient/
+> MCPHttpClient.completePrompt），但 **McpManager / server 协议 / CLI 都没透传**——宿主渲染提示词
+> （mcp_get_prompt）时对带补全声明的参数拿不到候选值；本轮三层对称补齐（纯外围，零 agent.ts 改动）
+> ——`McpManager.completePrompt` 代理转发（未连接 reject 清晰错误，与 callTool/getPrompt 同模式）；
+> server 协议 `mcp_complete`（server/prompt/argument 必填，value 可选 → values[]/total?/hasMore?，
+> 缺参数 error 含用法，未知引用透传协议错误不崩）；CLI `/mcp complete <server> <prompt> <argument>
+> [value]` 显示候选列表（数量+前缀收窄），无候选/未知引用/缺参数友好提示，hooks 缺 completePrompt
+> 回退提示不可用（向后兼容）；mock MCP server 补 completion/complete 响应。
+> **830/830 全绿**（821 + 9 新增，tsc 0 错误，零 agent.ts 改动）：manager 代理（4 候选/前缀收窄/
+> 未知引用 reject/未连接 reject）/ server 协议（缺参数 error / mock 子进程真实返回候选+前缀收窄+
+> 未知引用 error）/ CLI /mcp complete（候选显示/前缀收窄/无候选/未知引用/缺参数用法/hooks 缺失兼容）。
+> （v0.6.56：server mcp_connect/mcp_disconnect 控制面；v0.6.55：/mcp connect 摘要 transport/target；
+> v0.6.54：cache-check --rounds 多轮验收；v0.6.53：CLI /usage 本会话 perModel 子行；v0.6.52：
+> session_usage perModel；v0.6.51：CLI mcp status 统一 status()+--connect；v0.6.50：MCP 连接状态
+> transport/target；v0.6.49：CLI /usage 本会话行缓存命中；v0.6.48：cache-check --json 结构化输出；
+> v0.6.47：mcp-server --bridge-tools 工具透传；v0.6.46：CLI /trim 智能裁剪 + /context 裁剪提示；
+> v0.6.45：flare cache-check 验收工具；v0.6.44：CLI /sessions 关键词搜索；v0.6.43：server 协议
+> search_sessions；v0.6.42：CLI /usage perModel 缓存命中显示。）
 
 > 【🔴 当前最高优先级方向（2026-08-11 用户拍板）】**prompt caching 基建 P0 已基本落地 + 验收工具化**：
 > P0-1 前缀稳定 + P0-2 usage 回传（v0.6.29 完成）。验收：`flare cache-check` 一键验收
@@ -31,7 +33,8 @@
 > 下一步候选（按优先级）：
 > ① 【P1】分层上下文（Layer 1 异步滚动摘要——摘要内容升级为 LLM 生成语义级压缩，需评估 run 循环外异步）
 > ② 其他安全的外围增强（server 协议其他管理接口、MCP 工具集完善、测试稳定性等）
->    已覆盖：server mcp_connect/mcp_disconnect 控制面（v0.6.56）✓ /
+>    已覆盖：mcp_complete 参数补全桥接（v0.6.57）✓ /
+>    server mcp_connect/mcp_disconnect 控制面（v0.6.56）✓ /
 >    /mcp connect 摘要 transport/target（v0.6.55）✓ /
 >    cache-check --rounds 多轮验收（v0.6.54）✓ /
 >    /usage 本会话 perModel 子行（v0.6.53）✓ /
@@ -55,6 +58,34 @@
 >    terminal 退出码（v0.6.33）✓ / CLI 归档命令（v0.6.32）✓ / 归档 API（v0.6.31）✓ /
 >    工具输出治理（v0.6.30）✓ / prompt caching P0（v0.6.29）✓ / MCP 动态资源提供器（v0.6.28）✓ /
 >    confirm 描述（v0.6.27）✓
+
+> ---
+
+> ### 2026-08-12 第五十六轮实施（v0.6.57）——MCP 提示词参数补全桥接 `mcp_complete`（方向③ MCP 增强）
+
+> - **P86 三层补齐 `completion/complete` 参数补全**（src/mcp/manager.ts + src/server.ts + src/cli/index.ts
+>   + 测试）：
+>   - **缺口定位**：MCP 协议 `completion/complete`（提示词参数补全候选）在客户端层 v0.6.11 已实现
+>     （MCPClient/MCPHttpClient.completePrompt），但 **McpManager / server 协议 / CLI 都没透传**——
+>     宿主渲染提示词（mcp_get_prompt）时对带补全声明的参数拿不到候选值；本轮三层对称补齐
+>     （纯外围，零 agent.ts 改动）
+>   - **`McpManager.completePrompt(name, promptName, argumentName, value)`**：代理转发某服务器
+>     completion/complete；服务器未连接 → reject 清晰错误（与 callTool/getPrompt 同模式）
+>   - **server 协议 `mcp_complete`**：`{server, prompt, argument, value?}` → 返回
+>     `{values[], total?, hasMore?}`（候选值/总数/是否更多）；缺参数 error 含用法；未知引用透传
+>     协议错误不崩；等待启动连接落定（与 mcp_status 一致）
+>   - **CLI `/mcp complete <server> <prompt> <argument> [value]`**：显示补全候选列表（数量 + 前缀
+>     收窄）；无候选/未知引用/缺参数友好提示不崩溃；hooks 未提供 completePrompt → 提示不可用
+>     （向后兼容旧宿主）；/help + 用法提示更新
+>   - mock MCP server 补 `completion/complete` 响应（summarize 的 topic 参数按前缀建议候选）
+>   - docs/host-protocol.md（§16.8 mcp_complete + 请求类型清单 + 响应表）+ README Changelog + 版本号 0.6.57
+>   - **830/830 全绿**（821 + 9 新增：manager completePrompt 代理（4 候选/前缀收窄/未知引用 reject/
+>     未连接 reject）/ server mcp_complete（缺参数 error / mock 子进程真实返回候选+前缀收窄+未知引用
+>     error）/ CLI /mcp complete（候选显示/前缀收窄/无候选/未知引用/缺参数用法/hooks 缺失兼容）），
+>     tsc 0 错误，**零 agent.ts 改动**
+> - **下一步候选**：① 【P1】分层上下文（Layer 1 异步滚动摘要——摘要内容升级为 LLM 生成语义级压缩，
+>   需评估 run 循环外异步）；② 其他安全的外围增强（server 协议其他管理接口、MCP 工具集完善、测试
+>   稳定性等）
 
 > ---
 

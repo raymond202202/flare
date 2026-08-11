@@ -33,9 +33,10 @@ function makeHooks(
   readData: Record<string, { uri: string; mimeType?: string; text: string }[]> = {},
   renderData: Record<string, { description?: string; messages: { role: 'user' | 'assistant'; content: { type: 'text'; text: string } }[] }> = {},
   callData: Record<string, { isError?: boolean; content: { type: string; text?: string }[] }> = {},
+  completeData: Record<string, { values: string[]; total?: number; hasMore?: boolean }> = {},
 ): {
   hooks: McpCommandHooks
-  calls: { connect: string[]; disconnect: string[]; changed: number; reads: string[]; renders: string[]; calls: string[] }
+  calls: { connect: string[]; disconnect: string[]; changed: number; reads: string[]; renders: string[]; calls: string[]; completes: string[] }
   setStatus: (s: McpServerStatus[]) => void
 } {
   let status = initial.map((s) => ({
@@ -44,7 +45,7 @@ function makeHooks(
     target: '',
     ...s,
   })) as McpServerStatus[]
-  const calls = { connect: [] as string[], disconnect: [] as string[], changed: 0, reads: [] as string[], renders: [] as string[], calls: [] as string[] }
+  const calls = { connect: [] as string[], disconnect: [] as string[], changed: 0, reads: [] as string[], renders: [] as string[], calls: [] as string[], completes: [] as string[] }
   return {
     calls,
     setStatus: (s) => { status = s },
@@ -81,6 +82,13 @@ function makeHooks(
         calls.calls.push(`${server}:${tool}:${JSON.stringify(args || {})}`)
         const hit = callData[`${server}:${tool}`]
         if (!hit) throw new Error(`MCP 服务器未连接: ${server}`)
+        return hit
+      },
+      // v0.6.57：请求参数补全（真实代理由 McpManager.completePrompt 转发）
+      completePrompt: async (server, prompt, argument, value) => {
+        calls.completes.push(`${server}:${prompt}:${argument}:${value}`)
+        const hit = completeData[`${server}:${prompt}:${argument}`]
+        if (!hit) throw new Error(`未知补全引用: ${prompt}/${argument}`)
         return hit
       },
       onChanged: () => { calls.changed++ },
@@ -578,6 +586,78 @@ describe('/mcp 命令', () => {
     const r = await handleSlashCommand('/mcp call mock echo_text', store, (s) => lines.push(s), undefined, legacy)
     expect(r).toBe('continue')
     expect(lines.join('\n')).toContain('未提供工具调用')
+  })
+
+  it('/mcp complete <server> <prompt> <argument> [value] → 显示补全候选（代理转发 completePrompt）', async () => {
+    const lines: string[] = []
+    const { hooks, calls } = makeHooks(
+      [{ name: 'mock', connected: true, toolCount: 3 }],
+      undefined, undefined, undefined, undefined, undefined,
+      { 'mock:summarize:topic': { values: ['flare 缓存', 'flare MCP', 'flare 上下文', 'flare 用量'], total: 4, hasMore: false } },
+    )
+    const r = await handleSlashCommand('/mcp complete mock summarize topic flare', store, (s) => lines.push(s), undefined, hooks)
+    expect(r).toBe('continue')
+    expect(calls.completes).toEqual(['mock:summarize:topic:flare'])
+    const out = lines.join('\n')
+    expect(out).toContain('补全候选')
+    expect(out).toContain('flare 缓存')
+    expect(out).toContain('flare MCP')
+    expect(out).toContain('（4')
+  })
+
+  it('/mcp complete 前缀收窄 → 只显示命中候选', async () => {
+    const lines: string[] = []
+    const { hooks, calls } = makeHooks(
+      [{ name: 'mock', connected: true, toolCount: 3 }],
+      undefined, undefined, undefined, undefined, undefined,
+      { 'mock:summarize:topic': { values: ['flare MCP'] } },
+    )
+    const r = await handleSlashCommand('/mcp complete mock summarize topic flare M', store, (s) => lines.push(s), undefined, hooks)
+    expect(r).toBe('continue')
+    expect(calls.completes).toEqual(['mock:summarize:topic:flare M'])
+    const out = lines.join('\n')
+    expect(out).toContain('flare MCP')
+    expect(out).not.toContain('flare 缓存')
+  })
+
+  it('/mcp complete（无候选）→ 提示无候选不崩溃', async () => {
+    const lines: string[] = []
+    const { hooks, calls } = makeHooks(
+      [{ name: 'mock', connected: true, toolCount: 3 }],
+      undefined, undefined, undefined, undefined, undefined,
+      { 'mock:summarize:topic': { values: [] } },
+    )
+    const r = await handleSlashCommand('/mcp complete mock summarize topic zzz', store, (s) => lines.push(s), undefined, hooks)
+    expect(r).toBe('continue')
+    expect(calls.completes).toEqual(['mock:summarize:topic:zzz'])
+    expect(lines.join('\n')).toContain('无补全候选')
+  })
+
+  it('/mcp complete（未知引用）→ 错误输出不崩溃', async () => {
+    const lines: string[] = []
+    const { hooks } = makeHooks([{ name: 'mock', connected: true, toolCount: 3 }])
+    const r = await handleSlashCommand('/mcp complete mock ghost topic x', store, (s) => lines.push(s), undefined, hooks)
+    expect(r).toBe('continue')
+    expect(lines.join('\n')).toContain('未知补全引用')
+  })
+
+  it('/mcp complete（缺 argument）→ 提示用法（不调用）', async () => {
+    const lines: string[] = []
+    const { hooks, calls } = makeHooks([{ name: 'mock', connected: true, toolCount: 3 }])
+    const r = await handleSlashCommand('/mcp complete mock summarize', store, (s) => lines.push(s), undefined, hooks)
+    expect(r).toBe('continue')
+    expect(calls.completes.length).toBe(0)
+    expect(lines.join('\n')).toContain('用法: /mcp')
+  })
+
+  it('/mcp complete（hooks 未提供 completePrompt 方法）→ 提示不可用（向后兼容旧宿主）', async () => {
+    const lines: string[] = []
+    const { hooks } = makeHooks([])
+    const legacy = { ...hooks } as McpCommandHooks
+    delete (legacy as any).completePrompt
+    const r = await handleSlashCommand('/mcp complete mock summarize topic x', store, (s) => lines.push(s), undefined, legacy)
+    expect(r).toBe('continue')
+    expect(lines.join('\n')).toContain('未提供参数补全')
   })
 
   it('/mcp 用法错误 → 提示用法（含 call 子命令）', async () => {

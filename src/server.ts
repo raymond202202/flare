@@ -1178,6 +1178,32 @@ export function startHostServer(opts: HostServerOptions) {
           })
           break
         }
+        case 'mcp_complete': {
+          // 宿主请求已连接 MCP 服务器的提示词参数补全（v0.6.57；不触发生成、不创建会话）——
+          // 与 mcp_get_prompt（渲染）配套：渲染提示词时对带补全声明的参数给出候选值
+          // （completion/complete 代理转发，宿主面板可做参数自动补全输入）
+          await Promise.allSettled(mcpConnects)
+          const server = req.server === undefined || req.server === null ? '' : String(req.server).trim()
+          const prompt = req.prompt === undefined || req.prompt === null ? '' : String(req.prompt).trim()
+          const argument = req.argument === undefined || req.argument === null ? '' : String(req.argument).trim()
+          if (!server || !prompt || !argument) {
+            reply({ type: 'error', message: 'mcp_complete 需要 server、prompt 和 argument 参数（请求提示词参数补全候选）' })
+            break
+          }
+          const value = req.value === undefined || req.value === null ? '' : String(req.value)
+          const result = await mcpManager.completePrompt(server, prompt, argument, value)
+          reply({
+            type: 'mcp_complete',
+            server,
+            prompt,
+            argument,
+            ...(value ? { value } : {}),
+            values: result.values,
+            ...(result.total !== undefined ? { total: result.total } : {}),
+            ...(result.hasMore !== undefined ? { hasMore: result.hasMore } : {}),
+          })
+          break
+        }
         case 'mcp_connect': {
           // 宿主动态连接 MCP 服务器（v0.6.56；与 CLI /mcp connect 对称，控制面补齐）——
           // mcp_status 只能观测，宿主无法让「配置了但启动时未连上/或想按需连接」的服务器连上；
