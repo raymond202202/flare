@@ -286,3 +286,41 @@ describe('CLI flare mcp tools（v0.6.59）', () => {
     expect(stderr).toMatch(/未配置 MCP 服务器/)
   }, 20000)
 })
+
+describe('CLI flare mcp complete（v0.6.60）', () => {
+  it('请求参数补全候选（completion/complete 代理）', async () => {
+    const cfgPath = join(dir, 'mcp.json')
+    writeFileSync(cfgPath, JSON.stringify({ servers: [{ name: 'mock', command: process.execPath, args: [MOCK_SERVER] }] }))
+    const { code, stdout } = await runCli(['mcp', 'complete', 'mock', 'summarize', 'topic', 'flare', '--config', cfgPath])
+    expect(code).toBe(0)
+    expect(stdout).toMatch(/候选/)
+    expect(stdout).toMatch(/flare 缓存/)
+    expect(stdout).toMatch(/flare MCP/)
+    // 数量 4/4（values.length/total）
+    expect(stdout).toMatch(/4\/4/)
+  }, 20000)
+
+  it('前缀收窄 → 只显示匹配候选', async () => {
+    const cfgPath = join(dir, 'mcp.json')
+    writeFileSync(cfgPath, JSON.stringify({ servers: [{ name: 'mock', command: process.execPath, args: [MOCK_SERVER] }] }))
+    const { code, stdout } = await runCli(['mcp', 'complete', 'mock', 'summarize', 'topic', 'flare M', '--config', cfgPath])
+    expect(code).toBe(0)
+    expect(stdout).toMatch(/flare MCP/)
+    expect(stdout).not.toMatch(/flare 缓存/)
+    expect(stdout).toMatch(/1\/1/)
+  }, 20000)
+
+  it('未知引用（协议错误）→ 退出码 1 + 错误提示（不崩溃）', async () => {
+    const cfgPath = join(dir, 'mcp.json')
+    writeFileSync(cfgPath, JSON.stringify({ servers: [{ name: 'mock', command: process.execPath, args: [MOCK_SERVER] }] }))
+    const { code, stderr } = await runCli(['mcp', 'complete', 'mock', 'ghost', 'topic', 'x', '--config', cfgPath])
+    expect(code).toBe(1)
+    expect(stderr).toMatch(/未知补全引用|MCP 错误/i)
+  }, 20000)
+
+  it('未配置服务器 → 退出码 1 + 错误提示', async () => {
+    const { code, stderr } = await runCli(['mcp', 'complete', 'nope', 'p', 'a', 'v', '--config', join(dir, 'missing.json')])
+    expect(code).toBe(1)
+    expect(stderr).toMatch(/未配置 MCP 服务器/)
+  }, 20000)
+})

@@ -79,6 +79,9 @@
   `/mcp` 状态行只有工具数量，本命令显示具体工具名/描述，配合 `/mcp call` 使用：调用前先看有哪些工具）
 - `flare mcp tools <server>`（v0.6.59）：单次命令查看服务器工具清单（名称 + 描述，stdio/HTTP 均可，
   与 `flare mcp resources`/`prompts` 对称；配合 `flare mcp call <server> <tool> [JSON参数]` 调用）
+- `flare mcp complete <server> <prompt> <argument> [value]`（v0.6.60）：单次命令请求提示词参数补全
+  候选（`completion/complete` 代理，与 `/mcp complete` 交互命令、`mcp_complete` 协议同源）——显示
+  候选列表（数量/总数），带 `value` 前缀收窄；未知引用/无候选友好提示（退出码 1 不崩溃）
 - `/mcp read <server> <uri>`（v0.6.39）：**读取已连接服务器的资源内容**（`resources/read` 代理，
   与 `mcp_read_resource` 协议请求同源）——`/mcp resources` 只能看元数据，本命令直接显示资源
   真实内容（uri + mimeType + text）；服务器未连接/未知资源错误输出不崩溃
