@@ -209,6 +209,33 @@ describe('runCacheCheck（v0.6.45）', () => {
     expect(r.runSavedUsd).toEqual([null, null])
   })
 
+  it('基准轮已命中 → detail 追加残留缓存诊断（v0.6.78：<5min 内重跑的真实场景）', async () => {
+    // 第一次调用 cacheReadTokens > 0（服务端残留缓存/此前用过同前缀）→ miss 基准实际不纯
+    const { llm } = makeFake([
+      { model: 'deepseek-chat', usage: { prompt_tokens: 1000, completion_tokens: 10, prompt_cache_hit_tokens: 500 } },
+      { model: 'deepseek-chat', usage: { prompt_tokens: 1000, completion_tokens: 10, prompt_cache_hit_tokens: 900 } },
+    ])
+    const r = await runCacheCheck(llm)
+    expect(r.ok).toBe(true)
+    expect(r.first.cacheReadTokens).toBe(500)
+    // 原判定文本保留 + 诊断提示追加
+    expect(r.detail).toContain('命中缓存 900 tokens')
+    expect(r.detail).toContain('诊断：基准轮已有 500 tokens 命中')
+    expect(r.detail).toContain('miss 基准可能不纯')
+    // 基准轮命中 → 该轮 runSavedUsd > 0（与诊断一致，CLI 会显示基准轮节省）
+    expect(r.runSavedUsd[0]).toBeGreaterThan(0)
+  })
+
+  it('基准轮未命中 → 无诊断提示（v0.6.78：detail 与旧版一致）', async () => {
+    const { llm } = makeFake([
+      { model: 'deepseek-chat', usage: { prompt_tokens: 1000, completion_tokens: 10, prompt_cache_hit_tokens: 0 } },
+      { model: 'deepseek-chat', usage: { prompt_tokens: 1000, completion_tokens: 10, prompt_cache_hit_tokens: 900 } },
+    ])
+    const r = await runCacheCheck(llm)
+    expect(r.detail).toContain('命中缓存 900 tokens')
+    expect(r.detail).not.toContain('诊断：')
+  })
+
   it('cacheCheckToJson（v0.6.48）：失败结果也结构化（ok:false + detail），不抛异常', async () => {
     const { llm } = makeFake([
       { error: new Error('401 api key 无效') },

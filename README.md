@@ -341,6 +341,18 @@ Interactive mode commands:
 
 > 中文条目 / Chinese entries · English summary for each version
 
+#### v0.6.78 (2026-08-12) — cache-check 基准轮命中诊断（prompt caching 基建深化）
+
+- ✨ **`cache-check` 基准轮（第 1 轮）已命中时 detail 追加诊断提示**：
+-  真实场景：<5min 内重跑 cache-check 时服务端残留缓存会让「miss 基准」实际已命中——
+-  此前用户看到基准轮命中会困惑；本轮追加 `（诊断：基准轮已有 X tokens 命中——服务端残留缓存
+-  或此前 <5min 用过同前缀，miss 基准可能不纯，节省估算偏保守）`
+- - 判定逻辑不变（ok/命中量/节省估算均不受影响）；基准轮未命中 → 无提示（与旧版一致）
+- - --json 的 detail 字段同样携带诊断（宿主可消费）
+- - README Changelog + 版本号 0.6.78
+- - 🧪 **875/875 全绿**（新增 2 用例：基准轮命中 → 诊断提示 + runSavedUsd[0]>0；基准轮未命中 →
+-   无提示向后兼容），tsc 0 错误，**零 agent.ts 改动**
+
 #### v0.6.77 (2026-08-12) — README 命令行摘要表补齐 cache-check v0.6.75/76 能力（文档对称）
 
 - ✨ **README 命令表 `flare cache-check` 行补 v0.6.75/76 能力**（纯文档，零代码变更）：

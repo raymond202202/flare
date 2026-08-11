@@ -155,6 +155,14 @@ export async function runCacheCheck(llm: LLMProvider = createProvider(), opts: {
       ? `第二轮 cache_read_tokens = 0（前缀未命中：服务端缓存过期/未建立/外部因素；可间隔 <5min 重试）`
       : `第 ${hitRuns.findIndex((u) => u.cacheReadTokens <= 0) + 2} 轮 cache_read_tokens = 0（连续命中中断：服务端缓存过期/外部因素；可间隔 <5min 重试）`
 
+  // v0.6.78 诊断：基准轮（第 1 轮）已命中 → 服务端残留缓存或此前 5min 内用过同前缀，
+  // 「miss 基准」实际不纯（真实场景：<5min 内重跑 cache-check）——追加提示，避免用户误读
+  const baselineHit = first.cacheReadTokens > 0
+  const diag = baselineHit
+    ? `（诊断：基准轮已有 ${first.cacheReadTokens} tokens 命中——服务端残留缓存或此前 <5min 用过同前缀，miss 基准可能不纯，节省估算偏保守）`
+    : ''
+  const detailWithDiag = detail + diag
+
   return {
     ok,
     model,
@@ -162,7 +170,7 @@ export async function runCacheCheck(llm: LLMProvider = createProvider(), opts: {
     second: last,
     rounds,
     runs: usages,
-    detail,
+    detail: detailWithDiag,
     hitTokens,
     savedUsd,
     runSavedUsd,
