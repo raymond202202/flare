@@ -1267,13 +1267,16 @@ export async function handleSlashCommand(
           output(`  ${chalk.gray('估算成本:')}   $${usage.estimatedCostUsd.toFixed(4)}`)
         }
         // 按模型分解（v0.6.18：getUsageStats.perModel——用量分布/成本核算；v0.6.42：显示缓存命中）
+        // v0.6.65：perModel 子行带节省金额（与汇总行同口径）
         if (Array.isArray(usage.perModel) && usage.perModel.length > 0) {
           for (const m of usage.perModel) {
             output(`  ${chalk.gray(`模型 ${m.model}:`)} ${m.totalTokens.toLocaleString()} tokens（${m.calls} 次调用）`)
             const mCache = m.cacheReadTokens || 0
             if (mCache > 0) {
               const mRate = m.promptTokens > 0 ? Math.round((mCache / m.promptTokens) * 100) : 0
-              output(`    ${chalk.gray('缓存命中:')} ${mCache.toLocaleString()} tokens（${mRate}%）`)
+              const mSaved = typeof m.cacheSavedUsd === 'number' ? m.cacheSavedUsd : 0
+              const savedSuffix = mSaved > 0 ? `（节省 $${mSaved.toFixed(4)}）` : ''
+              output(`    ${chalk.gray('缓存命中:')} ${mCache.toLocaleString()} tokens（${mRate}%）${savedSuffix}`)
             }
           }
         }
@@ -1300,7 +1303,10 @@ export async function handleSlashCommand(
               const mCache = m.cacheReadTokens || 0
               if (mCache > 0) {
                 const mRate = m.promptTokens > 0 ? Math.round((mCache / m.promptTokens) * 100) : 0
-                output(`      ${chalk.gray('缓存命中:')} ${mCache.toLocaleString()} tokens（${mRate}%）`)
+                // v0.6.65：本会话 perModel 子行带节省金额（与总览 perModel 对称）
+                const mSaved = typeof m.cacheSavedUsd === 'number' ? m.cacheSavedUsd : 0
+                const savedSuffix = mSaved > 0 ? `（节省 $${mSaved.toFixed(4)}）` : ''
+                output(`      ${chalk.gray('缓存命中:')} ${mCache.toLocaleString()} tokens（${mRate}%）${savedSuffix}`)
               }
             }
           }
