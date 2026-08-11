@@ -57,6 +57,10 @@
   ✅ 已连接 fs [stdio] npx @modelcontextprotocol/server-filesystem /tmp（8 个 MCP 工具）
   （会话已按新工具集重建，历史从记忆库恢复）
 
+# v0.6.72：配了鉴权头（headers）的 HTTP 服务器摘要带 [auth] 标记（只显示标记不显示 token）
+🔥 flare> /mcp connect remote
+  ✅ 已连接 remote [HTTP][auth] http://127.0.0.1:8931/mcp（3 个 MCP 工具）
+
 🔥 flare> 帮我列出 /tmp 下的文件并读取 a.txt
 ```
 

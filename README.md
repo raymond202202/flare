@@ -341,6 +341,18 @@ Interactive mode commands:
 
 > 中文条目 / Chinese entries · English summary for each version
 
+#### v0.6.72 (2026-08-12) — `/mcp connect` 摘要带 [auth] 鉴权标记（方向③ MCP 增强，v0.6.70 对称补齐）
+
+- ✨ **CLI `/mcp connect` 摘要补 `[auth]` 标记**（src/cli/index.ts + 测试）：
+-  v0.6.70 给 `/mcp` 状态行与 `flare mcp status` 加了 [auth]，但 **connect 成功摘要仍只有
+-  [stdio]/[HTTP] + 目标**——连接配了鉴权头的 HTTP 服务器后看不到鉴权标记；本轮对称补齐
+-  （纯外围，零 agent.ts 改动）
+- - **connect 摘要**：`已连接 <name> [HTTP][auth] <url>（N 个 MCP 工具…）`——auth 与 /mcp 状态行
+-  **同源**（都来自 `McpManager.status()`），只显示标记不显示 token
+- - docs/mcp.md（connect 摘要示例补 [auth]）+ README Changelog + 版本号 0.6.72
+- - 🧪 **867/867 全绿**（新增 1 用例：connect 摘要 [HTTP][auth] 透传显示完整 + 不含 token），
+-  tsc 0 错误，**零 agent.ts 改动**
+
 #### v0.6.71 (2026-08-12) — host-protocol.md `--mcp` 配置文档补齐 url/headers/timeoutMs（方向③ 收尾，纯文档）
 
 - ✨ **docs/host-protocol.md 启动章节 `--mcp` 配置补 url/headers/timeoutMs 说明**（纯文档，零代码变更）：

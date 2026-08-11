@@ -256,8 +256,10 @@ async function startInteractive(opts: { contextSummarize?: boolean } = {}) {
         // v0.6.55：摘要带传输类型标记（与 /mcp 状态行同源——连接后立即看到 [stdio]/[HTTP] + 目标）
         const st = mcpManager.status().find((s) => s.name === name)
         const transport = st?.transport === 'http' ? '[HTTP]' : '[stdio]'
+        // v0.6.72：摘要带 [auth] 标记（HTTP transport 配了鉴权头——连接后立即知道该服务器需鉴权；与 /mcp 状态行同源）
+        const auth = st?.auth ? chalk.yellow('[auth]') : ''
         const target = st?.target ? ` ${st.target}` : ''
-        return `已连接 ${name} ${chalk.gray(transport)}${chalk.gray(target)}（${mcpTools.length} 个 MCP 工具${extra}）`
+        return `已连接 ${name} ${chalk.gray(transport)}${auth}${chalk.gray(target)}（${mcpTools.length} 个 MCP 工具${extra}）`
       },
       disconnect: (name) => mcpManager.disconnect(name),
       // v0.6.26：列出已桥接资源/模板（资源桥接——连接时拉取 resources/list + resources/templates/list）
