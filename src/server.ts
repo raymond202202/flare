@@ -1089,6 +1089,45 @@ export function startHostServer(opts: HostServerOptions) {
           reply({ type: 'mcp_prompts', servers })
           break
         }
+        case 'mcp_read_resource': {
+          // 宿主读取已连接 MCP 服务器的资源内容（v0.6.38；只读，不触发生成、不创建会话）——
+          // 与 mcp_resources（清单）配套：mcp_resources 只能看到资源/模板元数据，无法取内容；
+          // 本接口代理转发 resources/read（McpManager.readResource），宿主面板可展示外部资源真实内容
+          await Promise.allSettled(mcpConnects)
+          const server = req.server === undefined || req.server === null ? '' : String(req.server).trim()
+          const uri = req.uri === undefined || req.uri === null ? '' : String(req.uri).trim()
+          if (!server || !uri) {
+            reply({ type: 'error', message: 'mcp_read_resource 需要 server 和 uri 参数（读取外部 MCP 资源内容）' })
+            break
+          }
+          const contents = await mcpManager.readResource(server, uri)
+          reply({ type: 'mcp_read_resource', server, uri, contents })
+          break
+        }
+        case 'mcp_get_prompt': {
+          // 宿主渲染已连接 MCP 服务器的提示词（v0.6.38；只读，不触发生成、不创建会话）——
+          // 与 mcp_prompts（清单）配套：mcp_prompts 只能看到提示词元数据，无法渲染；
+          // 本接口代理转发 prompts/get（McpManager.getPrompt），宿主可把外部提示词注入对话/展示
+          await Promise.allSettled(mcpConnects)
+          const server = req.server === undefined || req.server === null ? '' : String(req.server).trim()
+          const prompt = req.prompt === undefined || req.prompt === null ? '' : String(req.prompt).trim()
+          if (!server || !prompt) {
+            reply({ type: 'error', message: 'mcp_get_prompt 需要 server 和 prompt 参数（渲染外部 MCP 提示词）' })
+            break
+          }
+          const args = req.args && typeof req.args === 'object' && !Array.isArray(req.args)
+            ? req.args as Record<string, string>
+            : undefined
+          const result = await mcpManager.getPrompt(server, prompt, args)
+          reply({
+            type: 'mcp_get_prompt',
+            server,
+            prompt,
+            ...(result.description ? { description: result.description } : {}),
+            messages: result.messages,
+          })
+          break
+        }
         default:
           reply({ type: 'error', message: `未知请求类型: ${req.type}` })
       }

@@ -120,3 +120,70 @@ describe('flare host server mcp_prompts 协议（v0.6.36 prompts 桥接）', () 
     expect(s.promptCount).toBe(2)
   }, 30000)
 })
+
+describe('flare host server mcp_read_resource 协议（v0.6.38 资源内容读取代理）', () => {
+  it('mcp_read_resource → 读取已连接服务器的资源内容（真实子进程闭环）', async () => {
+    const msgs = await request({ type: 'mcp_read_resource', server: 'mock', uri: 'memory://preferences' }, ['mcp_read_resource'])
+    const res = msgs[0]
+    expect(res.type).toBe('mcp_read_resource')
+    expect(res.server).toBe('mock')
+    expect(res.uri).toBe('memory://preferences')
+    expect(Array.isArray(res.contents)).toBe(true)
+    expect(res.contents[0]).toMatchObject({ uri: 'memory://preferences', mimeType: 'text/plain', text: '主题: 浅色' })
+  }, 30000)
+
+  it('mcp_read_resource → 未知资源 error（透传外部服务器错误，服务不崩）', async () => {
+    const msgs = await request({ type: 'mcp_read_resource', server: 'mock', uri: 'memory://ghost' }, ['error'])
+    expect(msgs[0].type).toBe('error')
+    expect(msgs[0].message).toMatch(/未知资源/)
+  }, 30000)
+
+  it('mcp_read_resource → 缺 server / uri error（含用法）', async () => {
+    const msgs = await request({ type: 'mcp_read_resource', uri: 'memory://preferences' }, ['error'])
+    expect(msgs[0].message).toMatch(/server 和 uri/)
+    const msgs2 = await request({ type: 'mcp_read_resource', server: 'mock' }, ['error'])
+    expect(msgs2[0].message).toMatch(/server 和 uri/)
+  }, 30000)
+
+  it('mcp_read_resource → 未连接服务器 error（清晰提示）', async () => {
+    const msgs = await request({ type: 'mcp_read_resource', server: 'ghost', uri: 'memory://preferences' }, ['error'])
+    expect(msgs[0].message).toMatch(/未连接/)
+  }, 30000)
+})
+
+describe('flare host server mcp_get_prompt 协议（v0.6.38 提示词渲染代理）', () => {
+  it('mcp_get_prompt → 渲染已连接服务器的提示词（真实子进程闭环）', async () => {
+    const msgs = await request({ type: 'mcp_get_prompt', server: 'mock', prompt: 'greet' }, ['mcp_get_prompt'])
+    const res = msgs[0]
+    expect(res.type).toBe('mcp_get_prompt')
+    expect(res.server).toBe('mock')
+    expect(res.prompt).toBe('greet')
+    expect(Array.isArray(res.messages)).toBe(true)
+    expect(res.messages[0]).toMatchObject({ role: 'user', content: { type: 'text', text: '你好' } })
+  }, 30000)
+
+  it('mcp_get_prompt → 带参数渲染（arguments 补全）', async () => {
+    const msgs = await request({ type: 'mcp_get_prompt', server: 'mock', prompt: 'summarize', args: { topic: 'flare 引擎' } }, ['mcp_get_prompt'])
+    const res = msgs[0]
+    expect(res.type).toBe('mcp_get_prompt')
+    expect(res.description).toBe('总结内容')
+    expect(res.messages[0].content.text).toBe('请总结关于「flare 引擎」的内容')
+  }, 30000)
+
+  it('mcp_get_prompt → 未知提示词 error（透传外部服务器错误，服务不崩）', async () => {
+    const msgs = await request({ type: 'mcp_get_prompt', server: 'mock', prompt: 'ghost' }, ['error'])
+    expect(msgs[0].message).toMatch(/未知提示词/)
+  }, 30000)
+
+  it('mcp_get_prompt → 缺 server / prompt error（含用法）', async () => {
+    const msgs = await request({ type: 'mcp_get_prompt', server: 'mock' }, ['error'])
+    expect(msgs[0].message).toMatch(/server 和 prompt/)
+    const msgs2 = await request({ type: 'mcp_get_prompt', prompt: 'greet' }, ['error'])
+    expect(msgs2[0].message).toMatch(/server 和 prompt/)
+  }, 30000)
+
+  it('mcp_get_prompt → 未连接服务器 error（清晰提示）', async () => {
+    const msgs = await request({ type: 'mcp_get_prompt', server: 'ghost', prompt: 'greet' }, ['error'])
+    expect(msgs[0].message).toMatch(/未连接/)
+  }, 30000)
+})
