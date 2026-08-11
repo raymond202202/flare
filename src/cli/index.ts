@@ -1210,6 +1210,7 @@ export async function handleSlashCommand(
         }
         // 当前会话用量（v0.6.17：getSessionUsage 按 session 过滤；未提供 sessionId 不显示）
         // v0.6.49：本会话行追加缓存命中（有命中才显示，与总行/perModel 行对称）
+        // v0.6.53：本会话 perModel 分解子行（与总览 perModel 行对称——本会话多模型场景可见每个模型命中）
         if (sessionId) {
           const mine = store.getSessionUsage(sessionId)
           let mineLine = `  本会话:     ${mine.totalTokens.toLocaleString()} tokens（${mine.callCount} 次调用）`
@@ -1219,6 +1220,16 @@ export async function handleSlashCommand(
             mineLine += ` · 缓存命中 ${mineCache.toLocaleString()} tokens（${mineRate}%）`
           }
           output(chalk.gray(mineLine))
+          if (Array.isArray(mine.perModel) && mine.perModel.length > 0) {
+            for (const m of mine.perModel) {
+              output(`    ${chalk.gray(`模型 ${m.model}:`)} ${m.totalTokens.toLocaleString()} tokens（${m.calls} 次调用）`)
+              const mCache = m.cacheReadTokens || 0
+              if (mCache > 0) {
+                const mRate = m.promptTokens > 0 ? Math.round((mCache / m.promptTokens) * 100) : 0
+                output(`      ${chalk.gray('缓存命中:')} ${mCache.toLocaleString()} tokens（${mRate}%）`)
+              }
+            }
+          }
         }
       }
       break

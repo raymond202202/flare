@@ -341,6 +341,23 @@ Interactive mode commands:
 
 > 中文条目 / Chinese entries · English summary for each version
 
+#### v0.6.53 (2026-08-12) — CLI `/usage` 本会话 perModel 子行（方向① prompt caching 基建深化，观测面闭环）
+
+- ✨ **`/usage` sessionId 分支显示本会话 perModel 分解（src/cli/index.ts + 测试）**：
+-  v0.6.52 给协议 `session_usage` 补了 perModel（宿主侧），但 **CLI `/usage` 的本会话行仍是单行汇总**
+-  （`本会话: N tokens · 缓存命中`）——CLI 交互模式看不到「本会话哪个模型吃到缓存」；本轮对称补齐
+-  （纯外围，零 agent.ts 改动）：
+- - **本会话行下追加 perModel 子行**：`模型 <name>: N tokens（M 次调用）` + 有命中追加缩进子行
+-  `缓存命中: N tokens（R%）`（命中率按该模型本会话 promptTokens 算）——与总览 perModel 行
+-  （v0.6.42）同模式；无命中模型不显示子行；**本会话维度隔离**（其他会话的用量不混入）
+- - **向后兼容**：perModel 为空/旧 store 无该字段 → 不显示子行（与 v0.6.49 输出一致）
+- - README Changelog + 版本号 0.6.53
+- - 🧪 **811/811 全绿**（810 + 1 新增 prompt-caching.test.ts：本会话双模型 chat 命中 400/1000=40%
+-  子行 + reasoner 无命中不显示 + 其他会话 s2 不混入（1,800 汇总 / 1,500 chat / 300 reasoner）），
+-  tsc 0 错误，**零 agent.ts 改动**；冒烟实测真实 MemoryStore + dist CLI：/usage 带 sessionId →
+-  本会话行 1,800 tokens · 缓存命中 400 + 子行 模型 deepseek-chat: 1,500 tokens（1 次调用）+ 缓存命中
+-  400 tokens（40%）、模型 deepseek-reasoner: 300 tokens（1 次调用），SMOKE PASS
+
 #### v0.6.52 (2026-08-12) — session_usage 带 perModel 按模型分解（方向① prompt caching 基建深化，观测面补齐）
 
 - ✨ **`getSessionUsage` perModel + server `session_usage` 透传（src/memory/store.ts + src/server.ts +
