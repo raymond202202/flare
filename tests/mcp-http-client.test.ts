@@ -297,3 +297,39 @@ describe('MCPHttpClient progress + cancelled 通知（v0.6.16：callTool 透传 
     await expect(client.notifyCancelled(1)).resolves.toBeUndefined()
   })
 })
+
+describe('MCPHttpClient 自定义请求头（v0.6.67：HTTP transport 鉴权，如 Authorization Bearer）', () => {
+  it('headers 选项 → 每次请求都携带（initialize/通知/listTools/callTool 全带）', async () => {
+    const h = await startMcpHttpServer({ tools: [echoTool] })
+    handles.push(h)
+    const seenAuth: string[] = []
+    // 服务器实例上挂监听：捕获每个到达请求的 Authorization（不影响内部 handler）
+    h.http.on('request', (req) => {
+      const auth = req.headers['authorization']
+      if (auth) seenAuth.push(String(auth))
+    })
+    const client = new MCPHttpClient({ url: h.url, headers: { Authorization: 'Bearer test-token-123' } })
+    clients.push(client)
+    await client.initialize()
+    await client.listTools()
+    const res = await client.callTool('echo', { text: 'hi-auth' })
+    expect(res.content[0]?.text).toBe('hi-auth')
+    // initialize + initialized 通知 + listTools + callTool 共 4 个请求，全部带 Authorization
+    expect(seenAuth.length).toBeGreaterThanOrEqual(3)
+    expect(seenAuth.every((a) => a === 'Bearer test-token-123')).toBe(true)
+  })
+
+  it('无 headers（默认）→ 不发送 Authorization（向后兼容，旧客户端行为不变）', async () => {
+    const h = await startMcpHttpServer({ tools: [echoTool] })
+    handles.push(h)
+    let seenAuth = false
+    h.http.on('request', (req) => {
+      if (req.headers['authorization']) seenAuth = true
+    })
+    const client = new MCPHttpClient({ url: h.url })
+    clients.push(client)
+    await client.initialize()
+    await client.listTools()
+    expect(seenAuth).toBe(false)
+  })
+})

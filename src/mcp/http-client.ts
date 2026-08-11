@@ -39,6 +39,8 @@ export interface MCPHttpClientOptions {
   url: string
   /** 单请求超时（毫秒），默认 15s（测试可调小） */
   timeoutMs?: number
+  /** 附加请求头（v0.6.67，如 { Authorization: 'Bearer <token>' } 鉴权；每次 POST 都携带） */
+  headers?: Record<string, string>
 }
 
 /** 一次 HTTP 响应的最小封装（状态码 + 文本体） */
@@ -49,8 +51,9 @@ interface HttpResponse {
 
 /**
  * 发一次 JSON POST（零依赖）：支持 http/https，带超时（超时销毁连接并 reject）。
+ * v0.6.67：extraHeaders 附加请求头（鉴权等）；Content-Length 以实际字节为准（用户传入不可信，强制覆盖）。
  */
-function postJson(url: string, body: string, timeoutMs: number): Promise<HttpResponse> {
+function postJson(url: string, body: string, timeoutMs: number, extraHeaders: Record<string, string> = {}): Promise<HttpResponse> {
   return new Promise((resolve, reject) => {
     let u: URL
     try {
@@ -60,16 +63,19 @@ function postJson(url: string, body: string, timeoutMs: number): Promise<HttpRes
       return
     }
     const isHttps = u.protocol === 'https:'
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+      ...extraHeaders,
+    }
+    // Content-Length 必须精确（即使调用方在 headers 里传了也以实际字节为准）
+    headers['Content-Length'] = String(Buffer.byteLength(body))
     const req = (isHttps ? httpsRequest : httpRequest)(
       {
         hostname: u.hostname,
         port: u.port || (isHttps ? 443 : 80),
         path: u.pathname + u.search,
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Content-Length': Buffer.byteLength(body),
-        },
+        headers,
       },
       (res) => {
         let data = ''
@@ -89,6 +95,7 @@ function postJson(url: string, body: string, timeoutMs: number): Promise<HttpRes
 export class MCPHttpClient {
   private readonly url: string
   private readonly timeoutMs: number
+  private readonly extraHeaders: Record<string, string>
   private nextId = 1
   private protocolVersion = MCP_PROTOCOL_VERSION
   private serverInfo: { name?: string; version?: string } | null = null
@@ -98,6 +105,7 @@ export class MCPHttpClient {
   constructor(opts: MCPHttpClientOptions) {
     this.url = opts.url
     this.timeoutMs = opts.timeoutMs || DEFAULT_TIMEOUT_MS
+    this.extraHeaders = opts.headers || {}
   }
 
   /** 发送 JSON-RPC 请求（带超时），返回 result；协议错误 reject */
@@ -109,7 +117,8 @@ export class MCPHttpClient {
     const resp = await postJson(
       this.url,
       JSON.stringify({ jsonrpc: '2.0', id, method, ...(params !== undefined ? { params } : {}) }),
-      this.timeoutMs
+      this.timeoutMs,
+      this.extraHeaders
     )
     // 服务器返回空体（如 202 通知响应 / 204）：无 result 可用
     if (resp.status === 202 || resp.status === 204 || !resp.body.trim()) {
@@ -134,7 +143,8 @@ export class MCPHttpClient {
       await postJson(
         this.url,
         JSON.stringify({ jsonrpc: '2.0', method, ...(params !== undefined ? { params } : {}) }),
-        this.timeoutMs
+        this.timeoutMs,
+        this.extraHeaders
       )
     } catch { /* 通知失败不致命（服务器可能已关闭；后续请求会报错） */ }
   }

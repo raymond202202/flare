@@ -233,8 +233,9 @@ export class McpManager {
     }
     this.errors.delete(name)
     // v0.6.6：配了 url 走 HTTP transport（MCPHttpClient），否则 stdio spawn（MCPClient）
+    // v0.6.67：HTTP 模式透传 cfg.headers（鉴权请求头，如 Authorization Bearer）
     const client: MCPClient | MCPHttpClient = cfg.url
-      ? new MCPHttpClient({ url: cfg.url, timeoutMs: cfg.timeoutMs || this.httpTimeoutMs })
+      ? new MCPHttpClient({ url: cfg.url, timeoutMs: cfg.timeoutMs || this.httpTimeoutMs, headers: cfg.headers })
       : new MCPClient({ command: cfg.command as string, args: cfg.args, env: cfg.env })
     try {
       await client.initialize()

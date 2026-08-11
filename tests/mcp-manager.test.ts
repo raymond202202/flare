@@ -175,6 +175,32 @@ describe('McpManager', () => {
     mgr.closeAll()
   })
 
+  it('connect HTTP transport 配置 headers → 每次请求携带鉴权头（v0.6.67）', async () => {
+    const h = await startMcpHttpServer({ tools: [echoTool] })
+    httpHandles.push(h)
+    const seenAuth: string[] = []
+    h.http.on('request', (req) => {
+      const auth = req.headers['authorization']
+      if (auth) seenAuth.push(String(auth))
+    })
+    writeFileSync(configPath, JSON.stringify({
+      servers: [{ name: 'secure', url: h.url, headers: { Authorization: 'Bearer mgr-token-456' } }],
+    }))
+    const mgr = new McpManager({ configPath })
+    const tools = await mgr.connect('secure')
+    expect(tools.length).toBe(1)
+    // 桥接工具执行也带鉴权头（HTTP 请求全部透传 headers）
+    const res = await tools[0].execute({ text: 'via-auth' })
+    expect(res.success).toBe(true)
+    expect(res.output).toBe('via-auth')
+    expect(seenAuth.length).toBeGreaterThanOrEqual(1)
+    expect(seenAuth.every((a) => a === 'Bearer mgr-token-456')).toBe(true)
+    const st = mgr.status()
+    expect(st[0].connected).toBe(true)
+    expect(st[0].error).toBeUndefined()
+    mgr.closeAll()
+  })
+
   it('connect HTTP 不可达（url 无服务器监听）→ 抛错 + 状态记录错误（服务不崩溃）', async () => {
     // 先起服务器拿端口，再关掉 → 端口无人监听（连接拒绝）
     const h = await startMcpHttpServer({ tools: [echoTool] })
