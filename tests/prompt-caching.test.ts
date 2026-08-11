@@ -157,4 +157,20 @@ describe('CLI /usage 缓存显示（v0.6.29 P0）', () => {
     expect(out).not.toContain('缓存命中')
     expect(out).not.toContain('估算成本')
   })
+
+  it('perModel 行显示缓存命中（v0.6.42：多模型用量分布带命中 tokens + 命中率）', async () => {
+    // 两个模型：deepseek-chat 有缓存命中，deepseek-reasoner 无
+    store.logUsage('s1', 1000, 500, 'deepseek-chat', { cacheReadTokens: 400 })
+    store.logUsage('s1', 200, 100, 'deepseek-reasoner')
+    const lines: string[] = []
+    await handleSlashCommand('/usage', store, (s) => lines.push(s))
+    const out = lines.join('\n')
+    expect(out).toContain('模型 deepseek-chat:')
+    expect(out).toContain('模型 deepseek-reasoner:')
+    // chat 行下带缓存命中子行（400 tokens，400/1000=40%）
+    expect(out).toContain('缓存命中: 400')
+    expect(out).toContain('40%')
+    // reasoner 无缓存命中 → 不显示命中子行（总命中率行照旧显示，400/1200=33%）
+    expect(out).toContain('33%')
+  })
 })

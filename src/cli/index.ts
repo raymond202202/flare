@@ -1107,10 +1107,15 @@ export async function handleSlashCommand(
         if (typeof usage.estimatedCostUsd === 'number' && usage.estimatedCostUsd > 0) {
           output(`  ${chalk.gray('估算成本:')}   $${usage.estimatedCostUsd.toFixed(4)}`)
         }
-        // 按模型分解（v0.6.18：getUsageStats.perModel——用量分布/成本核算）
+        // 按模型分解（v0.6.18：getUsageStats.perModel——用量分布/成本核算；v0.6.42：显示缓存命中）
         if (Array.isArray(usage.perModel) && usage.perModel.length > 0) {
           for (const m of usage.perModel) {
             output(`  ${chalk.gray(`模型 ${m.model}:`)} ${m.totalTokens.toLocaleString()} tokens（${m.calls} 次调用）`)
+            const mCache = m.cacheReadTokens || 0
+            if (mCache > 0) {
+              const mRate = m.promptTokens > 0 ? Math.round((mCache / m.promptTokens) * 100) : 0
+              output(`    ${chalk.gray('缓存命中:')} ${mCache.toLocaleString()} tokens（${mRate}%）`)
+            }
           }
         }
         // 当前会话用量（v0.6.17：getSessionUsage 按 session 过滤；未提供 sessionId 不显示）
