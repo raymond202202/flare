@@ -341,6 +341,25 @@ Interactive mode commands:
 
 > 中文条目 / Chinese entries · English summary for each version
 
+#### v0.6.56 (2026-08-12) — server 协议 `mcp_connect`/`mcp_disconnect` 动态管理 MCP 连接（方向③ MCP 增强，控制面补齐）
+
+- ✨ **宿主协议补 MCP 控制面（src/server.ts + 测试）**：
+-  `mcp_status` 只能**观测**（启动时后台连接、失败可见错误），但宿主（Pulse/StorySpire）无法让
+-  「配置了但启动时未连上/想按需连接」的服务器连上、也无法按需断开——本轮补齐（纯外围，零
+-  agent.ts 改动）：
+- - **`mcp_connect`**：`{server}` → 代理转发 `McpManager.connect`（**幂等**：已连接直接返回已有
+-  工具）；响应与 `mcp_status` **同源**（`connected`/`toolCount`/`transport`/`target` + 已连接时
+-  资源/模板/提示词数）——连接后宿主立即可见连到哪种传输、连到哪；成功**清空缓存 Agent**
+-  （下次 chat 重建并入新工具，与 CLI `/mcp connect` onChanged 语义一致）
+- - **`mcp_disconnect`**：`{server}` → 断开并清缓存（工具从 Agent 工具集移除）；未连接 → `disconnected:false`
+-  幂等不回 error；等待启动连接落定（与 mcp_status 一致，断开的是真实连接）
+- - 错误路径：缺 `server` / 服务器未配置 → error 含用法（服务不崩）
+- - docs/host-protocol.md（§16.6/16.7 + 请求类型清单 + 响应表）+ README Changelog + 版本号 0.6.56
+- - 🧪 **821/821 全绿**（816 + 5 新增 server.test.ts：connect 缺 server error / 未配置 error /
+-  disconnect 缺 server error / 未连接 disconnected:false / **闭环**——真实 mock MCP 子进程
+-  断开→status 未连接→重连→已连接+工具数 3+transport stdio+target 含脚本路径→error 清空→幂等重连），
+-  tsc 0 错误，**零 agent.ts 改动**
+
 #### v0.6.55 (2026-08-12) — `/mcp connect` 摘要带传输类型标记（方向③ MCP 增强，观测面补齐）
 
 - ✨ **CLI 交互 `/mcp connect` 摘要补 `[stdio]`/`[HTTP]` + 目标（src/cli/index.ts + 测试）**：

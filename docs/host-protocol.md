@@ -3,7 +3,7 @@
 > 供非 Node 宿主（如 Qt 应用）调用 flare 引擎的本地协议。
 > 传输：stdin/stdout · JSON Lines（每行一个 JSON 对象）
 > 实现：`src/server.ts`（`flare server` 命令）
-> 请求类型：chat / cancel / set_context / list_sessions / recent_sessions / search_sessions / get_messages / search_messages / get_usage / session_usage / context_status / apply_trim / ping / version / create_session / rename_session / clear_session / delete_session / end_session / restore_session / list_archived_sessions / remember / get_memories / delete_memory / tool_result / confirm_result / confirm_status / confirm_revoke / confirm_allow / models / get_config / tools / mcp_status / mcp_resources / mcp_prompts / mcp_read_resource / mcp_get_prompt / mcp_call
+> 请求类型：chat / cancel / set_context / list_sessions / recent_sessions / search_sessions / get_messages / search_messages / get_usage / session_usage / context_status / apply_trim / ping / version / create_session / rename_session / clear_session / delete_session / end_session / restore_session / list_archived_sessions / remember / get_memories / delete_memory / tool_result / confirm_result / confirm_status / confirm_revoke / confirm_allow / models / get_config / tools / mcp_status / mcp_resources / mcp_prompts / mcp_read_resource / mcp_get_prompt / mcp_call / mcp_connect / mcp_disconnect
 
 ## 启动
 
@@ -384,6 +384,34 @@ flare server --profile <expert-profile-file> --storage <db-path> [--mcp <mcp-con
   未知工具/协议层错误 → 透传外部服务器错误（服务不崩）
 - 不触发生成、不创建会话；等待启动时的后台连接落定（与 `mcp_status` 一致）
 
+### 16.6 mcp_connect — 动态连接 MCP 服务器（v0.6.56，控制面补齐）
+
+```json
+{"type":"mcp_connect","server":"mock"}
+```
+
+响应（成功）：`{"type":"mcp_connect","server":"mock","connected":true,"toolCount":3,"transport":"stdio","target":"node .../mcp-mock-server.mjs"}`
+
+- `server`：必填，MCP 服务器名（须在 `--mcp` 配置里；见 `mcp_status` 列表）
+- 代理转发 `McpManager.connect`（**幂等**：已连接直接返回已有工具，不重复连接）
+- 响应与 `mcp_status` **同源**：`connected` / `toolCount` / `transport`（`stdio`/`http`）/ `target`（stdio 为 command+args，http 为端点 url）+ 已连接时的资源/模板/提示词数——连接后宿主立即可见连到哪种传输、连到哪
+- 连接成功后**清空缓存 Agent**：下次 `chat` 重建时新 MCP 工具并入工具集（与 CLI `/mcp connect` 的 onChanged 语义一致）
+- 错误：缺 `server` → error 含用法；服务器未配置 → error「未配置 MCP 服务器: <name>」；连接失败（initialize/工具拉取失败）→ error 透传原因（服务不崩）
+- 控制面补齐：`mcp_status` 只能观测，宿主无法让「配置了但启动时未连上/想按需连接」的服务器连上——本接口让宿主面板可动态启用外部 MCP 工具
+
+### 16.7 mcp_disconnect — 动态断开 MCP 服务器（v0.6.56，控制面补齐）
+
+```json
+{"type":"mcp_disconnect","server":"mock"}
+```
+
+响应：`{"type":"mcp_disconnect","server":"mock","disconnected":true}`
+
+- `server`：必填，MCP 服务器名（见 `mcp_status` 列表）
+- 代理转发 `McpManager.disconnect`：断开后工具/资源/模板/提示词从桥接清单移除，**缓存 Agent 清空**（下次 `chat` 重建后工具集不再含该服务器工具）
+- 未连接的服务器 → `disconnected:false`（幂等，不回 error）；缺 `server` → error 含用法
+- 等待启动时的后台连接落定（与 `mcp_status`/`mcp_call` 一致，保证断开的是真实连接）
+
 ### 17. confirm_result — 回传用户确认决策（v0.6.1，响应 confirm 事件）
 
 ```json
@@ -547,6 +575,8 @@ flare server --profile <expert-profile-file> --storage <db-path> [--mcp <mcp-con
 | `mcp_read_resource` | `server, uri, contents` | 外部 MCP 资源内容（mcp_read_resource 响应，v0.6.38） |
 | `mcp_get_prompt` | `server, prompt, description?, messages` | 外部 MCP 提示词渲染结果（mcp_get_prompt 响应，v0.6.38） |
 | `mcp_call` | `server, tool, success, output?, error?` | 外部 MCP 工具调用结果（mcp_call 响应，v0.6.40） |
+| `mcp_connect` | `server, connected, toolCount, transport, target, resourceCount?, templateCount?, promptCount?` | MCP 服务器动态连接结果（v0.6.56，与 mcp_status 同源） |
+| `mcp_disconnect` | `server, disconnected` | MCP 服务器动态断开结果（v0.6.56） |
 
 ## 工具执行流（宿主代理工具）
 

@@ -1178,6 +1178,48 @@ export function startHostServer(opts: HostServerOptions) {
           })
           break
         }
+        case 'mcp_connect': {
+          // 宿主动态连接 MCP 服务器（v0.6.56；与 CLI /mcp connect 对称，控制面补齐）——
+          // mcp_status 只能观测，宿主无法让「配置了但启动时未连上/或想按需连接」的服务器连上；
+          // 本接口代理转发 McpManager.connect（幂等：已连接直接返回已有工具）。
+          // 连接成功后清空缓存 Agent——下次 chat 重建时并入新 MCP 工具（与 CLI onChanged 语义一致）
+          const server = req.server === undefined || req.server === null ? '' : String(req.server).trim()
+          if (!server) {
+            reply({ type: 'error', message: 'mcp_connect 需要 server 参数（要连接的 MCP 服务器名，见 mcp_status 列表）' })
+            break
+          }
+          const tools = await mcpManager.connect(server)
+          // 新工具并入 Agent 工具集：销毁缓存 Agent（下次 chat 重建生效；不影响已连接服务器）
+          agents.clear()
+          const st = mcpManager.status().find((s) => s.name === server)
+          reply({
+            type: 'mcp_connect',
+            server,
+            connected: true,
+            toolCount: tools.length,
+            // 与 mcp_status 同源：transport/target（stdio/HTTP + 端点/命令）——连接后宿主立即可见连到哪
+            ...(st ? { transport: st.transport, target: st.target } : {}),
+            ...(st?.resourceCount !== undefined ? { resourceCount: st.resourceCount } : {}),
+            ...(st?.templateCount !== undefined ? { templateCount: st.templateCount } : {}),
+            ...(st?.promptCount !== undefined ? { promptCount: st.promptCount } : {}),
+          })
+          break
+        }
+        case 'mcp_disconnect': {
+          // 宿主动态断开 MCP 服务器（v0.6.56；与 CLI /mcp disconnect 对称）——控制面补齐：
+          // 断开后工具从 Agent 工具集移除（清空缓存 Agent，下次 chat 重建生效）；
+          // 等待启动时的后台连接落定（与 mcp_status 一致，保证断开的是真实连接）
+          await Promise.allSettled(mcpConnects)
+          const server = req.server === undefined || req.server === null ? '' : String(req.server).trim()
+          if (!server) {
+            reply({ type: 'error', message: 'mcp_disconnect 需要 server 参数（要断开的 MCP 服务器名，见 mcp_status 列表）' })
+            break
+          }
+          const disconnected = mcpManager.disconnect(server)
+          if (disconnected) agents.clear()
+          reply({ type: 'mcp_disconnect', server, disconnected })
+          break
+        }
         default:
           reply({ type: 'error', message: `未知请求类型: ${req.type}` })
       }
