@@ -3,18 +3,20 @@
 > 目标：flare 是 Pulse/StorySpire 依赖的 AI Agent 引擎（TS）。任何改动必须安全（tsc 0 错 + 测试全绿才 commit）。
 > 铁律：禁止 push；禁止修改 src/core/agent.ts 的 Agent.run 核心循环。
 
-> **最新状态（v0.6.49）**：**CLI `/usage` 本会话行缓存命中显示**（方向① prompt caching 基建
-> 深化——观测面补齐）——v0.6.42 给总行 + perModel 行加了缓存命中，但**本会话行**（sessionId
-> 分支）仍是旧格式 `N tokens（M 次调用）`，宿主看「当前会话吃了多少缓存」只能自己从 get_usage
-> 算：本轮补齐（纯 CLI 外围，零 agent.ts 改动）——`getSessionUsage` 本就含 cacheReadTokens，
-> CLI 侧有命中时追加 `· 缓存命中 N tokens（R%）`（命中率按本会话 promptTokens 算）；无命中不
-> 追加（与旧版输出兼容）；**806/806 全绿**（804 + 2 新增），tsc 0 错误，零 agent.ts 改动；
-> 冒烟实测真实 MemoryStore + dist handleSlashCommand：/usage 带 sessionId → 本会话行
-> `1,500 tokens（1 次调用） · 缓存命中 400 tokens（40%）`，SMOKE PASS。
-> （v0.6.48：cache-check --json 结构化输出；v0.6.47：mcp-server --bridge-tools 工具透传；
-> v0.6.46：CLI /trim 智能裁剪 + /context 裁剪提示；v0.6.45：flare cache-check 验收工具；
-> v0.6.44：CLI /sessions 关键词搜索；v0.6.43：server 协议 search_sessions；v0.6.42：CLI /usage
-> perModel 缓存命中显示。）
+> **最新状态（v0.6.50）**：**MCP 连接状态带传输类型/端点**（方向③ MCP 增强——HTTP transport 观测面
+> 补齐）——`mcp_status`（v0.5.5）只有 name/connected/toolCount，宿主面板**无法区分 stdio/HTTP 两种
+> 连接方式、看不到端点/命令**（配了 url 的 HTTP transport 服务器与 stdio 服务器长得一样）：本轮补齐
+> （纯外围，零 agent.ts 改动）——`McpServerStatus` 新增 `transport`（`'stdio'|'http'`，配置 url 走
+> http、command 走 stdio）+ `target`（http 为端点 url、stdio 为 command + args），`McpManager.status()`
+> 直接填充（CLI /mcp 与 server mcp_status 同源）；CLI 交互模式 `/mcp` 状态行显示 `[stdio]`/`[HTTP]`
+> 标记 + 目标端点/命令（未连接也显示——配置即可见），旧形状 status（缺字段）降级默认 `[stdio]`
+> 不崩溃；**808/808 全绿**（806 + 2 新增），tsc 0 错误，零 agent.ts 改动；冒烟实测真实 McpManager +
+> in-process HTTP 服务器：stdio 服务器 transport=stdio target=node mcp-mock-server.mjs tools=3、
+> HTTP 服务器 transport=http target=端点 url，SMOKE PASS。
+> （v0.6.49：CLI /usage 本会话行缓存命中；v0.6.48：cache-check --json 结构化输出；v0.6.47：
+> mcp-server --bridge-tools 工具透传；v0.6.46：CLI /trim 智能裁剪 + /context 裁剪提示；v0.6.45：
+> flare cache-check 验收工具；v0.6.44：CLI /sessions 关键词搜索；v0.6.43：server 协议
+> search_sessions；v0.6.42：CLI /usage perModel 缓存命中显示。）
 
 > 【🔴 当前最高优先级方向（2026-08-11 用户拍板）】**prompt caching 基建 P0 已基本落地 + 验收工具化**：
 > P0-1 前缀稳定 + P0-2 usage 回传（v0.6.29 完成）。验收：`flare cache-check` 一键验收
@@ -26,7 +28,8 @@
 > 下一步候选（按优先级）：
 > ① 【P1】分层上下文（Layer 1 异步滚动摘要——摘要内容升级为 LLM 生成语义级压缩，需评估 run 循环外异步）
 > ② 其他安全的外围增强（server 协议其他管理接口、MCP 工具集完善、测试稳定性等）
->    已覆盖：/usage 本会话行缓存命中（v0.6.49）✓ /
+>    已覆盖：MCP 状态 transport/target（v0.6.50）✓ /
+>    /usage 本会话行缓存命中（v0.6.49）✓ /
 >    cache-check --json 结构化输出（v0.6.48）✓ /
 >    mcp-server --bridge-tools 工具透传（v0.6.47）✓ /
 >    CLI /trim 智能裁剪 + /context 提示（v0.6.46）✓ /
@@ -46,22 +49,27 @@
 
 > ---
 
-> ### 2026-08-12 第四十八轮实施（v0.6.49）——CLI `/usage` 本会话行缓存命中显示（方向① prompt caching 基建深化）
+> ### 2026-08-12 第四十九轮实施（v0.6.50）——MCP 连接状态带传输类型/端点（方向③ MCP 增强）
 
-> - **P78 CLI `/usage` 本会话行追加缓存命中**（src/cli/index.ts + 测试，commit `7587e6e`）：
->   - **缺口定位**：v0.6.42 给总行 + perModel 行加了缓存命中，但**本会话行**（sessionId 分支）
->     仍是旧格式 `N tokens（M 次调用）`——宿主看「当前会话吃了多少缓存」只能自己从 get_usage
->     算（观测面三行缺一）；本轮补齐（纯 CLI 外围，零 agent.ts 改动）
->   - **实现**：`getSessionUsage` 本就含 cacheReadTokens（v0.6.29 回传），CLI 侧有命中时追加
->     `· 缓存命中 N tokens（R%）`（命中率按本会话 promptTokens 算）；无命中不追加（与旧版输出
->     兼容，既有断言零回归）
->   - README Changelog + 版本号 0.6.49
->   - **806/806 全绿**（804 + 2 新增 tests/prompt-caching.test.ts：本会话行命中显示（sessionId
->     透传、命中 400/1000=40%、另一会话 s2 不影响统计——getSessionUsage 按 session 过滤）；
->     本会话无命中不追加段（不显示「缓存命中 0」）），tsc 0 错误，**零 agent.ts 改动**
->   - **冒烟实测**（真实 MemoryStore + dist handleSlashCommand，smoke-usage-session.mjs）：
->     /usage 带 sessionId → 本会话行 `本会话: 1,500 tokens（1 次调用） · 缓存命中 400 tokens
->     （40%）`（与总行/perModel 行 40% 一致），SMOKE PASS
+> - **P79 `McpServerStatus.transport/target` + CLI /mcp + server mcp_status**（src/mcp/types.ts +
+>   src/mcp/manager.ts + src/cli/index.ts + 测试，commit `4a2f5f8`）：
+>   - **缺口定位**：`mcp_status`（v0.5.5）只有 name/connected/toolCount，宿主面板**无法区分
+>     stdio/HTTP 两种连接方式、看不到端点/命令**（配了 url 的 HTTP transport 服务器与 stdio 服务器
+>     长得一样）；本轮补齐（纯外围，零 agent.ts 改动）
+>   - **`transport: 'stdio' | 'http'`**（配置 url 走 http，command 走 stdio）+ **`target`**（http 为
+>     端点 url，stdio 为 command + args）——`McpManager.status()` 直接填充（CLI /mcp 与 server
+>     `mcp_status` 同源，宿主面板可区分两种连接并直接展示连接目标）
+>   - **CLI 交互模式 `/mcp`**：状态行显示 `[stdio]`/`[HTTP]` 标记 + 目标端点/命令（未连接也显示——
+>     配置即可见）；旧形状 status（缺字段）降级默认 `[stdio]` 不崩溃（host 注入旧 hooks 形状零回归）
+>   - docs/host-protocol.md（§16 mcp_status 响应结构含 transport/target 示例）+ docs/mcp.md +
+>     README Changelog + 版本号 0.6.50
+>   - **808/808 全绿**（806 + 2 新增 mcp-command.test.ts：/mcp 显示 [stdio]+命令目标 / [HTTP]+端点
+>     url（未连接也显示）/ 旧形状 status 缺字段默认 stdio 不崩溃；mcp-manager 既有测试补
+>     transport/target 断言——stdio=stdio+target 含 MOCK_SERVER 路径、HTTP=http+target=端点 url），
+>     tsc 0 错误，**零 agent.ts 改动**
+>   - **冒烟实测**（真实 McpManager + in-process HTTP 服务器，smoke-mcp-status.mjs）：local
+>     connected=true transport=stdio target=node mcp-mock-server.mjs tools=3；remote connected=true
+>     transport=http target=端点 url，SMOKE PASS
 > - **下一步候选**：① 【P1】分层上下文（Layer 1 异步滚动摘要——摘要内容升级为 LLM 生成语义级压缩，
 >   需评估 run 循环外异步）；② 其他安全的外围增强（server 协议其他管理接口、MCP 工具集完善、测试
 >   稳定性等）
