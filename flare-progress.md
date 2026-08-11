@@ -3,19 +3,17 @@
 > 目标：flare 是 Pulse/StorySpire 依赖的 AI Agent 引擎（TS）。任何改动必须安全（tsc 0 错 + 测试全绿才 commit）。
 > 铁律：禁止 push；禁止修改 src/core/agent.ts 的 Agent.run 核心循环。
 
-> **最新状态（v0.6.36）**：**MCP prompts 桥接**（方向 3 MCP 增强，与 v0.6.26 资源桥接对称）——
-> 客户端侧（v0.6.2）与服务端 prompts 暴露早已支持，但 McpManager 连接外部 MCP 服务器时只桥接
-> 工具/资源/模板**不拉取提示词**——本轮补齐：connect 并行拉取 prompts/list（safeListPrompts 容错，
-> 无 prompts 能力/失败降级空数组不阻塞连接）；`getAllPrompts()` 并集（McpPromptRef 含来源 server 名，
-> 库导出）+ `getPrompt(name, promptName, args?)` 代理渲染 prompts/get（未连接 reject 清晰错误，
-> stdio/HTTP 双传输）；status 已连接带 promptCount（可选字段向后兼容）；disconnect 提示词随连接
-> 清理；server 协议 `mcp_prompts`（只读不触发生成，按服务器分组透传）+ mcp_status 带 promptCount；
-> CLI /mcp 状态行带提示词数、`/mcp prompts [name]` 子命令（✨ name（参数）— 描述）、connect 摘要带
-> 提示词数、/help 注册；docs/host-protocol.md §16.2 + docs/mcp.md + README Changelog + 版本号 0.6.36；
-> **724/724 全绿**（711 + 13 新增），tsc 0 错误，零 agent.ts 改动；冒烟实测真实 dist CLI 子进程——
-> version 0.6.36 → mcp_prompts 2 条带来源（greet@mock / summarize(args:topic)@mock）→ mcp_status
-> promptCount 2，SMOKE PASS。
-> （v0.6.35：上下文裁剪执行 API apply_trim；v0.6.34：工具输出治理策略可配置化；v0.6.33：terminal 退出码。）
+> **最新状态（v0.6.37）**：**CLI `mcp-server --bridge-prompts`**（方向 3 MCP 增强，与 v0.6.28
+> `--bridge-resources` 对称）——v0.6.36 补齐 McpManager prompts 桥接后，把外部 MCP 服务器的
+> **提示词**也经 flare 自身 MCPServer 暴露给客户端：新 flag `--bridge-prompts`（与
+> `--bridge-resources` 可同时用，`--config` 共用），连接 ~/.flare/mcp.json 全部服务器
+> （Promise.allSettled 容错），`getAllPrompts()` 包装成 McpPrompt[] 注入 MCPServer（stdio 与
+> `--http` 双传输）——元数据 name/description/arguments 原样透传，`render(args)` 按 prompt 名找
+> 所属服务器代理转发 prompts/get（与资源读取代理同模式，服务器断开/未知 prompt 返回空消息不中断）；
+> 有透传提示词时 initialize 声明 capabilities.prompts，无配置/无 prompts 仅暴露 flare 自身能力；
+> **726/726 全绿**（724 + 2 新增），tsc 0 错误，零 agent.ts 改动；冒烟实测真实 dist CLI 0.6.37 +
+> 真实外部 prompts 服务器 + 真实 MCPClient 全链路，SMOKE PASS。
+> （v0.6.36：MCP prompts 桥接；v0.6.35：上下文裁剪执行 API apply_trim；v0.6.34：工具输出治理策略可配置化。）
 
 > 【🔴 当前最高优先级方向（2026-08-11 用户拍板）】**prompt caching 基建 P0 已基本落地**：
 > P0-1 前缀稳定 + P0-2 usage 回传（v0.6.29 完成）。验收：连续两轮调用（间隔<5min）第二轮
@@ -25,10 +23,44 @@
 > 下一步候选（按优先级）：
 > ① 【P1】分层上下文（Layer 1 异步滚动摘要——摘要内容升级为 LLM 生成语义级压缩，需评估 run 循环外异步）
 > ② 其他安全的外围增强（server 协议其他管理接口、MCP 工具集完善、测试稳定性等）
->    已覆盖：MCP prompts 桥接（v0.6.36）✓ / 上下文裁剪执行 apply_trim（v0.6.35）✓ /
->    工具输出治理策略可配置化透传（v0.6.34）✓ / terminal 退出码（v0.6.33）✓ / CLI 归档命令（v0.6.32）✓ /
->    归档 API（v0.6.31）✓ / 工具输出治理（v0.6.30）✓ / prompt caching P0（v0.6.29）✓ /
->    MCP 动态资源提供器（v0.6.28）✓ / confirm 描述（v0.6.27）✓
+>    已覆盖：mcp-server --bridge-prompts（v0.6.37）✓ / MCP prompts 桥接（v0.6.36）✓ /
+>    上下文裁剪执行 apply_trim（v0.6.35）✓ / 工具输出治理策略可配置化透传（v0.6.34）✓ /
+>    terminal 退出码（v0.6.33）✓ / CLI 归档命令（v0.6.32）✓ / 归档 API（v0.6.31）✓ /
+>    工具输出治理（v0.6.30）✓ / prompt caching P0（v0.6.29）✓ / MCP 动态资源提供器（v0.6.28）✓ /
+>    confirm 描述（v0.6.27）✓
+>
+> ---
+>
+> ### 2026-08-12 第三十六轮实施（v0.6.37）——CLI `mcp-server --bridge-prompts`（方向 3 MCP 增强，与 v0.6.28 --bridge-resources 对称）
+>
+> - **P66 CLI `flare mcp-server --bridge-prompts`**（src/cli/index.ts + 测试，commit `400f6a2`）：
+>   - **缺口定位**：方向 3「MCP 增强」——v0.6.28 的 `--bridge-resources` 只透传外部 MCP 服务器的
+>     资源/模板；v0.6.36 补齐 McpManager prompts 桥接（getAllPrompts/getPrompt）后，外部**提示词**
+>     （MCP 三大列表之一）还无法经 flare 自身 MCPServer 暴露给客户端——本轮对称补齐（纯外围 CLI，
+>     零 agent.ts 改动）
+>   - **新 flag**：`mcp-server --bridge-prompts`（与 `--bridge-resources` 可同时用；`--config` 共用）
+>     ——连接 ~/.flare/mcp.json 全部服务器（Promise.allSettled 容错，与资源透传同分支共用连接），
+>     把 `getAllPrompts()` 包装成 `McpPrompt[]` 注入 MCPServer（stdio 与 `--http` 双传输都支持）：
+>     **元数据**（name/description/arguments 参数声明）原样透传；**`render(args)`** 按 prompt 名找到
+>     所属服务器代理转发 prompts/get（与资源读取代理转发同模式；服务器断开/未知 prompt 返回空消息，
+>     不中断请求）
+>   - **能力声明**：有透传提示词时 `initialize` 声明 `capabilities.prompts`（客户端可探测）；无配置/
+>     无 prompts → 仅暴露 flare 自身能力（提示词空列表，不中断，与 --bridge-resources 无配置降级一致）
+>   - docs/mcp.md「提示词透传」子章节（透传规则 + 嵌套循环风险同资源透传）+ README Changelog +
+>     版本号 0.6.37
+>   - **726/726 全绿**（724 + 2 新增 tests/mcp-cli-server.test.ts：--bridge-prompts 真实子进程全链路——
+>     外部 prompts 服务器（新 fixture mcp-flare-server-prompts-bridge.ts，greet + summarize 带参数）
+>     经 flare 透传：initialize prompts 能力声明 + listPrompts 元数据/参数透传 + getPrompt 渲染代理
+>     转发（greet 内容往返 + summarize 带 topic 参数补全）+ flare 自身工具照常；无配置降级（prompts
+>     空 + 工具照常，不中断）），tsc 0 错误，**零 agent.ts 改动**
+>   - **冒烟实测**（真实 dist CLI 0.6.37 子进程 + 真实外部 prompts 服务器 + 真实 MCPClient）：
+>     serverInfo flare 0.6.37 → capabilities.prompts 声明 → listPrompts
+>     `[{greet 打招呼},{summarize 总结内容, arguments:[topic]}]` → getPrompt(greet)「你好」→
+>     getPrompt(summarize,{topic:'flare 引擎'})「请总结关于「flare 引擎」的内容」→ tools 6 个照常，
+>     SMOKE PASS
+> - **下一步候选**：① 【P1】分层上下文（Layer 1 异步滚动摘要——摘要内容升级为 LLM 生成语义级压缩，
+>   需评估 run 循环外异步）；② 其他安全的外围增强（server 协议其他管理接口、MCP 工具集完善、测试
+>   稳定性等）
 >
 > ---
 >
