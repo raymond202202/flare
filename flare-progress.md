@@ -3,27 +3,24 @@
 > 目标：flare 是 Pulse/StorySpire 依赖的 AI Agent 引擎（TS）。任何改动必须安全（tsc 0 错 + 测试全绿才 commit）。
 > 铁律：禁止 push；禁止修改 src/core/agent.ts 的 Agent.run 核心循环。
 
-> **最新状态（v0.6.64）**：**usage 统计带缓存节省金额估算**（方向① prompt caching 基建深化）：
-> v0.6.29/42 起 /usage 显示缓存命中 tokens 但**看不到价值**——cache-check 单次验收有 savedUsd
-> （v0.6.45）而运行期统计缺失，宿主面板只看到命中量、不知道命中价 vs 未命中价的差距；
-> 本轮补齐（纯外围，零 agent.ts 改动）——store getUsageStats/getSessionUsage 新增
-> `cacheSavedUsd`（按 perModel 逐模型 estimateCostUsd 未命中价−命中价差值求和，定价线性聚合后
-> 计算精确；无法定价模型跳过；无命中→0）；server get_usage/session_usage 透传（fallback 补 0）；
-> CLI /usage 总览缓存命中行下追加 `缓存节省: $X.XXXX` + 本会话行追加 `· 缓存节省`（>0 才显示，
-> 本地模型命中只显示命中量不显示节省，向后兼容）。
-> **849/849 全绿**（新增 3 用例：store 差值求和+无法定价不计入 / CLI 总览+本会话行节省显示 /
-> 本地模型命中不显示节省；server e2e 补 2 断言 cacheSavedUsd=0 透传），tsc 0 错误，
-> **零 agent.ts 改动**。
-> （v0.6.63：MCP 子命令提示对称补齐；v0.6.62：MCP 单次命令文档补齐；v0.6.61：MCP 命令提示面补全；
-> v0.6.60：flare mcp complete 单次命令；v0.6.59：flare mcp tools 单次命令；v0.6.58：mcp_tools
-> 工具清单桥接三层；v0.6.57：mcp_complete 提示词参数补全桥接；v0.6.56：server mcp_connect/
-> mcp_disconnect 控制面；v0.6.55：/mcp connect 摘要 transport/target；v0.6.54：cache-check
-> --rounds 多轮验收；v0.6.53：CLI /usage 本会话 perModel 子行；v0.6.52：session_usage perModel；
-> v0.6.51：CLI mcp status 统一 status()+--connect；v0.6.50：MCP 连接状态 transport/target；
-> v0.6.49：CLI /usage 本会话行缓存命中；v0.6.48：cache-check --json 结构化输出；v0.6.47：
-> mcp-server --bridge-tools 工具透传；v0.6.46：CLI /trim 智能裁剪 + /context 裁剪提示；v0.6.45：
-> flare cache-check 验收工具；v0.6.44：CLI /sessions 关键词搜索；v0.6.43：server 协议
-> search_sessions；v0.6.42：CLI /usage perModel 缓存命中显示。）
+> **最新状态（v0.6.65）**：**/usage perModel 行带缓存节省金额**（方向① prompt caching 基建深化，
+> 对称补齐）：v0.6.64 只给了汇总级节省（总览行/本会话行），**perModel 行只有命中量**——多模型
+> 场景看不出「哪个模型吃到了缓存的钱」；本轮补齐（纯外围，零 agent.ts 改动）——store
+> getUsageStats/getSessionUsage 的 perModel 每项新增 `cacheSavedUsd`（同口径单模型差值，复用
+> estimateCacheSavedUsd([m])；无法定价→0）；CLI /usage 总览与本会话 perModel「缓存命中」子行
+> 行尾追加 `（节省 $X.XXXX）`（>0 才显示，本地模型命中子行无节省后缀向后兼容）。
+> **850/850 全绿**（新增 1 用例：perModel 子行带节省金额，reasoner 无命中无子行；store 缓存节省
+> 用例补 perModel 项断言 chat/reasoner/qwen），tsc 0 错误，**零 agent.ts 改动**。
+> （v0.6.64：usage 统计带缓存节省金额估算；v0.6.63：MCP 子命令提示对称补齐；v0.6.62：MCP 单次
+> 命令文档补齐；v0.6.61：MCP 命令提示面补全；v0.6.60：flare mcp complete 单次命令；v0.6.59：
+> flare mcp tools 单次命令；v0.6.58：mcp_tools 工具清单桥接三层；v0.6.57：mcp_complete 提示词
+> 参数补全桥接；v0.6.56：server mcp_connect/mcp_disconnect 控制面；v0.6.55：/mcp connect 摘要
+> transport/target；v0.6.54：cache-check --rounds 多轮验收；v0.6.53：CLI /usage 本会话 perModel
+> 子行；v0.6.52：session_usage perModel；v0.6.51：CLI mcp status 统一 status()+--connect；
+> v0.6.50：MCP 连接状态 transport/target；v0.6.49：CLI /usage 本会话行缓存命中；v0.6.48：
+> cache-check --json 结构化输出；v0.6.47：mcp-server --bridge-tools 工具透传；v0.6.46：CLI /trim
+> 智能裁剪 + /context 裁剪提示；v0.6.45：flare cache-check 验收工具；v0.6.44：CLI /sessions
+> 关键词搜索；v0.6.43：server 协议 search_sessions；v0.6.42：CLI /usage perModel 缓存命中显示。）
 
 > 【🔴 当前最高优先级方向（2026-08-11 用户拍板）】**prompt caching 基建 P0 已基本落地 + 验收工具化**：
 > P0-1 前缀稳定 + P0-2 usage 回传（v0.6.29 完成）。验收：`flare cache-check` 一键验收
@@ -66,6 +63,29 @@
 >    terminal 退出码（v0.6.33）✓ / CLI 归档命令（v0.6.32）✓ / 归档 API（v0.6.31）✓ /
 >    工具输出治理（v0.6.30）✓ / prompt caching P0（v0.6.29）✓ / MCP 动态资源提供器（v0.6.28）✓ /
 >    confirm 描述（v0.6.27）✓
+
+> ---
+
+> ### 2026-08-12 第六十四轮实施（v0.6.65）——/usage perModel 行带缓存节省金额（方向① prompt caching 基建深化，对称补齐）
+
+> - **P94 perModel 每项带 `cacheSavedUsd` + CLI 子行显示节省**（src/memory/store.ts + src/cli/index.ts
+>   + 测试，commit `92a15e0`）：
+>   - **缺口定位**：v0.6.64 只给了汇总级节省（总览行/本会话行），**perModel 行只有命中量**——多
+>     模型场景看不出「哪个模型吃到了缓存的钱」；本轮对称补齐（纯外围，零 agent.ts 改动）
+>   - **store 层**：`getUsageStats()` / `getSessionUsage()` 的 perModel 每项新增 `cacheSavedUsd`
+>     （同口径单模型差值，复用 `estimateCacheSavedUsd([m])`；无法定价 → 0）——宿主面板 perModel
+>     列表可直接显示每个模型的缓存节省
+>   - **CLI /usage**：总览与本会话的 perModel「缓存命中」子行行尾追加 `（节省 $X.XXXX）`（>0 才
+>     显示；本地模型命中子行无节省后缀，向后兼容；汇总行/本会话行格式不变）
+>   - docs/host-protocol.md（§9 / §9.1 perModel 项说明）+ README Changelog + 版本号 0.6.65
+>   - **850/850 全绿**（新增 1 用例：perModel 子行带节省金额（总览+本会话，reasoner 无命中无子行）；
+>     store 缓存节省用例补 perModel 项断言 chat/reasoner/qwen），tsc 0 错误，**零 agent.ts 改动**
+>   - **冒烟实测**（真实 MemoryStore + dist CLI）：/usage 总览与本会话 perModel 子行均显示
+>     `缓存命中: 600 tokens（60%）（节省 $0.0001）`，SMOKE PASS
+> - **下一步候选**：① 【P1】分层上下文（Layer 1 异步滚动摘要——摘要内容升级为 LLM 生成语义级压缩，
+>   需评估 run 循环外异步）；② 其他安全的外围增强（server 协议其他管理接口、MCP 工具集完善、测试
+>   稳定性等）；③ 方向①继续：cache-check --json 也输出 perModel 级节省？/ usage 节省金额单位可配？
+>   （边际价值递减，建议转向 ①② 中未覆盖项）
 
 > ---
 
