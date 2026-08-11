@@ -65,6 +65,9 @@ export interface McpServerStatus {
   transport: 'stdio' | 'http'
   /** 目标端点/命令（v0.6.50：http 显示 url，stdio 显示 command + args——宿主面板直接展示） */
   target: string
+  /** 是否配置鉴权请求头（v0.6.70：HTTP transport 配了 headers → true；只传标记不传 token，
+   *  stdio/未配置 → 缺省 undefined，向后兼容） */
+  auth?: boolean
   /** 桥接的资源数（v0.6.26 资源桥接：连接时拉取 resources/list；服务器无资源能力为 0） */
   resourceCount?: number
   /** 桥接的资源模板数（v0.6.26：resources/templates/list；无模板为 0） */

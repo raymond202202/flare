@@ -198,6 +198,19 @@ describe('McpManager', () => {
     const st = mgr.status()
     expect(st[0].connected).toBe(true)
     expect(st[0].error).toBeUndefined()
+    // v0.6.70：配了 headers → auth 标记（只传 boolean 不传 token）
+    expect(st[0].auth).toBe(true)
+    mgr.closeAll()
+  })
+
+  it('connect HTTP transport 无 headers 配置 → status.auth 缺省 undefined（向后兼容，v0.6.70）', async () => {
+    const h = await startMcpHttpServer({ tools: [echoTool] })
+    httpHandles.push(h)
+    writeFileSync(configPath, JSON.stringify({ servers: [{ name: 'anon', url: h.url }] }))
+    const mgr = new McpManager({ configPath })
+    await mgr.connect('anon')
+    const st = mgr.status()
+    expect(st[0].auth).toBeUndefined()
     mgr.closeAll()
   })
 
