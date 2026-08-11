@@ -338,6 +338,25 @@ Interactive mode commands:
 
 > 中文条目 / Chinese entries · English summary for each version
 
+#### v0.6.30 (2026-08-11) — 工具输出治理：按工具类型定制截断（读文件留头尾、终端留尾部）
+- ✂️ **`truncateToolOutput` 纯函数（src/core/tool-output.ts，库导出）**：原来 run 循环对所有工具统一
+  `output.slice(0, 2000)`——探索型工具（read_file/search_files）长输出只留头部**尾部丢掉**（AI 常需
+  看文件结尾/匹配列表末尾）、终端型工具（terminal）输出最有价值的**结果/报错在尾部**却先被裁掉。
+  现在按工具类型定制：**探索型留头尾**（头部 1200 + 省略标记（含被省略字符数）+ 尾部 700，总长
+  严格 ≤ 预算）、**终端型留尾部**（尾部 2000 + 省略标记在前）；其他工具走默认（与旧版 slice
+  逐字符一致，零回归）；`maxOutputChars/maxErrorChars/headChars/tailChars/ellipsis` 全可配；
+  `toolOutputKind` 分类纯函数 + `ToolOutputPolicy` 类型库导出
+- 🔌 **Agent.run 调用点一行等价替换**：`truncateToolOutput(tc.function.name, result)`——控制流零改动，
+  默认策略与旧版逐字符一致（既有断言覆盖）；失败分支仍为错误信息前 1000 字符
+- 📚 README Changelog + 版本号 0.6.30
+- 🧪 **654/654 全绿**（630 + 24 新增 tests/tool-output.test.ts：分类 3——探索型/终端型/默认；默认策略
+  6——成功 2000 与旧版 slice 逐字符一致/短输出原样/失败 1000 一致/error 缺省/成功 output 缺省/
+  可配上限；探索型 5——短输出原样/长输出留头尾+省略数+不超预算/search_files 同策略/可配头尾/
+  失败分支；终端型 4——短输出/留尾部+省略标记在前/可配 tailChars/失败分支；省略标记 3——无占位符
+  直接使用/自定义 {omitted} 替换/默认含占位符；**Agent 集成 3**——read_file 超长输出进上下文
+  （tool_result 事件 + LLM 消息均留头尾带省略标记）/默认工具超长输出仍前 2000 零回归/terminal
+  超长输出留尾部），tsc 0 错误，run 循环仅截断表达式一行替换（控制流不变）
+
 #### v0.6.29 (2026-08-11) — prompt caching 基建 P0：system 前缀稳定 + usage 缓存回传
 - 🧱 **system 前缀稳定（P0-1，src/core/agent.ts 构造函数 + context.ts）**：原来记忆拼进 system 前缀，
   记忆一变整条 system 变 → DeepSeek 前缀缓存全失效（50 倍差价）。现在 system 拆成**独立消息序列**：

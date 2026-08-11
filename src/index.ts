@@ -142,6 +142,10 @@ export {
 } from './core/context.js'
 export type { TrimSuggestion, SuggestTrimOptions, TrimContextOptions, SummarizeOptions, TrimStats } from './core/context.js'
 
+// ===== 工具输出治理（v0.6.30）：按工具类型定制工具结果截断策略 =====
+export { truncateToolOutput, toolOutputKind, DEFAULT_ELLIPSIS } from './core/tool-output.js'
+export type { ToolOutputPolicy, ToolOutputKind } from './core/tool-output.js'
+
 // ===== 模型可观测性（v0.6.0）：本地 Ollama 模型列表查询（flare models 命令 / 宿主面板）=====
 export {
   listOllamaModels,
