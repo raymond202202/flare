@@ -32,13 +32,14 @@ function makeHooks(
   promptData: McpPromptRef[] = [],
   readData: Record<string, { uri: string; mimeType?: string; text: string }[]> = {},
   renderData: Record<string, { description?: string; messages: { role: 'user' | 'assistant'; content: { type: 'text'; text: string } }[] }> = {},
+  callData: Record<string, { isError?: boolean; content: { type: string; text?: string }[] }> = {},
 ): {
   hooks: McpCommandHooks
-  calls: { connect: string[]; disconnect: string[]; changed: number; reads: string[]; renders: string[] }
+  calls: { connect: string[]; disconnect: string[]; changed: number; reads: string[]; renders: string[]; calls: string[] }
   setStatus: (s: McpServerStatus[]) => void
 } {
   let status = initial
-  const calls = { connect: [] as string[], disconnect: [] as string[], changed: 0, reads: [] as string[], renders: [] as string[] }
+  const calls = { connect: [] as string[], disconnect: [] as string[], changed: 0, reads: [] as string[], renders: [] as string[], calls: [] as string[] }
   return {
     calls,
     setStatus: (s) => { status = s },
@@ -68,6 +69,13 @@ function makeHooks(
         calls.renders.push(`${server}:${prompt}:${JSON.stringify(args || {})}`)
         const hit = renderData[`${server}:${prompt}`]
         if (!hit) throw new Error(`未知提示词: ${prompt}`)
+        return hit
+      },
+      // v0.6.41：调用工具（真实代理由 McpManager.callTool 转发）
+      callTool: async (server, tool, args) => {
+        calls.calls.push(`${server}:${tool}:${JSON.stringify(args || {})}`)
+        const hit = callData[`${server}:${tool}`]
+        if (!hit) throw new Error(`MCP 服务器未连接: ${server}`)
         return hit
       },
       onChanged: () => { calls.changed++ },
@@ -446,5 +454,79 @@ describe('/mcp 命令', () => {
     const text = lines.join('\n')
     expect(text).toContain('read <server> <uri>')
     expect(text).toContain('render <server> <prompt>')
+  })
+
+  // ===== v0.6.41 call =====
+  it('/mcp call <server> <tool> [JSON参数] → 显示工具返回（代理转发 callTool）', async () => {
+    const lines: string[] = []
+    const { hooks, calls } = makeHooks(
+      [{ name: 'mock', connected: true, toolCount: 3 }],
+      undefined, undefined, undefined, undefined,
+      { 'mock:add_numbers': { content: [{ type: 'text', text: '5' }] } },
+    )
+    const r = await handleSlashCommand('/mcp call mock add_numbers {"a":2,"b":3}', store, (s) => lines.push(s), undefined, hooks)
+    expect(r).toBe('continue')
+    expect(calls.calls).toEqual(['mock:add_numbers:{"a":2,"b":3}'])
+    const text = lines.join('\n')
+    expect(text).toContain('mock 的工具 add_numbers 返回')
+    expect(text).toContain('5')
+  })
+
+  it('/mcp call → 工具级失败（isError）→ 失败输出不崩溃', async () => {
+    const lines: string[] = []
+    const { hooks } = makeHooks(
+      [{ name: 'mock', connected: true, toolCount: 3 }],
+      undefined, undefined, undefined, undefined,
+      { 'mock:fail_tool': { isError: true, content: [{ type: 'text', text: '出错了' }] } },
+    )
+    const r = await handleSlashCommand('/mcp call mock fail_tool', store, (s) => lines.push(s), undefined, hooks)
+    expect(r).toBe('continue')
+    const text = lines.join('\n')
+    expect(text).toContain('执行失败')
+    expect(text).toContain('出错了')
+  })
+
+  it('/mcp call（非法 JSON 参数）→ 提示参数错误，不调用', async () => {
+    const lines: string[] = []
+    const { hooks, calls } = makeHooks([])
+    const r = await handleSlashCommand('/mcp call mock echo not-json', store, (s) => lines.push(s), undefined, hooks)
+    expect(r).toBe('continue')
+    expect(calls.calls).toEqual([])
+    expect(lines.join('\n')).toContain('不是合法 JSON')
+  })
+
+  it('/mcp call（缺 tool）→ 提示用法（不调用）', async () => {
+    const lines: string[] = []
+    const { hooks, calls } = makeHooks([])
+    const r = await handleSlashCommand('/mcp call mock', store, (s) => lines.push(s), undefined, hooks)
+    expect(r).toBe('continue')
+    expect(calls.calls).toEqual([])
+    expect(lines.join('\n')).toContain('用法')
+  })
+
+  it('/mcp call（服务器未连接）→ 错误输出不崩溃', async () => {
+    const lines: string[] = []
+    const { hooks } = makeHooks([])
+    const r = await handleSlashCommand('/mcp call ghost echo_text', store, (s) => lines.push(s), undefined, hooks)
+    expect(r).toBe('continue')
+    expect(lines.join('\n')).toContain('MCP 服务器未连接: ghost')
+  })
+
+  it('/mcp call（hooks 未提供 callTool 方法）→ 提示不可用（向后兼容旧宿主）', async () => {
+    const lines: string[] = []
+    const { hooks } = makeHooks([])
+    const legacy = { ...hooks } as McpCommandHooks
+    delete (legacy as any).callTool
+    const r = await handleSlashCommand('/mcp call mock echo_text', store, (s) => lines.push(s), undefined, legacy)
+    expect(r).toBe('continue')
+    expect(lines.join('\n')).toContain('未提供工具调用')
+  })
+
+  it('/mcp 用法错误 → 提示用法（含 call 子命令）', async () => {
+    const lines: string[] = []
+    const { hooks } = makeHooks([])
+    const r = await handleSlashCommand('/mcp bogus', store, (s) => lines.push(s), undefined, hooks)
+    expect(r).toBe('continue')
+    expect(lines.join('\n')).toContain('call <server> <tool>')
   })
 })

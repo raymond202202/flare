@@ -338,6 +338,24 @@ Interactive mode commands:
 
 > 中文条目 / Chinese entries · English summary for each version
 
+#### v0.6.41 (2026-08-12) — CLI 交互模式 `/mcp call`（直接调用外部 MCP 工具）
+
+- ✨ **CLI 交互模式 `/mcp call` 子命令（src/cli/index.ts + 测试）**：
+-  v0.6.40 给 server 协议补了 `mcp_call`（宿主能直接调用外部 MCP 工具），但 **CLI 交互模式的
+-  `/mcp` 还没有 call 子命令**（v0.6.39 补了 read/render，call 缺）——本轮对称补齐
+-  （纯 CLI 外围，零 agent.ts 改动）：
+- - **`/mcp call <server> <tool> [JSON参数]`**：调用已连接服务器的工具（`tools/call` 代理，与
+-  协议 `mcp_call` 同源）——`/mcp call mock add_numbers {"a":2,"b":3}` 直接显示工具返回（文本
+-  内容提取拼接）；工具级失败（isError）显示失败信息；**非法 JSON 参数提示不调用**（`参数必须是
+-  JSON 对象`）；未知工具/未连接错误输出不崩溃
+- - `McpCommandHooks` 新增可选 `callTool?`（旧 hooks 形状向后兼容——未提供时友好提示不可用，
+-  不崩溃）；`/help` 注册一行；用法提示更新
+- - 📚 docs/mcp.md（交互模式 call 说明）+ README Changelog + 版本号 0.6.41
+- - 🧪 **759/759 全绿**（752 + 7 新增 tests/mcp-command.test.ts：call 成功显示工具返回（代理
+-  转发 + 参数透传）/ 工具级失败 isError 失败输出不崩溃 / 非法 JSON 参数提示不调用 / 缺 tool
+-  用法提示不调用 / 未连接错误不崩溃 / 旧 hooks 无 callTool 降级 / 用法错误提示含 call），tsc 0
+-  错误，**零 agent.ts 改动**
+
 #### v0.6.40 (2026-08-12) — server 协议 mcp_call（宿主直接调用外部 MCP 工具）
 
 - ✨ **McpManager.callTool + server 协议 `mcp_call`（src/mcp/manager.ts + server.ts + 测试）**：
