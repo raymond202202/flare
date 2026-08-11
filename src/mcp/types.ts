@@ -63,6 +63,8 @@ export interface McpServerStatus {
   resourceCount?: number
   /** 桥接的资源模板数（v0.6.26：resources/templates/list；无模板为 0） */
   templateCount?: number
+  /** 桥接的提示词数（v0.6.36 prompts 桥接：连接时拉取 prompts/list；服务器无 prompts 能力为 0） */
+  promptCount?: number
   error?: string
 }
 
@@ -73,6 +75,11 @@ export interface McpResourceRef extends McpResourceInfo {
 
 /** 带来源的资源模板引用（v0.6.26 McpManager 资源桥接：getAllResourceTemplates 返回项） */
 export interface McpResourceTemplateRef extends McpResourceTemplateInfo {
+  server: string
+}
+
+/** 带来源的提示词引用（v0.6.36 McpManager prompts 桥接：getAllPrompts 返回项，含所属服务器名） */
+export interface McpPromptRef extends McpPromptInfo {
   server: string
 }
 

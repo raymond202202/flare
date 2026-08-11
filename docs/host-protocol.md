@@ -3,7 +3,7 @@
 > 供非 Node 宿主（如 Qt 应用）调用 flare 引擎的本地协议。
 > 传输：stdin/stdout · JSON Lines（每行一个 JSON 对象）
 > 实现：`src/server.ts`（`flare server` 命令）
-> 请求类型：chat / cancel / set_context / list_sessions / recent_sessions / get_messages / search_messages / get_usage / session_usage / context_status / apply_trim / ping / version / create_session / rename_session / clear_session / delete_session / end_session / restore_session / list_archived_sessions / remember / get_memories / delete_memory / tool_result / confirm_result / confirm_status / confirm_revoke / confirm_allow / models / get_config / tools / mcp_status / mcp_resources
+> 请求类型：chat / cancel / set_context / list_sessions / recent_sessions / get_messages / search_messages / get_usage / session_usage / context_status / apply_trim / ping / version / create_session / rename_session / clear_session / delete_session / end_session / restore_session / list_archived_sessions / remember / get_memories / delete_memory / tool_result / confirm_result / confirm_status / confirm_revoke / confirm_allow / models / get_config / tools / mcp_status / mcp_resources / mcp_prompts
 
 ## 启动
 
@@ -283,7 +283,7 @@ flare server --profile <expert-profile-file> --storage <db-path> [--mcp <mcp-con
 {"type":"mcp_status"}
 ```
 
-响应：`{"type":"mcp_status","servers":[{"name":"fs","connected":true,"toolCount":8,"resourceCount":2,"templateCount":1},{"name":"db","connected":false,"toolCount":0,"error":"..."}]}`
+响应：`{"type":"mcp_status","servers":[{"name":"fs","connected":true,"toolCount":8,"resourceCount":2,"templateCount":1,"promptCount":2},{"name":"db","connected":false,"toolCount":0,"error":"..."}]}`
 
 - 列出 `--mcp` 配置的每个服务器：`connected`（是否连接成功）、`toolCount`（桥接的工具数）、`error`（连接失败原因，可选）
 - v0.6.26：已连接服务器额外带 `resourceCount`（桥接的资源数）/ `templateCount`（桥接的资源模板数，均为可选字段，向后兼容）
@@ -301,6 +301,20 @@ flare server --profile <expert-profile-file> --storage <db-path> [--mcp <mcp-con
 - 已连接服务器带 `resources`（资源元数据数组，每项含来源 `server` 名）与 `templates`（动态资源 uri 模板数组）；未连接服务器不带这两个字段（仅 `connected:false` + 可选 `error`）
 - 只读，不触发生成、不创建会话；等待启动时的后台连接落定（与 `mcp_status` 一致）
 - 宿主 AI 面板「外部 MCP 资源」数据源：展示/透传外部服务器暴露的资源与动态资源形态
+
+### 16.2 mcp_prompts — 查看已连接 MCP 服务器的提示词清单（v0.6.36）
+
+```json
+{"type":"mcp_prompts"}
+```
+
+响应：`{"type":"mcp_prompts","servers":[{"name":"mock","connected":true,"toolCount":3,"prompts":[{"name":"greet","description":"打招呼","server":"mock"},{"name":"summarize","description":"总结内容","arguments":[{"name":"topic","description":"主题","required":true}],"server":"mock"}]}]}`
+
+- prompts 桥接：连接外部 MCP 服务器时拉取 `prompts/list`（服务器无 prompts 能力/请求失败 → 空数组，不阻塞连接）
+- 已连接服务器带 `prompts`（提示词元数据数组，每项含来源 `server` 名与可选 `arguments` 参数声明）；未连接服务器不带该字段（仅 `connected:false` + 可选 `error`）
+- 渲染提示词内容（prompts/get 代理）由库级 `McpManager.getPrompt(name, promptName, args?)` 提供——宿主若需把外部提示词注入对话，可经该 API 渲染后组装消息（不触发生成、不创建会话）
+- 只读，不触发生成、不创建会话；等待启动时的后台连接落定（与 `mcp_status` 一致）
+- 宿主 AI 面板「外部 MCP 提示词」数据源：展示/透传外部服务器暴露的提示词模板
 
 ### 17. confirm_result — 回传用户确认决策（v0.6.1，响应 confirm 事件）
 

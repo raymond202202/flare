@@ -92,3 +92,31 @@ describe('flare host server mcp_resources 协议', () => {
     expect(s.templateCount).toBe(1)
   }, 30000)
 })
+
+describe('flare host server mcp_prompts 协议（v0.6.36 prompts 桥接）', () => {
+  it('mcp_prompts → 已连接服务器的提示词清单（真实子进程闭环）', async () => {
+    const msgs = await request({ type: 'mcp_prompts' }, ['mcp_prompts'])
+    const res = msgs[0]
+    expect(res.type).toBe('mcp_prompts')
+    expect(Array.isArray(res.servers)).toBe(true)
+    expect(res.servers.length).toBe(1)
+    const s = res.servers[0]
+    expect(s.name).toBe('mock')
+    expect(s.connected).toBe(true)
+    // 提示词：mock 服务器暴露 2 个（greet + summarize）
+    expect(Array.isArray(s.prompts)).toBe(true)
+    expect(s.prompts.length).toBe(2)
+    expect(s.prompts[0]).toMatchObject({ server: 'mock', name: 'greet', description: '打招呼' })
+    expect(s.prompts[1]).toMatchObject({ server: 'mock', name: 'summarize' })
+    // 参数声明透传
+    expect(s.prompts[1].arguments[0]).toMatchObject({ name: 'topic', required: true })
+  }, 30000)
+
+  it('mcp_status → 已连接带 promptCount（与 mcp_prompts 一致）', async () => {
+    const msgs = await request({ type: 'mcp_status' }, ['mcp_status'])
+    const s = msgs[0].servers[0]
+    expect(s.name).toBe('mock')
+    expect(s.connected).toBe(true)
+    expect(s.promptCount).toBe(2)
+  }, 30000)
+})

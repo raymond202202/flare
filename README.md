@@ -338,6 +338,37 @@ Interactive mode commands:
 
 > 中文条目 / Chinese entries · English summary for each version
 
+#### v0.6.36 (2026-08-12) — MCP prompts 桥接（外部 MCP 提示词真实可见，与 v0.6.26 资源桥接对称）
+- ✨ **McpManager prompts 桥接（src/mcp/manager.ts + types.ts + server.ts + cli/index.ts）**：
+-  客户端侧（v0.6.2）与服务器侧（v0.6.2 prompts 暴露）早已支持 prompts，但 **McpManager 连接外部
+-  MCP 服务器时只桥接工具/资源/模板，不拉取提示词**——宿主/CLI 看不到外部服务器暴露的 prompts；
+-  本轮补齐与 v0.6.26 资源桥接对称的 prompts 桥接：
+- - **连接时拉取**：`connect` 与 resources/templates 并行拉取 `prompts/list`（safeListPrompts 容错——
+-  服务器无 prompts 能力/请求失败静默降级为空数组，不阻塞连接，与资源桥接同风格）
+- - **`getAllPrompts()`**：全部已连接服务器的提示词并集（`McpPromptRef` 含来源 server 名，库导出）；
+-  **`getPrompt(name, promptName, args?)`**：代理渲染某服务器提示词（prompts/get）；服务器未连接 →
+-  reject 清晰错误「MCP 服务器未连接: <name>」；stdio 与 HTTP transport 双传输都支持
+-  （McpPromptClient 最小接口，与 McpResourceClient 同模式）
+- - **status 带 promptCount**（已连接服务器；无 prompts 能力为 0，新增可选字段旧断言零回归）；
+-  disconnect 提示词随连接清理
+- - **server 协议 `mcp_prompts`**（只读，不触发生成、不创建会话）：`{type:'mcp_prompts'}` →
+-  `{type:'mcp_prompts', servers:[{name, connected, toolCount, prompts?, error?}]}`——宿主面板
+-  「外部 MCP 提示词」数据源（与 mcp_resources 对称）；mcp_status 同步带 promptCount
+- - **CLI**：`/mcp` 状态行已连接显示 `（N 个工具 · M 资源 · K 模板 · P 提示词）`；`/mcp prompts
+-  [name]` 子命令列出已桥接提示词（`✨ name（参数: a, b）— 描述`；无提示词友好提示；hooks 未提供
+-  prompts 方法回退提示向后兼容旧宿主）；connect 摘要带提示词数；/help 注册
+- - 📚 docs/host-protocol.md 请求类型列表 + 新章节（mcp_prompts 响应结构）+ docs/mcp.md（prompts
+-  桥接子章节）+ README Changelog + 版本号 0.6.36
+- - 🧪 **724/724 全绿**（711 + 13 新增：manager 5——stdio 桥接带来源+参数声明+promptCount /
+-  getPrompt 代理渲染+未知 reject+未连接 reject / disconnect 清理 / 无 prompts 能力降级 0 /
+-  HTTP transport 拉取+渲染闭环；server e2e 2——mcp_prompts 真实子进程闭环+参数透传 / mcp_status
+-  promptCount；CLI 6——状态行带提示词数 / prompts 无参列出 / prompts 过滤单服务器 / 无提示词友好 /
+-  旧 hooks 无 prompts 方法回退 / 用法含 prompts），tsc 0 错误，**零 agent.ts 改动**
+- - **冒烟实测**（真实 dist CLI 子进程 + 真实 stdio mock 服务器）：`/mcp` 状态行
+-  `● mock（3 个工具 · 2 资源 · 1 模板 · 2 提示词）`；`/mcp prompts` 列出
+-  `✨ greet — 打招呼` + `✨ summarize（参数: topic）— 总结内容`；`/mcp prompts mock` 过滤单服务器；
+-  server 协议 mcp_prompts 返回 2 条带来源（server:'mock'），SMOKE PASS
+
 #### v0.6.35 (2026-08-11) — 上下文裁剪执行 API（apply_trim：suggestTrim 建议 → 服务器执行闭环）
 - ✂️ **server 协议 `apply_trim`（src/server.ts + core/agent.ts + memory/store.ts）**：
 -  context_status 此前只返回裁剪**建议**（keepIndexes）宿主却无法实际执行（set_context 只能追加状态

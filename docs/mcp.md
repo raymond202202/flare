@@ -68,6 +68,10 @@
   真实暴露给宿主（`mcp_resources` 协议请求可查看/透传）
 - `/mcp resources [name]`（v0.6.26）：列出已桥接资源/模板（`📄 uri — 描述` + `🧩 uriTemplate`）；
   带 `<name>` 只列该服务器的；无资源友好提示
+- v0.6.36：状态行再带 `· P 提示词`——连接时同时拉取 `prompts/list`（prompts 桥接，与资源桥接对称）
+- `/mcp prompts [name]`（v0.6.36）：列出已桥接提示词（`✨ name（参数: a, b）— 描述`）；带 `<name>`
+  只列该服务器的；无提示词友好提示；`mcp_prompts` 协议请求可查看/透传（渲染经库级
+  `McpManager.getPrompt` 代理）
 
 ### 3. 单次查询
 
@@ -121,7 +125,14 @@ const agent2 = new Agent({ tools: [...builtinTools, ...mgr.getAllTools()] })
 const resources = mgr.getAllResources()       // [{ uri, name, description?, mimeType?, server }]
 const templates = mgr.getAllResourceTemplates() // [{ uriTemplate, name, description?, mimeType?, server }]
 const contents = await mgr.readResource('fs', 'memory://preferences') // 代理读取资源内容
-mgr.status()                                  // 已连接时带 resourceCount/templateCount
+
+// prompts 桥接（v0.6.36）：连接时同时拉取 prompts/list——外部服务器暴露的提示词模板真实暴露给宿主
+// （与资源桥接对称；stdio 与 HTTP transport 双传输都支持）
+const prompts = mgr.getAllPrompts()           // [{ name, description?, arguments?, server }]
+const rendered = await mgr.getPrompt('fs', 'summarize', { topic: 'flare' }) // 代理渲染 prompts/get
+//   → { description?, messages: [{ role: 'user', content: { type: 'text', text: '...' } }] }
+
+mgr.status()                                  // 已连接时带 resourceCount/templateCount/promptCount
 mgr.closeAll()
 ```
 

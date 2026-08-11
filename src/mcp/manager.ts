@@ -10,6 +10,8 @@
  * - getAllTools()：已连接服务器的工具并集（注入 Agent config.tools）
  * - getAllResources() / getAllResourceTemplates()：已连接服务器的资源/模板并集（含来源，宿主展示用）
  * - readResource(name, uri)：代理读取某服务器资源内容
+ * - getAllPrompts()（v0.6.36 prompts 桥接）：已连接服务器的提示词并集（含来源，宿主展示/透传用）
+ * - getPrompt(name, promptName, args?)：代理渲染某服务器提示词
  * - status()：连接状态列表（CLI /mcp、server mcp_status 用）
  *
  * 用法：
@@ -32,6 +34,9 @@ import type {
   McpResourceTemplateInfo,
   McpResourceTemplateRef,
   McpResourceContents,
+  McpPromptInfo,
+  McpPromptRef,
+  McpPromptResult,
 } from './types.js'
 import type { Tool } from '../tools/index.js'
 
@@ -42,6 +47,12 @@ export interface McpResourceClient {
   listResources(): Promise<McpResourceInfo[]>
   listResourceTemplates(): Promise<McpResourceTemplateInfo[]>
   readResource(uri: string): Promise<McpResourceContents[]>
+}
+
+/** prompts 桥接依赖的最小客户端接口（v0.6.36；stdio MCPClient 与 HTTP MCPHttpClient 都满足） */
+export interface McpPromptClient {
+  listPrompts(): Promise<McpPromptInfo[]>
+  getPrompt(name: string, args?: Record<string, string>): Promise<McpPromptResult>
 }
 
 export interface McpManagerOptions {
@@ -60,6 +71,8 @@ export class McpManager {
   // v0.6.26 资源桥接：已连接服务器的资源/模板（连接时拉取，断开清理）
   private resources = new Map<string, McpResourceInfo[]>()
   private templates = new Map<string, McpResourceTemplateInfo[]>()
+  // v0.6.36 prompts 桥接：已连接服务器的提示词（连接时拉取，断开清理）
+  private prompts = new Map<string, McpPromptInfo[]>()
   private errors = new Map<string, string>()
 
   constructor(opts: McpManagerOptions = {}) {
@@ -116,6 +129,24 @@ export class McpManager {
     return client.readResource(uri)
   }
 
+  /** 全部已连接服务器的提示词并集（v0.6.36，含来源服务器名；宿主展示/透传外部 MCP 提示词用） */
+  getAllPrompts(): McpPromptRef[] {
+    const all: McpPromptRef[] = []
+    for (const [server, list] of this.prompts) {
+      for (const p of list) all.push({ ...p, server })
+    }
+    return all
+  }
+
+  /** 代理渲染某服务器提示词（v0.6.36）：调该服务器 prompts/get；服务器未连接 → reject 清晰错误 */
+  async getPrompt(name: string, promptName: string, args?: Record<string, string>): Promise<McpPromptResult> {
+    const client = this.clients.get(name) as McpPromptClient | undefined
+    if (!client) {
+      throw new Error(`MCP 服务器未连接: ${name}`)
+    }
+    return client.getPrompt(promptName, args)
+  }
+
   /** 连接状态列表（CLI /mcp、server mcp_status 用） */
   status(): McpServerStatus[] {
     return this.config.map(c => ({
@@ -126,6 +157,8 @@ export class McpManager {
       ...(this.clients.has(c.name)
         ? { resourceCount: this.resources.get(c.name)?.length || 0, templateCount: this.templates.get(c.name)?.length || 0 }
         : {}),
+      // v0.6.36：已连接时带提示词数（无 prompts 能力为 0）
+      ...(this.clients.has(c.name) ? { promptCount: this.prompts.get(c.name)?.length || 0 } : {}),
       error: this.errors.get(c.name),
     }))
   }
@@ -151,14 +184,17 @@ export class McpManager {
       const tools = await createMcpTools(client)
       // v0.6.26 资源桥接：拉取 resources/list + resources/templates/list（容错——服务器无资源
       // 能力/请求失败时静默降级为空数组，不阻塞连接；列表变化通知回调触发后宿主可重新连接刷新）
-      const [resources, templates] = await Promise.all([
+      // v0.6.36 prompts 桥接：同时拉取 prompts/list（容错同资源——无 prompts 能力降级为空数组）
+      const [resources, templates, prompts] = await Promise.all([
         safeListResources(client),
         safeListResourceTemplates(client),
+        safeListPrompts(client),
       ])
       this.clients.set(name, client)
       this.tools.set(name, tools)
       this.resources.set(name, resources)
       this.templates.set(name, templates)
+      this.prompts.set(name, prompts)
       return tools
     } catch (e: any) {
       this.errors.set(name, e?.message || String(e))
@@ -181,6 +217,8 @@ export class McpManager {
     // v0.6.26：资源/模板随连接一并清理
     this.resources.delete(name)
     this.templates.delete(name)
+    // v0.6.36：提示词随连接一并清理
+    this.prompts.delete(name)
     this.errors.delete(name)
     return true
   }
@@ -219,6 +257,16 @@ async function safeListResources(client: McpResourceClient): Promise<McpResource
 async function safeListResourceTemplates(client: McpResourceClient): Promise<McpResourceTemplateInfo[]> {
   try {
     const list = await client.listResourceTemplates()
+    return Array.isArray(list) ? list : []
+  } catch {
+    return []
+  }
+}
+
+/** 容错拉取提示词列表（v0.6.36）：服务器无 prompts 能力 / 请求失败 → 静默降级为空数组（不阻塞连接） */
+async function safeListPrompts(client: McpPromptClient): Promise<McpPromptInfo[]> {
+  try {
+    const list = await client.listPrompts()
     return Array.isArray(list) ? list : []
   } catch {
     return []

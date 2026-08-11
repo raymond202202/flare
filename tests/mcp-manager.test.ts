@@ -268,6 +268,87 @@ describe('McpManager', () => {
     mgr.closeAll()
   })
 
+  // ===== v0.6.36 prompts 桥接：连接时拉取 prompts/list + 代理渲染 prompts/get =====
+
+  it('connect prompts 桥接：getAllPrompts 返回带来源的提示词（mock 服务器，stdio）', async () => {
+    writeFileSync(configPath, JSON.stringify({ servers: [{ name: 'mock', command: process.execPath, args: [MOCK_SERVER] }] }))
+    const mgr = new McpManager({ configPath })
+    await mgr.connect('mock')
+    const prompts = mgr.getAllPrompts()
+    expect(prompts.length).toBe(2)
+    expect(prompts[0]).toMatchObject({ server: 'mock', name: 'greet', description: '打招呼' })
+    expect(prompts[1]).toMatchObject({ server: 'mock', name: 'summarize' })
+    // 参数声明透传（prompts/list 元数据）
+    expect(Array.isArray(prompts[1].arguments)).toBe(true)
+    expect(prompts[1].arguments![0]).toMatchObject({ name: 'topic', required: true })
+    // status 带提示词数（新增字段可选，向后兼容）
+    const st = mgr.status()
+    expect(st[0].connected).toBe(true)
+    expect(st[0].promptCount).toBe(2)
+    mgr.closeAll()
+  })
+
+  it('getPrompt：代理渲染某服务器提示词（带参数）；未连接服务器 reject', async () => {
+    writeFileSync(configPath, JSON.stringify({ servers: [{ name: 'mock', command: process.execPath, args: [MOCK_SERVER] }] }))
+    const mgr = new McpManager({ configPath })
+    await mgr.connect('mock')
+    const res = await mgr.getPrompt('mock', 'summarize', { topic: 'flare' })
+    expect(res.messages.length).toBe(1)
+    expect(res.messages[0].role).toBe('user')
+    expect(res.messages[0].content.text).toContain('flare')
+    // 未知提示词 → 协议错误 reject
+    await expect(mgr.getPrompt('mock', 'ghost')).rejects.toThrow()
+    // 未连接服务器 → 清晰错误
+    await expect(mgr.getPrompt('not-connected', 'greet')).rejects.toThrow(/未连接/)
+    mgr.closeAll()
+  })
+
+  it('disconnect：提示词随连接清理（getAllPrompts 空 + status 不再带提示词数）', async () => {
+    writeFileSync(configPath, JSON.stringify({ servers: [{ name: 'mock', command: process.execPath, args: [MOCK_SERVER] }] }))
+    const mgr = new McpManager({ configPath })
+    await mgr.connect('mock')
+    expect(mgr.getAllPrompts().length).toBe(2)
+    expect(mgr.disconnect('mock')).toBe(true)
+    expect(mgr.getAllPrompts().length).toBe(0)
+    const st = mgr.status()
+    expect(st[0].promptCount).toBeUndefined()
+    mgr.closeAll()
+  })
+
+  it('connect 无 prompts 能力的服务器 → 提示词空数组 + status promptCount 0（不阻塞连接）', async () => {
+    const h = await startMcpHttpServer({ tools: [echoTool] }) // 无 prompts 注入
+    httpHandles.push(h)
+    writeFileSync(configPath, JSON.stringify({ servers: [{ name: 'remote', url: h.url }] }))
+    const mgr = new McpManager({ configPath })
+    const tools = await mgr.connect('remote')
+    expect(tools.length).toBe(1)
+    expect(mgr.getAllPrompts().length).toBe(0)
+    const st = mgr.status()
+    expect(st[0].promptCount).toBe(0)
+    mgr.closeAll()
+  })
+
+  it('connect HTTP transport prompts 桥接：注入 prompts 的 HTTP 服务器 → 提示词拉取 + 渲染闭环', async () => {
+    const h = await startMcpHttpServer({
+      tools: [echoTool],
+      prompts: [{
+        name: 'hello',
+        description: '打招呼',
+        render: async (args) => [{ role: 'user', content: { type: 'text', text: `你好 ${args?.who || '世界'}` } }],
+      }],
+    })
+    httpHandles.push(h)
+    writeFileSync(configPath, JSON.stringify({ servers: [{ name: 'remote', url: h.url }] }))
+    const mgr = new McpManager({ configPath })
+    await mgr.connect('remote')
+    const prompts = mgr.getAllPrompts()
+    expect(prompts.length).toBe(1)
+    expect(prompts[0]).toMatchObject({ server: 'remote', name: 'hello', description: '打招呼' })
+    const res = await mgr.getPrompt('remote', 'hello', { who: 'flare' })
+    expect(res.messages[0].content.text).toContain('flare')
+    mgr.closeAll()
+  })
+
   it('配置同时有 url 与 command → url 优先（HTTP transport）', async () => {
     const h = await startMcpHttpServer({ tools: [echoTool] })
     httpHandles.push(h)

@@ -97,6 +97,7 @@ export type {
   McpResourceTemplate,
   McpResourceTemplateInfo,
   McpResourceTemplateRef,
+  McpPromptRef,
   McpPrompt,
   McpPromptArgument,
   McpPromptMessage,
