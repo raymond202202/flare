@@ -1754,15 +1754,22 @@ export function main() {
 
   program
     .command('cache-check')
-    .description('prompt caching 验收：连续两轮调用验证第二轮 cache_read_tokens > 0（v0.6.45，P0 验收自动化）')
+    .description('prompt caching 验收：连续两轮调用验证第二轮 cache_read_tokens > 0（v0.6.45，P0 验收自动化；v0.6.48 起 --json 结构化输出）')
     .option('-m, --model <model>', '指定模型（缺省用默认路由；如 deepseek-chat）')
-    .action(async (options: { model?: string }) => {
+    .option('-j, --json', 'JSON 结构化输出（宿主/CI 程序化消费：ok/model/hitTokens/savedUsd/detail/两轮用量；exit code 语义不变）')
+    .action(async (options: { model?: string; json?: boolean }) => {
       // 真实调用走 ~/.flare/.env 配置的密钥（本地诊断；不输出任何密钥）
       const { createProvider } = await import('../core/llm.js')
-      const { runCacheCheck } = await import('../core/cache-check.js')
+      const { runCacheCheck, cacheCheckToJson } = await import('../core/cache-check.js')
       const llm = createProvider(options.model ? { model: options.model } : undefined)
-      console.log(chalk.cyan('\n🧪 prompt caching 验收（连续两轮调用，第二轮应命中缓存）:'))
       const r = await runCacheCheck(llm)
+      if (options.json) {
+        // 结构化输出：只打印 JSON（不混入彩色/人类可读行），exit code 语义保留
+        console.log(cacheCheckToJson(r))
+        if (!r.ok) process.exitCode = 1
+        return
+      }
+      console.log(chalk.cyan('\n🧪 prompt caching 验收（连续两轮调用，第二轮应命中缓存）:'))
       if (!r.model) {
         console.log(chalk.red(`\n❌ ${r.detail}`))
         process.exitCode = 1

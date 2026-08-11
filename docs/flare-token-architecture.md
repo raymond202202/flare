@@ -99,5 +99,8 @@ Layer 3: 当前轮（最新输入）           ← 必留
   （外部因素，宿主经 /usage 缓存行可观测）
 - ✅ **验收自动化（v0.6.45）**：`flare cache-check` 命令一键验收——构造稳定长前缀连续两轮调用，
   报告第二轮 cache_read_tokens 与估算节省（`--model` 可指定模型；本地诊断，不输出密钥）
+- ✅ **验收程序化消费（v0.6.48）**：`flare cache-check --json` 只打印纯 JSON（ok/model/hitTokens/
+  savedUsd/detail + 两轮用量快照），exit code 语义保留（命中 → 0，未命中/失败 → 1）——宿主面板
+  「缓存健康度」/ CI「命中才放行」断言可直接 JSON.parse
 - ⏳ 单次迭代 fire 的 prompt tokens 相比 v0.6.27 基线下降 ≥ 30%（P0-1 后测量；工具定义瘦身 P1 候选）
 - ✅ 全部改动 tsc 0 错 + 测试全绿（v0.6.29：630/630）

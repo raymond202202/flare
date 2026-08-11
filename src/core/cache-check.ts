@@ -124,3 +124,26 @@ export async function runCacheCheck(llm: LLMProvider = createProvider()): Promis
 
   return { ok, model: second.model || first.model || '', first: f, second: s, detail, hitTokens, savedUsd }
 }
+
+/**
+ * 把验收结果序列化为 JSON（v0.6.48，宿主/CI 程序化消费用——`cache-check --json`）。
+ *
+ * 结构化字段与 CacheCheckResult 一致：ok / model / hitTokens / savedUsd / detail /
+ * first / second（各含 promptTokens/completionTokens/cacheReadTokens/cacheWriteTokens）。
+ * 纯函数不触网、不读密钥；CLI 只负责打印与 exit code（ok → 0，未命中/失败 → 1）。
+ */
+export function cacheCheckToJson(r: CacheCheckResult): string {
+  return JSON.stringify(
+    {
+      ok: r.ok,
+      model: r.model,
+      hitTokens: r.hitTokens,
+      savedUsd: r.savedUsd,
+      detail: r.detail,
+      first: r.first,
+      second: r.second,
+    },
+    null,
+    2
+  )
+}
