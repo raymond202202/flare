@@ -3,20 +3,22 @@
 > 目标：flare 是 Pulse/StorySpire 依赖的 AI Agent 引擎（TS）。任何改动必须安全（tsc 0 错 + 测试全绿才 commit）。
 > 铁律：禁止 push；禁止修改 src/core/agent.ts 的 Agent.run 核心循环。
 
-> **最新状态（v0.6.51）**：**CLI `mcp status` 统一走 `status()` + `--connect` 真实连接状态**（方向③
-> MCP 增强——观测面补齐）：v0.6.50 给 McpServerStatus 补了 transport/target（CLI /mcp 与 server
-> mcp_status 同源），但 CLI 一次性命令 `flare mcp status` 仍**自己拼配置行**（不显示连接状态/工具数），
-> 两处输出形状不一致；本轮统一走 `McpManager.status()`（纯外围，零 agent.ts 改动）——输出
-> `●/○ 连接标记 + 传输类型 + 端点/命令 + （已连接）N 个工具 + [错误]`（未连接也显示、连接失败错误
-> 红字可见）；新增 `--connect` 选项先连接全部配置服务器再显示（Promise.allSettled 容错，与 server
-> mcp_status 等待连接落定同语义），CLI 一次性命令可看真实连接状态与工具数；**809/809 全绿**
-> （808 + 1 新增 status --connect 真实 HTTP 服务器 ●+1 个工具 + 既有 status 测试补 ○ 未连接断言），
-> tsc 0 错误，零 agent.ts 改动；冒烟实测真实 dist CLI + in-process HTTP 服务器：status 未连接 ○+
-> 端点 url；status --connect ●+1 个工具，SMOKE PASS。
-> （v0.6.50：MCP 连接状态 transport/target；v0.6.49：CLI /usage 本会话行缓存命中；v0.6.48：
-> cache-check --json 结构化输出；v0.6.47：mcp-server --bridge-tools 工具透传；v0.6.46：CLI /trim
-> 智能裁剪 + /context 裁剪提示；v0.6.45：flare cache-check 验收工具；v0.6.44：CLI /sessions 关键词
-> 搜索；v0.6.43：server 协议 search_sessions；v0.6.42：CLI /usage perModel 缓存命中显示。）
+> **最新状态（v0.6.52）**：**`session_usage` 带 perModel 按模型分解**（方向① prompt caching 基建
+> 深化——观测面补齐）：v0.6.42 给全局 getUsageStats 加了 perModel（CLI /usage perModel 行显示缓存
+> 命中），但本会话级 `getSessionUsage` 只有汇总（prompt/completion/cacheRead/callCount），宿主面板
+> "本会话用量"看不到**哪个模型**吃到缓存（多模型场景只能从全局统计里手工筛）；本轮补齐（纯外围，
+> 零 agent.ts 改动）——`getSessionUsage` 新增 `perModel`（按模型分组
+> model/calls/promptTokens/completionTokens/cacheReadTokens/totalTokens，按调用次数降序，与
+> getUsageStats.perModel 同形状，host 侧渲染逻辑可直接复用；分解合计与汇总一致；无用量会话返回
+> perModel:[] 幂等不抛错）；server 协议 `session_usage` stats 透传 perModel（fallback 默认对象补
+> perModel:[]）；**810/810 全绿**（809 + 1 新增 store.test.ts + server.test.ts 补 perModel 断言），
+> tsc 0 错误，零 agent.ts 改动；冒烟实测真实 MemoryStore + dist CLI server 子进程：session_usage →
+> stats.perModel [{reasoner 无命中},{chat 命中400}]，SMOKE PASS。
+> （v0.6.51：CLI mcp status 统一 status()+--connect；v0.6.50：MCP 连接状态 transport/target；
+> v0.6.49：CLI /usage 本会话行缓存命中；v0.6.48：cache-check --json 结构化输出；v0.6.47：
+> mcp-server --bridge-tools 工具透传；v0.6.46：CLI /trim 智能裁剪 + /context 裁剪提示；v0.6.45：
+> flare cache-check 验收工具；v0.6.44：CLI /sessions 关键词搜索；v0.6.43：server 协议
+> search_sessions；v0.6.42：CLI /usage perModel 缓存命中显示。）
 
 > 【🔴 当前最高优先级方向（2026-08-11 用户拍板）】**prompt caching 基建 P0 已基本落地 + 验收工具化**：
 > P0-1 前缀稳定 + P0-2 usage 回传（v0.6.29 完成）。验收：`flare cache-check` 一键验收
@@ -28,7 +30,8 @@
 > 下一步候选（按优先级）：
 > ① 【P1】分层上下文（Layer 1 异步滚动摘要——摘要内容升级为 LLM 生成语义级压缩，需评估 run 循环外异步）
 > ② 其他安全的外围增强（server 协议其他管理接口、MCP 工具集完善、测试稳定性等）
->    已覆盖：mcp status 统一 status()+--connect（v0.6.51）✓ /
+>    已覆盖：session_usage perModel（v0.6.52）✓ /
+>    mcp status 统一 status()+--connect（v0.6.51）✓ /
 >    MCP 状态 transport/target（v0.6.50）✓ /
 >    /usage 本会话行缓存命中（v0.6.49）✓ /
 >    cache-check --json 结构化输出（v0.6.48）✓ /
@@ -50,6 +53,32 @@
 
 > ---
 
+> ### 2026-08-12 第五十一轮实施（v0.6.52）——session_usage 带 perModel 按模型分解（方向① prompt caching 基建深化）
+>
+> - **P81 `getSessionUsage.perModel` + server `session_usage` 透传**（src/memory/store.ts + src/server.ts
+>   + 测试，commit `e98ceeb`）：
+>   - **缺口定位**：v0.6.42 给全局 getUsageStats 加了 perModel（CLI /usage perModel 行显示缓存命中），
+>     但本会话级 getSessionUsage 只有汇总（prompt/completion/cacheRead/callCount）——宿主面板
+>     "本会话用量"看不到**哪个模型**吃到缓存（多模型场景只能从全局统计里手工筛）；本轮补齐
+>     （纯外围，零 agent.ts 改动）
+>   - **`getSessionUsage` 新增 `perModel`**：按模型分组（model/calls/promptTokens/completionTokens/
+>     cacheReadTokens/totalTokens，按调用次数降序）——与 getUsageStats.perModel **同形状**（host 侧
+>     渲染逻辑可直接复用）；分解合计与汇总一致（calls/cacheReadTokens 可核对）；无用量会话返回
+>     perModel:[] 幂等不抛错
+>   - **server 协议 `session_usage`**：stats 透传 perModel（fallback 默认对象补 perModel:[]）——宿主
+>     面板"本会话用量"直接显示每个模型的缓存命中分布，与 get_usage 对称
+>   - docs/host-protocol.md（§9.1 响应结构示例 + perModel 说明）+ README Changelog + 版本号 0.6.52
+>   - **810/810 全绿**（809 + 1 新增 store.test.ts：getSessionUsage perModel 双模型分解 + 缓存命中
+>     隔离（s2 不影响 s1）/ 分解合计与汇总一致 / 无用量空数组；server.test.ts 既有 session_usage
+>     用例补 perModel 数组断言），tsc 0 错误，**零 agent.ts 改动**
+>   - **冒烟实测**（真实 MemoryStore + dist CLI server 子进程）：session_usage → stats.perModel
+>     [{reasoner 无命中},{chat 命中400}]，SMOKE PASS
+> - **下一步候选**：① 【P1】分层上下文（Layer 1 异步滚动摘要——摘要内容升级为 LLM 生成语义级压缩，
+>   需评估 run 循环外异步）；② 其他安全的外围增强（server 协议其他管理接口、MCP 工具集完善、测试
+>   稳定性等）
+>
+> ---
+>
 > ### 2026-08-12 第五十轮实施（v0.6.51）——CLI `mcp status` 统一走 `status()` + `--connect` 真实连接状态（方向③ MCP 增强）
 >
 > - **P80 `flare mcp status [--connect]`**（src/cli/index.ts + 测试，commit `d0b78a6`）：
