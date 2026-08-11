@@ -3,23 +3,25 @@
 > 目标：flare 是 Pulse/StorySpire 依赖的 AI Agent 引擎（TS）。任何改动必须安全（tsc 0 错 + 测试全绿才 commit）。
 > 铁律：禁止 push；禁止修改 src/core/agent.ts 的 Agent.run 核心循环。
 
-> **最新状态（v0.6.66）**：**/help 同步 /usage 描述**（方向① prompt caching 基建深化，观察面
-> 对齐）：v0.6.64/65 给 /usage 加了缓存节省显示但 /help 描述还停在「查看 token 用量」——用户
-> 从帮助入口看不到该能力；本轮同步（纯外围，零 agent.ts 改动）——/help 的 /usage 行补
-> 「含缓存命中/节省」说明。
-> **851/851 全绿**（新增 1 断言：/help 含 /usage + 「缓存命中/节省」），tsc 0 错误，
-> **零 agent.ts 改动**。
-> （v0.6.65：/usage perModel 行带缓存节省金额；v0.6.64：usage 统计带缓存节省金额估算；v0.6.63：
-> MCP 子命令提示对称补齐；v0.6.62：MCP 单次命令文档补齐；v0.6.61：MCP 命令提示面补全；v0.6.60：
-> flare mcp complete 单次命令；v0.6.59：flare mcp tools 单次命令；v0.6.58：mcp_tools 工具清单
-> 桥接三层；v0.6.57：mcp_complete 提示词参数补全桥接；v0.6.56：server mcp_connect/mcp_disconnect
-> 控制面；v0.6.55：/mcp connect 摘要 transport/target；v0.6.54：cache-check --rounds 多轮验收；
-> v0.6.53：CLI /usage 本会话 perModel 子行；v0.6.52：session_usage perModel；v0.6.51：CLI mcp
-> status 统一 status()+--connect；v0.6.50：MCP 连接状态 transport/target；v0.6.49：CLI /usage
-> 本会话行缓存命中；v0.6.48：cache-check --json 结构化输出；v0.6.47：mcp-server --bridge-tools
-> 工具透传；v0.6.46：CLI /trim 智能裁剪 + /context 裁剪提示；v0.6.45：flare cache-check 验收
-> 工具；v0.6.44：CLI /sessions 关键词搜索；v0.6.43：server 协议 search_sessions；v0.6.42：
-> CLI /usage perModel 缓存命中显示。）
+> **最新状态（v0.6.67）**：**MCP HTTP transport 鉴权请求头支持**（方向③ MCP 增强）：v0.6.4 起
+> HTTP transport 客户端只能匿名访问——postJson 硬编码 Content-Type/Content-Length，无法携带
+> `Authorization: Bearer <token>` 等鉴权头，远程受保护 MCP 服务器（HTTP transport 主要价值）无法
+> 接入；本轮补齐（纯外围，零 agent.ts 改动）——`MCPHttpClientOptions.headers`（每次 POST 都携带，
+> Content-Length 以实际字节强制覆盖）+ `McpServerConfig.headers`（~/.flare/mcp.json 配置透传，
+> stdio 忽略）+ `McpManager.connect` 透传。
+> **854/854 全绿**（新增 3 用例：客户端 headers 全请求携带 / 无 headers 向后兼容 / manager 配置
+> 透传+桥接工具执行带鉴权），tsc 0 错误，**零 agent.ts 改动**。
+> （v0.6.66：/help 同步 /usage 描述；v0.6.65：/usage perModel 行带缓存节省金额；v0.6.64：usage
+> 统计带缓存节省金额估算；v0.6.63：MCP 子命令提示对称补齐；v0.6.62：MCP 单次命令文档补齐；
+> v0.6.61：MCP 命令提示面补全；v0.6.60：flare mcp complete 单次命令；v0.6.59：flare mcp tools
+> 单次命令；v0.6.58：mcp_tools 工具清单桥接三层；v0.6.57：mcp_complete 提示词参数补全桥接；
+> v0.6.56：server mcp_connect/mcp_disconnect 控制面；v0.6.55：/mcp connect 摘要 transport/target；
+> v0.6.54：cache-check --rounds 多轮验收；v0.6.53：CLI /usage 本会话 perModel 子行；v0.6.52：
+> session_usage perModel；v0.6.51：CLI mcp status 统一 status()+--connect；v0.6.50：MCP 连接状态
+> transport/target；v0.6.49：CLI /usage 本会话行缓存命中；v0.6.48：cache-check --json 结构化输出；
+> v0.6.47：mcp-server --bridge-tools 工具透传；v0.6.46：CLI /trim 智能裁剪 + /context 裁剪提示；
+> v0.6.45：flare cache-check 验收工具；v0.6.44：CLI /sessions 关键词搜索；v0.6.43：server 协议
+> search_sessions；v0.6.42：CLI /usage perModel 缓存命中显示。）
 
 > 【🔴 当前最高优先级方向（2026-08-11 用户拍板）】**prompt caching 基建 P0 已基本落地 + 验收工具化**：
 > P0-1 前缀稳定 + P0-2 usage 回传（v0.6.29 完成）。验收：`flare cache-check` 一键验收
@@ -31,7 +33,8 @@
 > 下一步候选（按优先级）：
 > ① 【P1】分层上下文（Layer 1 异步滚动摘要——摘要内容升级为 LLM 生成语义级压缩，需评估 run 循环外异步）
 > ② 其他安全的外围增强（server 协议其他管理接口、MCP 工具集完善、测试稳定性等）
->    已覆盖：MCP 子命令提示对称补齐（v0.6.63）✓ /
+>    已覆盖：MCP HTTP transport 鉴权 headers（v0.6.67）✓ /
+>    MCP 子命令提示对称补齐（v0.6.63）✓ /
 >    MCP 单次命令文档补齐（v0.6.62）✓ /
 >    MCP 命令提示面补全（v0.6.61）✓ /
 >    flare mcp complete 单次命令（v0.6.60）✓ /
@@ -62,6 +65,29 @@
 >    terminal 退出码（v0.6.33）✓ / CLI 归档命令（v0.6.32）✓ / 归档 API（v0.6.31）✓ /
 >    工具输出治理（v0.6.30）✓ / prompt caching P0（v0.6.29）✓ / MCP 动态资源提供器（v0.6.28）✓ /
 >    confirm 描述（v0.6.27）✓
+
+> ---
+
+> ### 2026-08-12 第六十六轮实施（v0.6.67）——MCP HTTP transport 鉴权请求头支持（方向③ MCP 增强）
+
+> - **P96 `MCPHttpClientOptions.headers` + `McpServerConfig.headers` + `McpManager.connect` 透传**
+>   （src/mcp/http-client.ts + src/mcp/types.ts + src/mcp/manager.ts + 测试，commit `de12821`）：
+>   - **缺口定位**：v0.6.4 起的 HTTP transport 客户端**只能匿名访问**——postJson 硬编码
+>     Content-Type/Content-Length，无法携带 `Authorization: Bearer <token>` 等鉴权头；真实世界
+>     远程 MCP 服务器（HTTP transport 主要价值）几乎都需要鉴权，否则 `flare mcp call --url`
+>     远程调用必失败；本轮补齐（纯外围，零 agent.ts 改动）
+>   - **客户端**：`MCPHttpClientOptions.headers`（每次 POST 都携带，含 initialize/通知/清单/调用；
+>     Content-Length 以实际字节为准强制覆盖——用户传入不可信）；不传 → 行为与旧版完全一致
+>     （向后兼容）
+>   - **配置**：`~/.flare/mcp.json` 的 servers 项加 `headers`（如 `{ "Authorization": "Bearer
+>     <token>" }`）——`McpManager.connect` 透传；stdio 模式忽略（env 已覆盖子进程环境变量）
+>   - docs/mcp.md（McpManager 接入 headers 说明）+ README Changelog + 版本号 0.6.67
+>   - **854/854 全绿**（新增 3 用例：客户端 headers 全请求携带 / 无 headers 不发送向后兼容 /
+>     manager 配置 headers 透传 + 桥接工具执行带鉴权），tsc 0 错误，**零 agent.ts 改动**
+> - **下一步候选**：① 【P1】分层上下文（Layer 1 异步滚动摘要——摘要内容升级为 LLM 生成语义级压缩，
+>   需评估 run 循环外异步）；② 其他安全的外围增强（server 协议其他管理接口、MCP 工具集完善、测试
+>   稳定性等）；③ 方向③续：CLI 单次命令 `--header <k:v>`（可重复）对称？MCP HTTP transport
+>   OAuth/SSE？——建议先做 CLI --header（改动面小且对称）
 
 > ---
 
