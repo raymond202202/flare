@@ -3,22 +3,21 @@
 > 目标：flare 是 Pulse/StorySpire 依赖的 AI Agent 引擎（TS）。任何改动必须安全（tsc 0 错 + 测试全绿才 commit）。
 > 铁律：禁止 push；禁止修改 src/core/agent.ts 的 Agent.run 核心循环。
 
-> **最新状态（v0.6.52）**：**`session_usage` 带 perModel 按模型分解**（方向① prompt caching 基建
-> 深化——观测面补齐）：v0.6.42 给全局 getUsageStats 加了 perModel（CLI /usage perModel 行显示缓存
-> 命中），但本会话级 `getSessionUsage` 只有汇总（prompt/completion/cacheRead/callCount），宿主面板
-> "本会话用量"看不到**哪个模型**吃到缓存（多模型场景只能从全局统计里手工筛）；本轮补齐（纯外围，
-> 零 agent.ts 改动）——`getSessionUsage` 新增 `perModel`（按模型分组
-> model/calls/promptTokens/completionTokens/cacheReadTokens/totalTokens，按调用次数降序，与
-> getUsageStats.perModel 同形状，host 侧渲染逻辑可直接复用；分解合计与汇总一致；无用量会话返回
-> perModel:[] 幂等不抛错）；server 协议 `session_usage` stats 透传 perModel（fallback 默认对象补
-> perModel:[]）；**810/810 全绿**（809 + 1 新增 store.test.ts + server.test.ts 补 perModel 断言），
-> tsc 0 错误，零 agent.ts 改动；冒烟实测真实 MemoryStore + dist CLI server 子进程：session_usage →
-> stats.perModel [{reasoner 无命中},{chat 命中400}]，SMOKE PASS。
-> （v0.6.51：CLI mcp status 统一 status()+--connect；v0.6.50：MCP 连接状态 transport/target；
-> v0.6.49：CLI /usage 本会话行缓存命中；v0.6.48：cache-check --json 结构化输出；v0.6.47：
-> mcp-server --bridge-tools 工具透传；v0.6.46：CLI /trim 智能裁剪 + /context 裁剪提示；v0.6.45：
-> flare cache-check 验收工具；v0.6.44：CLI /sessions 关键词搜索；v0.6.43：server 协议
-> search_sessions；v0.6.42：CLI /usage perModel 缓存命中显示。）
+> **最新状态（v0.6.53）**：**CLI `/usage` 本会话 perModel 子行**（方向① prompt caching 基建深化——
+> 观测面闭环）：v0.6.52 给协议 session_usage 补了 perModel（宿主侧），但 **CLI /usage 的本会话行
+> 仍是单行汇总**（本会话: N tokens · 缓存命中）——CLI 交互模式看不到「本会话哪个模型吃到缓存」；
+> 本轮对称补齐（纯外围，零 agent.ts 改动）——本会话行下追加 perModel 子行
+> `模型 <name>: N tokens（M 次调用）` + 有命中追加缩进子行 `缓存命中: N tokens（R%）`（命中率按该
+> 模型本会话 promptTokens 算），与总览 perModel 行（v0.6.42）同模式；无命中模型不显示子行；**本
+> 会话维度隔离**（其他会话用量不混入）；perModel 为空/旧 store 无该字段 → 不显示子行（与 v0.6.49
+> 输出一致）；**811/811 全绿**（810 + 1 新增 prompt-caching.test.ts），tsc 0 错误，零 agent.ts 改动；
+> 冒烟实测真实 MemoryStore + dist CLI：/usage 带 sessionId → 本会话行 1,800 tokens · 缓存命中 400
+> + 子行 chat 1,500（命中 400/40%）+ reasoner 300，SMOKE PASS。
+> （v0.6.52：session_usage perModel；v0.6.51：CLI mcp status 统一 status()+--connect；v0.6.50：
+> MCP 连接状态 transport/target；v0.6.49：CLI /usage 本会话行缓存命中；v0.6.48：cache-check --json
+> 结构化输出；v0.6.47：mcp-server --bridge-tools 工具透传；v0.6.46：CLI /trim 智能裁剪 + /context
+> 裁剪提示；v0.6.45：flare cache-check 验收工具；v0.6.44：CLI /sessions 关键词搜索；v0.6.43：
+> server 协议 search_sessions；v0.6.42：CLI /usage perModel 缓存命中显示。）
 
 > 【🔴 当前最高优先级方向（2026-08-11 用户拍板）】**prompt caching 基建 P0 已基本落地 + 验收工具化**：
 > P0-1 前缀稳定 + P0-2 usage 回传（v0.6.29 完成）。验收：`flare cache-check` 一键验收
@@ -30,7 +29,8 @@
 > 下一步候选（按优先级）：
 > ① 【P1】分层上下文（Layer 1 异步滚动摘要——摘要内容升级为 LLM 生成语义级压缩，需评估 run 循环外异步）
 > ② 其他安全的外围增强（server 协议其他管理接口、MCP 工具集完善、测试稳定性等）
->    已覆盖：session_usage perModel（v0.6.52）✓ /
+>    已覆盖：/usage 本会话 perModel 子行（v0.6.53）✓ /
+>    session_usage perModel（v0.6.52）✓ /
 >    mcp status 统一 status()+--connect（v0.6.51）✓ /
 >    MCP 状态 transport/target（v0.6.50）✓ /
 >    /usage 本会话行缓存命中（v0.6.49）✓ /
@@ -53,6 +53,29 @@
 
 > ---
 
+> ### 2026-08-12 第五十二轮实施（v0.6.53）——CLI `/usage` 本会话 perModel 子行（方向① prompt caching 基建深化）
+>
+> - **P82 `/usage` sessionId 分支显示本会话 perModel 分解**（src/cli/index.ts + 测试，commit `b9e5f9d`）：
+>   - **缺口定位**：v0.6.52 给协议 session_usage 补了 perModel（宿主侧），但 **CLI /usage 的本会话
+>     行仍是单行汇总**（本会话: N tokens · 缓存命中）——CLI 交互模式看不到「本会话哪个模型吃到
+>     缓存」；本轮对称补齐（纯外围，零 agent.ts 改动）
+>   - **本会话行下追加 perModel 子行**：`模型 <name>: N tokens（M 次调用）` + 有命中追加缩进子行
+>     `缓存命中: N tokens（R%）`（命中率按该模型本会话 promptTokens 算）——与总览 perModel 行
+>     （v0.6.42）同模式；无命中模型不显示子行；**本会话维度隔离**（其他会话用量不混入）
+>   - **向后兼容**：perModel 为空/旧 store 无该字段 → 不显示子行（与 v0.6.49 输出一致）
+>   - README Changelog + 版本号 0.6.53
+>   - **811/811 全绿**（810 + 1 新增 prompt-caching.test.ts：本会话双模型 chat 命中 400/1000=40%
+>     子行 + reasoner 无命中不显示 + 其他会话 s2 不混入（1,800 汇总 / 1,500 chat / 300 reasoner）），
+>     tsc 0 错误，**零 agent.ts 改动**
+>   - **冒烟实测**（真实 MemoryStore + dist CLI）：/usage 带 sessionId → 本会话行 1,800 tokens ·
+>     缓存命中 400 + 子行 模型 deepseek-chat: 1,500 tokens（1 次调用）+ 缓存命中 400 tokens（40%）、
+>     模型 deepseek-reasoner: 300 tokens（1 次调用），SMOKE PASS
+> - **下一步候选**：① 【P1】分层上下文（Layer 1 异步滚动摘要——摘要内容升级为 LLM 生成语义级压缩，
+>   需评估 run 循环外异步）；② 其他安全的外围增强（server 协议其他管理接口、MCP 工具集完善、测试
+>   稳定性等）
+>
+> ---
+>
 > ### 2026-08-12 第五十一轮实施（v0.6.52）——session_usage 带 perModel 按模型分解（方向① prompt caching 基建深化）
 >
 > - **P81 `getSessionUsage.perModel` + server `session_usage` 透传**（src/memory/store.ts + src/server.ts
