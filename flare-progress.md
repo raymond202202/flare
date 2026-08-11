@@ -3,25 +3,26 @@
 > 目标：flare 是 Pulse/StorySpire 依赖的 AI Agent 引擎（TS）。任何改动必须安全（tsc 0 错 + 测试全绿才 commit）。
 > 铁律：禁止 push；禁止修改 src/core/agent.ts 的 Agent.run 核心循环。
 
-> **最新状态（v0.6.75）**：**cache-check 多轮验收 savedUsd 累加所有命中轮**（方向① prompt
-> caching 基建深化）：--rounds>2 时总节省此前只按最后一轮计算（第 2..N-1 命中轮漏算，宿主/CI
-> 消费 --json 看到的总节省被低估）——本轮改为累加所有命中轮（未命中轮不计、无法定价仍整体 null、
-> rounds=2 行为不变向后兼容）。**871/871 全绿**，tsc 0 错误，**零 agent.ts 改动**。
-> （v0.6.74：README 命令行摘要表补齐；v0.6.73：get_config mcpServers 带 auth 标记；v0.6.72：
-> /mcp connect 摘要带 [auth]；v0.6.71：host-protocol --mcp 配置文档补齐；v0.6.70：MCP 状态带
-> auth 标记；v0.6.69：HTTP 服务端 Bearer 鉴权；v0.6.68：CLI mcp 单次命令 --header；v0.6.67：
-> HTTP transport 鉴权请求头支持；v0.6.66：/help 同步 /usage 描述；v0.6.65：/usage perModel
-> 行带缓存节省金额；v0.6.64：usage 统计带缓存节省金额估算；v0.6.63：MCP 子命令提示对称补齐；
-> v0.6.62：MCP 单次命令文档补齐；v0.6.61：MCP 命令提示面补全；v0.6.60：flare mcp complete
-> 单次命令；v0.6.59：flare mcp tools 单次命令；v0.6.58：mcp_tools 工具清单桥接三层；v0.6.57：
-> mcp_complete 提示词参数补全桥接；v0.6.56：server mcp_connect/mcp_disconnect 控制面；v0.6.55：
-> /mcp connect 摘要 transport/target；v0.6.54：cache-check --rounds 多轮验收；v0.6.53：CLI
-> /usage 本会话 perModel 子行；v0.6.52：session_usage perModel；v0.6.51：CLI mcp status
-> 统一 status()+--connect；v0.6.50：MCP 连接状态 transport/target；v0.6.49：CLI /usage 本会话
-> 行缓存命中；v0.6.48：cache-check --json 结构化输出；v0.6.47：mcp-server --bridge-tools
-> 工具透传；v0.6.46：CLI /trim 智能裁剪 + /context 裁剪提示；v0.6.45：flare cache-check
-> 验收工具；v0.6.44：CLI /sessions 关键词搜索；v0.6.43：server 协议 search_sessions；
-> v0.6.42：CLI /usage perModel 缓存命中显示。）
+> **最新状态（v0.6.76）**：**cache-check 每轮节省明细 runSavedUsd**（方向① prompt caching 基建
+> 深化）：v0.6.75 修好多轮总节省后仍缺**每轮省钱分布**——宿主/CI 只看到总节省、看不出逐轮明细；
+> 本轮新增 runSavedUsd（与 runs 对齐，第 i 项 = 第 i+1 轮 miss 价 − hit 价；无法定价 → null；
+> 基准/未命中轮 0），--json 含该字段、人类可读输出每轮行尾追加（节省 $X.XXXXXX）（>0 才显示）。
+> **873/873 全绿**，tsc 0 错误，**零 agent.ts 改动**。
+> （v0.6.75：cache-check 多轮 savedUsd 累加所有命中轮；v0.6.74：README 命令行摘要表补齐；
+> v0.6.73：get_config mcpServers 带 auth 标记；v0.6.72：/mcp connect 摘要带 [auth]；v0.6.71：
+> host-protocol --mcp 配置文档补齐；v0.6.70：MCP 状态带 auth 标记；v0.6.69：HTTP 服务端 Bearer
+> 鉴权；v0.6.68：CLI mcp 单次命令 --header；v0.6.67：HTTP transport 鉴权请求头支持；v0.6.66：
+> /help 同步 /usage 描述；v0.6.65：/usage perModel 行带缓存节省金额；v0.6.64：usage 统计带缓存
+> 节省金额估算；v0.6.63：MCP 子命令提示对称补齐；v0.6.62：MCP 单次命令文档补齐；v0.6.61：MCP
+> 命令提示面补全；v0.6.60：flare mcp complete 单次命令；v0.6.59：flare mcp tools 单次命令；
+> v0.6.58：mcp_tools 工具清单桥接三层；v0.6.57：mcp_complete 提示词参数补全桥接；v0.6.56：
+> server mcp_connect/mcp_disconnect 控制面；v0.6.55：/mcp connect 摘要 transport/target；
+> v0.6.54：cache-check --rounds 多轮验收；v0.6.53：CLI /usage 本会话 perModel 子行；v0.6.52：
+> session_usage perModel；v0.6.51：CLI mcp status 统一 status()+--connect；v0.6.50：MCP 连接
+> 状态 transport/target；v0.6.49：CLI /usage 本会话行缓存命中；v0.6.48：cache-check --json
+> 结构化输出；v0.6.47：mcp-server --bridge-tools 工具透传；v0.6.46：CLI /trim 智能裁剪 +
+> /context 裁剪提示；v0.6.45：flare cache-check 验收工具；v0.6.44：CLI /sessions 关键词搜索；
+> v0.6.43：server 协议 search_sessions；v0.6.42：CLI /usage perModel 缓存命中显示。）
 
 > 【🔴 当前最高优先级方向（2026-08-11 用户拍板）】**prompt caching 基建 P0 已基本落地 + 验收工具化**：
 > P0-1 前缀稳定 + P0-2 usage 回传（v0.6.29 完成）。验收：`flare cache-check` 一键验收
@@ -67,6 +68,26 @@
 >    terminal 退出码（v0.6.33）✓ / CLI 归档命令（v0.6.32）✓ / 归档 API（v0.6.31）✓ /
 >    工具输出治理（v0.6.30）✓ / prompt caching P0（v0.6.29）✓ / MCP 动态资源提供器（v0.6.28）✓ /
 >    confirm 描述（v0.6.27）✓
+
+> ---
+
+> ### 2026-08-12 第七十五轮实施（v0.6.76）——cache-check 每轮节省明细（方向① prompt caching 基建深化）
+
+> - **P105 `CacheCheckResult.runSavedUsd` + CLI 每轮节省显示**（src/core/cache-check.ts +
+>   src/cli/index.ts + 测试，commit `a3db26a`）：
+>   - **缺口定位**：v0.6.75 修好多轮总节省后仍缺**每轮省钱分布**——宿主/CI 只看到总节省
+>     （savedUsd），看不出哪一轮省了多少；本轮补齐（纯外围，零 agent.ts 改动）
+>   - **runSavedUsd**：与 runs 对齐的数组（第 i 项 = 第 i+1 轮 miss 价 − hit 价，同 round 同
+>     口径；无法定价 → null；基准/未命中轮通常 0）；失败路径 null 填充与 runs 对齐
+>   - **消费面**：cacheCheckToJson（--json）输出含 runSavedUsd；人类可读输出每轮行尾追加
+>     `（节省 $X.XXXXXX）`（>0 才显示，与总节省 toFixed(6) 同格式）；命令描述同步
+>   - README Changelog + 版本号 0.6.76
+>   - **873/873 全绿**（新增 2 用例 + 1 断言：多轮每轮明细精确相等且总节省 = 明细和（toBeCloseTo
+>     6 位）；无法定价全部 null；--json 含 runSavedUsd 且基准 0/命中 >0），tsc 0 错误，
+>     **零 agent.ts 改动**
+> - **下一步候选**：① 【P1】分层上下文（Layer 1 异步滚动摘要——需评估 run 循环外异步）；② 其他
+>   安全的外围增强（server 协议其他管理接口、MCP 工具集完善、测试稳定性等）；③ 方向①继续：
+>   cache-check 失败诊断建议 / README 命令表 --json 补齐（文档对称，可选）
 
 > ---
 
