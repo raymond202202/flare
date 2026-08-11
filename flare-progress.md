@@ -3,17 +3,16 @@
 > 目标：flare 是 Pulse/StorySpire 依赖的 AI Agent 引擎（TS）。任何改动必须安全（tsc 0 错 + 测试全绿才 commit）。
 > 铁律：禁止 push；禁止修改 src/core/agent.ts 的 Agent.run 核心循环。
 
-> **最新状态（v0.6.40）**：**server 协议 `mcp_call` + McpManager.callTool**（方向②③交叉）——
-> 宿主已能**列** MCP 工具（tools 请求 source:mcp 标注）、读资源（mcp_read_resource）、渲染提示词
-> （mcp_get_prompt），但**无法经协议直接调用外部 MCP 工具**——MCP 三大列表的「清单 → 操作」闭环
-> 缺最后一环：`McpManager.callTool(name, toolName, args?)` 代理调用 tools/call（与
-> readResource/getPrompt 同模式：未连接 reject 清晰错误、工具级失败 isError 原样透传不抛、
-> stdio/HTTP 双传输 McpToolClient 最小接口）；server 协议 `mcp_call {server,tool,args?}` →
-> `{type:'mcp_call', server, tool, success, output?, error?}`（文本内容提取拼接、工具级失败
-> success:false+error 服务不崩、缺参 error 含用法、未知工具/协议层错误透传、不触发生成不创建会话
-> 等待后台连接落定）；**752/752 全绿**（745 + 7 新增），tsc 0 错误，零 agent.ts 改动；
-> 冒烟实测真实 dist CLI 0.6.40 + 真实 mock 服务器全链路，SMOKE PASS。
-> （v0.6.39：CLI /mcp read/render；v0.6.38：server 协议 mcp_read_resource/mcp_get_prompt 读取渲染代理；v0.6.37：CLI mcp-server --bridge-prompts。）
+> **最新状态（v0.6.41）**：**CLI 交互模式 `/mcp call`**（方向②③交叉）——
+> v0.6.40 给 server 协议补了 `mcp_call`（宿主能直接调用外部 MCP 工具），但 **CLI 交互模式的
+> `/mcp` 还没有 call 子命令**（v0.6.39 补了 read/render，call 缺）——本轮对称补齐
+> （纯 CLI 外围，零 agent.ts 改动）：`/mcp call <server> <tool> [JSON参数]` 调用已连接服务器
+> 工具（tools/call 代理，与协议 mcp_call 同源，直接显示工具返回文本；工具级失败 isError 显示
+> 失败信息；非法 JSON 参数提示不调用；未知工具/未连接错误不崩溃）；McpCommandHooks 新增可选
+> callTool?（旧 hooks 向后兼容降级提示）；/help 注册一行 + 用法提示更新；**759/759 全绿**
+> （752 + 7 新增），tsc 0 错误，零 agent.ts 改动；冒烟实测真实 McpManager.callTool 全链路，
+> SMOKE PASS。
+> （v0.6.40：server 协议 mcp_call + McpManager.callTool；v0.6.39：CLI /mcp read/render；v0.6.38：server 协议 mcp_read_resource/mcp_get_prompt 读取渲染代理。）
 
 > 【🔴 当前最高优先级方向（2026-08-11 用户拍板）】**prompt caching 基建 P0 已基本落地**：
 > P0-1 前缀稳定 + P0-2 usage 回传（v0.6.29 完成）。验收：连续两轮调用（间隔<5min）第二轮
@@ -23,7 +22,8 @@
 > 下一步候选（按优先级）：
 > ① 【P1】分层上下文（Layer 1 异步滚动摘要——摘要内容升级为 LLM 生成语义级压缩，需评估 run 循环外异步）
 > ② 其他安全的外围增强（server 协议其他管理接口、MCP 工具集完善、测试稳定性等）
->    已覆盖：mcp_call 协议+callTool 代理（v0.6.40）✓ /
+>    已覆盖：/mcp call 交互命令（v0.6.41）✓ /
+>    mcp_call 协议+callTool 代理（v0.6.40）✓ /
 >    /mcp read/render 交互命令（v0.6.39）✓ /
 >    mcp_read_resource/mcp_get_prompt 读取渲染代理（v0.6.38）✓ /
 >    mcp-server --bridge-prompts（v0.6.37）✓ / MCP prompts 桥接（v0.6.36）✓ /
@@ -34,7 +34,35 @@
 >
 > ---
 >
-> ### 2026-08-12 第三十九轮实施（v0.6.40）——server 协议 mcp_call + McpManager.callTool（方向②③，宿主直接调用外部 MCP 工具）
+> ### 2026-08-12 第四十轮实施（v0.6.41）——CLI 交互模式 `/mcp call`（方向②③，直接调用外部 MCP 工具）
+
+- **P70 CLI 交互模式 `/mcp call` 子命令**（src/cli/index.ts + 测试，commit `765111b`）：
+  - **缺口定位**：v0.6.40 给 server 协议补了 `mcp_call`（宿主能直接调用外部 MCP 工具），但
+    **CLI 交互模式的 `/mcp` 还没有 call 子命令**（v0.6.39 补了 read/render，call 缺）——
+    本轮对称补齐（纯 CLI 外围，零 agent.ts 改动）
+  - **`/mcp call <server> <tool> [JSON参数]`**：调用已连接服务器的工具（`tools/call` 代理，
+    与协议 `mcp_call` 同源）——`/mcp call mock add_numbers {"a":2,"b":3}` 直接显示工具返回
+    （文本内容提取拼接）；工具级失败（isError）显示失败信息（`❌ ... 执行失败`）；
+    **非法 JSON 参数提示不调用**（`参数必须是 JSON 对象`）；未知工具/未连接错误输出不崩溃
+  - **向后兼容**：`McpCommandHooks` 新增可选 `callTool?`——旧 hooks 形状（未提供方法）友好
+    提示「未提供工具调用」不崩溃（与 readResource/renderPrompt 降级同模式）；CLI 真实实现
+    直接委托 `mcpManager.callTool`（与协议同源）
+  - `/help` 注册一行 + 状态行/用法提示更新（含 call 子命令）
+  - docs/mcp.md（交互模式 call 说明）+ README Changelog + 版本号 0.6.41
+  - **759/759 全绿**（752 + 7 新增 tests/mcp-command.test.ts：call 成功显示工具返回（代理转发
+    + 参数透传）/ 工具级失败 isError 失败输出不崩溃 / 非法 JSON 参数提示不调用 / 缺 tool 用法
+    提示不调用 / 未连接错误不崩溃 / 旧 hooks 无 callTool 降级 / 用法错误提示含 call），tsc 0
+    错误，**零 agent.ts 改动**
+  - **冒烟实测**（真实 McpManager.callTool，CLI hooks 委托的同源方法）：add_numbers `{a:2,b:3}`
+    → isError false 输出 5；fail_tool → isError true 输出「出错了」；ghost_tool →「未知工具:
+    ghost_tool」；ghost 未连接 →「MCP 服务器未连接: ghost」，SMOKE PASS
+- **下一步候选**：① 【P1】分层上下文（Layer 1 异步滚动摘要——摘要内容升级为 LLM 生成语义级压缩，
+  需评估 run 循环外异步）；② 其他安全的外围增强（server 协议其他管理接口、MCP 工具集完善、测试
+  稳定性等）
+
+---
+
+### 2026-08-12 第三十九轮实施（v0.6.40）——server 协议 mcp_call + McpManager.callTool（方向②③，宿主直接调用外部 MCP 工具）
 
 - **P69 McpManager.callTool + server 协议 `mcp_call`**（src/mcp/manager.ts + server.ts + 测试，
   commit `4231398`）：
