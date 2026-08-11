@@ -3,20 +3,19 @@
 > 目标：flare 是 Pulse/StorySpire 依赖的 AI Agent 引擎（TS）。任何改动必须安全（tsc 0 错 + 测试全绿才 commit）。
 > 铁律：禁止 push；禁止修改 src/core/agent.ts 的 Agent.run 核心循环。
 
-> **最新状态（v0.6.46）**：**CLI `/trim` 智能裁剪 + `/context` 裁剪提示**（方向④ suggestTrim
-> 宿主接线 CLI 侧）——server 侧 apply_trim（v0.6.35）早已闭环，但 **CLI 交互模式缺裁剪入口**：
-> 上下文超预算只能 `/clear`（清空全部）无法外科手术式裁剪：本轮补齐（纯 CLI 外围 + hooks 参数，
-> 零 agent.ts 改动）——`ContextTrimHooks`（handleSlashCommand 新增可选参数，宿主注入）：
-> `suggest()` 返回建议删除量（suggestTrim 纯函数：system 保底+最近优先+tool_calls↔tool 配对）、
-> `apply(budget?)` 执行裁剪（agent.applyTrim）；CLI 交互模式接线真实 Agent（budget 缺省取
-> config.maxContextTokens 默认 16000，reserveForOutput 1024）；`/context` 超预算追加
-> `💡 可裁剪: 建议删 N 条消息（约 X tokens）——/trim 执行智能裁剪`（预算内/无 hooks 不显示
-> 零回归）；`/trim [budgetTokens]` 执行显示保留/删除条数、预算内「无需裁剪」、非法预算
-> （abc/0/-5/1.5）用法提示不调用、无 hooks 降级「裁剪不可用」不崩溃；**800/800 全绿**
-> （789 + 11 新增），tsc 0 错误，零 agent.ts 改动；冒烟实测真实 MemoryStore+Agent——
-> /trim 300 → 保留 2 删 4（重建 Agent 后仍 2 条，store 同步删除），SMOKE PASS。
-> （v0.6.45：flare cache-check 验收工具；v0.6.44：CLI /sessions 关键词搜索；v0.6.43：
-> server 协议 search_sessions；v0.6.42：CLI /usage perModel 缓存命中显示。）
+> **最新状态（v0.6.47）**：**CLI `mcp-server --bridge-tools` 外部 MCP 工具透传**（方向③ MCP 增强，
+> 与 v0.6.28/0.6.37 `--bridge-resources`/`--bridge-prompts` 对称）——MCP 三大列表（tools/resources/
+> prompts）中资源/提示词已能透传，唯独**工具**不能（只能注入 Agent，无法经 flare 自身 MCPServer 暴露
+> 给其他 AI 客户端）：本轮补齐（纯外围 CLI，零 agent.ts 改动）——`--bridge-tools`（与资源/提示词透传
+> 可同时用，`--config` 共用）连接 ~/.flare/mcp.json 全部服务器，把 `McpManager.getAllTools()` 的 flare
+> Tool 代理并入工具集：**并集 = 内置（-t 收窄）+ 外部透传**（stdio 与 `--http` 双传输）；**调用实时
+> 代理转发**（tools/call 经 flare 到外部服务器，内容往返 isError 原样透传）；同名工具保留原名以先
+> 注册者为准（可用 -t 收窄内置避免冲突）；无配置/连接失败提示 + 仅暴露自身工具不中断；**802/802
+> 全绿**（800 + 2 新增），tsc 0 错误，零 agent.ts 改动；冒烟实测真实 dist CLI 0.6.47 子进程 + 真实
+> mock 服务器——工具并集 9 个（6 内置 + 3 外部）→ add_numbers {a:2,b:3} → 5 → echo_text → echo: hi
+> → fail_tool → isError true「出错了」，SMOKE PASS。
+> （v0.6.46：CLI /trim 智能裁剪 + /context 裁剪提示；v0.6.45：flare cache-check 验收工具；v0.6.44：
+> CLI /sessions 关键词搜索；v0.6.43：server 协议 search_sessions；v0.6.42：CLI /usage perModel 缓存命中显示。）
 
 > 【🔴 当前最高优先级方向（2026-08-11 用户拍板）】**prompt caching 基建 P0 已基本落地 + 验收工具化**：
 > P0-1 前缀稳定 + P0-2 usage 回传（v0.6.29 完成）。验收：`flare cache-check` 一键验收
@@ -28,6 +27,7 @@
 > ① 【P1】分层上下文（Layer 1 异步滚动摘要——摘要内容升级为 LLM 生成语义级压缩，需评估 run 循环外异步）
 > ② 其他安全的外围增强（server 协议其他管理接口、MCP 工具集完善、测试稳定性等）
 >    已覆盖：CLI /trim 智能裁剪 + /context 提示（v0.6.46）✓ /
+>    mcp-server --bridge-tools 工具透传（v0.6.47）✓ /
 >    cache-check 验收工具（v0.6.45）✓ /
 >    CLI /sessions 关键词搜索（v0.6.44）✓ /
 >    search_sessions 会话搜索（v0.6.43）✓ /
@@ -44,35 +44,30 @@
 
 > ---
 
-> ### 2026-08-12 第四十五轮实施（v0.6.46）——CLI /trim 智能裁剪 + /context 裁剪提示（方向④ suggestTrim 宿主接线 CLI 侧）
+> ### 2026-08-12 第四十六轮实施（v0.6.47）——CLI `mcp-server --bridge-tools` 外部 MCP 工具透传（方向③ MCP 增强）
 
-> - **P75 CLI `/trim` + `/context` 裁剪提示**（src/cli/index.ts + 测试，commit `464ce04`）：
->   - **缺口定位**：方向④「suggestTrim 宿主接线」server 侧早已闭环（v0.6.35 apply_trim），
->     但 **CLI 交互模式缺裁剪入口**——上下文超预算时只能 `/clear`（清空全部），无法外科手术式
->     裁剪；本轮补齐（纯 CLI 外围 + hooks 参数，零 agent.ts 改动）
->   - **`ContextTrimHooks`**（handleSlashCommand 新增**可选参数第 10 位**，宿主注入）：
->     `suggest()` 返回建议删除量（suggestTrim 纯函数：system 保底 + 最近优先 + tool_calls↔tool
->     配对）、`apply(budget?)` 执行裁剪（`agent.applyTrim`，store 同步删除被裁消息）；
->     CLI 交互模式接线真实 Agent（budget 缺省取 `config.maxContextTokens` 默认 16000，
->     `reserveForOutput: 1024`）
->   - **`/context` 增强**：超预算时追加 `💡 可裁剪: 建议删 N 条消息（约 X tokens）——/trim
->     执行智能裁剪`（预算内/无 contextTrim 不显示，既有 toContain 断言零回归）；
->     **`/trim [budgetTokens]`**：执行智能裁剪显示 `✅ 已智能裁剪: 保留 N 条，删除 M 条`;
->     预算内显示「无需裁剪」；非法预算（abc/0/-5/1.5）用法提示**不调用 apply**；无 hooks /
->     apply 返回 null 降级「裁剪不可用」不崩溃；`/help` 注册两行（/context 提示 + /trim）
->   - docs/context-observability.md（「一键执行」小节：apply_trim + CLI /trim）+ README
->     Changelog + 版本号 0.6.46
->   - **800/800 全绿**（789 + 11 新增 tests/trim-command.test.ts：/trim 缺省预算调 apply
->     （undefined 透传）+ 成功显示保留/删除条数 / 显式预算 8000 透传 / 4 种非法预算用法提示
->     不调 apply / 无 hooks 降级 / apply 返回 null 降级 / 预算内无需裁剪 / 不触发命令不调
->     apply / help 注册；/context 超预算显示可裁剪提示（建议删 5 条 + 8,800 tokens + /trim
->     指引）/ 预算内不显示 / 无 contextTrim 零回归），tsc 0 错误，**零 agent.ts 改动**
->   - **冒烟实测**（真实 MemoryStore + Agent，`storage` 路径注入——Agent 的 store 来自
->     config.storage 而非 config.store，冒烟脚本踩坑修正）：/trim 300 →
->     `✅ 已智能裁剪: 保留 2 条，删除 4 条`（system 保底 + 最新消息保留；重建 Agent 后仍
->     2 条——store 同步删除被裁消息）；/trim abc → 用法提示，SMOKE PASS
-> - **（文档补记 commit `9a25353`）**：README CLI 命令表补齐 cache-check 子命令 + /trim +
->   /sessions 关键词搜索（中英文表与 v0.6.44/45/46 功能对齐），纯文档零代码
+> - **P76 CLI `flare mcp-server --bridge-tools`**（src/cli/index.ts + 测试，commit `6e3605f`）：
+>   - **缺口定位**：MCP 三大列表（tools/resources/prompts）中资源/提示词已能透传（v0.6.28/0.6.37），
+>     唯独**工具**不能——外部 MCP 服务器工具只能注入 Agent（库级 getAllTools），无法经 flare 自身
+>     MCPServer 暴露给其他 AI 客户端（v0.6.36 补齐 prompts 桥接后「三大列表」仅剩工具不可透传）；
+>     本轮补齐（纯外围 CLI，零 agent.ts 改动）
+>   - **新 flag**：`mcp-server --bridge-tools`（与 `--bridge-resources` / `--bridge-prompts` 可同时用；
+>     `--config` 共用）——连接 ~/.flare/mcp.json 全部服务器（Promise.allSettled 容错，与资源透传同分支
+>     共用连接），把 `McpManager.getAllTools()` 返回的 flare Tool 代理（createMcpTools 包装）并入工具集：
+>     **工具并集 = 内置（-t 收窄）+ 外部透传**（stdio 与 `--http` 双传输都支持）；**调用实时代理转发**——
+>     客户端 `tools/call` 经 flare 转发到外部服务器（内容往返，isError 原样透传）；同名工具保留原名、
+>     以先注册者为准（可用 `-t` 收窄内置避免冲突）
+>   - **降级**：透传不改变 initialize 能力声明（工具能力本就默认声明）；无配置/连接失败 → 提示 +
+>     仅暴露 flare 自身工具（不中断，与资源透传无配置降级一致）
+>   - docs/mcp.md（工具透传章节 + 嵌套循环风险同资源透传）+ README Changelog + 版本号 0.6.47
+>   - **802/802 全绿**（800 + 2 新增 tests/mcp-cli-server.test.ts：--bridge-tools 真实子进程全链路——
+>     外部 mock 服务器（echo_text/add_numbers/fail_tool）经 flare 透传：listTools 并集 9 个（6 内置 +
+>     3 外部）+ callTool 代理转发往返（add_numbers → 5、echo_text → echo: hi）；无配置降级（仅 6 内置
+>     工具，不中断）），tsc 0 错误，**零 agent.ts 改动**
+>   - **冒烟实测**（真实 dist CLI 0.6.47 子进程 + 真实 mock 服务器 + 真实 MCPClient，smoke-bridge-tools.mjs）：
+>     serverInfo flare 0.6.47 → 工具集并集 `read_file...memory_save, echo_text, add_numbers, fail_tool`
+>     （9 个）→ callTool add_numbers `{a:2,b:3}` → `5` → echo_text → `echo: hi` → fail_tool →
+>     isError true「出错了」，SMOKE PASS
 > - **下一步候选**：① 【P1】分层上下文（Layer 1 异步滚动摘要——摘要内容升级为 LLM 生成语义级压缩，
 >   需评估 run 循环外异步）；② 其他安全的外围增强（server 协议其他管理接口、MCP 工具集完善、测试
 >   稳定性等）
