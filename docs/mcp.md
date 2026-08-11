@@ -79,7 +79,11 @@
   （`prompts/get` 代理，与 `mcp_get_prompt` 协议请求同源）——`/mcp prompts` 只能看元数据，
   本命令直接显示渲染后的消息序列（`💬 role: text` + 可选描述）；`k=v` 传提示词参数
   （如 `/mcp render mock summarize topic=flare`）；未知提示词错误输出不崩溃
-- `/help` 已注册 read/render 两行用法（v0.6.39）
+- `/mcp call <server> <tool> [JSON参数]`（v0.6.41）：**调用已连接服务器的工具**
+  （`tools/call` 代理，与 `mcp_call` 协议请求同源）——`/mcp call mock add_numbers {"a":2,"b":3}`
+  直接显示工具返回（文本内容）；工具级失败（isError）显示失败信息；非法 JSON 参数提示不调用；
+  未知工具/未连接错误输出不崩溃
+- `/help` 已注册 read/render/call 三行用法（v0.6.39/v0.6.41）
 
 ### 3. 单次查询
 
