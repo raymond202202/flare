@@ -1507,24 +1507,35 @@ export function main() {
 
   mcpCmd
     .command('status')
-    .description('查看配置的 MCP 服务器（~/.flare/mcp.json，含传输类型与端点/命令）')
+    .description('查看配置的 MCP 服务器（~/.flare/mcp.json，含传输类型/端点/命令与连接状态；v0.6.51 起统一走 status()）')
     .option('--config <path>', 'MCP 配置文件路径（默认 ~/.flare/mcp.json）')
-    .action(async (options: { config?: string }) => {
+    .option('--connect', '先连接全部配置服务器再显示（真实连接状态 + 工具数；失败不阻塞，错误可见）')
+    .action(async (options: { config?: string; connect?: boolean }) => {
       const { McpManager } = await import('../index.js')
       const mgr = new McpManager({ configPath: options.config })
-      const servers = mgr.servers
-      if (servers.length === 0) {
+      // v0.6.51 --connect：先连接全部配置服务器（Promise.allSettled 容错——失败服务器错误在
+      // status() 的 error 字段可见，不阻塞其余；与 server mcp_status 等待连接落定同语义）
+      if (options.connect) {
+        await Promise.allSettled(mgr.servers.map((s) => mgr.connect(s.name).catch(() => {})))
+      }
+      const st = mgr.status()
+      if (st.length === 0) {
         console.log(chalk.yellow('未配置 MCP 服务器（~/.flare/mcp.json 的 servers 列表）'))
         return
       }
-      const lines = servers.map((s) => {
-        const transport = s.url ? 'HTTP' : 'stdio'
-        const target = s.url || `${s.command || ''}${s.args?.length ? ' ' + s.args.join(' ') : ''}`
-        return `  ${chalk.green(s.name)}  ${chalk.gray(transport)} ${target}`
+      // v0.6.51：统一走 mgr.status()（与交互模式 /mcp、server mcp_status 同源）——显示连接标记/
+      // 传输类型/端点/命令 + 工具数（stdio 与 HTTP transport 服务器都完整展示）
+      const lines = st.map((s) => {
+        const mark = s.connected ? chalk.green('●') : chalk.gray('○')
+        const transport = s.transport === 'http' ? 'HTTP' : 'stdio'
+        const target = s.target || ''
+        const tools = s.connected ? chalk.gray(`（${s.toolCount} 个工具）`) : ''
+        const err = s.error ? chalk.red(` [${s.error}]`) : ''
+        return `  ${mark} ${chalk.green(s.name)}  ${chalk.gray(transport)} ${target}${tools}${err}`
       })
       console.log(chalk.cyan('配置的 MCP 服务器:'))
       console.log(lines.join('\n'))
-      console.log(chalk.gray('  提示: flare mcp call <服务器> <工具> [JSON参数] 调用工具'))
+      console.log(chalk.gray('  提示: flare mcp call <服务器> <工具> [JSON参数] 调用工具；flare mcp status --connect 查看连接状态'))
     })
 
   mcpCmd

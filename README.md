@@ -341,6 +341,22 @@ Interactive mode commands:
 
 > 中文条目 / Chinese entries · English summary for each version
 
+#### v0.6.51 (2026-08-12) — CLI `mcp status` 统一走 `status()` + `--connect` 真实连接状态（方向③ MCP 增强，观测面补齐）
+
+- ✨ **`flare mcp status [--connect]`（src/cli/index.ts + 测试）**：
+-  v0.6.50 给 `McpServerStatus` 补了 transport/target（CLI /mcp 与 server mcp_status 同源），但 CLI
+-  一次性命令 `flare mcp status` 仍**自己拼配置行**（不显示连接状态/工具数）——两处输出形状不一致；
+-  本轮统一走 `McpManager.status()`（纯外围，零 agent.ts 改动）：
+- - **统一输出**：`●/○ 连接标记 + 传输类型（HTTP/stdio）+ 端点/命令 + （已连接）N 个工具 + [错误]`
+-  （未连接也显示——配置即可见；连接失败服务器的错误在 status() 的 error 字段红字可见）
+- - **`--connect` 选项**：先连接全部配置服务器再显示（`Promise.allSettled` 容错——失败不阻塞其余，
+-  与 server mcp_status 等待连接落定同语义），CLI 一次性命令可看真实连接状态与工具数
+- - docs/mcp.md（status/--connect 用法）+ README Changelog + 版本号 0.6.51
+- - 🧪 **809/809 全绿**（808 + 1 新增 mcp-cli-call.test.ts：status --connect 真实 HTTP 服务器
+-  ●+1 个工具；既有 status 测试补 ○ 未连接断言），tsc 0 错误，
+-  **零 agent.ts 改动**；冒烟实测真实 dist CLI + in-process HTTP 服务器：status（未连接）○ +
+-  端点 url；status --connect ● + 1 个工具，SMOKE PASS
+
 #### v0.6.50 (2026-08-12) — MCP 连接状态带传输类型/端点（方向③ MCP 增强，HTTP transport 观测面补齐）
 
 - ✨ **`McpServerStatus.transport` / `.target` + CLI /mcp + server mcp_status（src/mcp/types.ts +
