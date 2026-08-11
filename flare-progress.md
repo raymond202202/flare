@@ -3,16 +3,19 @@
 > 目标：flare 是 Pulse/StorySpire 依赖的 AI Agent 引擎（TS）。任何改动必须安全（tsc 0 错 + 测试全绿才 commit）。
 > 铁律：禁止 push；禁止修改 src/core/agent.ts 的 Agent.run 核心循环。
 
-> **最新状态（v0.6.35）**：**上下文裁剪执行 API `apply_trim`（suggestTrim 宿主接线完整化）**——
-> `context_status` 此前只返回裁剪**建议**（keepIndexes）宿主却无法实际执行（set_context 只能追加状态
-> 快照）——本轮补「建议 → 执行」闭环：`Agent.applyTrim(keepIndexes)` **run 循环外独立 API**（开头
-> 连续 system 块无条件保底、非法索引宽松过滤、空数组保守不裁剪）+ store 同步（storedIdByMsg 消息
-> 对象→id 映射，依赖 trimContextMessages/suggestTrim 保留原对象引用，**零 run 循环改动**）——重建
-> Agent 后裁剪依然生效；server 协议 `apply_trim` 双模式（keepIndexes 回传执行 / budgetTokens 服务器
-> 按 suggestTrim 计算执行），非法值 error 含用法不触发生成，响应带 keptCount/droppedCount/
-> messageCount/estimatedKeptTokens/estimatedDroppedTokens；711/711 全绿（699 + 12 新增），tsc 0 错误，
-> 零 agent.ts run 循环改动；冒烟实测真实 dist CLI 子进程全链路，SMOKE PASS。
-> （v0.6.34：工具输出治理策略可配置化；v0.6.33：terminal 退出码；v0.6.32：CLI 会话归档命令。）
+> **最新状态（v0.6.36）**：**MCP prompts 桥接**（方向 3 MCP 增强，与 v0.6.26 资源桥接对称）——
+> 客户端侧（v0.6.2）与服务端 prompts 暴露早已支持，但 McpManager 连接外部 MCP 服务器时只桥接
+> 工具/资源/模板**不拉取提示词**——本轮补齐：connect 并行拉取 prompts/list（safeListPrompts 容错，
+> 无 prompts 能力/失败降级空数组不阻塞连接）；`getAllPrompts()` 并集（McpPromptRef 含来源 server 名，
+> 库导出）+ `getPrompt(name, promptName, args?)` 代理渲染 prompts/get（未连接 reject 清晰错误，
+> stdio/HTTP 双传输）；status 已连接带 promptCount（可选字段向后兼容）；disconnect 提示词随连接
+> 清理；server 协议 `mcp_prompts`（只读不触发生成，按服务器分组透传）+ mcp_status 带 promptCount；
+> CLI /mcp 状态行带提示词数、`/mcp prompts [name]` 子命令（✨ name（参数）— 描述）、connect 摘要带
+> 提示词数、/help 注册；docs/host-protocol.md §16.2 + docs/mcp.md + README Changelog + 版本号 0.6.36；
+> **724/724 全绿**（711 + 13 新增），tsc 0 错误，零 agent.ts 改动；冒烟实测真实 dist CLI 子进程——
+> version 0.6.36 → mcp_prompts 2 条带来源（greet@mock / summarize(args:topic)@mock）→ mcp_status
+> promptCount 2，SMOKE PASS。
+> （v0.6.35：上下文裁剪执行 API apply_trim；v0.6.34：工具输出治理策略可配置化；v0.6.33：terminal 退出码。）
 
 > 【🔴 当前最高优先级方向（2026-08-11 用户拍板）】**prompt caching 基建 P0 已基本落地**：
 > P0-1 前缀稳定 + P0-2 usage 回传（v0.6.29 完成）。验收：连续两轮调用（间隔<5min）第二轮
@@ -22,10 +25,50 @@
 > 下一步候选（按优先级）：
 > ① 【P1】分层上下文（Layer 1 异步滚动摘要——摘要内容升级为 LLM 生成语义级压缩，需评估 run 循环外异步）
 > ② 其他安全的外围增强（server 协议其他管理接口、MCP 工具集完善、测试稳定性等）
->    已覆盖：上下文裁剪执行 apply_trim（v0.6.35）✓ / 工具输出治理策略可配置化透传（v0.6.34）✓ /
->    terminal 退出码（v0.6.33）✓ / CLI 归档命令（v0.6.32）✓ / 归档 API（v0.6.31）✓ /
->    工具输出治理（v0.6.30）✓ / prompt caching P0（v0.6.29）✓ / MCP 动态资源提供器（v0.6.28）✓ /
->    confirm 描述（v0.6.27）✓
+>    已覆盖：MCP prompts 桥接（v0.6.36）✓ / 上下文裁剪执行 apply_trim（v0.6.35）✓ /
+>    工具输出治理策略可配置化透传（v0.6.34）✓ / terminal 退出码（v0.6.33）✓ / CLI 归档命令（v0.6.32）✓ /
+>    归档 API（v0.6.31）✓ / 工具输出治理（v0.6.30）✓ / prompt caching P0（v0.6.29）✓ /
+>    MCP 动态资源提供器（v0.6.28）✓ / confirm 描述（v0.6.27）✓
+>
+> ---
+>
+> ### 2026-08-12 第三十五轮实施（v0.6.36）——MCP prompts 桥接（方向 3 MCP 增强，与 v0.6.26 资源桥接对称）
+>
+> - **P65 MCP prompts 桥接**（src/mcp/manager.ts + types.ts + server.ts + cli/index.ts + 测试，commit `9d49521`）：
+>   - **缺口定位**：方向 3「MCP 增强（resources / HTTP transport）」——MCP 协议三大列表（tools/
+>     resources/prompts）中，客户端侧 `listPrompts/getPrompt`（v0.6.2）与服务端 prompts 暴露（v0.6.2）
+>     早已支持，但 **McpManager 连接外部 MCP 服务器时只桥接工具/资源/模板，不拉取提示词**——宿主/CLI
+>     看不到外部服务器暴露的 prompts，与 v0.6.26 资源桥接不对称；本轮补齐（纯外围，零 agent.ts 改动）
+>   - **连接时拉取**：`connect` 与 resources/templates 并行拉取 `prompts/list`（`safeListPrompts` 容错——
+>     服务器无 prompts 能力/请求失败静默降级为空数组，不阻塞连接，与资源桥接同风格）；`McpPromptClient`
+>     最小客户端接口（listPrompts/getPrompt，stdio MCPClient 与 HTTP MCPHttpClient 都满足，传输无关）
+>   - **`getAllPrompts(): McpPromptRef[]`**：全部已连接服务器的提示词并集（`McpPromptRef extends
+>     McpPromptInfo { server }`，库导出）——宿主展示/透传外部提示词；**`getPrompt(name, promptName,
+>     args?): Promise<McpPromptResult>`**：代理渲染某服务器提示词（prompts/get 按 arguments 补全）；
+>     服务器未连接 → reject 清晰错误「MCP 服务器未连接: <name>」
+>   - **status 带 promptCount**（已连接服务器；无 prompts 能力为 0——新增可选字段，旧断言零回归）；
+>     `disconnect` 提示词随连接一并清理（与资源/模板同模式）
+>   - **server 协议 `mcp_prompts`**（src/server.ts，与 mcp_resources 对称）：`{type:'mcp_prompts'}` →
+>     `{type:'mcp_prompts', servers:[{name, connected, toolCount, prompts?, error?}]}`——已连接服务器带
+>     `prompts`（元数据数组，每项含来源 `server` 名与可选 `arguments` 参数声明）；只读不触发生成、不创建
+>     会话、等待后台连接落定；mcp_status 同步带 promptCount；宿主面板「外部 MCP 提示词」数据源（渲染经
+>     库级 McpManager.getPrompt 代理）
+>   - **CLI**：`/mcp` 状态行已连接显示 `（N 个工具 · M 资源 · K 模板 · P 提示词）`（无提示词与旧版一致）；
+>     `/mcp prompts [name]` 子命令列出已桥接提示词（`✨ name（参数: a, b）— 描述`；无提示词友好提示；
+>     hooks 未提供 prompts 方法回退提示向后兼容旧宿主）；connect 摘要带提示词数；/help 注册
+>   - docs/host-protocol.md 请求类型列表 + §16.2 新章节（响应结构 + 渲染指引）+ mcp_status 示例带
+>     promptCount + docs/mcp.md（编程方式 prompts 桥接示例 + CLI 命令说明）+ README Changelog + 版本号 0.6.36
+>   - **724/724 全绿**（711 + 13 新增：manager 5——stdio 桥接带来源+参数声明+promptCount / getPrompt
+>     代理渲染+未知 prompt reject+未连接 reject / disconnect 清理（promptCount 消失）/ 无 prompts 能力
+>     降级 0 / HTTP transport 拉取+渲染闭环；server e2e 2——mcp_prompts 真实子进程闭环+参数透传 /
+>     mcp_status promptCount；CLI 6——状态行带提示词数 / prompts 无参列出 / prompts 过滤单服务器 /
+>     无提示词友好 / 旧 hooks 无 prompts 方法回退 / 用法含 prompts），tsc 0 错误，**零 agent.ts 改动**
+>   - **冒烟实测**（真实 dist CLI 子进程 + 真实 stdio mock 服务器）：version 0.6.36 → mcp_prompts
+>     servers[0] `{name:'mock', connected:true, toolCount:3, prompts:[greet@mock,
+>     summarize(args:topic)@mock]}` → mcp_status promptCount 2，SMOKE PASS
+> - **下一步候选**：① 【P1】分层上下文（Layer 1 异步滚动摘要——摘要内容升级为 LLM 生成语义级压缩，
+>   需评估 run 循环外异步）；② 其他安全的外围增强（server 协议其他管理接口、MCP 工具集完善、测试
+>   稳定性等）
 >
 > ---
 >
