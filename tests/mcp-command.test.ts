@@ -162,7 +162,29 @@ describe('/mcp 命令', () => {
     const r = await handleSlashCommand('/mcp connect fs', store, (s) => lines.push(s), undefined, withRes)
     expect(r).toBe('continue')
     expect(calls.changed).toBe(1)
-    expect(lines.join('\n')).toContain('已连接 fs（3 个 MCP 工具 · 2 个资源 · 1 个模板）')
+    expect(lines.join('\\n')).toContain('已连接 fs（3 个 MCP 工具 · 2 个资源 · 1 个模板）')
+  })
+
+  it('/mcp connect 摘要带传输类型标记（v0.6.55：CLI 组装 [stdio]/[HTTP] + 目标，透传显示完整）', async () => {
+    // stdio：摘要带 [stdio] + 命令目标
+    const lines1: string[] = []
+    const h1 = makeHooks([{ name: 'fs', connected: false, toolCount: 0 }])
+    const withStdio = { ...h1.hooks, connect: async () => '已连接 fs [stdio] npx server /tmp（3 个 MCP 工具）' }
+    const r1 = await handleSlashCommand('/mcp connect fs', store, (s) => lines1.push(s), undefined, withStdio)
+    expect(r1).toBe('continue')
+    expect(h1.calls.changed).toBe(1)
+    const text1 = lines1.join('\n')
+    expect(text1).toContain('已连接 fs [stdio] npx server /tmp')
+    expect(text1).toContain('3 个 MCP 工具')
+    // HTTP：摘要带 [HTTP] + 端点 url
+    const lines2: string[] = []
+    const h2 = makeHooks([{ name: 'remote', connected: false, toolCount: 0 }])
+    const withHttp = { ...h2.hooks, connect: async () => '已连接 remote [HTTP] http://127.0.0.1:8931/mcp（3 个 MCP 工具）' }
+    const r2 = await handleSlashCommand('/mcp connect remote', store, (s) => lines2.push(s), undefined, withHttp)
+    expect(r2).toBe('continue')
+    expect(h2.calls.changed).toBe(1)
+    const text2 = lines2.join('\n')
+    expect(text2).toContain('已连接 remote [HTTP] http://127.0.0.1:8931/mcp')
   })
 
   it('/mcp connect <未配置名> → 错误输出（hook 抛错）', async () => {

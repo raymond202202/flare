@@ -341,6 +341,21 @@ Interactive mode commands:
 
 > 中文条目 / Chinese entries · English summary for each version
 
+#### v0.6.55 (2026-08-12) — `/mcp connect` 摘要带传输类型标记（方向③ MCP 增强，观测面补齐）
+
+- ✨ **CLI 交互 `/mcp connect` 摘要补 `[stdio]`/`[HTTP]` + 目标（src/cli/index.ts + 测试）**：
+-  v0.6.50 给 `/mcp` 状态行加了 transport/target（`[stdio]`/`[HTTP]` + 端点/命令），但 `/mcp connect`
+-  成功摘要仍是旧格式 `已连接 X（N 个 MCP 工具）`——连接成功后看不到刚连的是哪种传输、连到哪；
+-  本轮对称补齐（纯外围，零 agent.ts 改动）：
+- - **connect 摘要**：`已连接 <name> [stdio|HTTP] <target>（N 个 MCP 工具[ · 资源/模板/提示词数]）`
+-  ——transport/target 与 `/mcp` 状态行**同源**（都来自 `McpManager.status()`），连接后立即可见
+-  传输类型与连接目标；旧形状 status（缺字段）降级默认 `[stdio]` 不崩溃
+- - docs/mcp.md（交互模式 connect 摘要说明）+ README Changelog + 版本号 0.6.55
+- - 🧪 **816/816 全绿**（815 + 1 新增 mcp-command.test.ts：connect 摘要 stdio 带 [stdio]+命令目标 /
+-  HTTP 带 [HTTP]+端点 url，透传显示完整 + onChanged 计数），tsc 0 错误，**零 agent.ts 改动**
+- - **冒烟实测**（真实 McpManager + in-process HTTP 服务器）：connect 后 status() 返回
+-  transport=http target=端点 url（CLI 组装同源数据），SMOKE PASS
+
 #### v0.6.54 (2026-08-12) — cache-check `--rounds` 多轮连续命中验收（方向① prompt caching 基建深化，验收升级）
 
 - ✨ **`runCacheCheck` 支持 rounds 多轮 + CLI `cache-check --rounds <N>`（src/core/cache-check.ts +
