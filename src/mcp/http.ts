@@ -24,6 +24,9 @@ export interface McpHttpServerOptions extends MCPServerOptions {
   host?: string
   /** 请求路径（默认 /mcp） */
   path?: string
+  /** Bearer 鉴权 token（v0.6.69）：设置后所有请求必须带 `Authorization: Bearer <token>`，
+   *  否则 401（与 MCPHttpClient/McpServerConfig.headers 客户端鉴权闭环） */
+  authToken?: string
 }
 
 export interface McpHttpServerHandle {
@@ -50,6 +53,12 @@ export function startMcpHttpServer(opts: McpHttpServerOptions = {}): Promise<Mcp
     if (req.method !== 'POST' || (req.url || '/').split('?')[0] !== path) {
       res.writeHead(404, { 'Content-Type': 'application/json' })
       res.end(JSON.stringify({ jsonrpc: '2.0', id: null, error: { code: -32601, message: 'Not found' } }))
+      return
+    }
+    // v0.6.69：Bearer 鉴权（authToken 设置后校验；不匹配 → 401 Unauthorized，不进入协议处理）
+    if (opts.authToken && req.headers.authorization !== `Bearer ${opts.authToken}`) {
+      res.writeHead(401, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({ jsonrpc: '2.0', id: null, error: { code: -32001, message: 'Unauthorized' } }))
       return
     }
     let body = ''
