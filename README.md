@@ -338,6 +338,29 @@ Interactive mode commands:
 
 > 中文条目 / Chinese entries · English summary for each version
 
+#### v0.6.37 (2026-08-12) — CLI `mcp-server --bridge-prompts`（外部 MCP 提示词透传 flare 自身 MCPServer，与 v0.6.28 --bridge-resources 对称）
+- ✨ **CLI `flare mcp-server --bridge-prompts`（src/cli/index.ts + 测试）**：
+-  v0.6.28 的 `--bridge-resources` 只透传外部 MCP 服务器的资源/模板；v0.6.36 补齐了 McpManager 的
+-  prompts 桥接（getAllPrompts/getPrompt）——本轮把外部**提示词**也经 flare 自身 MCPServer 暴露给
+-  客户端（prompts 是 MCP 三大列表之一，与资源同样值得透传）：
+- - **新 flag**：`mcp-server --bridge-prompts`（与 `--bridge-resources` 可同时用；`--config` 共用）——
+-  连接 ~/.flare/mcp.json 全部服务器（Promise.allSettled 容错），把 `getAllPrompts()` 包装成
+-  `McpPrompt[]` 注入 MCPServer（stdio 与 `--http` 双传输都支持）：元数据（name/description/
+-  arguments 参数声明）原样透传，`render(args)` **按 prompt 名找到所属服务器代理转发 prompts/get**
+-  （与资源读取代理转发同模式；服务器断开/未知 prompt 返回空消息，不中断请求）
+- - **能力声明**：有透传提示词时 `initialize` 声明 `capabilities.prompts`（客户端可探测）；无配置/无
+-  prompts → 仅暴露 flare 自身能力（提示词空列表，不中断，与 --bridge-resources 无配置降级一致）
+- - 📚 docs/mcp.md（--bridge-prompts 说明 + 透传规则）+ README Changelog + 版本号 0.6.37
+- - 🧪 **726/726 全绿**（724 + 2 新增 tests/mcp-cli-server.test.ts：--bridge-prompts 真实子进程
+-  全链路——外部 prompts 服务器（新 fixture mcp-flare-server-prompts-bridge.ts，greet + summarize
+-  带参数）经 flare 透传：initialize prompts 能力声明 + listPrompts 元数据/参数透传 + getPrompt
+-  渲染代理转发（greet 内容往返 + summarize 带 topic 参数补全）+ flare 自身工具照常；无配置降级
+-  （prompts 空 + 工具照常，不中断）），tsc 0 错误，**零 agent.ts 改动**
+- - **冒烟实测**（真实 dist CLI 子进程 + 真实外部 prompts 服务器 + 真实 MCPClient）：serverInfo
+-  flare → capabilities.prompts 声明 → listPrompts `[{greet 打招呼},{summarize 总结内容,
+-  arguments:[topic]}]` → getPrompt(greet)「你好」→ getPrompt(summarize,{topic:'flare 引擎'})
+-  「请总结关于「flare 引擎」的内容」→ tools 6 个照常，SMOKE PASS
+
 #### v0.6.36 (2026-08-12) — MCP prompts 桥接（外部 MCP 提示词真实可见，与 v0.6.26 资源桥接对称）
 - ✨ **McpManager prompts 桥接（src/mcp/manager.ts + types.ts + server.ts + cli/index.ts）**：
 -  客户端侧（v0.6.2）与服务器侧（v0.6.2 prompts 暴露）早已支持 prompts，但 **McpManager 连接外部

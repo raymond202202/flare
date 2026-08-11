@@ -304,6 +304,20 @@ server.start()
 - **嵌套循环风险（文档记录）**：若外部服务器恰好是另一个也做了同样透传的 flare 实例，
   `resources/read` 可能无限递归——实际部署宿主不把 flare 自身 MCP 端点配为 flare 的 MCP 服务器即可避免
 
+#### 提示词透传（v0.6.37）：CLI `mcp-server --bridge-prompts`
+
+与资源透传对称，外部 MCP 服务器的**提示词**也可经 flare 自身 MCPServer 暴露给客户端——
+`flare mcp-server --bridge-prompts` 连接 ~/.flare/mcp.json 全部外部服务器（与 `--bridge-resources`
+可同时用，`--config` 共用），把 `McpManager.getAllPrompts()` 包装成 `McpPrompt[]` 注入 MCPServer：
+
+- **元数据透传**：`prompts/list` 返回外部提示词的 name/description/arguments 参数声明（原样透传）
+- **渲染代理**：`prompts/get` 调 `render(args)` 时按 prompt 名找到所属服务器，代理转发该服务器的
+  `prompts/get`（与资源读取代理转发同模式）——客户端拿到的是外部服务器渲染后的消息序列
+- **能力声明**：有透传提示词时 `initialize` 声明 `capabilities.prompts`（客户端可探测）；未配置服务器 /
+  服务器无 prompts → 仅暴露 flare 自身能力（提示词空列表，不中断）
+- **嵌套循环风险（同资源透传）**：外部服务器若是另一个同样透传的 flare 实例，prompts/get 可能无限
+  递归——部署时避免把 flare 自身 MCP 端点配为 flare 的 MCP 服务器即可
+
 ### 提示词暴露（v0.6.2）：prompts/list 真实数据 + prompts/get 渲染
 
 MCPServer 可注入**提示词模板**（如总结、翻译等可复用指令），经 MCP 标准 `prompts/list` / `prompts/get`
