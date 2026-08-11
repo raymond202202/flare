@@ -3,25 +3,27 @@
 > 目标：flare 是 Pulse/StorySpire 依赖的 AI Agent 引擎（TS）。任何改动必须安全（tsc 0 错 + 测试全绿才 commit）。
 > 铁律：禁止 push；禁止修改 src/core/agent.ts 的 Agent.run 核心循环。
 
-> **最新状态（v0.6.68）**：**CLI mcp 单次命令 `--header` 鉴权请求头**（方向③ MCP 增强，与
-> v0.6.67 对称）：v0.6.67 给库层/配置层补了鉴权头但 CLI 单次命令侧未对称——`--url` 直连远程
-> 受保护 HTTP 服务器仍无法带 token，必须临时改配置文件；本轮补齐（纯外围，零 agent.ts 改动）——
-> call/resources/prompts/tools/complete 全部支持 `--header <k:v>`（可重复收集，与配置 headers
-> 合并时 CLI 优先；非法格式退出码 1 + 用法提示）。
-> **857/857 全绿**（新增 3 用例：call --url --header 服务器收到 Authorization / 可重复 --header
-> 与配置 headers 合并 CLI 优先 / 非法格式退出码 1），tsc 0 错误，**零 agent.ts 改动**。
-> （v0.6.67：MCP HTTP transport 鉴权请求头支持；v0.6.66：/help 同步 /usage 描述；v0.6.65：
-> /usage perModel 行带缓存节省金额；v0.6.64：usage 统计带缓存节省金额估算；v0.6.63：MCP 子命令
-> 提示对称补齐；v0.6.62：MCP 单次命令文档补齐；v0.6.61：MCP 命令提示面补全；v0.6.60：flare mcp
-> complete 单次命令；v0.6.59：flare mcp tools 单次命令；v0.6.58：mcp_tools 工具清单桥接三层；
-> v0.6.57：mcp_complete 提示词参数补全桥接；v0.6.56：server mcp_connect/mcp_disconnect 控制面；
-> v0.6.55：/mcp connect 摘要 transport/target；v0.6.54：cache-check --rounds 多轮验收；v0.6.53：
-> CLI /usage 本会话 perModel 子行；v0.6.52：session_usage perModel；v0.6.51：CLI mcp status
-> 统一 status()+--connect；v0.6.50：MCP 连接状态 transport/target；v0.6.49：CLI /usage 本会话行
-> 缓存命中；v0.6.48：cache-check --json 结构化输出；v0.6.47：mcp-server --bridge-tools 工具透传；
-> v0.6.46：CLI /trim 智能裁剪 + /context 裁剪提示；v0.6.45：flare cache-check 验收工具；v0.6.44：
-> CLI /sessions 关键词搜索；v0.6.43：server 协议 search_sessions；v0.6.42：CLI /usage perModel
-> 缓存命中显示。）
+> **最新状态（v0.6.69）**：**MCP HTTP transport 服务端 Bearer 鉴权**（方向③ MCP 增强，与
+> v0.6.67/68 客户端鉴权闭环）：v0.6.67/68 只解决了「flare 连受保护服务器」但 flare 自己当 HTTP
+> 服务器时仍全开放（仅 127.0.0.1 兜底），跨机/半可信网络暴露原生工具风险高；本轮补齐服务端
+> （纯外围，零 agent.ts 改动）——`startMcpHttpServer({ authToken })`（不匹配 → 401 + -32001
+> Unauthorized 不进入协议处理；未设置匿名照常向后兼容）+ `flare mcp-server --http-auth-token-env
+> <VAR>`（token 从环境变量读不落命令行；未设置报错退出；启动日志标注鉴权已启用）。
+> **864/864 全绿**（新增 7 用例：服务端 401 无 token/错误 token/正确 token 200/未设置向后兼容 +
+> CLI e2e --http-auth-token-env 401→200 + 客户端闭环带 headers 成功/不带 401 reject），tsc 0
+> 错误，**零 agent.ts 改动**。
+> （v0.6.68：CLI mcp 单次命令 --header 鉴权请求头；v0.6.67：MCP HTTP transport 鉴权请求头支持；
+> v0.6.66：/help 同步 /usage 描述；v0.6.65：/usage perModel 行带缓存节省金额；v0.6.64：usage
+> 统计带缓存节省金额估算；v0.6.63：MCP 子命令提示对称补齐；v0.6.62：MCP 单次命令文档补齐；
+> v0.6.61：MCP 命令提示面补全；v0.6.60：flare mcp complete 单次命令；v0.6.59：flare mcp tools
+> 单次命令；v0.6.58：mcp_tools 工具清单桥接三层；v0.6.57：mcp_complete 提示词参数补全桥接；
+> v0.6.56：server mcp_connect/mcp_disconnect 控制面；v0.6.55：/mcp connect 摘要 transport/target；
+> v0.6.54：cache-check --rounds 多轮验收；v0.6.53：CLI /usage 本会话 perModel 子行；v0.6.52：
+> session_usage perModel；v0.6.51：CLI mcp status 统一 status()+--connect；v0.6.50：MCP 连接状态
+> transport/target；v0.6.49：CLI /usage 本会话行缓存命中；v0.6.48：cache-check --json 结构化输出；
+> v0.6.47：mcp-server --bridge-tools 工具透传；v0.6.46：CLI /trim 智能裁剪 + /context 裁剪提示；
+> v0.6.45：flare cache-check 验收工具；v0.6.44：CLI /sessions 关键词搜索；v0.6.43：server 协议
+> search_sessions；v0.6.42：CLI /usage perModel 缓存命中显示。）
 
 > 【🔴 当前最高优先级方向（2026-08-11 用户拍板）】**prompt caching 基建 P0 已基本落地 + 验收工具化**：
 > P0-1 前缀稳定 + P0-2 usage 回传（v0.6.29 完成）。验收：`flare cache-check` 一键验收
@@ -33,7 +35,8 @@
 > 下一步候选（按优先级）：
 > ① 【P1】分层上下文（Layer 1 异步滚动摘要——摘要内容升级为 LLM 生成语义级压缩，需评估 run 循环外异步）
 > ② 其他安全的外围增强（server 协议其他管理接口、MCP 工具集完善、测试稳定性等）
->    已覆盖：CLI 单次命令 --header（v0.6.68）✓ /
+>    已覆盖：HTTP 服务端 Bearer 鉴权（v0.6.69）✓ /
+>    CLI 单次命令 --header（v0.6.68）✓ /
 >    MCP HTTP transport 鉴权 headers（v0.6.67）✓ /
 >    MCP 子命令提示对称补齐（v0.6.63）✓ /
 >    MCP 单次命令文档补齐（v0.6.62）✓ /
@@ -66,6 +69,29 @@
 >    terminal 退出码（v0.6.33）✓ / CLI 归档命令（v0.6.32）✓ / 归档 API（v0.6.31）✓ /
 >    工具输出治理（v0.6.30）✓ / prompt caching P0（v0.6.29）✓ / MCP 动态资源提供器（v0.6.28）✓ /
 >    confirm 描述（v0.6.27）✓
+
+> ---
+
+> ### 2026-08-12 第六十八轮实施（v0.6.69）——MCP HTTP transport 服务端 Bearer 鉴权（方向③ MCP 增强，与 v0.6.67/68 客户端鉴权闭环）
+
+> - **P98 `startMcpHttpServer({ authToken })` + `flare mcp-server --http-auth-token-env <VAR>`**
+>   （src/mcp/http.ts + src/cli/index.ts + 测试，commit `6cbf3fd`）：
+>   - **缺口定位**：v0.6.67/68 只解决了「flare 连受保护服务器」——**flare 自己当 HTTP 服务器时仍
+>     全开放**（仅 127.0.0.1 兜底），跨机/半可信网络暴露 flare 原生工具（terminal 等）风险高；
+>     本轮补齐服务端侧（纯外围，零 agent.ts 改动），客户端↔服务端鉴权形成完整闭环
+>   - **库层**：`McpHttpServerOptions.authToken`——设置后所有请求必须带 `Authorization: Bearer
+>     <token>`，不匹配 → `401` + `-32001 Unauthorized`（不进入协议处理）；不设置 → 匿名照常
+>     （向后兼容）
+>   - **CLI**：`flare mcp-server --http --http-auth-token-env FLARE_MCP_TOKEN`——从环境变量读
+>     token（**不落命令行**，避免 shell history 泄漏）；环境变量未设置 → 报错退出码 1；启动日志
+>     标注「Bearer 鉴权已启用」
+>   - docs/mcp.md（HTTP 服务器 Bearer 鉴权 + CLI 用法）+ README Changelog + 版本号 0.6.69
+>   - **864/864 全绿**（新增 7 用例：服务端 401 无 token/错误 token/正确 token 200/未设置向后兼容 +
+>     CLI e2e --http-auth-token-env 401→200 + 客户端闭环带 headers 成功/不带 401 reject），
+>     tsc 0 错误，**零 agent.ts 改动**
+> - **下一步候选**：① 【P1】分层上下文（Layer 1 异步滚动摘要——摘要内容升级为 LLM 生成语义级压缩，
+>   需评估 run 循环外异步）；② 其他安全的外围增强（server 协议其他管理接口、MCP 工具集完善、测试
+>   稳定性等）；③ 方向③ MCP 鉴权闭环已完整（v0.6.67~69），建议转向 ①② 中未覆盖项
 
 > ---
 
