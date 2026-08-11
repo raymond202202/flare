@@ -8,7 +8,7 @@
  */
 
 import { Command } from 'commander'
-import { Agent, createProvider, getMemoryStore, config, tools, McpManager, estimateMessagesTokens, ConfirmationGate, memoryStoreKv, wrapConfirmTools, describeTools, validateToolOutputPolicy, type AgentConfig, type McpServerStatus, type ConfirmDecision, type McpResourceRef, type McpResourceTemplateRef, type ToolOutputPolicy } from '../index.js'
+import { Agent, createProvider, getMemoryStore, config, tools, McpManager, estimateMessagesTokens, ConfirmationGate, memoryStoreKv, wrapConfirmTools, describeTools, validateToolOutputPolicy, type AgentConfig, type McpServerStatus, type ConfirmDecision, type McpResourceRef, type McpResourceTemplateRef, type McpPromptRef, type ToolOutputPolicy } from '../index.js'
 import chalk from 'chalk'
 import { execSync } from 'child_process'
 import { createRequire } from 'module'
@@ -248,8 +248,10 @@ async function startInteractive(opts: { contextSummarize?: boolean } = {}) {
         // v0.6.26：摘要带桥接资源/模板数（资源桥接——连接时已拉取 resources/list + templates/list）
         const resCount = mcpManager.getAllResources().filter((r) => r.server === name).length
         const tmplCount = mcpManager.getAllResourceTemplates().filter((t) => t.server === name).length
-        const extra = resCount || tmplCount
-          ? ` · ${resCount} 个资源${tmplCount ? ` · ${tmplCount} 个模板` : ''}`
+        // v0.6.36：摘要带桥接提示词数（prompts 桥接——连接时已拉取 prompts/list）
+        const promptCount = mcpManager.getAllPrompts().filter((p) => p.server === name).length
+        const extra = resCount || tmplCount || promptCount
+          ? ` · ${resCount} 个资源${tmplCount ? ` · ${tmplCount} 个模板` : ''}${promptCount ? ` · ${promptCount} 个提示词` : ''}`
           : ''
         return `已连接 ${name}（${mcpTools.length} 个 MCP 工具${extra}）`
       },
@@ -263,6 +265,11 @@ async function startInteractive(opts: { contextSummarize?: boolean } = {}) {
           ? mcpManager.getAllResourceTemplates().filter((t) => t.server === name)
           : mcpManager.getAllResourceTemplates(),
       }),
+      // v0.6.36：列出已桥接提示词（prompts 桥接——连接时拉取 prompts/list）
+      prompts: (name) =>
+        name
+          ? mcpManager.getAllPrompts().filter((p) => p.server === name)
+          : mcpManager.getAllPrompts(),
       onChanged: () => {
         // 工具集变化后重建 Agent（同 sessionId，历史从记忆库恢复），使 MCP 工具立即生效
         agent = makeAgent()
@@ -504,6 +511,8 @@ export interface McpCommandHooks {
   onChanged(): void
   /** 列出已桥接资源/模板（v0.6.26）：name 缺省返回全部已连接服务器；未提供回退旧行为（提示不可用） */
   resources?(name?: string): McpResourceListing
+  /** 列出已桥接提示词（v0.6.36）：name 缺省返回全部已连接服务器；未提供回退旧行为（提示不可用） */
+  prompts?(name?: string): McpPromptRef[]
 }
 
 /** /mcp resources 返回的资源/模板清单（v0.6.26） */
@@ -659,9 +668,11 @@ export async function handleSlashCommand(
           const toolsInfo = s.connected ? chalk.gray(`（${s.toolCount} 个工具`) : ''
           // v0.6.26：已连接时显示桥接的资源/模板数（外部 MCP 服务器资源真实暴露）
           const resInfo = s.connected ? chalk.gray(`${s.resourceCount ? ` · ${s.resourceCount} 资源` : ''}${s.templateCount ? ` · ${s.templateCount} 模板` : ''}`) : ''
+          // v0.6.36：已连接时显示桥接的提示词数（外部 MCP 服务器提示词真实暴露）
+          const promptInfo = s.connected ? chalk.gray(`${s.promptCount ? ` · ${s.promptCount} 提示词` : ''}`) : ''
           const closeParen = s.connected ? chalk.gray('）') : ''
           const err = s.error ? chalk.red(` [${s.error}]`) : ''
-          output(`  ${mark} ${s.name}${toolsInfo}${resInfo}${closeParen}${err}`)
+          output(`  ${mark} ${s.name}${toolsInfo}${resInfo}${promptInfo}${closeParen}${err}`)
         }
       }
       output(chalk.gray('\n  /mcp resources [name] 查看资源 | /mcp connect <name> 连接 | /mcp disconnect <name> 断开'))
@@ -716,10 +727,34 @@ export async function handleSlashCommand(
           }
         }
       }
-      output(chalk.gray('\n  /mcp resources [name] 查看资源 | /mcp connect <name> 连接'))
+      output(chalk.gray('\n  /mcp resources [name] 查看资源 | /mcp prompts [name] 查看提示词 | /mcp connect <name> 连接'))
       return 'continue'
     }
-    output(chalk.yellow('\n  用法: /mcp | /mcp resources [name] | /mcp connect <name> | /mcp disconnect <name>'))
+    // /mcp prompts [name]（v0.6.36）：列出已桥接提示词（prompts 桥接——外部服务器暴露的提示词真实可见）
+    if (sub === 'prompts') {
+      if (typeof mcp.prompts !== 'function') {
+        output(chalk.yellow('\n  当前环境未提供提示词桥接（MCP 管理器不支持提示词拉取）'))
+        return 'continue'
+      }
+      const name = rest.join(' ').trim() || undefined
+      const prompts = mcp.prompts(name)
+      const scope = name ? `「${name}」` : '全部已连接服务器'
+      if (prompts.length === 0) {
+        output(chalk.yellow(`\n  ${scope} 无已桥接提示词（服务器未暴露 prompts 或未连接）`))
+      } else {
+        output(chalk.gray(`\n  ${scope} 的提示词（${prompts.length}）：`))
+        for (const p of prompts) {
+          const args = Array.isArray(p.arguments) && p.arguments.length > 0
+            ? chalk.gray(`（参数: ${p.arguments.map(a => a.name).join(', ')}）`)
+            : ''
+          const desc = p.description ? chalk.gray(` — ${p.description}`) : ''
+          output(`    ✨ ${chalk.cyan(p.name)}${args}${desc}`)
+        }
+      }
+      output(chalk.gray('\n  /mcp prompts [name] 查看提示词 | /mcp resources [name] 查看资源 | /mcp connect <name> 连接'))
+      return 'continue'
+    }
+    output(chalk.yellow('\n  用法: /mcp | /mcp resources [name] | /mcp prompts [name] | /mcp connect <name> | /mcp disconnect <name>'))
     return 'continue'
   }
 
@@ -937,6 +972,7 @@ export async function handleSlashCommand(
       output('  /model list  - 查看本地 Ollama 可用模型（v0.6.9）')
       output('  /mcp         - 查看 MCP 服务器状态（~/.flare/mcp.json 配置）')
       output('  /mcp resources [name] - 查看已桥接资源/模板（v0.6.26，外部 MCP 服务器暴露的资源）')
+      output('  /mcp prompts [name] - 查看已桥接提示词（v0.6.36，外部 MCP 服务器暴露的提示词）')
       output('  /mcp connect <name> - 连接 MCP 服务器并注入其工具')
       output('  /mcp disconnect <name> - 断开 MCP 服务器')
       output('  /allow     - 查看已放行的确认工具（AI 写回类工具执行前会请求确认）')

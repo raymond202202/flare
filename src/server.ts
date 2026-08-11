@@ -1071,6 +1071,24 @@ export function startHostServer(opts: HostServerOptions) {
           reply({ type: 'mcp_resources', servers })
           break
         }
+        case 'mcp_prompts': {
+          // 宿主查看已连接 MCP 服务器的提示词清单（v0.6.36；只读，不触发生成、不创建会话）——
+          // prompts 桥接：连接时拉取 prompts/list，此处按服务器分组透传
+          await Promise.allSettled(mcpConnects)
+          const servers = mcpManager.status().map((s) => ({
+            name: s.name,
+            connected: s.connected,
+            toolCount: s.toolCount,
+            ...(s.connected
+              ? {
+                  prompts: mcpManager.getAllPrompts().filter((p) => p.server === s.name),
+                }
+              : {}),
+            ...(s.error ? { error: s.error } : {}),
+          }))
+          reply({ type: 'mcp_prompts', servers })
+          break
+        }
         default:
           reply({ type: 'error', message: `未知请求类型: ${req.type}` })
       }
