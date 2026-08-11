@@ -173,4 +173,29 @@ describe('CLI /usage 缓存显示（v0.6.29 P0）', () => {
     // reasoner 无缓存命中 → 不显示命中子行（总命中率行照旧显示，400/1200=33%）
     expect(out).toContain('33%')
   })
+
+  it('本会话行显示缓存命中（v0.6.49：sessionId 分支与总行/perModel 对称）', async () => {
+    store.logUsage('s1', 1000, 500, 'deepseek-chat', { cacheReadTokens: 400 })
+    store.logUsage('s2', 100, 50, 'deepseek-chat') // 另一个会话，不影响本会话统计
+    const lines: string[] = []
+    await handleSlashCommand('/usage', store, (s) => lines.push(s), undefined, undefined, undefined, undefined, undefined, 's1')
+    const out = lines.join('\n')
+    // 本会话行：s1 总量 1500 tokens、1 次调用（1000+500 → totalTokens 1500；callCount 1）
+    expect(out).toContain('本会话:')
+    expect(out).toContain('1,500 tokens')
+    expect(out).toContain('1 次调用')
+    // 命中 400 tokens、命中率 400/1000=40%
+    expect(out).toContain('缓存命中 400')
+    expect(out).toContain('40%')
+  })
+
+  it('本会话无缓存命中 → 不追加命中段（向后兼容）', async () => {
+    store.logUsage('s1', 100, 50, 'deepseek-chat')
+    const lines: string[] = []
+    await handleSlashCommand('/usage', store, (s) => lines.push(s), undefined, undefined, undefined, undefined, undefined, 's1')
+    const out = lines.join('\n')
+    expect(out).toContain('本会话:')
+    expect(out).toContain('150 tokens')
+    expect(out).not.toContain('缓存命中 0')
+  })
 })
