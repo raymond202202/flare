@@ -778,13 +778,14 @@ export function startHostServer(opts: HostServerOptions) {
         }
         case 'session_usage': {
           // 宿主读取单个会话的 token 用量（v0.6.17）：宿主面板"本会话用量"数据源（只读不生成）
+          // v0.6.52：stats 带 perModel 按模型分解（含缓存命中，与 get_usage 对称）
           const sessionId = String(req.sessionId || 'default')
           const agent = getAgent(sessionId)
           // Agent 内部 sessionId 可能带 namespace 前缀，用它查询才一致
           const sid = (agent as any).config?.sessionId || sessionId
           const stats = (typeof (agent as any).store?.getSessionUsage === 'function')
             ? await (agent as any).store.getSessionUsage(sid)
-            : { sessionId, promptTokens: 0, completionTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, estimatedCostUsd: 0, totalTokens: 0, callCount: 0 }
+            : { sessionId, promptTokens: 0, completionTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, estimatedCostUsd: 0, totalTokens: 0, callCount: 0, perModel: [] }
           reply({ type: 'session_usage', sessionId, stats })
           break
         }

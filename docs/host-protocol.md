@@ -169,10 +169,13 @@ flare server --profile <expert-profile-file> --storage <db-path> [--mcp <mcp-con
 {"type":"session_usage","sessionId":"s1"}
 ```
 
-响应：`{"type":"session_usage","sessionId":"s1","stats":{"sessionId":"s1","promptTokens":100,"completionTokens":50,"cacheReadTokens":40,"cacheWriteTokens":0,"estimatedCostUsd":0.0001,"totalTokens":150,"callCount":2}}`
+响应：`{"type":"session_usage","sessionId":"s1","stats":{"sessionId":"s1","promptTokens":100,"completionTokens":50,"cacheReadTokens":40,"cacheWriteTokens":0,"estimatedCostUsd":0.0001,"totalTokens":150,"callCount":2,"perModel":[{"model":"deepseek-chat","calls":2,"promptTokens":100,"completionTokens":50,"cacheReadTokens":40,"totalTokens":150}]}}`
 
 - 按会话过滤 usage_log：宿主面板"本会话用量/成本"数据源（区别于 get_usage 的全局汇总）
 - `callCount`：该会话的 LLM 调用次数；无用量记录的会话返回全 0（幂等，不抛错）
+- `perModel`（v0.6.52）：本会话按模型分组的用量分解（`model` / `calls` / `promptTokens` /
+  `completionTokens` / `cacheReadTokens` / `totalTokens`，按调用次数降序）——与 get_usage 的
+  perModel 对称，宿主面板"本会话用量"可直接显示每个模型的缓存命中分布（无需从全局统计里筛）
 - 无 `sessionId` 时默认会话 `default`；只读，不触发生成
 
 ### 10. context_status — 读取会话上下文占用（v0.5.6，只读，不生成）

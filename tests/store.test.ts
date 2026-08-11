@@ -192,6 +192,34 @@ describe('MemoryStore', () => {
     expect(s1.estimatedCostUsd).toBeCloseTo(0.003234, 6)
   })
 
+  it('单会话 perModel 分解（v0.6.52）：按模型分组 + 缓存命中，与 getUsageStats 对称', () => {
+    store.logUsage('s1', 1000, 500, 'deepseek-chat', { cacheReadTokens: 400 })
+    store.logUsage('s1', 200, 100, 'deepseek-reasoner')
+    store.logUsage('s2', 900, 450, 'deepseek-chat') // 另一会话不影响 s1 分解
+
+    const s1 = store.getSessionUsage('s1')
+    expect(Array.isArray(s1.perModel)).toBe(true)
+    expect(s1.perModel).toHaveLength(2)
+    // deepseek-chat：1 次调用、1000 prompt、400 命中；deepseek-reasoner：1 次调用、无命中
+    const chat = s1.perModel.find((m: any) => m.model === 'deepseek-chat')
+    const reasoner = s1.perModel.find((m: any) => m.model === 'deepseek-reasoner')
+    expect(chat).toBeTruthy()
+    expect(chat!.calls).toBe(1)
+    expect(chat!.promptTokens).toBe(1000)
+    expect(chat!.cacheReadTokens).toBe(400)
+    expect(chat!.totalTokens).toBe(1500)
+    expect(reasoner).toBeTruthy()
+    expect(reasoner!.cacheReadTokens).toBe(0)
+    expect(reasoner!.totalTokens).toBe(300)
+    // 分解合计与汇总一致
+    expect(s1.perModel.reduce((a: number, m: any) => a + m.calls, 0)).toBe(s1.callCount)
+    expect(s1.perModel.reduce((a: number, m: any) => a + m.cacheReadTokens, 0)).toBe(s1.cacheReadTokens)
+
+    // 无用量的会话：perModel 空数组（幂等）
+    const none = store.getSessionUsage('no_such')
+    expect(none.perModel).toEqual([])
+  })
+
   it('老库迁移（v0.6.29 P0）：旧 usage_log 无缓存列 → 打开时自动补列', () => {
     // 先关掉当前 store，手工建一个"老版本"库（usage_log 无 cache_read_tokens 等列）
     store.close()
