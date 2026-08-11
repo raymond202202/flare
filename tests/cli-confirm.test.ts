@@ -105,6 +105,28 @@ describe('formatConfirmPrompt', () => {
     expect(p).toContain('⚠️ AI 想调用「memory_save」')
     expect(p).not.toContain('（）')
   })
+
+  it('带工具描述（v0.6.27）：说明行展示「AI 想做什么」', () => {
+    const p = formatConfirmPrompt('memory_save', { content: 'hi' }, '保存一条持久记忆（跨会话长期记住）')
+    expect(p).toContain('说明: 保存一条持久记忆（跨会话长期记住）')
+    // 说明行在选项行之前
+    expect(p.indexOf('说明:')).toBeLessThan(p.indexOf('[y] 允许一次'))
+  })
+
+  it('超长工具描述截断到 80 字符并加省略号（v0.6.27）', () => {
+    const long = 'x'.repeat(200)
+    const p = formatConfirmPrompt('memory_save', {}, long)
+    expect(p).toContain('…')
+    const line = p.split('\n').find((l) => l.includes('说明:'))!
+    expect(line.length).toBeLessThan(100)
+  })
+
+  it('不带工具描述（v0.6.27 缺省）→ 与旧版完全一致：无说明行', () => {
+    const withDesc = formatConfirmPrompt('memory_save', { content: 'hi' }, undefined)
+    const oldStyle = formatConfirmPrompt('memory_save', { content: 'hi' })
+    expect(withDesc).toBe(oldStyle)
+    expect(withDesc).not.toContain('说明:')
+  })
 })
 
 describe('terminalConfirmer', () => {
@@ -124,6 +146,28 @@ describe('terminalConfirmer', () => {
     // onPause 在 ask 之前，onResume 在 ask 之后
     expect(onPause.mock.invocationCallOrder[0]).toBeLessThan(ask.mock.invocationCallOrder[0])
     expect(ask.mock.invocationCallOrder[0]).toBeLessThan(onResume.mock.invocationCallOrder[0])
+  })
+
+  it('带工具描述（v0.6.27）：ask 收到含说明行的 prompt', async () => {
+    let received = ''
+    const d = await terminalConfirmer({
+      toolName: 'memory_save',
+      args: { content: 'hi' },
+      description: '保存一条持久记忆（跨会话长期记住）',
+      ask: async (prompt) => { received = prompt; return 'y' },
+    })
+    expect(d).toBe('allow_once')
+    expect(received).toContain('说明: 保存一条持久记忆（跨会话长期记住）')
+  })
+
+  it('不带工具描述（v0.6.27 缺省）→ prompt 无说明行', async () => {
+    let received = ''
+    await terminalConfirmer({
+      toolName: 'memory_save',
+      args: { content: 'hi' },
+      ask: async (prompt) => { received = prompt; return 'n' },
+    })
+    expect(received).not.toContain('说明:')
   })
 
   it('ask 返回空/未知 → deny + 拒绝反馈', async () => {

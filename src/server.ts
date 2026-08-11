@@ -134,6 +134,38 @@ export function wrapConfirmTools(tools: Tool[], gate: ConfirmationGate, confirmT
   return tools.map(t => (set.has(t.definition.function.name) ? gate.wrap(t) : t))
 }
 
+/** confirm 事件消息（宿主弹窗确认请求，v0.6.27 起可选带工具描述） */
+export interface ConfirmEvent {
+  type: 'confirm'
+  sessionId: string
+  id: string
+  name: string
+  args: Record<string, any>
+  /** 工具描述（可选）：工具定义有描述时带上——宿主弹窗可展示「AI 想做什么」，而非只有工具名+参数 */
+  description?: string
+}
+
+/**
+ * 构造 confirm 事件（v0.6.27，纯函数可单测）：宿主弹窗确认请求。
+ * description 可选——有描述才输出该字段（JSON.stringify 丢 undefined，向后兼容：旧宿主忽略未知字段）。
+ */
+export function buildConfirmEvent(
+  sessionId: string,
+  id: string,
+  toolName: string,
+  args: Record<string, any>,
+  description?: string,
+): ConfirmEvent {
+  return {
+    type: 'confirm',
+    sessionId,
+    id,
+    name: toolName,
+    args: args || {},
+    ...(description ? { description } : {}),
+  }
+}
+
 /**
  * 推断模型 provider 类型（v0.6.9，纯函数可单测）：模型名 → ollama / deepseek / openai / other。
  * 与 resolveProviderOptions 的自动检测规则一致（含 ':' 的 Ollama 命名 / deepseek 系列 / gpt·o1·o3·chatgpt 系列）。
@@ -254,6 +286,8 @@ export function startHostServer(opts: HostServerOptions) {
   const gates = new Map<string, ConfirmationGate>()
   // 挂起的确认请求：confirm 事件发出后等待宿主 confirm_result
   const pendingConfirms = new Map<string, { resolve: (d: ConfirmDecision) => void; timer: NodeJS.Timeout }>()
+  // 工具描述（v0.6.27）：confirm 事件带工具描述（宿主弹窗可展示「AI 想做什么」）；getAgent 构建工具集时填充
+  const toolDescriptions = new Map<string, string>()
   // MCP 管理器（v0.5.5）：外部 MCP 服务器工具并入 Agent 工具集
   const mcpManager = new McpManager({ configPath: '' })
   if (opts.mcp && opts.mcp.length > 0) {
@@ -273,8 +307,9 @@ export function startHostServer(opts: HostServerOptions) {
    * 向宿主发起确认请求（v0.6.1）：发 confirm 事件 → 宿主弹窗 → 回 confirm_result。
    * 超时兜底：宿主一直不回时由 ConfirmationGate 自身超时（安全 deny）处理；
    * 本函数只负责在稍后清理挂起条目（防泄漏），resolve 值不会被 gate 采用（已处理完）。
+   * description（v0.6.27）：工具描述，宿主弹窗展示「AI 想做什么」；无描述不输出字段（向后兼容）。
    */
-  const askHostConfirm = (sessionId: string, toolName: string, args: Record<string, any>): Promise<ConfirmDecision> => {
+  const askHostConfirm = (sessionId: string, toolName: string, args: Record<string, any>, description?: string): Promise<ConfirmDecision> => {
     return new Promise((resolve) => {
       const id = `c_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`
       const timer = setTimeout(() => {
@@ -283,7 +318,7 @@ export function startHostServer(opts: HostServerOptions) {
       }, confirmTimeoutMs + 5000)
       timer.unref?.()
       pendingConfirms.set(id, { resolve, timer })
-      reply({ type: 'confirm', sessionId, id, name: toolName, args: args || {} })
+      reply(buildConfirmEvent(sessionId, id, toolName, args, description))
     })
   }
 
@@ -293,7 +328,8 @@ export function startHostServer(opts: HostServerOptions) {
     if (!gate) {
       const kv = memoryStoreKv(storage ? new MemoryStore(storage) : getMemoryStore())
       gate = new ConfirmationGate({
-        confirmer: (toolName, args) => askHostConfirm(sessionId, toolName, args),
+        // 描述在工具执行时实时查（getAgent 已填充）——仅命中确认名单的工具可能触发
+        confirmer: (toolName, args) => askHostConfirm(sessionId, toolName, args, toolDescriptions.get(toolName)),
         sessionId,
         store: kv,
         timeoutMs: confirmTimeoutMs,
@@ -331,6 +367,11 @@ export function startHostServer(opts: HostServerOptions) {
       const baseTools = mergedTools.length > 0 ? mergedTools : builtinTools
       // 确认门（v0.6.1）：命中 confirmTools 名单的工具执行前经宿主弹窗确认（写回类工具知情授权）
       const gatedTools = wrapConfirmTools(baseTools, getGate(sessionId), confirmTools)
+      // 工具描述（v0.6.27）：confirm 事件带描述——宿主弹窗可展示「AI 想做什么」（无描述不输出，向后兼容）
+      for (const t of gatedTools) {
+        const fn = t.definition.function
+        if (fn.description) toolDescriptions.set(fn.name, fn.description)
+      }
       // 工具元数据（v0.6.11）：来源标注（宿主代理 / 专家配置 / MCP / 内置回退）
       const toolMeta = describeTools(gatedTools, confirmTools, {
         host: new Set((hostTools || []).map((t) => t.definition.function.name)),
