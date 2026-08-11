@@ -3,20 +3,21 @@
 > 目标：flare 是 Pulse/StorySpire 依赖的 AI Agent 引擎（TS）。任何改动必须安全（tsc 0 错 + 测试全绿才 commit）。
 > 铁律：禁止 push；禁止修改 src/core/agent.ts 的 Agent.run 核心循环。
 
-> **最新状态（v0.6.76）**：**cache-check 每轮节省明细 runSavedUsd**（方向① prompt caching 基建
-> 深化）：v0.6.75 修好多轮总节省后仍缺**每轮省钱分布**——宿主/CI 只看到总节省、看不出逐轮明细；
-> 本轮新增 runSavedUsd（与 runs 对齐，第 i 项 = 第 i+1 轮 miss 价 − hit 价；无法定价 → null；
-> 基准/未命中轮 0），--json 含该字段、人类可读输出每轮行尾追加（节省 $X.XXXXXX）（>0 才显示）。
-> **873/873 全绿**，tsc 0 错误，**零 agent.ts 改动**。
-> （v0.6.75：cache-check 多轮 savedUsd 累加所有命中轮；v0.6.74：README 命令行摘要表补齐；
-> v0.6.73：get_config mcpServers 带 auth 标记；v0.6.72：/mcp connect 摘要带 [auth]；v0.6.71：
-> host-protocol --mcp 配置文档补齐；v0.6.70：MCP 状态带 auth 标记；v0.6.69：HTTP 服务端 Bearer
-> 鉴权；v0.6.68：CLI mcp 单次命令 --header；v0.6.67：HTTP transport 鉴权请求头支持；v0.6.66：
-> /help 同步 /usage 描述；v0.6.65：/usage perModel 行带缓存节省金额；v0.6.64：usage 统计带缓存
-> 节省金额估算；v0.6.63：MCP 子命令提示对称补齐；v0.6.62：MCP 单次命令文档补齐；v0.6.61：MCP
-> 命令提示面补全；v0.6.60：flare mcp complete 单次命令；v0.6.59：flare mcp tools 单次命令；
-> v0.6.58：mcp_tools 工具清单桥接三层；v0.6.57：mcp_complete 提示词参数补全桥接；v0.6.56：
-> server mcp_connect/mcp_disconnect 控制面；v0.6.55：/mcp connect 摘要 transport/target；
+> **最新状态（v0.6.78）**：**cache-check 基准轮命中诊断提示**（方向① prompt caching 基建深化）：
+> 真实场景 <5min 内重跑时服务端残留缓存让「miss 基准」实际已命中（此前用户看到基准轮
+> cache_read_tokens>0 会困惑）——本轮在 detail 追加诊断（基准轮已有 X tokens 命中——服务端残留
+> 缓存或此前 <5min 用过同前缀，miss 基准可能不纯，节省估算偏保守）；判定/命中量/节省估算逻辑
+> 不变，--json detail 同样携带。**875/875 全绿**，tsc 0 错误，**零 agent.ts 改动**。
+> （v0.6.77：README 命令表补 cache-check v0.6.75/76 能力；v0.6.76：cache-check 每轮节省明细
+> runSavedUsd；v0.6.75：cache-check 多轮 savedUsd 累加所有命中轮；v0.6.74：README 命令行摘要表
+> 补齐；v0.6.73：get_config mcpServers 带 auth 标记；v0.6.72：/mcp connect 摘要带 [auth]；
+> v0.6.71：host-protocol --mcp 配置文档补齐；v0.6.70：MCP 状态带 auth 标记；v0.6.69：HTTP 服务端
+> Bearer 鉴权；v0.6.68：CLI mcp 单次命令 --header；v0.6.67：HTTP transport 鉴权请求头支持；
+> v0.6.66：/help 同步 /usage 描述；v0.6.65：/usage perModel 行带缓存节省金额；v0.6.64：usage
+> 统计带缓存节省金额估算；v0.6.63：MCP 子命令提示对称补齐；v0.6.62：MCP 单次命令文档补齐；
+> v0.6.61：MCP 命令提示面补全；v0.6.60：flare mcp complete 单次命令；v0.6.59：flare mcp tools
+> 单次命令；v0.6.58：mcp_tools 工具清单桥接三层；v0.6.57：mcp_complete 提示词参数补全桥接；
+> v0.6.56：server mcp_connect/mcp_disconnect 控制面；v0.6.55：/mcp connect 摘要 transport/target；
 > v0.6.54：cache-check --rounds 多轮验收；v0.6.53：CLI /usage 本会话 perModel 子行；v0.6.52：
 > session_usage perModel；v0.6.51：CLI mcp status 统一 status()+--connect；v0.6.50：MCP 连接
 > 状态 transport/target；v0.6.49：CLI /usage 本会话行缓存命中；v0.6.48：cache-check --json
@@ -68,6 +69,27 @@
 >    terminal 退出码（v0.6.33）✓ / CLI 归档命令（v0.6.32）✓ / 归档 API（v0.6.31）✓ /
 >    工具输出治理（v0.6.30）✓ / prompt caching P0（v0.6.29）✓ / MCP 动态资源提供器（v0.6.28）✓ /
 >    confirm 描述（v0.6.27）✓
+
+> ---
+
+> ### 2026-08-12 第七十六/七十七轮实施（v0.6.77~78）——README 命令表补齐 + cache-check 基准轮诊断（方向①）
+
+> - **P106 (v0.6.77) README 命令表补 cache-check v0.6.75/76 能力**（commit `7d6e3dc`，纯文档）：
+>   v0.6.75/76 的能力在 README 命令行摘要表未同步（用户从 README 看不到多轮 savedUsd 累加与
+>   runSavedUsd 每轮节省明细）——与 v0.6.74 先例一致补齐
+> - **P107 (v0.6.78) 基准轮命中诊断提示**（src/core/cache-check.ts + 测试，commit `c024c99`）：
+>   - **缺口定位**：真实场景 <5min 内重跑 cache-check 时服务端残留缓存让「miss 基准」实际已命中
+>     ——此前用户看到基准轮 cache_read_tokens>0 会困惑（且误以为节省估算基于纯 miss）
+>   - **诊断**：基准轮命中时 detail 追加 `（诊断：基准轮已有 X tokens 命中——服务端残留缓存或
+>     此前 <5min 用过同前缀，miss 基准可能不纯，节省估算偏保守）`；判定/命中量/节省估算逻辑不变；
+>     --json 的 detail 同样携带；基准轮未命中 → 无提示（向后兼容）
+>   - README Changelog + 版本号 0.6.78
+>   - **875/875 全绿**（新增 2 用例：基准轮命中 → 诊断提示 + runSavedUsd[0]>0；基准轮未命中 →
+>     无提示），tsc 0 错误，**零 agent.ts 改动**（全量曾出现 1 次偶发失败，连续 3 次重跑全绿，
+>     判定为 spawn e2e 环境偶发，非本次改动引入）
+> - **下一步候选**：① 【P1】分层上下文（Layer 1 异步滚动摘要——需评估 run 循环外异步）；② 其他
+>   安全的外围增强（server 协议其他管理接口、MCP 工具集完善、测试稳定性等）；③ 方向①继续：
+>   cache-check 命中率百分比显示 / 人类可读输出结构优化（边际价值递减，可选）
 
 > ---
 
