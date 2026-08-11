@@ -199,6 +199,33 @@ describe('CLI /usage 缓存显示（v0.6.29 P0）', () => {
     expect(out).not.toContain('缓存命中 0')
   })
 
+  it('缓存节省金额显示（v0.6.64）：总览 + 本会话行显示命中价 vs 未命中价节省', async () => {
+    // deepseek-chat 命中 600 tokens → 节省 600/1e6 * (0.27-0.07) = 0.00012
+    store.logUsage('s1', 1000, 500, 'deepseek-chat', { cacheReadTokens: 600 })
+    const lines: string[] = []
+    await handleSlashCommand('/usage', store, (s) => lines.push(s), undefined, undefined, undefined, undefined, undefined, 's1')
+    const out = lines.join('\n')
+    // 总览：缓存命中行后跟缓存节省行
+    expect(out).toContain('缓存节省:')
+    expect(out).toContain('$0.0001')
+    // 本会话行：追加节省段（600 命中 → 0.00012）
+    expect(out).toContain('本会话:')
+    expect(out).toContain('缓存节省 $0.0001')
+    // 节省独立于估算成本：未传 estimatedCostUsd → 不显示估算成本行（向后兼容）
+    expect(out).not.toContain('估算成本')
+  })
+
+  it('无法定价模型命中 → 不显示缓存节省（本地模型不计入，向后兼容）', async () => {
+    // qwen2.5:7b 无法定价（estimateCostUsd → null）：显示缓存命中行但不显示节省
+    store.logUsage('s1', 1000, 500, 'qwen2.5:7b', { cacheReadTokens: 600 })
+    const lines: string[] = []
+    await handleSlashCommand('/usage', store, (s) => lines.push(s))
+    const out = lines.join('\n')
+    expect(out).toContain('缓存命中')
+    expect(out).toContain('60%')
+    expect(out).not.toContain('缓存节省')
+  })
+
   it('本会话 perModel 子行（v0.6.53：多模型本会话命中分布，与总览行对称）', async () => {
     // 本会话 s1 两个模型：chat 有命中、reasoner 无；另一会话 s2 不影响本会话
     store.logUsage('s1', 1000, 500, 'deepseek-chat', { cacheReadTokens: 400 })

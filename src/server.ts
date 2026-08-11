@@ -772,7 +772,7 @@ export function startHostServer(opts: HostServerOptions) {
           const agent = getAgent(String(req.sessionId || 'default'))
           const stats = (typeof (agent as any).store?.getUsageStats === 'function')
             ? await (agent as any).store.getUsageStats()
-            : { promptTokens: 0, completionTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, estimatedCostUsd: 0, totalTokens: 0, sessionCount: 0, perModel: [] }
+            : { promptTokens: 0, completionTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, estimatedCostUsd: 0, cacheSavedUsd: 0, totalTokens: 0, sessionCount: 0, perModel: [] }
           reply({ type: 'usage', stats })
           break
         }
@@ -785,7 +785,7 @@ export function startHostServer(opts: HostServerOptions) {
           const sid = (agent as any).config?.sessionId || sessionId
           const stats = (typeof (agent as any).store?.getSessionUsage === 'function')
             ? await (agent as any).store.getSessionUsage(sid)
-            : { sessionId, promptTokens: 0, completionTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, estimatedCostUsd: 0, totalTokens: 0, callCount: 0, perModel: [] }
+            : { sessionId, promptTokens: 0, completionTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, estimatedCostUsd: 0, cacheSavedUsd: 0, totalTokens: 0, callCount: 0, perModel: [] }
           reply({ type: 'session_usage', sessionId, stats })
           break
         }
