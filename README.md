@@ -341,6 +341,19 @@ Interactive mode commands:
 
 > 中文条目 / Chinese entries · English summary for each version
 
+#### v0.6.61 (2026-08-12) — MCP 命令提示面补全（方向③ MCP 增强）
+
+- ✨ **提示文本补全（src/cli/index.ts + 测试）**：
+-  v0.6.58~v0.6.60 连补工具清单/参数补全入口，但**两处提示文本没跟上**——交互 `/mcp` 状态行提示
+-  只有 resources/prompts/connect/disconnect（缺 tools）、`flare mcp status` 提示行只有 call 和
+-  status --connect（缺 tools/complete）；本轮补齐（纯外围，零 agent.ts 改动）：
+- - **交互 `/mcp` 状态行提示**：加 `/mcp tools [name] 查看工具`
+- - **`flare mcp status` 提示行**：加 `mcp tools <服务器> 查看工具` + `mcp complete <服务器>
+-  <提示词> <参数> 补全候选`
+- - README Changelog + 版本号 0.6.61
+- - 🧪 **846/846 全绿**（新增 2 断言：/mcp 状态行提示含 tools / mcp status 提示含 tools+complete），
+-  tsc 0 错误，**零 agent.ts 改动**
+
 #### v0.6.60 (2026-08-12) — CLI 单次命令 `flare mcp complete` 参数补全（方向③ MCP 增强）
 
 - ✨ **单次命令补参数补全（src/cli/index.ts + 测试）**：
