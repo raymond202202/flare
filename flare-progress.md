@@ -3,17 +3,17 @@
 > 目标：flare 是 Pulse/StorySpire 依赖的 AI Agent 引擎（TS）。任何改动必须安全（tsc 0 错 + 测试全绿才 commit）。
 > 铁律：禁止 push；禁止修改 src/core/agent.ts 的 Agent.run 核心循环。
 
-> **最新状态（v0.6.37）**：**CLI `mcp-server --bridge-prompts`**（方向 3 MCP 增强，与 v0.6.28
-> `--bridge-resources` 对称）——v0.6.36 补齐 McpManager prompts 桥接后，把外部 MCP 服务器的
-> **提示词**也经 flare 自身 MCPServer 暴露给客户端：新 flag `--bridge-prompts`（与
-> `--bridge-resources` 可同时用，`--config` 共用），连接 ~/.flare/mcp.json 全部服务器
-> （Promise.allSettled 容错），`getAllPrompts()` 包装成 McpPrompt[] 注入 MCPServer（stdio 与
-> `--http` 双传输）——元数据 name/description/arguments 原样透传，`render(args)` 按 prompt 名找
-> 所属服务器代理转发 prompts/get（与资源读取代理同模式，服务器断开/未知 prompt 返回空消息不中断）；
-> 有透传提示词时 initialize 声明 capabilities.prompts，无配置/无 prompts 仅暴露 flare 自身能力；
-> **726/726 全绿**（724 + 2 新增），tsc 0 错误，零 agent.ts 改动；冒烟实测真实 dist CLI 0.6.37 +
-> 真实外部 prompts 服务器 + 真实 MCPClient 全链路，SMOKE PASS。
-> （v0.6.36：MCP prompts 桥接；v0.6.35：上下文裁剪执行 API apply_trim；v0.6.34：工具输出治理策略可配置化。）
+> **最新状态（v0.6.38）**：**server 协议 MCP 资源内容读取 + 提示词渲染代理**
+> （`mcp_read_resource` / `mcp_get_prompt`，方向②③交叉）——v0.6.26 `mcp_resources` 与
+> v0.6.36 `mcp_prompts` 只提供外部 MCP 服务器资源/提示词的**清单**（元数据），宿主（如 Qt 面板）
+> **无法经协议取资源真实内容 / 渲染提示词**（文档只能指到库级 McpManager.readResource/getPrompt，
+> 宿主协议用不上）：本轮补齐「列表 → 读取/渲染」闭环——`mcp_read_resource {server,uri}` 代理转发
+> resources/read（contents 透传，缺参 error 含用法、未连接 error「MCP 服务器未连接: <name>」、
+> 未知资源透传外部错误服务不崩）；`mcp_get_prompt {server,prompt,args?}` 代理转发 prompts/get
+> （messages 序列 + 可选 description，args 按 arguments 声明补全、非对象忽略）；两者只读不触发生成
+> 不创建会话、等待后台连接落定；**735/735 全绿**（726 + 9 新增），tsc 0 错误，零 agent.ts 改动；
+> 冒烟实测真实 dist CLI 0.6.38 + 真实 mock 服务器全链路，SMOKE PASS。
+> （v0.6.37：CLI mcp-server --bridge-prompts；v0.6.36：MCP prompts 桥接；v0.6.35：上下文裁剪执行 API apply_trim；v0.6.34：工具输出治理策略可配置化。）
 
 > 【🔴 当前最高优先级方向（2026-08-11 用户拍板）】**prompt caching 基建 P0 已基本落地**：
 > P0-1 前缀稳定 + P0-2 usage 回传（v0.6.29 完成）。验收：连续两轮调用（间隔<5min）第二轮
@@ -23,7 +23,8 @@
 > 下一步候选（按优先级）：
 > ① 【P1】分层上下文（Layer 1 异步滚动摘要——摘要内容升级为 LLM 生成语义级压缩，需评估 run 循环外异步）
 > ② 其他安全的外围增强（server 协议其他管理接口、MCP 工具集完善、测试稳定性等）
->    已覆盖：mcp-server --bridge-prompts（v0.6.37）✓ / MCP prompts 桥接（v0.6.36）✓ /
+>    已覆盖：mcp_read_resource/mcp_get_prompt 读取渲染代理（v0.6.38）✓ /
+>    mcp-server --bridge-prompts（v0.6.37）✓ / MCP prompts 桥接（v0.6.36）✓ /
 >    上下文裁剪执行 apply_trim（v0.6.35）✓ / 工具输出治理策略可配置化透传（v0.6.34）✓ /
 >    terminal 退出码（v0.6.33）✓ / CLI 归档命令（v0.6.32）✓ / 归档 API（v0.6.31）✓ /
 >    工具输出治理（v0.6.30）✓ / prompt caching P0（v0.6.29）✓ / MCP 动态资源提供器（v0.6.28）✓ /
@@ -31,7 +32,42 @@
 >
 > ---
 >
-> ### 2026-08-12 第三十六轮实施（v0.6.37）——CLI `mcp-server --bridge-prompts`（方向 3 MCP 增强，与 v0.6.28 --bridge-resources 对称）
+> ### 2026-08-12 第三十七轮实施（v0.6.38）——server 协议 MCP 资源内容读取 + 提示词渲染代理（方向②③，mcp_read_resource / mcp_get_prompt）
+
+- **P67 server 协议两个只读代理接口**（src/server.ts + 测试，commit `6f0182e`）：
+  - **缺口定位**：方向②「server 协议其他管理接口」+ 方向③「MCP 增强」交叉点——v0.6.26
+    `mcp_resources` 与 v0.6.36 `mcp_prompts` 只提供外部 MCP 服务器资源/提示词的**清单**（元数据），
+    宿主（如 Qt 面板）**无法经协议取资源真实内容 / 渲染提示词**（文档只能指到库级
+    McpManager.readResource/getPrompt，宿主协议用不上）——「列表 → 读取/渲染」闭环缺失
+  - **`mcp_read_resource {server, uri}`** → `{type:'mcp_read_resource', server, uri, contents:
+    [{uri, mimeType?, text}]}`：代理转发 `resources/read`（McpManager.readResource）——宿主面板可
+    展示外部资源真实内容/把资源喂给 AI；缺参 error 含用法；服务器未连接 error「MCP 服务器未连接:
+    <name>」；未知资源/读取失败透传外部服务器错误（服务不崩）
+  - **`mcp_get_prompt {server, prompt, args?}`** → `{type:'mcp_get_prompt', server, prompt,
+    description?, messages:[{role, content:{type:'text',text}}]}`：代理转发 `prompts/get`
+    （McpManager.getPrompt）——宿主可把外部提示词注入对话/展示；`args` 按服务器 arguments 声明
+    补全（可选，非对象忽略）；缺参 error 含用法；未连接/未知提示词 error（服务不崩）
+  - **安全规则**：两者都只读——不触发生成、不创建会话；等待启动时的后台连接落定（与 mcp_status
+    一致）；错误一律走 error 响应不中断服务；**零 agent.ts 改动**（纯 server 协议 + 测试 + 文档）
+  - docs/host-protocol.md（请求类型列表 + §16.3/§16.4 新章节 + 响应表）+ README Changelog +
+    版本号 0.6.38
+  - **735/735 全绿**（726 + 9 新增 tests/server-mcp-resources.test.ts：mcp_read_resource 4——
+    成功闭环（真实子进程 + 真实 mock 服务器，contents 内容往返）/ 未知资源 error 透传 /
+    缺 server·uri error 含用法 / 未连接 error；mcp_get_prompt 5——成功渲染闭环（greet 无参）/
+    带参数渲染（summarize + topic 补全 + description）/ 未知提示词 error / 缺 server·prompt
+    error / 未连接 error），tsc 0 错误，**零 agent.ts 改动**
+  - **冒烟实测**（真实 dist CLI 0.6.38 子进程 + 真实 mock 服务器）：version 0.6.38 →
+    mcp_read_resource `{server:'mock', uri:'memory://preferences'}` → contents
+    `[{uri, mimeType:'text/plain', text:'主题: 浅色'}]`；mcp_get_prompt
+    `{server:'mock', prompt:'summarize', args:{topic:'flare 引擎'}}` → description「总结内容」+
+    messages「请总结关于「flare 引擎」的内容」；未知提示词/未连接均 error，SMOKE PASS
+- **下一步候选**：① 【P1】分层上下文（Layer 1 异步滚动摘要——摘要内容升级为 LLM 生成语义级压缩，
+  需评估 run 循环外异步）；② 其他安全的外围增强（server 协议其他管理接口、MCP 工具集完善、测试
+  稳定性等）
+
+---
+
+### 2026-08-12 第三十六轮实施（v0.6.37）——CLI `mcp-server --bridge-prompts`（方向 3 MCP 增强，与 v0.6.28 --bridge-resources 对称）
 >
 > - **P66 CLI `flare mcp-server --bridge-prompts`**（src/cli/index.ts + 测试，commit `400f6a2`）：
 >   - **缺口定位**：方向 3「MCP 增强」——v0.6.28 的 `--bridge-resources` 只透传外部 MCP 服务器的
