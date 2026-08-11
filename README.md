@@ -341,6 +341,20 @@ Interactive mode commands:
 
 > 中文条目 / Chinese entries · English summary for each version
 
+#### v0.6.60 (2026-08-12) — CLI 单次命令 `flare mcp complete` 参数补全（方向③ MCP 增强）
+
+- ✨ **单次命令补参数补全（src/cli/index.ts + 测试）**：
+-  v0.6.57 给交互模式（`/mcp complete`）和 server 协议（`mcp_complete`）补了提示词参数补全，
+-  但**一次性命令侧未对称**——`flare mcp call/resources/prompts/tools` 都有，唯独没有
+-  「渲染提示词前先看参数候选值」的入口；本轮补齐（纯外围，零 agent.ts 改动）：
+- - **`flare mcp complete <server> <prompt> <argument> [value]`**：请求服务器 `completion/complete`
+-  返回候选列表（数量/总数 + hasMore 标记），带 `value` 前缀收窄；与 `flare mcp call/resources/
+-  prompts/tools` 同构（`--url` 直连 HTTP / `--config` 查配置 stdio 或 HTTP / `--timeout`）；
+-  无候选友好提示；未知引用（协议错误）→ 退出码 1 + 错误提示不崩溃；未配置服务器 → 退出码 1
+- - docs/mcp.md（单次命令 complete 说明）+ README Changelog + 版本号 0.6.60
+- - 🧪 **846/846 全绿**（842 + 4 新增 mcp-cli-call.test.ts：候选显示 4/4 / 前缀收窄 1/1 / 未知引用
+-  退出码 1 / 未配置服务器退出码 1），tsc 0 错误，**零 agent.ts 改动**
+
 #### v0.6.59 (2026-08-12) — CLI 单次命令 `flare mcp tools` 工具清单（方向③ MCP 增强）
 
 - ✨ **单次命令补工具清单（src/cli/index.ts + 测试）**：

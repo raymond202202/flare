@@ -3,23 +3,25 @@
 > 目标：flare 是 Pulse/StorySpire 依赖的 AI Agent 引擎（TS）。任何改动必须安全（tsc 0 错 + 测试全绿才 commit）。
 > 铁律：禁止 push；禁止修改 src/core/agent.ts 的 Agent.run 核心循环。
 
-> **最新状态（v0.6.59）**：**CLI 单次命令 `flare mcp tools` 工具清单**（方向③ MCP 增强）：
-> v0.6.58 给交互模式（`/mcp tools`）和 server 协议（`mcp_tools`）补了工具清单，但**一次性命令
-> 侧未对称**——`flare mcp call/resources/prompts` 都有，唯独没有「先看有哪些工具」的入口；
-> 本轮补齐（纯外围，零 agent.ts 改动）——`flare mcp tools <server>` 列出服务器 `tools/list`
-> 暴露的工具（名称 + 描述，含数量），与 `flare mcp resources`/`prompts` 同构（`--url` 直连
-> HTTP / `--config` 查配置 stdio 或 HTTP / `--timeout`）；空清单友好提示；未配置服务器 → 退出码
-> 1 + 错误提示；提示行引导 `flare mcp call <服务器> <工具> [JSON参数]` 调用。
-> **842/842 全绿**（839 + 3 新增，tsc 0 错误，零 agent.ts 改动）：HTTP --url 直连列工具名+描述 /
-> stdio --config mock 子进程真实 3 工具（echo_text/add_numbers/fail_tool）/ 未配置服务器退出码 1。
-> （v0.6.58：mcp_tools 工具清单桥接三层；v0.6.57：mcp_complete 提示词参数补全桥接；v0.6.56：
-> server mcp_connect/mcp_disconnect 控制面；v0.6.55：/mcp connect 摘要 transport/target；
-> v0.6.54：cache-check --rounds 多轮验收；v0.6.53：CLI /usage 本会话 perModel 子行；v0.6.52：
-> session_usage perModel；v0.6.51：CLI mcp status 统一 status()+--connect；v0.6.50：MCP 连接
-> 状态 transport/target；v0.6.49：CLI /usage 本会话行缓存命中；v0.6.48：cache-check --json
-> 结构化输出；v0.6.47：mcp-server --bridge-tools 工具透传；v0.6.46：CLI /trim 智能裁剪 +
-> /context 裁剪提示；v0.6.45：flare cache-check 验收工具；v0.6.44：CLI /sessions 关键词搜索；
-> v0.6.43：server 协议 search_sessions；v0.6.42：CLI /usage perModel 缓存命中显示。）
+> **最新状态（v0.6.60）**：**CLI 单次命令 `flare mcp complete` 参数补全**（方向③ MCP 增强）：
+> v0.6.57 给交互模式（`/mcp complete`）和 server 协议（`mcp_complete`）补了提示词参数补全，
+> 但**一次性命令侧未对称**——`flare mcp call/resources/prompts/tools` 都有，唯独没有「渲染
+> 提示词前先看参数候选值」的入口；本轮补齐（纯外围，零 agent.ts 改动）——`flare mcp complete
+> <server> <prompt> <argument> [value]` 请求服务器 `completion/complete` 返回候选列表（数量/总数
+> + hasMore 标记），带 `value` 前缀收窄；与 `flare mcp call/resources/prompts/tools` 同构
+> （`--url` 直连 HTTP / `--config` 查配置 stdio 或 HTTP / `--timeout`）；无候选友好提示；未知引用
+> （协议错误）→ 退出码 1 + 错误提示不崩溃；未配置服务器 → 退出码 1。
+> **846/846 全绿**（842 + 4 新增，tsc 0 错误，零 agent.ts 改动）：候选显示 4/4 / 前缀收窄 1/1 /
+> 未知引用退出码 1 / 未配置服务器退出码 1。
+> （v0.6.59：flare mcp tools 单次命令；v0.6.58：mcp_tools 工具清单桥接三层；v0.6.57：
+> mcp_complete 提示词参数补全桥接；v0.6.56：server mcp_connect/mcp_disconnect 控制面；v0.6.55：
+> /mcp connect 摘要 transport/target；v0.6.54：cache-check --rounds 多轮验收；v0.6.53：CLI /usage
+> 本会话 perModel 子行；v0.6.52：session_usage perModel；v0.6.51：CLI mcp status 统一
+> status()+--connect；v0.6.50：MCP 连接状态 transport/target；v0.6.49：CLI /usage 本会话行缓存
+> 命中；v0.6.48：cache-check --json 结构化输出；v0.6.47：mcp-server --bridge-tools 工具透传；
+> v0.6.46：CLI /trim 智能裁剪 + /context 裁剪提示；v0.6.45：flare cache-check 验收工具；v0.6.44：
+> CLI /sessions 关键词搜索；v0.6.43：server 协议 search_sessions；v0.6.42：CLI /usage perModel
+> 缓存命中显示。）
 
 > 【🔴 当前最高优先级方向（2026-08-11 用户拍板）】**prompt caching 基建 P0 已基本落地 + 验收工具化**：
 > P0-1 前缀稳定 + P0-2 usage 回传（v0.6.29 完成）。验收：`flare cache-check` 一键验收
@@ -31,7 +33,8 @@
 > 下一步候选（按优先级）：
 > ① 【P1】分层上下文（Layer 1 异步滚动摘要——摘要内容升级为 LLM 生成语义级压缩，需评估 run 循环外异步）
 > ② 其他安全的外围增强（server 协议其他管理接口、MCP 工具集完善、测试稳定性等）
->    已覆盖：flare mcp tools 单次命令（v0.6.59）✓ /
+>    已覆盖：flare mcp complete 单次命令（v0.6.60）✓ /
+>    flare mcp tools 单次命令（v0.6.59）✓ /
 >    mcp_tools 工具清单查看（v0.6.58）✓ /
 >    mcp_complete 参数补全桥接（v0.6.57）✓ /
 >    server mcp_connect/mcp_disconnect 控制面（v0.6.56）✓ /
@@ -58,6 +61,25 @@
 >    terminal 退出码（v0.6.33）✓ / CLI 归档命令（v0.6.32）✓ / 归档 API（v0.6.31）✓ /
 >    工具输出治理（v0.6.30）✓ / prompt caching P0（v0.6.29）✓ / MCP 动态资源提供器（v0.6.28）✓ /
 >    confirm 描述（v0.6.27）✓
+
+> ---
+
+> ### 2026-08-12 第五十九轮实施（v0.6.60）——CLI 单次命令 `flare mcp complete` 参数补全（方向③ MCP 增强）
+
+> - **P89 单次命令补参数补全**（src/cli/index.ts + 测试）：
+>   - **缺口定位**：v0.6.57 给交互模式（`/mcp complete`）和 server 协议（`mcp_complete`）补了提示词
+>     参数补全，但**一次性命令侧未对称**——`flare mcp call/resources/prompts/tools` 都有，唯独
+>     没有「渲染提示词前先看参数候选值」的入口；本轮补齐（纯外围，零 agent.ts 改动）
+>   - **`flare mcp complete <server> <prompt> <argument> [value]`**：请求服务器 `completion/complete`
+>     返回候选列表（数量/总数 + hasMore 标记），带 `value` 前缀收窄；与 `flare mcp call/resources/
+>     prompts/tools` 同构（`--url` 直连 HTTP / `--config` 查配置 stdio 或 HTTP / `--timeout`）；
+>     无候选友好提示；未知引用（协议错误）→ 退出码 1 + 错误提示不崩溃；未配置服务器 → 退出码 1
+>   - docs/mcp.md（单次命令 complete 说明）+ README Changelog + 版本号 0.6.60
+>   - **846/846 全绿**（842 + 4 新增 mcp-cli-call.test.ts：候选显示 4/4 / 前缀收窄 1/1 / 未知引用
+>     退出码 1 / 未配置服务器退出码 1），tsc 0 错误，**零 agent.ts 改动**
+> - **下一步候选**：① 【P1】分层上下文（Layer 1 异步滚动摘要——摘要内容升级为 LLM 生成语义级压缩，
+>   需评估 run 循环外异步）；② 其他安全的外围增强（server 协议其他管理接口、MCP 工具集完善、测试
+>   稳定性等）
 
 > ---
 
