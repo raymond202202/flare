@@ -148,4 +148,65 @@ describe('runCacheCheck（v0.6.45）', () => {
     expect(parsed.hitTokens).toBe(0)
     expect(parsed.savedUsd).toBeNull()
   })
+
+  it('多轮验收（v0.6.54 --rounds 3）：第 2/3 轮都命中 → ok:true + rounds/runs 快照', async () => {
+    const { llm, seen } = makeFake([
+      { model: 'deepseek-chat', usage: { prompt_tokens: 800, completion_tokens: 10, prompt_cache_hit_tokens: 0 } },
+      { model: 'deepseek-chat', usage: { prompt_tokens: 800, completion_tokens: 10, prompt_cache_hit_tokens: 640 } },
+      { model: 'deepseek-chat', usage: { prompt_tokens: 800, completion_tokens: 10, prompt_cache_hit_tokens: 650 } },
+    ])
+    const r = await runCacheCheck(llm, { rounds: 3 })
+    expect(r.ok).toBe(true)
+    expect(r.rounds).toBe(3)
+    expect(r.runs).toHaveLength(3)
+    expect(r.runs.map((u) => u.cacheReadTokens)).toEqual([0, 640, 650])
+    // first 为基准、second 为最后一轮
+    expect(r.first.cacheReadTokens).toBe(0)
+    expect(r.second.cacheReadTokens).toBe(650)
+    expect(r.hitTokens).toBe(650)
+    expect(r.detail).toContain('连续 2 轮命中缓存')
+    // 三轮都调用、前缀逐字节一致、user 内容递增
+    expect(seen).toHaveLength(3)
+    expect(seen[0][0].content).toBe(seen[2][0].content)
+    expect(seen[2][1].content).toContain('数字 3')
+  })
+
+  it('多轮验收（v0.6.54）：第 3 轮中断 → ok:false + detail 指出中断轮次', async () => {
+    const { llm } = makeFake([
+      { model: 'deepseek-chat', usage: { prompt_tokens: 800, completion_tokens: 10, prompt_cache_hit_tokens: 0 } },
+      { model: 'deepseek-chat', usage: { prompt_tokens: 800, completion_tokens: 10, prompt_cache_hit_tokens: 640 } },
+      { model: 'deepseek-chat', usage: { prompt_tokens: 800, completion_tokens: 10, prompt_cache_hit_tokens: 0 } },
+    ])
+    const r = await runCacheCheck(llm, { rounds: 3 })
+    expect(r.ok).toBe(false)
+    expect(r.detail).toContain('第 3 轮 cache_read_tokens = 0')
+    expect(r.detail).toContain('连续命中中断')
+  })
+
+  it('多轮验收（v0.6.54）：rounds 非法（1 / 6 / 1.5 / abc）→ 回退默认 2 不崩', async () => {
+    for (const bad of [1, 6, 1.5, Number('abc')]) {
+      const { llm, seen } = makeFake([
+        { model: 'deepseek-chat', usage: { prompt_tokens: 800, completion_tokens: 10, prompt_cache_hit_tokens: 0 } },
+        { model: 'deepseek-chat', usage: { prompt_tokens: 800, completion_tokens: 10, prompt_cache_hit_tokens: 650 } },
+      ])
+      const r = await runCacheCheck(llm, { rounds: bad })
+      expect(r.rounds).toBe(2)
+      expect(r.ok).toBe(true)
+      expect(seen).toHaveLength(2)
+    }
+  })
+
+  it('多轮 JSON（v0.6.54）：--json 含 rounds/runs 快照', async () => {
+    const { llm } = makeFake([
+      { model: 'deepseek-chat', usage: { prompt_tokens: 800, completion_tokens: 10, prompt_cache_hit_tokens: 0 } },
+      { model: 'deepseek-chat', usage: { prompt_tokens: 800, completion_tokens: 10, prompt_cache_hit_tokens: 640 } },
+      { model: 'deepseek-chat', usage: { prompt_tokens: 800, completion_tokens: 10, prompt_cache_hit_tokens: 650 } },
+    ])
+    const r = await runCacheCheck(llm, { rounds: 3 })
+    const parsed = JSON.parse(cacheCheckToJson(r))
+    expect(parsed.rounds).toBe(3)
+    expect(parsed.runs).toHaveLength(3)
+    expect(parsed.runs[2].cacheReadTokens).toBe(650)
+    expect(parsed.second.cacheReadTokens).toBe(650)
+  })
 })

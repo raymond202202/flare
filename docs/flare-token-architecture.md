@@ -102,5 +102,8 @@ Layer 3: 当前轮（最新输入）           ← 必留
 - ✅ **验收程序化消费（v0.6.48）**：`flare cache-check --json` 只打印纯 JSON（ok/model/hitTokens/
   savedUsd/detail + 两轮用量快照），exit code 语义保留（命中 → 0，未命中/失败 → 1）——宿主面板
   「缓存健康度」/ CI「命中才放行」断言可直接 JSON.parse
+- ✅ **多轮连续命中验收（v0.6.54）**：`flare cache-check --rounds <N>`（2~5，默认 2）——第 1 轮为
+  miss 基准，第 2..N 轮**全部**命中才算 PASS（验证服务端缓存持续稳定，避免偶发命中误判）；结果含
+  rounds/runs 每轮快照（--json 同步输出）；非法 --rounds → 退出码 1 + 用法提示
 - ⏳ 单次迭代 fire 的 prompt tokens 相比 v0.6.27 基线下降 ≥ 30%（P0-1 后测量；工具定义瘦身 P1 候选）
 - ✅ 全部改动 tsc 0 错 + 测试全绿（v0.6.29：630/630）
