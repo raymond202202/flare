@@ -38,6 +38,7 @@ import type {
   McpPromptInfo,
   McpPromptRef,
   McpPromptResult,
+  McpCompletionResult,
   McpCallResult,
 } from './types.js'
 import type { Tool } from '../tools/index.js'
@@ -161,6 +162,19 @@ export class McpManager {
       throw new Error(`MCP 服务器未连接: ${name}`)
     }
     return client.callTool(toolName, args)
+  }
+
+  /**
+   * 代理请求某服务器提示词参数补全（v0.6.57）：调该服务器 completion/complete——
+   * 与 getPrompt（渲染）配套：宿主渲染提示词时对带补全声明的参数给出候选值；
+   * 服务器未连接 → reject 清晰错误（与 callTool/getPrompt 同模式）
+   */
+  async completePrompt(name: string, promptName: string, argumentName: string, value: string): Promise<McpCompletionResult> {
+    const client = this.clients.get(name) as (McpPromptClient & { completePrompt(n: string, a: string, v: string): Promise<McpCompletionResult> }) | undefined
+    if (!client) {
+      throw new Error(`MCP 服务器未连接: ${name}`)
+    }
+    return client.completePrompt(promptName, argumentName, value)
   }
 
   /** 连接状态列表（CLI /mcp、server mcp_status 用） */

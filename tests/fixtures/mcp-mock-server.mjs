@@ -165,6 +165,21 @@ rl.on('line', (line) => {
       }
       break
     }
+    // v0.6.57：completion/complete（提示词参数补全）——summarize 的 topic 参数按前缀建议候选
+    case 'completion/complete': {
+      const { ref, argument } = msg.params || {}
+      const promptName = ref?.type === 'ref/prompt' ? ref.name : ''
+      const argName = argument?.name || ''
+      const value = argument?.value || ''
+      if (promptName !== 'summarize' || argName !== 'topic') {
+        respondError(-32602, `未知补全引用: ${promptName}/${argName}`)
+        break
+      }
+      const ALL_TOPICS = ['flare 缓存', 'flare MCP', 'flare 上下文', 'flare 用量']
+      const values = ALL_TOPICS.filter((t) => t.startsWith(value))
+      respond({ completion: { values, total: values.length, hasMore: false } })
+      break
+    }
     case 'tools/call': {
       if (mode === 'no-response') return // 不响应 → 客户端超时
       const { name, arguments: args } = msg.params || {}

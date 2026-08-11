@@ -8,7 +8,7 @@
  */
 
 import { Command } from 'commander'
-import { Agent, createProvider, getMemoryStore, config, tools, McpManager, estimateMessagesTokens, suggestTrim, ConfirmationGate, memoryStoreKv, wrapConfirmTools, describeTools, validateToolOutputPolicy, type AgentConfig, type McpServerStatus, type ConfirmDecision, type McpResourceRef, type McpResourceTemplateRef, type McpPromptRef, type McpResourceContents, type McpPromptResult, type McpCallResult, type ToolOutputPolicy } from '../index.js'
+import { Agent, createProvider, getMemoryStore, config, tools, McpManager, estimateMessagesTokens, suggestTrim, ConfirmationGate, memoryStoreKv, wrapConfirmTools, describeTools, validateToolOutputPolicy, type AgentConfig, type McpServerStatus, type ConfirmDecision, type McpResourceRef, type McpResourceTemplateRef, type McpPromptRef, type McpResourceContents, type McpPromptResult, type McpCompletionResult, type McpCallResult, type ToolOutputPolicy } from '../index.js'
 import chalk from 'chalk'
 import { execSync } from 'child_process'
 import { createRequire } from 'module'
@@ -278,6 +278,8 @@ async function startInteractive(opts: { contextSummarize?: boolean } = {}) {
       readResource: (server, uri) => mcpManager.readResource(server, uri),
       // v0.6.39：渲染已连接服务器提示词（代理转发 prompts/get——与 server 协议 mcp_get_prompt 同源）
       renderPrompt: (server, prompt, args) => mcpManager.getPrompt(server, prompt, args),
+      // v0.6.57：请求提示词参数补全（代理转发 completion/complete——与 server 协议 mcp_complete 同源）
+      completePrompt: (server, prompt, argument, value) => mcpManager.completePrompt(server, prompt, argument, value),
       // v0.6.41：调用已连接服务器工具（代理转发 tools/call——与 server 协议 mcp_call 同源）
       callTool: (server, tool, args) => mcpManager.callTool(server, tool, args),
       onChanged: () => {
@@ -548,6 +550,8 @@ export interface McpCommandHooks {
   readResource?(server: string, uri: string): Promise<McpResourceContents[]>
   /** 渲染已连接服务器提示词（v0.6.39）：代理转发 prompts/get；未提供回退提示不可用 */
   renderPrompt?(server: string, prompt: string, args?: Record<string, string>): Promise<McpPromptResult>
+  /** 请求提示词参数补全（v0.6.57）：代理转发 completion/complete；未提供回退提示不可用 */
+  completePrompt?(server: string, prompt: string, argument: string, value: string): Promise<McpCompletionResult>
   /** 调用已连接服务器工具（v0.6.41）：代理转发 tools/call；未提供回退提示不可用 */
   callTool?(server: string, tool: string, args?: Record<string, any>): Promise<McpCallResult>
 }
@@ -857,6 +861,30 @@ export async function handleSlashCommand(
       }
       return 'continue'
     }
+    // /mcp complete <server> <prompt> <argument> [value]（v0.6.57）：请求提示词参数补全候选
+    // （与 server 协议 mcp_complete 对称；配合 /mcp render——渲染前先看该参数有哪些候选值）
+    if (sub === 'complete' && rest.length >= 3) {
+      if (typeof mcp.completePrompt !== 'function') {
+        output(chalk.yellow('\n  当前环境未提供参数补全（MCP 管理器不支持 completePrompt）'))
+        return 'continue'
+      }
+      const server = rest[0]
+      const prompt = rest[1]
+      const argument = rest[2]
+      const value = rest.slice(3).join(' ')
+      try {
+        const result = await mcp.completePrompt(server, prompt, argument, value)
+        if (result.values.length === 0) {
+          output(chalk.yellow(`\n  ${server} 的提示词 ${chalk.cyan(prompt)} 参数 ${chalk.cyan(argument)} 无补全候选`))
+        } else {
+          output(chalk.gray(`\n  ${server} 的提示词 ${chalk.cyan(prompt)} 参数 ${chalk.cyan(argument)} 补全候选（${result.values.length}${result.total !== undefined && result.total > result.values.length ? `/${result.total}` : ''}${result.hasMore ? '+': ''}）：`))
+          for (const v of result.values) output(`    • ${v}`)
+        }
+      } catch (e: any) {
+        output(chalk.red(`\n  ❌ ${e?.message || e}`))
+      }
+      return 'continue'
+    }
     // /mcp call <server> <tool> [JSON参数]（v0.6.41）：调用已连接服务器工具（与 server 协议 mcp_call 对称）
     if (sub === 'call' && rest.length >= 2) {
       if (typeof mcp.callTool !== 'function') {
@@ -894,7 +922,7 @@ export async function handleSlashCommand(
       }
       return 'continue'
     }
-    output(chalk.yellow('\n  用法: /mcp | /mcp resources [name] | /mcp prompts [name] | /mcp read <server> <uri> | /mcp render <server> <prompt> [k=v ...] | /mcp call <server> <tool> [JSON参数] | /mcp connect <name> | /mcp disconnect <name>'))
+    output(chalk.yellow('\n  用法: /mcp | /mcp resources [name] | /mcp prompts [name] | /mcp read <server> <uri> | /mcp render <server> <prompt> [k=v ...] | /mcp complete <server> <prompt> <argument> [value] | /mcp call <server> <tool> [JSON参数] | /mcp connect <name> | /mcp disconnect <name>'))
     return 'continue'
   }
 
@@ -1171,6 +1199,7 @@ export async function handleSlashCommand(
       output('  /mcp prompts [name] - 查看已桥接提示词（v0.6.36，外部 MCP 服务器暴露的提示词）')
       output('  /mcp read <server> <uri> - 读取外部 MCP 资源内容（v0.6.39，resources/read 代理）')
       output('  /mcp render <server> <prompt> [k=v ...] - 渲染外部 MCP 提示词（v0.6.39，prompts/get 代理）')
+      output('  /mcp complete <server> <prompt> <argument> [value] - 提示词参数补全候选（v0.6.57，completion/complete 代理）')
       output('  /mcp call <server> <tool> [JSON参数] - 调用外部 MCP 工具（v0.6.41，tools/call 代理）')
       output('  /mcp connect <name> - 连接 MCP 服务器并注入其工具')
       output('  /mcp disconnect <name> - 断开 MCP 服务器')

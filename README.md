@@ -341,6 +341,25 @@ Interactive mode commands:
 
 > 中文条目 / Chinese entries · English summary for each version
 
+#### v0.6.57 (2026-08-12) — MCP 提示词参数补全桥接 `mcp_complete`（方向③ MCP 增强）
+
+- ✨ **提示词参数补全 completion/complete 桥接到三层（src/mcp/manager.ts + src/server.ts + src/cli/index.ts + 测试）**：
+-  MCP 协议 `completion/complete`（提示词参数补全候选）在客户端层 v0.6.11 已实现（MCPClient/
+-  MCPHttpClient.completePrompt），但 **McpManager / server 协议 / CLI 都没透传**——宿主渲染提示词
+-  （mcp_get_prompt）时对带补全声明的参数拿不到候选值；本轮三层对称补齐（纯外围，零 agent.ts 改动）：
+- - **McpManager.completePrompt(name, promptName, argumentName, value)**：代理转发某服务器
+-  completion/complete；服务器未连接 → reject 清晰错误（与 callTool/getPrompt 同模式）
+- - **server 协议 `mcp_complete`**：`{server, prompt, argument, value?}` → 返回
+-  `{values[], total?, hasMore?}`（候选值/总数/是否更多；缺参数 error 含用法；未知引用透传协议错误不崩）
+- - **CLI `/mcp complete <server> <prompt> <argument> [value]`**：显示补全候选列表（数量 + 前缀收窄）；
+-  无候选/未知引用/缺参数友好提示不崩溃；hooks 未提供 completePrompt → 提示不可用（向后兼容旧宿主）
+- - mock MCP server 补 `completion/complete` 响应（summarize 的 topic 参数按前缀建议候选）
+- - docs/host-protocol.md（§16.8 mcp_complete + 请求类型清单 + 响应表）+ README Changelog + 版本号 0.6.57
+- - 🧪 **830/830 全绿**（821 + 9 新增：manager completePrompt 代理（4 候选/前缀收窄/未知引用 reject/未连接
+-  reject）/ server mcp_complete（缺参数 error / mock 子进程真实返回候选+前缀收窄+未知引用 error）/ CLI
+-  /mcp complete（候选显示/前缀收窄/无候选/未知引用/缺参数用法/hooks 缺失兼容）），tsc 0 错误，
+-  **零 agent.ts 改动**
+
 #### v0.6.56 (2026-08-12) — server 协议 `mcp_connect`/`mcp_disconnect` 动态管理 MCP 连接（方向③ MCP 增强，控制面补齐）
 
 - ✨ **宿主协议补 MCP 控制面（src/server.ts + 测试）**：
