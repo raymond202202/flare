@@ -2035,10 +2035,12 @@ export function main() {
       r.runs.forEach((u, i) => {
         const label = i === 0 ? '第一轮' : `第${i + 1}轮`
         const note = i === 0 ? '（miss 基准）' : ''
+        // v0.6.79：命中率百分比（prompt 为 0 时不显示，与 /usage 命中率观测面对称）
+        const pct = u.promptTokens > 0 ? `（${Math.round((u.cacheReadTokens / u.promptTokens) * 100)}%）` : ''
         // v0.6.76：每轮节省明细（>0 才显示，与总节省同口径；无法定价/无节省不显示）
         const saved = r.runSavedUsd?.[i]
         const savedNote = saved !== undefined && saved !== null && saved > 0 ? `（节省 $${saved.toFixed(6)}）` : ''
-        console.log(`  ${label}: prompt ${u.promptTokens} · 命中 ${u.cacheReadTokens} tokens${note}${savedNote}`)
+        console.log(`  ${label}: prompt ${u.promptTokens} · 命中 ${u.cacheReadTokens} tokens${pct}${note}${savedNote}`)
       })
       if (r.savedUsd !== null) {
         console.log(chalk.gray(`  估算节省: $${r.savedUsd.toFixed(6)}（命中价 vs 未命中价）`))

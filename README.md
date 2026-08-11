@@ -341,6 +341,15 @@ Interactive mode commands:
 
 > 中文条目 / Chinese entries · English summary for each version
 
+#### v0.6.79 (2026-08-12) — cache-check 人类可读输出命中率百分比（prompt caching 基建深化）
+
+- ✨ **`cache-check` 每轮行加命中率百分比**：`命中 896 tokens（75%）`（prompt 为 0 时不显示）：
+- - 与 /usage 的命中率观测面对称（v0.6.49 起 /usage 显示百分比、cache-check 只有绝对量）——
+-  用户一眼看出前缀命中比例（DeepSeek 服务端缓存通常部分命中，非 100%）
+- - 纯显示层改动（核心判定/--json 结构不变）；--json 消费方仍用 runs 自算百分比
+- - README Changelog + 版本号 0.6.79
+- - 🧪 **875/875 全绿**（显示层改动，无逻辑变更），tsc 0 错误，**零 agent.ts 改动**
+
 #### v0.6.78 (2026-08-12) — cache-check 基准轮命中诊断（prompt caching 基建深化）
 
 - ✨ **`cache-check` 基准轮（第 1 轮）已命中时 detail 追加诊断提示**：
