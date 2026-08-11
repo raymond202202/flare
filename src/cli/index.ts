@@ -1206,9 +1206,16 @@ export async function handleSlashCommand(
           }
         }
         // 当前会话用量（v0.6.17：getSessionUsage 按 session 过滤；未提供 sessionId 不显示）
+        // v0.6.49：本会话行追加缓存命中（有命中才显示，与总行/perModel 行对称）
         if (sessionId) {
           const mine = store.getSessionUsage(sessionId)
-          output(chalk.gray(`  本会话:     ${mine.totalTokens.toLocaleString()} tokens（${mine.callCount} 次调用）`))
+          let mineLine = `  本会话:     ${mine.totalTokens.toLocaleString()} tokens（${mine.callCount} 次调用）`
+          const mineCache = mine.cacheReadTokens || 0
+          if (mineCache > 0) {
+            const mineRate = mine.promptTokens > 0 ? Math.round((mineCache / mine.promptTokens) * 100) : 0
+            mineLine += ` · 缓存命中 ${mineCache.toLocaleString()} tokens（${mineRate}%）`
+          }
+          output(chalk.gray(mineLine))
         }
       }
       break

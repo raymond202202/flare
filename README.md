@@ -341,6 +341,22 @@ Interactive mode commands:
 
 > 中文条目 / Chinese entries · English summary for each version
 
+#### v0.6.49 (2026-08-12) — CLI `/usage` 本会话行缓存命中显示（方向① prompt caching 基建深化，观测面补齐）
+
+- ✨ **CLI `/usage` 本会话行追加缓存命中（src/cli/index.ts + 测试）**：
+-  v0.6.42 给总行 + perModel 行加了缓存命中，但**本会话行**（sessionId 分支）仍是旧格式
+-  `N tokens（M 次调用）`——宿主看「当前会话吃了多少缓存」只能自己从 get_usage 算；本轮补齐
+-  （纯 CLI 外围，零 agent.ts 改动）：`getSessionUsage` 本就含 cacheReadTokens，CLI 侧有命中时
+-  追加 `· 缓存命中 N tokens（R%）`（命中率按本会话 promptTokens 算）；无命中不追加（与旧版
+-  输出兼容）
+- - 📚 README Changelog + 版本号 0.6.49
+- - 🧪 **806/806 全绿**（804 + 2 新增 tests/prompt-caching.test.ts：本会话行命中显示（sessionId
+-  透传、命中 400/1000=40%、另一会话 s2 不影响统计）；本会话无命中不追加段（不显示「缓存命中 0」）），
+-  tsc 0 错误，**零 agent.ts 改动**
+- - **冒烟实测**（真实 MemoryStore + dist handleSlashCommand）：/usage 带 sessionId → 本会话行
+-  `本会话: 1,500 tokens（1 次调用） · 缓存命中 400 tokens（40%）`（与总行/perModel 行 40% 一致），
+-  SMOKE PASS
+
 #### v0.6.48 (2026-08-12) — `flare cache-check --json` 结构化输出（方向① prompt caching 基建深化，宿主/CI 程序化验收）
 
 - ✨ **`cache-check --json`（src/core/cache-check.ts + src/cli/index.ts + 测试）**：
