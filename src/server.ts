@@ -1064,6 +1064,8 @@ export function startHostServer(opts: HostServerOptions) {
             mcpServers: (opts.mcp || []).map((m) => ({
               name: m.name,
               transport: m.url ? 'http' : 'stdio',
+              // v0.6.73：HTTP transport 配了 headers → auth 标记（只传布尔不传 token；与 mcp_status 同源）
+              ...(m.url && m.headers ? { auth: true } : {}),
             })),
           })
           break

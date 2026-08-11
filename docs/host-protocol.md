@@ -594,7 +594,7 @@ flare server --profile <expert-profile-file> --storage <db-path> [--mcp <mcp-con
 
 响应：`{"type":"config","confirmTools":["memory_save"],"confirmTimeoutMs":30000,"defaultMaxTokens":null,"defaultTemperature":null,"defaultMaxContextMessages":null,"defaultMaxContextTokens":null,"defaultContextSummarize":null,"defaultToolOutputPolicy":null,"toolTimeoutMs":30000,"namespace":null,"storage":"/path/flare.db","mcpServers":[{"name":"fs","transport":"stdio"}]}`
 
-- 宿主面板"设置/关于"数据源：确认门配置（`confirmTools` 名单 / `confirmTimeoutMs` 超时）、默认采样参数（`defaultMaxTokens` / `defaultTemperature`，未配置为 null）、默认上下文裁剪参数（`defaultMaxContextMessages` / `defaultMaxContextTokens` / `defaultContextSummarize` 压缩摘要开关（v0.6.19），未配置为 null）、默认工具输出治理策略（`defaultToolOutputPolicy`，v0.6.34，未配置为 null）、`toolTimeoutMs` 工具超时、`namespace` 记忆隔离标识（无则 null）、`storage` 存储路径（非字符串配置为 null）、`mcpServers` MCP 服务器清单（名称 + 传输类型 http/stdio）
+- 宿主面板"设置/关于"数据源：确认门配置（`confirmTools` 名单 / `confirmTimeoutMs` 超时）、默认采样参数（`defaultMaxTokens` / `defaultTemperature`，未配置为 null）、默认上下文裁剪参数（`defaultMaxContextMessages` / `defaultMaxContextTokens` / `defaultContextSummarize` 压缩摘要开关（v0.6.19），未配置为 null）、默认工具输出治理策略（`defaultToolOutputPolicy`，v0.6.34，未配置为 null）、`toolTimeoutMs` 工具超时、`namespace` 记忆隔离标识（无则 null）、`storage` 存储路径（非字符串配置为 null）、`mcpServers` MCP 服务器清单（名称 + 传输类型 http/stdio；v0.6.73：HTTP 配置了 `headers` → 带 `auth: true` 鉴权标记，只传布尔不传 token）
 - 只读查询：不触发生成、不创建会话；**不含任何密钥/敏感配置**
 
 ## 响应（服务 → 宿主，stdout 每行一个）

@@ -341,6 +341,18 @@ Interactive mode commands:
 
 > 中文条目 / Chinese entries · English summary for each version
 
+#### v0.6.73 (2026-08-12) — get_config 的 mcpServers 带 auth 鉴权标记（方向③ MCP 增强，v0.6.70 配置视角对称）
+
+- ✨ **server `get_config` 响应 `mcpServers` 每项补 `auth` 标记**（src/server.ts + 测试）：
+-  v0.6.70 给运行态 `mcp_status` 加了 auth，但**配置视角的 `get_config.mcpServers` 仍只有
+-  name/transport**——宿主「设置/关于」面板看不出哪些服务器配了鉴权（只能翻 mcp.json）；本轮补齐
+-  （纯外围，零 agent.ts 改动）
+- - **`mcpServers[].auth`**：HTTP transport 配了 `headers` → `true`（只传布尔不传 token，与
+-  mcp_status 同源；stdio/未配置 → 缺省 undefined，向后兼容）
+- - docs/host-protocol.md（§get_config mcpServers auth 说明）+ README Changelog + 版本号 0.6.73
+- - 🧪 **868/868 全绿**（新增 1 用例：--mcp 配 HTTP url+headers → get_config mcpServers 带
+-  auth:true 且不含 token、stdio 无 auth），tsc 0 错误，**零 agent.ts 改动**
+
 #### v0.6.72 (2026-08-12) — `/mcp connect` 摘要带 [auth] 鉴权标记（方向③ MCP 增强，v0.6.70 对称补齐）
 
 - ✨ **CLI `/mcp connect` 摘要补 `[auth]` 标记**（src/cli/index.ts + 测试）：
