@@ -3,17 +3,16 @@
 > 目标：flare 是 Pulse/StorySpire 依赖的 AI Agent 引擎（TS）。任何改动必须安全（tsc 0 错 + 测试全绿才 commit）。
 > 铁律：禁止 push；禁止修改 src/core/agent.ts 的 Agent.run 核心循环。
 
-> **最新状态（v0.6.43）**：**server 协议 `search_sessions` 会话搜索**（方向② server 协议
-> 其他管理接口）——`list_sessions` 只能全量列出、`search_messages`（v0.6.24）返回**消息级**
-> 结果，宿主面板搜索框缺**会话级**搜索（先搜会话→点进会话→再定位消息的闭环）：本轮补齐
-> （纯外围，零 agent.ts 改动）——`MemoryStore.searchSessions(query, limit=20)` LIKE 匹配
-> **会话标题或会话内任意消息内容**（DISTINCT 去重、结构同 getAllSessions 含消息数/归档标记、
-> 按更新时间倒序、空 query 空数组不误搜全部）；server 协议 `search_sessions {query, limit?}`
-> → `{type:'search_sessions', query, sessions}`——query 必填 error 含用法、limit 1~100 整数
-> 非法 error、无匹配空数组不报错、只读不触发生成；**774/774 全绿**（760 + 14 新增），tsc 0
-> 错误，零 agent.ts 改动；冒烟实测真实 dist CLI 0.6.43，SMOKE PASS。
-> （v0.6.42：CLI /usage perModel 缓存命中显示；v0.6.41：CLI /mcp call；v0.6.40：server 协议
-> mcp_call + McpManager.callTool；v0.6.39：CLI /mcp read/render。）
+> **最新状态（v0.6.44）**：**CLI `/sessions <关键词>` 会话搜索**（方向② 其他安全的外围增强，
+> v0.6.43 search_sessions 的 CLI 对称）——`/search`（v0.6.24）只搜**消息**、`/sessions` 只能
+> **全量**列出最近会话，「记不清哪个会话聊过 X」无从下手：本轮补齐（纯 CLI 外围，零 agent.ts
+> 改动）——`/sessions <关键词>` 调用 store.searchSessions（与协议同源）：按**标题或会话内任意
+> 消息内容** LIKE 匹配，显示 `[时间] 标题（N 条消息）`（formatSessionTime 复用 /sessions 时间
+> 格式；归档会话带 `（已归档）` 标记仍可搜到）；无匹配友好提示；`/sessions` 无关键词走原
+> switch 分支逐字符零回归；**781/781 全绿**（774 + 7 新增），tsc 0 错误，零 agent.ts 改动；
+> 冒烟实测真实 MemoryStore + dist handleSlashCommand，SMOKE PASS。
+> （v0.6.43：server 协议 search_sessions；v0.6.42：CLI /usage perModel 缓存命中显示；
+> v0.6.41：CLI /mcp call；v0.6.40：server 协议 mcp_call + McpManager.callTool。）
 
 > 【🔴 当前最高优先级方向（2026-08-11 用户拍板）】**prompt caching 基建 P0 已基本落地**：
 > P0-1 前缀稳定 + P0-2 usage 回传（v0.6.29 完成）。验收：连续两轮调用（间隔<5min）第二轮
@@ -23,7 +22,8 @@
 > 下一步候选（按优先级）：
 > ① 【P1】分层上下文（Layer 1 异步滚动摘要——摘要内容升级为 LLM 生成语义级压缩，需评估 run 循环外异步）
 > ② 其他安全的外围增强（server 协议其他管理接口、MCP 工具集完善、测试稳定性等）
->    已覆盖：search_sessions 会话搜索（v0.6.43）✓ /
+>    已覆盖：CLI /sessions 关键词搜索（v0.6.44）✓ /
+>    search_sessions 会话搜索（v0.6.43）✓ /
 >    /usage perModel 缓存命中显示（v0.6.42）✓ /
 >    /mcp call 交互命令（v0.6.41）✓ /
 >    mcp_call 协议+callTool 代理（v0.6.40）✓ /
@@ -34,6 +34,35 @@
 >    terminal 退出码（v0.6.33）✓ / CLI 归档命令（v0.6.32）✓ / 归档 API（v0.6.31）✓ /
 >    工具输出治理（v0.6.30）✓ / prompt caching P0（v0.6.29）✓ / MCP 动态资源提供器（v0.6.28）✓ /
 >    confirm 描述（v0.6.27）✓
+
+> ---
+
+> ### 2026-08-12 第四十三轮实施（v0.6.44）——CLI `/sessions <关键词>` 会话搜索（v0.6.43 search_sessions 的 CLI 对称）
+
+> - **P73 CLI `/sessions <关键词>` 会话搜索**（src/cli/index.ts + 测试，commit `7d3540c`）：
+>   - **缺口定位**：v0.6.43 给 server 协议补了 `search_sessions`（按标题/消息内容搜索会话），
+>     但 **CLI 交互模式没有对称入口**——`/search`（v0.6.24）只搜**消息**（返回消息级结果），
+>     `/sessions` 只能**全量**列出最近会话，「记不清哪个会话聊过 X」无从下手；本轮补齐
+>     （纯 CLI 外围，零 agent.ts 改动）
+>   - **`/sessions <关键词>`**：前缀分支（switch 前，/restore 同模式）调用
+>     `store.searchSessions(kw, 20)`（与协议 search_sessions 同源）——按**标题或会话内任意
+>     消息内容** LIKE 匹配；显示 `💬 搜索会话「kw」（N 个，按更新时间倒序）:` + 每行
+>     `[时间] 标题（M 条消息）`（formatSessionTime 复用 /sessions 时间格式；**归档会话带
+>     `（已归档）` 标记**仍可搜到——与 server search_sessions 语义一致）；无匹配友好提示
+>     「未找到包含「kw」的会话（标题或消息内容）」；空白关键词用法提示不报错
+>   - **零回归**：`/sessions`（无关键词）精确匹配走原 switch 分支（最近会话列表逐字符不变）；
+>     `/help` 注册一行（`/sessions - 查看会话列表；带关键词搜索会话`）
+>   - README Changelog + 版本号 0.6.44
+>   - **781/781 全绿**（774 + 7 新增 tests/session-search-cli.test.ts：按标题匹配显示
+>     标题+消息数 / 按消息内容匹配（标题不含关键词也命中、不相关会话不出现）/ 归档会话带
+>     （已归档）标记 / 无匹配友好提示 / 空白关键词用法提示 / 无关键词原行为零回归（输出
+>     含「最近会话」不含「搜索会话「」）/ /help 注册），tsc 0 错误，**零 agent.ts 改动**
+>   - **冒烟实测**（真实 MemoryStore + dist handleSlashCommand）：/sessions 集成 →
+>     `[昨天] flutter 集成指南 (1 条消息)`；/sessions 前缀稳定 → `普通标题（已归档）`；
+>     /sessions 绝无此词 → 未找到；/sessions（空白）→ 用法提示，SMOKE PASS
+> - **下一步候选**：① 【P1】分层上下文（Layer 1 异步滚动摘要——摘要内容升级为 LLM 生成语义级压缩，
+>   需评估 run 循环外异步）；② 其他安全的外围增强（server 协议其他管理接口、MCP 工具集完善、测试
+>   稳定性等）
 
 > ---
 
