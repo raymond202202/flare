@@ -1111,6 +1111,25 @@ export function startHostServer(opts: HostServerOptions) {
           reply({ type: 'mcp_prompts', servers })
           break
         }
+        case 'mcp_tools': {
+          // 宿主查看已连接 MCP 服务器的工具清单（v0.6.58；只读，不触发生成、不创建会话）——
+          // 工具桥接：连接时拉取 tools/list，此处按服务器分组透传（与 mcp_resources/mcp_prompts
+          // 对称；mcp_status 只能看到 toolCount 数量，宿主在 mcp_call 前需要知道具体工具名/描述）
+          await Promise.allSettled(mcpConnects)
+          const servers = mcpManager.status().map((s) => ({
+            name: s.name,
+            connected: s.connected,
+            toolCount: s.toolCount,
+            ...(s.connected
+              ? {
+                  tools: mcpManager.getAllToolsRef().filter((t) => t.server === s.name),
+                }
+              : {}),
+            ...(s.error ? { error: s.error } : {}),
+          }))
+          reply({ type: 'mcp_tools', servers })
+          break
+        }
         case 'mcp_read_resource': {
           // 宿主读取已连接 MCP 服务器的资源内容（v0.6.38；只读，不触发生成、不创建会话）——
           // 与 mcp_resources（清单）配套：mcp_resources 只能看到资源/模板元数据，无法取内容；

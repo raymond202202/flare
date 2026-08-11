@@ -10,7 +10,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { MemoryStore } from '../src/memory/store.js'
 import { handleSlashCommand, type McpCommandHooks } from '../src/cli/index.js'
-import type { McpServerStatus, McpResourceRef, McpResourceTemplateRef, McpPromptRef } from '../src/mcp/types.js'
+import type { McpServerStatus, McpResourceRef, McpResourceTemplateRef, McpPromptRef, McpToolRef } from '../src/mcp/types.js'
 
 let store: MemoryStore
 let dir: string
@@ -34,6 +34,7 @@ function makeHooks(
   renderData: Record<string, { description?: string; messages: { role: 'user' | 'assistant'; content: { type: 'text'; text: string } }[] }> = {},
   callData: Record<string, { isError?: boolean; content: { type: string; text?: string }[] }> = {},
   completeData: Record<string, { values: string[]; total?: number; hasMore?: boolean }> = {},
+  toolData: McpToolRef[] = [],
 ): {
   hooks: McpCommandHooks
   calls: { connect: string[]; disconnect: string[]; changed: number; reads: string[]; renders: string[]; calls: string[]; completes: string[] }
@@ -64,6 +65,8 @@ function makeHooks(
         templates: name ? resourceData.templates.filter((t) => t.server === name) : resourceData.templates,
       }),
       prompts: (name) => (name ? promptData.filter((p) => p.server === name) : promptData),
+      // v0.6.58：列出已桥接工具（工具清单——与 /mcp call 配套）
+      tools: (name) => (name ? toolData.filter((t) => t.server === name) : toolData),
       // v0.6.39：读取资源内容 / 渲染提示词（真实代理由 McpManager.readResource/getPrompt 转发）
       readResource: async (server, uri) => {
         calls.reads.push(`${server}:${uri}`)
@@ -396,6 +399,95 @@ describe('/mcp 命令', () => {
     const r = await handleSlashCommand('/mcp prompts', store, (s) => lines.push(s), undefined, legacy)
     expect(r).toBe('continue')
     expect(lines.join('\n')).toContain('未提供提示词桥接')
+  })
+
+  // ===== v0.6.58 tools（工具清单）=====
+  it('/mcp tools（无参）→ 列出全部已连接服务器的工具（名称/描述，v0.6.58）', async () => {
+    const lines: string[] = []
+    const { hooks } = makeHooks(
+      [{ name: 'mock', connected: true, toolCount: 3 }],
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      [
+        { server: 'mock', name: 'echo_text', description: '回显输入文本' },
+        { server: 'mock', name: 'add_numbers', description: '两个数相加' },
+        { server: 'mock', name: 'no_desc_tool' },
+      ],
+    )
+    const r = await handleSlashCommand('/mcp tools', store, (s) => lines.push(s), undefined, hooks)
+    expect(r).toBe('continue')
+    const text = lines.join('\n')
+    expect(text).toContain('全部已连接服务器')
+    expect(text).toContain('3')
+    expect(text).toContain('echo_text')
+    expect(text).toContain('回显输入文本')
+    expect(text).toContain('add_numbers')
+    expect(text).toContain('两个数相加')
+    // 无描述工具不崩溃
+    expect(text).toContain('no_desc_tool')
+  })
+
+  it('/mcp tools <name> → 只列该服务器的工具（过滤生效）', async () => {
+    const lines: string[] = []
+    const { hooks } = makeHooks(
+      [{ name: 'fs', connected: true, toolCount: 2 }, { name: 'db', connected: true, toolCount: 1 }],
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      [
+        { server: 'fs', name: 'read_file', description: '读文件' },
+        { server: 'fs', name: 'write_file', description: '写文件' },
+        { server: 'db', name: 'query', description: '查询' },
+      ],
+    )
+    const r = await handleSlashCommand('/mcp tools db', store, (s) => lines.push(s), undefined, hooks)
+    expect(r).toBe('continue')
+    const text = lines.join('\n')
+    expect(text).toContain('「db」')
+    expect(text).toContain('query')
+    expect(text).not.toContain('read_file')
+  })
+
+  it('/mcp tools（无工具）→ 友好提示', async () => {
+    const lines: string[] = []
+    const { hooks } = makeHooks([{ name: 'fs', connected: true, toolCount: 0 }])
+    const r = await handleSlashCommand('/mcp tools', store, (s) => lines.push(s), undefined, hooks)
+    expect(r).toBe('continue')
+    expect(lines.join('\n')).toContain('无已桥接工具')
+  })
+
+  it('/mcp tools（hooks 未提供 tools 方法）→ 提示不可用（向后兼容旧宿主）', async () => {
+    const lines: string[] = []
+    const { hooks } = makeHooks([{ name: 'fs', connected: true, toolCount: 3 }])
+    // 移除 tools 方法（旧版 hooks 形状——v0.6.58 之前无此方法）
+    const legacy = { ...hooks } as McpCommandHooks
+    delete (legacy as any).tools
+    const r = await handleSlashCommand('/mcp tools', store, (s) => lines.push(s), undefined, legacy)
+    expect(r).toBe('continue')
+    expect(lines.join('\n')).toContain('未提供工具桥接')
+  })
+
+  it('/mcp 用法错误 → 提示用法（含 tools 子命令）', async () => {
+    const lines: string[] = []
+    const { hooks } = makeHooks([])
+    const r = await handleSlashCommand('/mcp bogus', store, (s) => lines.push(s), undefined, hooks)
+    expect(r).toBe('continue')
+    expect(lines.join('\n')).toContain('tools')
+  })
+
+  it('/help → 注册 /mcp tools 一行', async () => {
+    const lines: string[] = []
+    const { hooks } = makeHooks([])
+    const r = await handleSlashCommand('/help', store, (s) => lines.push(s), undefined, hooks)
+    expect(r).toBe('continue')
+    expect(lines.join('\n')).toContain('/mcp tools')
   })
 
   it('/mcp 用法错误 → 提示用法（含 prompts 子命令）', async () => {

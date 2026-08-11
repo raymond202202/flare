@@ -3,7 +3,7 @@
 > 供非 Node 宿主（如 Qt 应用）调用 flare 引擎的本地协议。
 > 传输：stdin/stdout · JSON Lines（每行一个 JSON 对象）
 > 实现：`src/server.ts`（`flare server` 命令）
-> 请求类型：chat / cancel / set_context / list_sessions / recent_sessions / search_sessions / get_messages / search_messages / get_usage / session_usage / context_status / apply_trim / ping / version / create_session / rename_session / clear_session / delete_session / end_session / restore_session / list_archived_sessions / remember / get_memories / delete_memory / tool_result / confirm_result / confirm_status / confirm_revoke / confirm_allow / models / get_config / tools / mcp_status / mcp_resources / mcp_prompts / mcp_read_resource / mcp_get_prompt / mcp_call / mcp_complete / mcp_connect / mcp_disconnect
+> 请求类型：chat / cancel / set_context / list_sessions / recent_sessions / search_sessions / get_messages / search_messages / get_usage / session_usage / context_status / apply_trim / ping / version / create_session / rename_session / clear_session / delete_session / end_session / restore_session / list_archived_sessions / remember / get_memories / delete_memory / tool_result / confirm_result / confirm_status / confirm_revoke / confirm_allow / models / get_config / tools / mcp_status / mcp_resources / mcp_tools / mcp_prompts / mcp_read_resource / mcp_get_prompt / mcp_call / mcp_complete / mcp_connect / mcp_disconnect
 
 ## 启动
 
@@ -429,6 +429,22 @@ flare server --profile <expert-profile-file> --storage <db-path> [--mcp <mcp-con
 - 错误：缺 `server`/`prompt`/`argument` → error 含用法；服务器未连接 → error「MCP 服务器未连接: <name>」；
   未知提示词/参数（服务器协议错误）→ 透传（服务不崩）
 - 不触发生成、不创建会话；等待启动时的后台连接落定（与 `mcp_status` 一致）
+
+### 16.9 mcp_tools — 查看已连接 MCP 服务器的工具清单（v0.6.58）
+
+```json
+{"type":"mcp_tools"}
+```
+
+响应：`{"type":"mcp_tools","servers":[{"name":"mock","connected":true,"toolCount":3,"tools":[{"name":"echo_text","description":"回显输入文本","server":"mock"},{"name":"add_numbers","description":"两个数相加","server":"mock"},{"name":"fail_tool","description":"总是失败的工具（测 isError 映射）","server":"mock"}]}]}`
+
+- 无参数；按服务器分组返回（与 `mcp_resources`/`mcp_prompts` 同形状）：`servers[]` 每项含
+  `name`/`connected`/`toolCount`，已连接时带 `tools[]`（每项 `name`/`description?`/`server` 来源名），
+  连接失败时带 `error`
+- 与 `mcp_status` 对称补齐：`mcp_status` 只能看到 **toolCount 数量**，宿主面板看不到具体工具
+  名/描述——本接口返回工具桥接清单（连接时拉取 `tools/list`），宿主在 `mcp_call` 前可先发现
+  可用工具（名称/描述），面板可直接展示/搜索
+- 只读，不触发生成、不创建会话；等待启动时的后台连接落定（与 `mcp_status` 一致）
 
 ### 17. confirm_result — 回传用户确认决策（v0.6.1，响应 confirm 事件）
 

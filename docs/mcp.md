@@ -74,6 +74,9 @@
 - `/mcp prompts [name]`（v0.6.36）：列出已桥接提示词（`✨ name（参数: a, b）— 描述`）；带 `<name>`
   只列该服务器的；无提示词友好提示；`mcp_prompts` 协议请求可查看/透传（渲染经库级
   `McpManager.getPrompt` 代理）
+- `/mcp tools [name]`（v0.6.58）：**列出已桥接工具**（`🔧 name — 描述`）；带 `<name>` 只列该服务器
+  的；无工具友好提示；`mcp_tools` 协议请求可查看/透传（与 `/mcp resources`/`/mcp prompts` 对称——
+  `/mcp` 状态行只有工具数量，本命令显示具体工具名/描述，配合 `/mcp call` 使用：调用前先看有哪些工具）
 - `/mcp read <server> <uri>`（v0.6.39）：**读取已连接服务器的资源内容**（`resources/read` 代理，
   与 `mcp_read_resource` 协议请求同源）——`/mcp resources` 只能看元数据，本命令直接显示资源
   真实内容（uri + mimeType + text）；服务器未连接/未知资源错误输出不崩溃

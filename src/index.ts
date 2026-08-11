@@ -104,6 +104,7 @@ export type {
   McpPromptInfo,
   McpPromptResult,
   McpCompletionResult,
+  McpToolRef,
   McpRoot,
   McpRootsResult,
   McpLogLevel,
