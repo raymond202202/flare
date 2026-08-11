@@ -150,12 +150,12 @@ cp .env.example ~/.flare/.env
 | `flare chat -q "问题"` | 单次查询模式 |
 | `flare chat -q "问题" -i 图片.png` | 单次查询附带图片 |
 | `flare server [--profile --storage --mcp --confirm-tools --confirm-timeout --max-tokens --temperature --max-context-messages --max-context-tokens --context-summarize --tool-output-policy]` | 宿主协议服务（stdin/stdout JSON Lines，供 Qt 等宿主调用；v0.6.1 起写回类工具经确认门；v0.6.5 起 --max-tokens/--temperature 设 chat 默认采样参数；v0.6.17 起 --max-context-messages/--max-context-tokens 设默认上下文自动裁剪；v0.6.19 起 --context-summarize 默认开启上下文压缩摘要；v0.6.34 起 --tool-output-policy 设默认工具输出治理策略） |
-| `flare mcp-server [-t 工具名,...] [--bridge-resources] [--bridge-prompts] [--bridge-tools]` | MCP stdio 服务器：把 flare 工具集暴露给其他 AI 客户端（v0.5.8；v0.6.28/0.6.37/0.6.47 起可透传外部 MCP 服务器资源/提示词/工具） |
-| `flare mcp call <服务器> <工具> [JSON参数]` | 调用 MCP 服务器工具（stdio 或 HTTP transport；服务器名查 `~/.flare/mcp.json`，`--url` 直连 HTTP 端点，v0.6.6） |
-| `flare mcp status` | 查看配置的 MCP 服务器（名称 + 传输类型 + 端点/命令，v0.6.6） |
+| `flare mcp-server [-t 工具名,...] [--http [--port <端口>] [--http-auth-token-env <VAR>]] [--bridge-resources] [--bridge-prompts] [--bridge-tools]` | MCP stdio 服务器：把 flare 工具集暴露给其他 AI 客户端（v0.5.8；v0.6.3 起 --http 起 HTTP transport；v0.6.28/0.6.37/0.6.47 起可透传外部 MCP 服务器资源/提示词/工具；v0.6.69 起 --http-auth-token-env 从环境变量读 Bearer 鉴权 token） |
+| `flare mcp call <服务器> <工具> [JSON参数]` | 调用 MCP 服务器工具（stdio 或 HTTP transport；服务器名查 `~/.flare/mcp.json`，`--url` 直连 HTTP 端点，v0.6.6；`--header <k:v>` 可重复附加鉴权请求头，v0.6.68） |
+| `flare mcp status` | 查看配置的 MCP 服务器（名称 + 传输类型 + 端点/命令 + [auth] 鉴权标记，v0.6.6/v0.6.70） |
 | `flare mcp resources <服务器> [--read <uri>]` | 查看/读取 MCP 服务器暴露的资源（v0.6.10） |
 | `flare mcp prompts <服务器> [--get <名称>]` | 查看/渲染 MCP 服务器暴露的提示词（v0.6.10） |
-| `flare cache-check [--model <模型>] [--json]` | prompt caching 验收：连续两轮调用验证第二轮 cache_read_tokens > 0（v0.6.45；v0.6.48 起 --json 结构化输出供宿主/CI 消费） |
+| `flare cache-check [--model <模型>] [--json] [--rounds <N>]` | prompt caching 验收：连续两轮调用验证第二轮 cache_read_tokens > 0（v0.6.45；v0.6.48 起 --json 结构化输出供宿主/CI 消费；v0.6.54 起 --rounds 2~5 多轮连续命中验收） |
 
 交互模式命令：
 
@@ -340,6 +340,19 @@ Interactive mode commands:
 ### Changelog / Release Notes
 
 > 中文条目 / Chinese entries · English summary for each version
+
+#### v0.6.74 (2026-08-12) — README 命令行摘要表补齐 v0.6.54/68/69/70 能力（文档对称）
+
+- ✨ **README 命令表补 `mcp-server --http/--http-auth-token-env`、`mcp call --header`、
+-  `mcp status [auth]`、`cache-check --rounds`**（纯文档，零代码变更）：
+-  v0.6.54/68/69/70 的能力在 README 命令行摘要表未同步——用户从 README 看不到多轮验收、
+-  HTTP 服务端鉴权、--header 鉴权头、状态 [auth] 标记等入口；本轮补齐（与 v0.6.62 纯文档先例一致）
+- - `flare mcp-server` 行：`--http` + `--http-auth-token-env <VAR>`（v0.6.3/0.6.69）
+- - `flare mcp call` 行：`--header <k:v>` 可重复鉴权头（v0.6.68）
+- - `flare mcp status` 行：`[auth]` 鉴权标记（v0.6.70）
+- - `flare cache-check` 行：`--rounds <N>` 多轮验收（v0.6.54）
+- - README Changelog + 版本号 0.6.74
+- - 🧪 **868/868 全绿**（纯文档改动，无代码变更），tsc 0 错误，**零 agent.ts 改动**
 
 #### v0.6.73 (2026-08-12) — get_config 的 mcpServers 带 auth 鉴权标记（方向③ MCP 增强，v0.6.70 配置视角对称）
 
