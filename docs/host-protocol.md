@@ -13,11 +13,21 @@ flare server --profile <expert-profile-file> --storage <db-path> [--mcp <mcp-con
 
 - `--profile`：ExpertProfile JSON 文件（name/identity/systemPrompt/tools）
 - `--storage`：记忆库路径（默认 `~/.flare-data/`）
-- `--mcp`（可选，v0.5.5）：MCP 服务器配置 JSON——`{ "servers": [{ "name", "command", "args", "env" }] }`。
-  启动时连接各 MCP 服务器（stdio），其工具并入每个会话的 Agent 工具集（与宿主代理工具/专家工具并存）；
-  连接失败不阻塞服务（`mcp_status` 可见错误）。例：
+- `--mcp`（可选，v0.5.5）：MCP 服务器配置 JSON——`{ "servers": [{ "name", "command", "args", "env", "url", "timeoutMs", "headers" }] }`。
+  启动时连接各 MCP 服务器，其工具并入每个会话的 Agent 工具集（与宿主代理工具/专家工具并存）；
+  连接失败不阻塞服务（`mcp_status` 可见错误）。
+  - v0.6.6：配置项 `url`（HTTP transport 端点）→ 走 HTTP 直连（不 spawn 子进程）；`timeoutMs` 可
+    单独覆盖单请求超时
+  - v0.6.67：配置项 `headers`（HTTP 附加请求头，如 `{ "Authorization": "Bearer <token>" }` 鉴权）——
+    仅 url 模式生效；stdio 用 `env` 传子进程环境变量
+  例：
   ```json
-  { "servers": [{ "name": "fs", "command": "npx", "args": ["-y", "@modelcontextprotocol/server-filesystem", "/tmp"] }] }
+  {
+    "servers": [
+      { "name": "fs", "command": "npx", "args": ["-y", "@modelcontextprotocol/server-filesystem", "/tmp"] },
+      { "name": "remote", "url": "http://127.0.0.1:8931/mcp", "headers": { "Authorization": "Bearer <token>" } }
+    ]
+  }
   ```
 - 环境变量注入 API key（如 `DEEPSEEK_API_KEY=...`），与现有 Agent 一致
 
