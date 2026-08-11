@@ -89,7 +89,8 @@ export class MemoryStore {
         id TEXT PRIMARY KEY,
         title TEXT DEFAULT '新会话',
         created_at TEXT DEFAULT (datetime('now')),
-        updated_at TEXT DEFAULT (datetime('now'))
+        updated_at TEXT DEFAULT (datetime('now')),
+        archived INTEGER NOT NULL DEFAULT 0
       );
 
       CREATE TABLE IF NOT EXISTS messages (
@@ -235,6 +236,13 @@ export class MemoryStore {
     if (!ucolNames.includes('estimated_cost_usd')) {
       this.db.exec('ALTER TABLE usage_log ADD COLUMN estimated_cost_usd REAL')
     }
+
+    // v0.6.31：sessions 补 archived 列（会话归档 API，老库升级 ALTER 幂等）
+    const scols = this.db.prepare('PRAGMA table_info(sessions)').all() as any[]
+    const scolNames = scols.map(c => c.name)
+    if (!scolNames.includes('archived')) {
+      this.db.exec('ALTER TABLE sessions ADD COLUMN archived INTEGER NOT NULL DEFAULT 0')
+    }
   }
 
   /** 创建新会话 */
@@ -248,9 +256,9 @@ export class MemoryStore {
   }
 
   /** 列出所有会话（含消息数），按更新时间倒序 */
-  getAllSessions(): { id: string; title: string; createdAt: string; updatedAt: string; messageCount: number }[] {
+  getAllSessions(): { id: string; title: string; createdAt: string; updatedAt: string; messageCount: number; archived: boolean }[] {
     const rows = this.db.prepare(`
-      SELECT s.id, s.title, s.created_at, s.updated_at,
+      SELECT s.id, s.title, s.created_at, s.updated_at, s.archived,
              (SELECT COUNT(*) FROM messages m WHERE m.session_id = s.id) AS message_count
       FROM sessions s
       ORDER BY s.updated_at DESC
@@ -261,7 +269,41 @@ export class MemoryStore {
       createdAt: r.created_at || '',
       updatedAt: r.updated_at || '',
       messageCount: Number(r.message_count) || 0,
+      archived: Number(r.archived) === 1,
     }))
+  }
+
+  /**
+   * 归档会话（v0.6.31）：标记 archived=1，会话数据保留（消息/用量都在），
+   * 从「最近会话」隐藏但可 listArchivedSessions 找回 / restoreSession 恢复。
+   * 返回是否真的标记了（会话不存在返回 false，幂等不抛错）。
+   */
+  archiveSession(sessionId: string): boolean {
+    const res = this.db.prepare(
+      'UPDATE sessions SET archived = 1, updated_at = datetime(\'now\') WHERE id = ? AND archived = 0'
+    ).run(sessionId)
+    return res.changes > 0
+  }
+
+  /** 恢复归档会话（v0.6.31）：标记 archived=0，重新出现在最近会话。不存在幂等返回 false。 */
+  restoreSession(sessionId: string): boolean {
+    const res = this.db.prepare(
+      'UPDATE sessions SET archived = 0, updated_at = datetime(\'now\') WHERE id = ? AND archived = 1'
+    ).run(sessionId)
+    return res.changes > 0
+  }
+
+  /** 列出归档会话（v0.6.31，结构同 getRecentSessions 含首条 user 消息预览），按更新时间倒序 */
+  listArchivedSessions(limit = 50): SessionRow[] {
+    return this.db.prepare(
+      `SELECT s.id, s.title, s.updated_at,
+        (SELECT content FROM messages m
+         WHERE m.session_id = s.id AND m.role = 'user'
+         ORDER BY m.id LIMIT 1) as first_user_msg
+       FROM sessions s
+       WHERE s.archived = 1
+       ORDER BY s.updated_at DESC LIMIT ?`
+    ).all(limit) as SessionRow[]
   }
 
   /** 更新会话标题（UPSERT：会话记录不存在时同时创建，避免 UPDATE 0 行） */
@@ -417,7 +459,7 @@ export class MemoryStore {
     }
   }
 
-  /** 获取最近会话 */
+  /** 获取最近会话（v0.6.31：排除归档会话） */
   getRecentSessions(limit = 10): SessionRow[] {
     // 为每个会话取第一条 user 消息作为标题（人类可读，用于区分会话）
     return this.db.prepare(
@@ -426,6 +468,7 @@ export class MemoryStore {
          WHERE m.session_id = s.id AND m.role = 'user'
          ORDER BY m.id LIMIT 1) as first_user_msg
        FROM sessions s
+       WHERE s.archived = 0
        ORDER BY s.updated_at DESC LIMIT ?`
     ).all(limit) as SessionRow[]
   }
