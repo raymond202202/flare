@@ -280,6 +280,8 @@ describe('/mcp 命令', () => {
     expect(text).toContain('file:///etc/hosts')
     expect(text).toContain('memory://{noteId}')
     expect(text).toContain('2')
+    // v0.6.63：resources 分支提示含 tools 子命令入口
+    expect(text).toContain('/mcp tools [name] 查看工具')
   })
 
   it('/mcp resources <name> → 只列该服务器的资源（过滤生效）', async () => {
@@ -364,6 +366,8 @@ describe('/mcp 命令', () => {
     expect(text).toContain('打招呼')
     expect(text).toContain('summarize')
     expect(text).toContain('topic')
+    // v0.6.63：prompts 分支提示含 tools 子命令入口
+    expect(text).toContain('/mcp tools [name] 查看工具')
   })
 
   it('/mcp prompts <name> → 只列该服务器的提示词（过滤生效）', async () => {
