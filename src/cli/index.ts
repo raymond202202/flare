@@ -788,7 +788,7 @@ export async function handleSlashCommand(
           }
         }
       }
-      output(chalk.gray('\n  /mcp resources [name] 查看资源 | /mcp prompts [name] 查看提示词 | /mcp connect <name> 连接'))
+      output(chalk.gray('\n  /mcp resources [name] 查看资源 | /mcp prompts [name] 查看提示词 | /mcp tools [name] 查看工具 | /mcp connect <name> 连接'))
       return 'continue'
     }
     // /mcp prompts [name]（v0.6.36）：列出已桥接提示词（prompts 桥接——外部服务器暴露的提示词真实可见）
@@ -812,7 +812,7 @@ export async function handleSlashCommand(
           output(`    ✨ ${chalk.cyan(p.name)}${args}${desc}`)
         }
       }
-      output(chalk.gray('\n  /mcp prompts [name] 查看提示词 | /mcp resources [name] 查看资源 | /mcp connect <name> 连接'))
+      output(chalk.gray('\n  /mcp prompts [name] 查看提示词 | /mcp resources [name] 查看资源 | /mcp tools [name] 查看工具 | /mcp connect <name> 连接'))
       return 'continue'
     }
     // /mcp tools [name]（v0.6.58）：列出已桥接工具（工具清单——mcp_status 只有数量，

@@ -341,6 +341,16 @@ Interactive mode commands:
 
 > 中文条目 / Chinese entries · English summary for each version
 
+#### v0.6.63 (2026-08-12) — MCP 子命令提示对称补齐（方向③ MCP 增强）
+
+- ✨ **交互 `/mcp resources`/`/mcp prompts` 分支提示补 tools 入口（src/cli/index.ts + 测试）**：
+-  v0.6.61 只补了 `/mcp` 状态行与 `flare mcp status` 的提示，但 **resources/prompts 两个子命令的
+-  尾部提示行仍只有 resources/prompts/connect**——用户看完资源/提示词后不知道还能看工具清单；
+-  本轮补齐（纯外围，零 agent.ts 改动）：两个分支提示行均加 `/mcp tools [name] 查看工具`
+- - README Changelog + 版本号 0.6.63
+- - 🧪 **846/846 全绿**（新增 2 断言：/mcp resources 分支提示含 tools / /mcp prompts 分支提示含
+-  tools），tsc 0 错误，**零 agent.ts 改动**
+
 #### v0.6.62 (2026-08-12) — MCP 单次命令文档补齐（方向③ MCP 增强）
 
 - ✨ **docs/mcp.md 单次命令章节补 tools/complete 用法**：
