@@ -620,7 +620,7 @@ export class MemoryStore {
     }
   }
 
-  /** 单个会话的 token 用量（v0.6.17）：按 session_id 过滤 usage_log（宿主面板"本会话用量"数据源；v0.6.29 含缓存） */
+  /** 单个会话的 token 用量（v0.6.17）：按 session_id 过滤 usage_log（宿主面板"本会话用量"数据源；v0.6.29 含缓存；v0.6.52 含 perModel 按模型分解） */
   getSessionUsage(sessionId: string) {
     const row = this.db.prepare(
       `SELECT
@@ -632,6 +632,19 @@ export class MemoryStore {
          COUNT(*) as callCount
        FROM usage_log WHERE session_id = ?`
     ).get(sessionId) as any
+    // 按模型分组（v0.6.52）：本会话每个模型的调用次数 + token 分解（与 getUsageStats.perModel 对称，
+    // 宿主面板"本会话用量"可看每个模型的缓存命中分布，无需从全局统计里筛）
+    const rows = this.db.prepare(
+      `SELECT COALESCE(model, 'unknown') as model,
+              COUNT(*) as calls,
+              COALESCE(SUM(prompt_tokens), 0) as promptTokens,
+              COALESCE(SUM(completion_tokens), 0) as completionTokens,
+              COALESCE(SUM(cache_read_tokens), 0) as cacheReadTokens
+       FROM usage_log
+       WHERE session_id = ?
+       GROUP BY model
+       ORDER BY calls DESC`
+    ).all(sessionId) as any[]
     return {
       sessionId,
       promptTokens: row.promptTokens,
@@ -641,6 +654,14 @@ export class MemoryStore {
       estimatedCostUsd: row.estimatedCostUsd,
       totalTokens: row.promptTokens + row.completionTokens,
       callCount: row.callCount,
+      perModel: rows.map((m) => ({
+        model: m.model,
+        calls: m.calls,
+        promptTokens: m.promptTokens,
+        completionTokens: m.completionTokens,
+        cacheReadTokens: m.cacheReadTokens,
+        totalTokens: m.promptTokens + m.completionTokens,
+      })),
     }
   }
 

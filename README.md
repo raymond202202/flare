@@ -341,6 +341,27 @@ Interactive mode commands:
 
 > 中文条目 / Chinese entries · English summary for each version
 
+#### v0.6.52 (2026-08-12) — session_usage 带 perModel 按模型分解（方向① prompt caching 基建深化，观测面补齐）
+
+- ✨ **`getSessionUsage` perModel + server `session_usage` 透传（src/memory/store.ts + src/server.ts +
+-  测试）**：
+-  v0.6.42 给全局 `getUsageStats` 加了 perModel（CLI /usage perModel 行显示缓存命中），但**本会话级
+-  `getSessionUsage` 只有汇总**（prompt/completion/cacheRead/callCount）——宿主面板"本会话用量"
+-  看不到**哪个模型**吃到缓存（多模型场景只能从全局统计里手工筛）；本轮补齐（纯外围，零 agent.ts
+-  改动）：
+- - **`getSessionUsage` 新增 `perModel`**：按模型分组（`model`/`calls`/`promptTokens`/`completionTokens`/
+-  `cacheReadTokens`/`totalTokens`，按调用次数降序）——与 getUsageStats.perModel **同形状**（host 侧
+-  渲染逻辑可直接复用）；分解合计与汇总一致（calls/cacheReadTokens 可核对）；无用量会话返回
+-  `perModel: []`（幂等不抛错）
+- - **server 协议 `session_usage`**：stats 透传 perModel（fallback 默认对象补 `perModel: []`）——
+-  宿主面板"本会话用量"直接显示每个模型的缓存命中分布，与 get_usage 对称
+- - docs/host-protocol.md（§9.1 响应结构示例 + perModel 说明）+ README Changelog + 版本号 0.6.52
+- - 🧪 **810/810 全绿**（809 + 1 新增 store.test.ts：getSessionUsage perModel 双模型分解 +
+-  缓存命中隔离（s2 不影响 s1）/ 分解合计与汇总一致 / 无用量空数组；server.test.ts 既有
+-  session_usage 用例补 perModel 数组断言），tsc 0 错误，**零 agent.ts 改动**
+- - **冒烟实测**（真实 MemoryStore + dist CLI 子进程）：session_usage → stats.perModel
+-  `[{model:'deepseek-chat', calls:1, cacheReadTokens:400, ...}]`，SMOKE PASS
+
 #### v0.6.51 (2026-08-12) — CLI `mcp status` 统一走 `status()` + `--connect` 真实连接状态（方向③ MCP 增强，观测面补齐）
 
 - ✨ **`flare mcp status [--connect]`（src/cli/index.ts + 测试）**：

@@ -387,6 +387,8 @@ describe('flare host server 协议', () => {
     // P0（v0.6.29）：会话级缓存字段透传
     expect(typeof msgs[0].stats.cacheReadTokens).toBe('number')
     expect(typeof msgs[0].stats.estimatedCostUsd).toBe('number')
+    // perModel 分解（v0.6.52）：数组，每项含 model/calls/totalTokens（与 get_usage 对称）
+    expect(Array.isArray(msgs[0].stats.perModel)).toBe(true)
     // 未产生用量的会话：全 0（幂等，不抛错）
     expect(msgs[0].stats.totalTokens).toBe(0)
 
