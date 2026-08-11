@@ -341,6 +341,19 @@ Interactive mode commands:
 
 > 中文条目 / Chinese entries · English summary for each version
 
+#### v0.6.70 (2026-08-12) — MCP 连接状态带 auth 鉴权标记（方向③ MCP 增强，v0.6.67~69 鉴权闭环的观测面收尾）
+
+- ✨ **`McpServerStatus.auth` + server `mcp_status` 透传 + CLI `/mcp` / `flare mcp status` 显示 `[auth]`**（src/mcp/types.ts + src/mcp/manager.ts + src/cli/index.ts + 测试）：
+-  v0.6.67~69 建好了客户端↔服务端鉴权，但**观测面缺失**——宿主面板/CLI 看不出哪些服务器配了
+-  鉴权（只能翻 mcp.json）；本轮补状态标记（纯外围，零 agent.ts 改动）
+- - **`status().auth`**：HTTP transport 配置了 `headers` → `true`；**只传布尔不传 token**
+-  （安全：状态观测不泄漏凭据）；stdio/未配置 → 缺省 undefined（向后兼容）
+- - **server `mcp_status`** 直接透传 status()（协议自动带 `auth`）——宿主面板可显示「鉴权」徽标
+- - **CLI**：交互 `/mcp` 与 `flare mcp status` 状态行 HTTP 后追加黄色 `[auth]` 标记
+- - docs/host-protocol.md（§16 auth 字段说明）+ README Changelog + 版本号 0.6.70
+- - 🧪 **866/866 全绿**（新增 2 用例：manager status auth=true/缺省 undefined + CLI status 显示
+-  [auth] 且不显示 token 值），tsc 0 错误，**零 agent.ts 改动**
+
 #### v0.6.69 (2026-08-12) — MCP HTTP transport 服务端 Bearer 鉴权（方向③ MCP 增强，与 v0.6.67/68 客户端鉴权闭环）
 
 - ✨ **`startMcpHttpServer({ authToken })` + `flare mcp-server --http-auth-token-env <VAR>`**（src/mcp/http.ts + src/cli/index.ts + 测试）：

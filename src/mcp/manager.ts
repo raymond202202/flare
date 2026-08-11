@@ -209,6 +209,8 @@ export class McpManager {
         toolCount: this.tools.get(c.name)?.length || 0,
         transport,
         target,
+        // v0.6.70：HTTP transport 配了 headers → auth 标记（只传 boolean 不传 token，宿主面板可显示「鉴权」）
+        ...(c.url && c.headers ? { auth: true } : {}),
         // v0.6.26：已连接时带资源/模板数（无资源能力为 0）
         ...(this.clients.has(c.name)
           ? { resourceCount: this.resources.get(c.name)?.length || 0, templateCount: this.templates.get(c.name)?.length || 0 }

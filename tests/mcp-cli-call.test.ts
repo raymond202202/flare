@@ -381,4 +381,22 @@ describe('CLI flare mcp 单次命令 --header（v0.6.68：HTTP transport 鉴权�
     expect(code).toBe(1)
     expect(stderr).toMatch(/key:value/)
   }, 20000)
+
+  it('mcp status：配置 headers 的服务器显示 [auth] 标记；无 headers 不显示（v0.6.70）', async () => {
+    const cfgPath = join(dir, 'mcp.json')
+    writeFileSync(cfgPath, JSON.stringify({
+      servers: [
+        { name: 'secure', url: 'http://127.0.0.1:8931/mcp', headers: { Authorization: 'Bearer x' } },
+        { name: 'open', url: 'http://127.0.0.1:8932/mcp' },
+      ],
+    }))
+    const { code, stdout } = await runCli(['mcp', 'status', '--config', cfgPath])
+    expect(code).toBe(0)
+    // secure 行：HTTP + [auth]（标记不显示 token 值）
+    expect(stdout).toMatch(/secure\s+HTTP \[auth\]/)
+    expect(stdout).not.toMatch(/Bearer x/)
+    // open 行：HTTP 无 [auth]
+    expect(stdout).toMatch(/open\s+HTTP\s+http:\/\/127\.0\.0\.1:8932/)
+    expect(stdout).not.toMatch(/open\s+HTTP \[auth\]/)
+  }, 20000)
 })

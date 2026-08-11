@@ -731,9 +731,11 @@ export async function handleSlashCommand(
           const closeParen = s.connected ? chalk.gray('）') : ''
           // v0.6.50：传输类型 + 目标端点/命令（stdio/HTTP 区分 + 连接目标直接可见）
           const transportTag = chalk.gray(`[${s.transport === 'http' ? 'HTTP' : 'stdio'}]`)
+          // v0.6.70：配了鉴权头 → [auth] 标记（只显示标记不显示 token）
+          const authTag = s.auth ? chalk.yellow('[auth]') : ''
           const targetInfo = s.target ? chalk.gray(` ${s.target}`) : ''
           const err = s.error ? chalk.red(` [${s.error}]`) : ''
-          output(`  ${mark} ${s.name} ${transportTag}${toolsInfo}${resInfo}${promptInfo}${closeParen}${targetInfo}${err}`)
+          output(`  ${mark} ${s.name} ${transportTag}${authTag}${toolsInfo}${resInfo}${promptInfo}${closeParen}${targetInfo}${err}`)
         }
       }
       output(chalk.gray('\n  /mcp resources [name] 查看资源 | /mcp prompts [name] 查看提示词 | /mcp tools [name] 查看工具 | /mcp connect <name> 连接 | /mcp disconnect <name> 断开'))
@@ -1648,10 +1650,12 @@ export function main() {
       const lines = st.map((s) => {
         const mark = s.connected ? chalk.green('●') : chalk.gray('○')
         const transport = s.transport === 'http' ? 'HTTP' : 'stdio'
+        // v0.6.70：配了鉴权头 → [auth] 标记（只显示标记不显示 token）
+        const auth = s.auth ? chalk.yellow(' [auth]') : ''
         const target = s.target || ''
         const tools = s.connected ? chalk.gray(`（${s.toolCount} 个工具）`) : ''
         const err = s.error ? chalk.red(` [${s.error}]`) : ''
-        return `  ${mark} ${chalk.green(s.name)}  ${chalk.gray(transport)} ${target}${tools}${err}`
+        return `  ${mark} ${chalk.green(s.name)}  ${chalk.gray(transport)}${auth} ${target}${tools}${err}`
       })
       console.log(chalk.cyan('配置的 MCP 服务器:'))
       console.log(lines.join('\n'))
