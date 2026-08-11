@@ -198,4 +198,25 @@ describe('CLI /usage 缓存显示（v0.6.29 P0）', () => {
     expect(out).toContain('150 tokens')
     expect(out).not.toContain('缓存命中 0')
   })
+
+  it('本会话 perModel 子行（v0.6.53：多模型本会话命中分布，与总览行对称）', async () => {
+    // 本会话 s1 两个模型：chat 有命中、reasoner 无；另一会话 s2 不影响本会话
+    store.logUsage('s1', 1000, 500, 'deepseek-chat', { cacheReadTokens: 400 })
+    store.logUsage('s1', 200, 100, 'deepseek-reasoner')
+    store.logUsage('s2', 900, 450, 'deepseek-chat')
+    const lines: string[] = []
+    await handleSlashCommand('/usage', store, (s) => lines.push(s), undefined, undefined, undefined, undefined, undefined, 's1')
+    const out = lines.join('\n')
+    // 本会话行汇总照旧（1200+600 → totalTokens 1800；命中 400）
+    expect(out).toContain('本会话:')
+    expect(out).toContain('1,800 tokens')
+    expect(out).toContain('缓存命中 400')
+    // 本会话 perModel 子行：chat 带命中子行、reasoner 无命中不显示子行；s2 的 900 tokens 不混入
+    expect(out).toContain('模型 deepseek-chat: 1,500 tokens（1 次调用）')
+    expect(out).toContain('缓存命中: 400 tokens（40%）')
+    expect(out).toContain('模型 deepseek-reasoner: 300 tokens（1 次调用）')
+    // 子行命中率 40%（400/1000，本会话 chat prompt）——不会出现 s2 的 900 prompt 混算
+    const chatLineIdx = out.indexOf('模型 deepseek-chat:')
+    expect(out.indexOf('缓存命中: 400 tokens（40%）')).toBeGreaterThan(chatLineIdx)
+  })
 })
