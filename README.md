@@ -338,6 +338,30 @@ Interactive mode commands:
 
 > 中文条目 / Chinese entries · English summary for each version
 
+#### v0.6.46 (2026-08-12) — CLI `/trim` 智能裁剪 + `/context` 裁剪提示（方向④ suggestTrim 宿主接线 CLI 侧）
+
+- ✨ **CLI `/trim [预算tokens]` + `/context` 超预算提示（src/cli/index.ts + 测试）**：
+-  方向④「suggestTrim 宿主接线」server 侧早已闭环（v0.6.35 apply_trim），但 **CLI 交互模式
+-  缺裁剪入口**——上下文超预算时只能 `/clear`（清空全部），无法外科手术式裁剪；本轮补齐
+-  （纯 CLI 外围 + hooks 参数，零 agent.ts 改动）：
+-  `ContextTrimHooks`（handleSlashCommand 新增可选参数，宿主注入）：`suggest()` 返回建议
+-  删除量（suggestTrim 纯函数：system 保底 + 最近优先 + tool_calls↔tool 配对）、`apply(budget?)`
+-  执行裁剪（agent.applyTrim）；CLI 交互模式接线真实 Agent（budget 缺省取 config
+-  maxContextTokens，默认 16000，reserveForOutput 1024）
+- - **`/context`**：超预算时追加 `💡 可裁剪: 建议删 N 条消息（约 X tokens）——/trim 执行
+-  智能裁剪`（预算内/无 hooks 不显示，零回归）；**`/trim [budgetTokens]`**：执行智能裁剪
+-  显示 `保留 N 条，删除 M 条`；预算内显示「无需裁剪」；非法预算（abc/0/-5/1.5）用法提示
+-  不调用；无 hooks 降级「裁剪不可用」不崩溃；`/help` 注册
+- - 🧪 **800/800 全绿**（789 + 11 新增 tests/trim-command.test.ts：/trim 缺省预算调 apply
+-  （undefined 透传）+ 成功显示 / 显式预算 8000 透传 / 4 种非法预算用法提示不调 apply /
+-  无 hooks 降级 / apply 返回 null 降级 / 预算内无需裁剪 / 不触发命令不调 apply / help 注册；
+-  /context 超预算显示可裁剪提示（含建议删 5 条 + 8,800 tokens + /trim 指引）/ 预算内不显示 /
+-  无 contextTrim 零回归），tsc 0 错误，**零 agent.ts 改动**
+- - **冒烟实测**（真实 MemoryStore + Agent + dist handleSlashCommand 接线同款 hooks）：
+-  /trim 300 → `✅ 已智能裁剪: 保留 2 条，删除 4 条`（真实 suggestTrim/applyTrim 全链路：
+-  system 保底 + 最新消息保留，store 同步删除被裁消息——重建 Agent 后仍 2 条）；
+-  /trim abc → 用法提示，SMOKE PASS
+
 #### v0.6.45 (2026-08-12) — `flare cache-check` prompt caching 验收工具（方向① P0 验收自动化）
 
 - ✨ **`flare cache-check`（src/core/cache-check.ts + src/cli/index.ts + 测试）**：

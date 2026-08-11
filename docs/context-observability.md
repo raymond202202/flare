@@ -113,6 +113,13 @@ console.log(r.droppedCount, r.estimatedKeptTokens)
 }
 ```
 
+### 一键执行（v0.6.35 apply_trim / v0.6.46 CLI /trim）
+
+- **server 协议**：`apply_trim {budgetTokens, reserveForOutput?}` 或 `{keepIndexes}` → 服务器按
+  suggestTrim 计算并执行 `agent.applyTrim`（内存裁剪 + store 同步删除被裁消息，重建后依然生效）
+- **CLI 交互模式**：`/trim [预算tokens]` 一键智能裁剪（缺省用当前配置 maxContextTokens）；
+  `/context` 超预算时提示可裁剪条数与 `/trim` 指引——宿主/终端用户无需手工算索引
+
 ## 引擎内部自动裁剪（v0.6.17，trimContextMessages）
 
 `suggestTrim` 是给**宿主**的建议（不保证 tool_calls ↔ tool 配对，宿主按索引裁剪后自行负责语义）；

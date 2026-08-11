@@ -8,7 +8,7 @@
  */
 
 import { Command } from 'commander'
-import { Agent, createProvider, getMemoryStore, config, tools, McpManager, estimateMessagesTokens, ConfirmationGate, memoryStoreKv, wrapConfirmTools, describeTools, validateToolOutputPolicy, type AgentConfig, type McpServerStatus, type ConfirmDecision, type McpResourceRef, type McpResourceTemplateRef, type McpPromptRef, type McpResourceContents, type McpPromptResult, type McpCallResult, type ToolOutputPolicy } from '../index.js'
+import { Agent, createProvider, getMemoryStore, config, tools, McpManager, estimateMessagesTokens, suggestTrim, ConfirmationGate, memoryStoreKv, wrapConfirmTools, describeTools, validateToolOutputPolicy, type AgentConfig, type McpServerStatus, type ConfirmDecision, type McpResourceRef, type McpResourceTemplateRef, type McpPromptRef, type McpResourceContents, type McpPromptResult, type McpCallResult, type ToolOutputPolicy } from '../index.js'
 import chalk from 'chalk'
 import { execSync } from 'child_process'
 import { createRequire } from 'module'
@@ -316,7 +316,28 @@ async function startInteractive(opts: { contextSummarize?: boolean } = {}) {
       const mcpNames = new Set(mcpTools.map((t) => t.definition.function.name))
       const allTools = [...tools, ...mcpTools]
       return describeTools(allTools, CLI_CONFIRM_TOOLS, { mcp: mcpNames })
-    }, sessionId)
+    }, sessionId, {
+      // /trim 命令（v0.6.46）：suggestTrim 建议 → applyTrim 执行（与 server apply_trim budget
+      // 模式同源——保留开头稳定 system 块 + 最近消息 + tool_calls↔tool 配对；store 同步删除被裁消息）
+      suggest: () => {
+        const msgs = agent.getMessages()
+        const budget = (agent as any).config?.maxContextTokens || 16000
+        const trim = suggestTrim(msgs, budget, { reserveForOutput: 1024 })
+        const before = estimateMessagesTokens(msgs)
+        const after = estimateMessagesTokens(trim.keep)
+        return {
+          droppedCount: msgs.length - trim.keep.length,
+          estimatedKeptTokens: after,
+          estimatedDroppedTokens: Math.max(0, before - after),
+        }
+      },
+      apply: (budgetTokens) => {
+        const msgs = agent.getMessages()
+        const budget = budgetTokens || (agent as any).config?.maxContextTokens || 16000
+        const trim = suggestTrim(msgs, budget, { reserveForOutput: 1024 })
+        return agent.applyTrim(trim.keep.map((m) => msgs.indexOf(m)))
+      },
+    })
     agentRunning = false
     renderFrame()
     return result
@@ -536,6 +557,14 @@ export interface McpResourceListing {
 /** /context 命令回调（v0.5.6）：返回当前会话上下文占用；null 表示不可用 */
 export type ContextInfoGetter = () => { messageCount: number; estimatedTokens: number } | null
 
+/** /trim 命令回调（v0.6.46）：suggestTrim 建议 → applyTrim 执行（与 server apply_trim budget 模式同源） */
+export interface ContextTrimHooks {
+  /** 智能裁剪建议（system 保底 + 最近优先 + tool_calls↔tool 配对保护）；null 表示不可用 */
+  suggest(): { droppedCount: number; estimatedKeptTokens: number; estimatedDroppedTokens: number } | null
+  /** 执行裁剪（budgetTokens 缺省用当前配置默认预算）；null 表示不可用 */
+  apply(budgetTokens?: number): { keptCount: number; droppedCount: number } | null
+}
+
 /** /tools 命令回调（v0.6.11）：返回当前 Agent 可用工具清单元数据；null 表示不可用 */
 export type ToolsInfoGetter = () => import('../index.js').ToolMeta[] | null
 
@@ -570,7 +599,9 @@ export async function handleSlashCommand(
   /** /tools 命令回调（v0.6.11，当前 Agent 可用工具清单） */
   toolsInfo?: ToolsInfoGetter,
   /** 当前会话 id（v0.6.17，/usage 显示本会话用量；缺省不显示） */
-  sessionId?: string
+  sessionId?: string,
+  /** /trim 命令回调（v0.6.46，智能裁剪上下文） */
+  contextTrim?: ContextTrimHooks
 ): Promise<'exit' | 'continue'> {
   const lower = cmd.toLowerCase()
   // /remember 带内容，必须用前缀匹配（switch 精确匹配会永远"未知命令"）
@@ -875,6 +906,40 @@ export async function handleSlashCommand(
     output(`  消息数:      ${info.messageCount}`)
     output(`  估算 tokens: ${info.estimatedTokens.toLocaleString()}`)
     output(chalk.gray('  （估算非精确：CJK 1字符≈1 / 英文 4字符≈1；含 system 提示与结构开销）'))
+    // v0.6.46：超出预算时给出智能裁剪建议（/trim 一键执行，保留稳定前缀与最近消息）
+    const trimHint = contextTrim?.suggest?.()
+    if (trimHint && trimHint.droppedCount > 0) {
+      output(chalk.yellow(`  💡 可裁剪: 建议删 ${trimHint.droppedCount} 条消息（约 ${trimHint.estimatedDroppedTokens.toLocaleString()} tokens）——/trim 执行智能裁剪`))
+    }
+    return 'continue'
+  }
+
+  // /trim [budgetTokens] 智能裁剪上下文（v0.6.46：suggestTrim 建议 → applyTrim 执行——
+  // 保留开头稳定 system 块 + 最近消息 + tool_calls↔tool 配对；与 server apply_trim budget 模式同源）
+  if (lower === '/trim' || lower.startsWith('/trim ')) {
+    if (!contextTrim) {
+      output(chalk.yellow('\n  裁剪不可用（当前环境未提供 Agent 实例）'))
+      return 'continue'
+    }
+    let budget: number | undefined
+    const arg = cmd.replace(/^\/trim\s*/, '').trim()
+    if (arg) {
+      budget = Number(arg)
+      if (!Number.isInteger(budget) || budget <= 0) {
+        output(chalk.yellow('\n  用法: /trim [budgetTokens]（正整数上下文 token 预算；缺省用当前配置默认）'))
+        return 'continue'
+      }
+    }
+    const result = contextTrim.apply(budget)
+    if (!result) {
+      output(chalk.yellow('\n  裁剪不可用（当前环境未提供 Agent 实例）'))
+      return 'continue'
+    }
+    if (result.droppedCount > 0) {
+      output(chalk.green(`\n✅ 已智能裁剪: 保留 ${result.keptCount} 条，删除 ${result.droppedCount} 条（稳定前缀与最近消息保留）`))
+    } else {
+      output(chalk.gray('\n上下文无需裁剪（预算内）'))
+    }
     return 'continue'
   }
 
@@ -1083,7 +1148,8 @@ export async function handleSlashCommand(
       output('  /remember    - 保存一条记忆（如: /remember 用户喜欢浅色主题）')
       output('  /forget      - 删除记忆（如: /forget 浅色主题，删除包含该关键词的记忆）')
       output('  /usage       - 查看 token 用量')
-      output('  /context     - 查看当前会话上下文占用（消息数/估算 tokens）')
+      output('  /context     - 查看当前会话上下文占用（消息数/估算 tokens；超预算提示 /trim）')
+      output('  /trim [预算tokens] - 智能裁剪上下文（v0.6.46，保留稳定前缀与最近消息）')
       output('  /sessions    - 查看会话列表；带关键词搜索会话（如: /sessions 缓存，v0.6.44）')
       output('  /archived    - 查看归档会话（v0.6.32，/archive 归档的会话）')
       output('  /archive [会话ID] - 归档会话（缺省当前会话；数据保留，/restore 可恢复）')
