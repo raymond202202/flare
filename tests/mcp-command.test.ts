@@ -200,6 +200,18 @@ describe('/mcp 命令', () => {
     expect(text2).toContain('已连接 remote [HTTP] http://127.0.0.1:8931/mcp')
   })
 
+  it('/mcp connect 摘要带 [auth] 标记（v0.6.72：CLI 组装 HTTP + auth，透传显示完整；不显示 token）', async () => {
+    const lines: string[] = []
+    const h = makeHooks([{ name: 'secure', connected: false, toolCount: 0 }])
+    const withAuth = { ...h.hooks, connect: async () => '已连接 secure [HTTP][auth] http://127.0.0.1:8931/mcp（3 个 MCP 工具）' }
+    const r = await handleSlashCommand('/mcp connect secure', store, (s) => lines.push(s), undefined, withAuth)
+    expect(r).toBe('continue')
+    expect(h.calls.changed).toBe(1)
+    const text = lines.join('\n')
+    expect(text).toContain('已连接 secure [HTTP][auth] http://127.0.0.1:8931/mcp')
+    expect(text).not.toContain('Bearer')
+  })
+
   it('/mcp connect <未配置名> → 错误输出（hook 抛错）', async () => {
     const lines: string[] = []
     const { hooks, calls } = makeHooks([{ name: 'fs', connected: false, toolCount: 0 }])
