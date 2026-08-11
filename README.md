@@ -155,7 +155,7 @@ cp .env.example ~/.flare/.env
 | `flare mcp status` | 查看配置的 MCP 服务器（名称 + 传输类型 + 端点/命令，v0.6.6） |
 | `flare mcp resources <服务器> [--read <uri>]` | 查看/读取 MCP 服务器暴露的资源（v0.6.10） |
 | `flare mcp prompts <服务器> [--get <名称>]` | 查看/渲染 MCP 服务器暴露的提示词（v0.6.10） |
-| `flare cache-check [--model <模型>]` | prompt caching 验收：连续两轮调用验证第二轮 cache_read_tokens > 0（v0.6.45） |
+| `flare cache-check [--model <模型>] [--json]` | prompt caching 验收：连续两轮调用验证第二轮 cache_read_tokens > 0（v0.6.45；v0.6.48 起 --json 结构化输出供宿主/CI 消费） |
 
 交互模式命令：
 
@@ -340,6 +340,23 @@ Interactive mode commands:
 ### Changelog / Release Notes
 
 > 中文条目 / Chinese entries · English summary for each version
+
+#### v0.6.48 (2026-08-12) — `flare cache-check --json` 结构化输出（方向① prompt caching 基建深化，宿主/CI 程序化验收）
+
+- ✨ **`cache-check --json`（src/core/cache-check.ts + src/cli/index.ts + 测试）**：
+-  v0.6.45 验收工具只有人类可读输出，宿主/CI **无法程序化消费**验收结果（面板要显示「缓存健康度」、
+-  CI 要断言「命中才放行」只能解析彩色文本）；本轮补 `cacheCheckToJson` 纯函数 + CLI `-j/--json`
+-  （纯外围，零 agent.ts 改动）：
+- - **`cacheCheckToJson(r)`**（库级导出，纯函数不触网/不读密钥）：序列化全部结构化字段
+-  （ok/model/hitTokens/savedUsd/detail + first/second 两轮用量快照）
+- - **CLI**：`flare cache-check --json` 只打印纯 JSON（不混入彩色/人类可读行，宿主直接
+-  `JSON.parse`），**exit code 语义保留**（ok → 0，未命中/调用失败 → 1，CI 可直接断言）；与
+-  `--model` 可组合；`--help` 注册
+- - 📚 README Changelog + CLI 命令表 + 版本号 0.6.48
+- - 🧪 **804/804 全绿**（802 + 2 新增 tests/cache-check.test.ts：命中结果 JSON 合法 + 全部结构化
+-  字段（首字符即 `{` 无前缀行、ok/hitTokens/detail/savedUsd/first/second 逐字段断言）；失败结果
+-  也结构化（ok:false + detail + model 空 + savedUsd null，不抛异常）），tsc 0 错误，
+-  **零 agent.ts 改动**
 
 #### v0.6.47 (2026-08-12) — CLI `mcp-server --bridge-tools`（外部 MCP 工具透传 flare 自身 MCPServer，与 v0.6.28/0.6.37 --bridge-resources/--bridge-prompts 对称）
 

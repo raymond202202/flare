@@ -5,7 +5,7 @@
  * DeepSeek/OpenAI 两种 usage 格式兼容、调用失败不抛、成本估算。
  */
 import { describe, it, expect } from 'vitest'
-import { runCacheCheck } from '../src/core/cache-check.js'
+import { runCacheCheck, cacheCheckToJson } from '../src/core/cache-check.js'
 import type { LLMProvider } from '../src/core/llm.js'
 
 interface FakeCall {
@@ -113,5 +113,39 @@ describe('runCacheCheck（v0.6.45）', () => {
     const r = await runCacheCheck(llm)
     expect(r.ok).toBe(true)
     expect(r.savedUsd).toBeNull()
+  })
+
+  it('cacheCheckToJson（v0.6.48）：合法 JSON + 全部结构化字段（宿主/CI 消费）', async () => {
+    const { llm } = makeFake([
+      { model: 'deepseek-chat', usage: { prompt_tokens: 800, completion_tokens: 10, prompt_cache_hit_tokens: 0 } },
+      { model: 'deepseek-chat', usage: { prompt_tokens: 800, completion_tokens: 10, prompt_cache_hit_tokens: 650 } },
+    ])
+    const r = await runCacheCheck(llm)
+    const json = cacheCheckToJson(r)
+    // 纯 JSON（首字符即 {，无彩色/前缀行）
+    expect(json.trim().startsWith('{')).toBe(true)
+    const parsed = JSON.parse(json)
+    expect(parsed.ok).toBe(true)
+    expect(parsed.model).toBe('deepseek-chat')
+    expect(parsed.hitTokens).toBe(650)
+    expect(parsed.detail).toContain('命中缓存 650 tokens')
+    expect(parsed.savedUsd).toBeGreaterThan(0)
+    expect(parsed.first).toEqual({ promptTokens: 800, completionTokens: 10, cacheReadTokens: 0, cacheWriteTokens: 0 })
+    expect(parsed.second.cacheReadTokens).toBe(650)
+    expect(parsed.second.promptTokens).toBe(800)
+  })
+
+  it('cacheCheckToJson（v0.6.48）：失败结果也结构化（ok:false + detail），不抛异常', async () => {
+    const { llm } = makeFake([
+      { error: new Error('401 api key 无效') },
+      { model: 'deepseek-chat', usage: {} },
+    ])
+    const r = await runCacheCheck(llm)
+    const parsed = JSON.parse(cacheCheckToJson(r))
+    expect(parsed.ok).toBe(false)
+    expect(parsed.detail).toContain('第一次调用失败')
+    expect(parsed.model).toBe('')
+    expect(parsed.hitTokens).toBe(0)
+    expect(parsed.savedUsd).toBeNull()
   })
 })
