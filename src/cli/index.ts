@@ -8,7 +8,7 @@
  */
 
 import { Command } from 'commander'
-import { Agent, createProvider, getMemoryStore, config, tools, McpManager, estimateMessagesTokens, ConfirmationGate, memoryStoreKv, wrapConfirmTools, describeTools, validateToolOutputPolicy, type AgentConfig, type McpServerStatus, type ConfirmDecision, type McpResourceRef, type McpResourceTemplateRef, type McpPromptRef, type ToolOutputPolicy } from '../index.js'
+import { Agent, createProvider, getMemoryStore, config, tools, McpManager, estimateMessagesTokens, ConfirmationGate, memoryStoreKv, wrapConfirmTools, describeTools, validateToolOutputPolicy, type AgentConfig, type McpServerStatus, type ConfirmDecision, type McpResourceRef, type McpResourceTemplateRef, type McpPromptRef, type McpResourceContents, type McpPromptResult, type ToolOutputPolicy } from '../index.js'
 import chalk from 'chalk'
 import { execSync } from 'child_process'
 import { createRequire } from 'module'
@@ -270,6 +270,10 @@ async function startInteractive(opts: { contextSummarize?: boolean } = {}) {
         name
           ? mcpManager.getAllPrompts().filter((p) => p.server === name)
           : mcpManager.getAllPrompts(),
+      // v0.6.39：读取已连接服务器资源内容（代理转发 resources/read——与 server 协议 mcp_read_resource 同源）
+      readResource: (server, uri) => mcpManager.readResource(server, uri),
+      // v0.6.39：渲染已连接服务器提示词（代理转发 prompts/get——与 server 协议 mcp_get_prompt 同源）
+      renderPrompt: (server, prompt, args) => mcpManager.getPrompt(server, prompt, args),
       onChanged: () => {
         // 工具集变化后重建 Agent（同 sessionId，历史从记忆库恢复），使 MCP 工具立即生效
         agent = makeAgent()
@@ -513,6 +517,10 @@ export interface McpCommandHooks {
   resources?(name?: string): McpResourceListing
   /** 列出已桥接提示词（v0.6.36）：name 缺省返回全部已连接服务器；未提供回退旧行为（提示不可用） */
   prompts?(name?: string): McpPromptRef[]
+  /** 读取已连接服务器资源内容（v0.6.39）：代理转发 resources/read；未提供回退提示不可用 */
+  readResource?(server: string, uri: string): Promise<McpResourceContents[]>
+  /** 渲染已连接服务器提示词（v0.6.39）：代理转发 prompts/get；未提供回退提示不可用 */
+  renderPrompt?(server: string, prompt: string, args?: Record<string, string>): Promise<McpPromptResult>
 }
 
 /** /mcp resources 返回的资源/模板清单（v0.6.26） */
@@ -675,7 +683,7 @@ export async function handleSlashCommand(
           output(`  ${mark} ${s.name}${toolsInfo}${resInfo}${promptInfo}${closeParen}${err}`)
         }
       }
-      output(chalk.gray('\n  /mcp resources [name] 查看资源 | /mcp connect <name> 连接 | /mcp disconnect <name> 断开'))
+      output(chalk.gray('\n  /mcp resources [name] 查看资源 | /mcp prompts [name] 查看提示词 | /mcp connect <name> 连接 | /mcp disconnect <name> 断开'))
       return 'continue'
     }
     if (sub === 'connect' && rest.length > 0) {
@@ -754,7 +762,60 @@ export async function handleSlashCommand(
       output(chalk.gray('\n  /mcp prompts [name] 查看提示词 | /mcp resources [name] 查看资源 | /mcp connect <name> 连接'))
       return 'continue'
     }
-    output(chalk.yellow('\n  用法: /mcp | /mcp resources [name] | /mcp prompts [name] | /mcp connect <name> | /mcp disconnect <name>'))
+    // /mcp read <server> <uri>（v0.6.39）：读取已连接服务器资源内容（与 server 协议 mcp_read_resource 对称）
+    if (sub === 'read' && rest.length >= 2) {
+      if (typeof mcp.readResource !== 'function') {
+        output(chalk.yellow('\n  当前环境未提供资源读取（MCP 管理器不支持 readResource）'))
+        return 'continue'
+      }
+      const server = rest[0]
+      const uri = rest.slice(1).join(' ')
+      try {
+        const contents = await mcp.readResource(server, uri)
+        if (contents.length === 0) {
+          output(chalk.yellow(`\n  ${server} 的资源 ${chalk.cyan(uri)} 无内容`))
+        } else {
+          output(chalk.gray(`\n  ${server} 的资源 ${chalk.cyan(uri)}（${contents.length} 项）：`))
+          for (const c of contents) {
+            const mime = c.mimeType ? chalk.gray(` [${c.mimeType}]`) : ''
+            output(`    📄 ${chalk.cyan(c.uri)}${mime}`)
+            output(`      ${c.text}`)
+          }
+        }
+      } catch (e: any) {
+        output(chalk.red(`\n  ❌ ${e?.message || e}`))
+      }
+      return 'continue'
+    }
+    // /mcp render <server> <prompt> [arg=value ...]（v0.6.39）：渲染已连接服务器提示词（与 server 协议 mcp_get_prompt 对称）
+    if (sub === 'render' && rest.length >= 2) {
+      if (typeof mcp.renderPrompt !== 'function') {
+        output(chalk.yellow('\n  当前环境未提供提示词渲染（MCP 管理器不支持 renderPrompt）'))
+        return 'continue'
+      }
+      const server = rest[0]
+      const prompt = rest[1]
+      const args: Record<string, string> = {}
+      for (const kv of rest.slice(2)) {
+        const eq = kv.indexOf('=')
+        if (eq > 0) args[kv.slice(0, eq)] = kv.slice(eq + 1)
+      }
+      try {
+        const result = await mcp.renderPrompt(server, prompt, Object.keys(args).length > 0 ? args : undefined)
+        const desc = result.description ? chalk.gray(` — ${result.description}`) : ''
+        output(chalk.gray(`\n  ${server} 的提示词 ${chalk.cyan(prompt)}${desc}：`))
+        for (const m of result.messages) {
+          const text = m.content && typeof m.content === 'object' && 'text' in m.content
+            ? (m.content as { text: string }).text
+            : JSON.stringify(m.content)
+          output(`    💬 ${chalk.gray(m.role)}: ${text}`)
+        }
+      } catch (e: any) {
+        output(chalk.red(`\n  ❌ ${e?.message || e}`))
+      }
+      return 'continue'
+    }
+    output(chalk.yellow('\n  用法: /mcp | /mcp resources [name] | /mcp prompts [name] | /mcp read <server> <uri> | /mcp render <server> <prompt> [k=v ...] | /mcp connect <name> | /mcp disconnect <name>'))
     return 'continue'
   }
 
@@ -973,6 +1034,8 @@ export async function handleSlashCommand(
       output('  /mcp         - 查看 MCP 服务器状态（~/.flare/mcp.json 配置）')
       output('  /mcp resources [name] - 查看已桥接资源/模板（v0.6.26，外部 MCP 服务器暴露的资源）')
       output('  /mcp prompts [name] - 查看已桥接提示词（v0.6.36，外部 MCP 服务器暴露的提示词）')
+      output('  /mcp read <server> <uri> - 读取外部 MCP 资源内容（v0.6.39，resources/read 代理）')
+      output('  /mcp render <server> <prompt> [k=v ...] - 渲染外部 MCP 提示词（v0.6.39，prompts/get 代理）')
       output('  /mcp connect <name> - 连接 MCP 服务器并注入其工具')
       output('  /mcp disconnect <name> - 断开 MCP 服务器')
       output('  /allow     - 查看已放行的确认工具（AI 写回类工具执行前会请求确认）')

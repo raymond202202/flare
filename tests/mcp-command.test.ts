@@ -30,13 +30,15 @@ function makeHooks(
   initial: McpServerStatus[] = [],
   resourceData: { resources: McpResourceRef[]; templates: McpResourceTemplateRef[] } = { resources: [], templates: [] },
   promptData: McpPromptRef[] = [],
+  readData: Record<string, { uri: string; mimeType?: string; text: string }[]> = {},
+  renderData: Record<string, { description?: string; messages: { role: 'user' | 'assistant'; content: { type: 'text'; text: string } }[] }> = {},
 ): {
   hooks: McpCommandHooks
-  calls: { connect: string[]; disconnect: string[]; changed: number }
+  calls: { connect: string[]; disconnect: string[]; changed: number; reads: string[]; renders: string[] }
   setStatus: (s: McpServerStatus[]) => void
 } {
   let status = initial
-  const calls = { connect: [] as string[], disconnect: [] as string[], changed: 0 }
+  const calls = { connect: [] as string[], disconnect: [] as string[], changed: 0, reads: [] as string[], renders: [] as string[] }
   return {
     calls,
     setStatus: (s) => { status = s },
@@ -55,6 +57,19 @@ function makeHooks(
         templates: name ? resourceData.templates.filter((t) => t.server === name) : resourceData.templates,
       }),
       prompts: (name) => (name ? promptData.filter((p) => p.server === name) : promptData),
+      // v0.6.39：读取资源内容 / 渲染提示词（真实代理由 McpManager.readResource/getPrompt 转发）
+      readResource: async (server, uri) => {
+        calls.reads.push(`${server}:${uri}`)
+        const hit = readData[`${server}:${uri}`]
+        if (!hit) throw new Error(`MCP 服务器未连接: ${server}`)
+        return hit
+      },
+      renderPrompt: async (server, prompt, args) => {
+        calls.renders.push(`${server}:${prompt}:${JSON.stringify(args || {})}`)
+        const hit = renderData[`${server}:${prompt}`]
+        if (!hit) throw new Error(`未知提示词: ${prompt}`)
+        return hit
+      },
       onChanged: () => { calls.changed++ },
     },
   }
@@ -315,5 +330,121 @@ describe('/mcp 命令', () => {
     const r = await handleSlashCommand('/mcp bogus', store, (s) => lines.push(s), undefined, hooks)
     expect(r).toBe('continue')
     expect(lines.join('\n')).toContain('prompts')
+  })
+
+  // ===== v0.6.39 read / render =====
+  it('/mcp read <server> <uri> → 显示资源内容（代理转发 readResource）', async () => {
+    const lines: string[] = []
+    const { hooks, calls } = makeHooks(
+      [{ name: 'mock', connected: true, toolCount: 3 }],
+      undefined,
+      undefined,
+      { 'mock:memory://preferences': [{ uri: 'memory://preferences', mimeType: 'text/plain', text: '主题: 浅色' }] },
+    )
+    const r = await handleSlashCommand('/mcp read mock memory://preferences', store, (s) => lines.push(s), undefined, hooks)
+    expect(r).toBe('continue')
+    expect(calls.reads).toEqual(['mock:memory://preferences'])
+    const text = lines.join('\n')
+    expect(text).toContain('mock 的资源 memory://preferences')
+    expect(text).toContain('主题: 浅色')
+    expect(text).toContain('text/plain')
+  })
+
+  it('/mcp read（服务器未连接）→ 错误输出不崩溃', async () => {
+    const lines: string[] = []
+    const { hooks } = makeHooks([])
+    const r = await handleSlashCommand('/mcp read ghost memory://x', store, (s) => lines.push(s), undefined, hooks)
+    expect(r).toBe('continue')
+    expect(lines.join('\n')).toContain('MCP 服务器未连接: ghost')
+  })
+
+  it('/mcp read（缺 uri）→ 提示用法（不调用）', async () => {
+    const lines: string[] = []
+    const { hooks, calls } = makeHooks([])
+    const r = await handleSlashCommand('/mcp read mock', store, (s) => lines.push(s), undefined, hooks)
+    expect(r).toBe('continue')
+    expect(calls.reads).toEqual([])
+    expect(lines.join('\n')).toContain('用法')
+  })
+
+  it('/mcp read（hooks 未提供 readResource 方法）→ 提示不可用（向后兼容旧宿主）', async () => {
+    const lines: string[] = []
+    const { hooks } = makeHooks([])
+    const legacy = { ...hooks } as McpCommandHooks
+    delete (legacy as any).readResource
+    const r = await handleSlashCommand('/mcp read mock memory://x', store, (s) => lines.push(s), undefined, legacy)
+    expect(r).toBe('continue')
+    expect(lines.join('\n')).toContain('未提供资源读取')
+  })
+
+  it('/mcp render <server> <prompt> → 显示渲染消息（代理转发 renderPrompt）', async () => {
+    const lines: string[] = []
+    const { hooks, calls } = makeHooks(
+      [{ name: 'mock', connected: true, toolCount: 3 }],
+      undefined,
+      undefined,
+      undefined,
+      { 'mock:greet': { messages: [{ role: 'user', content: { type: 'text', text: '你好' } }] } },
+    )
+    const r = await handleSlashCommand('/mcp render mock greet', store, (s) => lines.push(s), undefined, hooks)
+    expect(r).toBe('continue')
+    expect(calls.renders).toEqual(['mock:greet:{}'])
+    const text = lines.join('\n')
+    expect(text).toContain('mock 的提示词 greet')
+    expect(text).toContain('user: 你好')
+  })
+
+  it('/mcp render <server> <prompt> k=v → 参数透传 + 描述展示', async () => {
+    const lines: string[] = []
+    const { hooks, calls } = makeHooks(
+      [{ name: 'mock', connected: true, toolCount: 3 }],
+      undefined,
+      undefined,
+      undefined,
+      { 'mock:summarize': { description: '总结内容', messages: [{ role: 'user', content: { type: 'text', text: '请总结关于「flare」的内容' } }] } },
+    )
+    const r = await handleSlashCommand('/mcp render mock summarize topic=flare', store, (s) => lines.push(s), undefined, hooks)
+    expect(r).toBe('continue')
+    expect(calls.renders).toEqual(['mock:summarize:{"topic":"flare"}'])
+    const text = lines.join('\n')
+    expect(text).toContain('总结内容')
+    expect(text).toContain('请总结关于「flare」的内容')
+  })
+
+  it('/mcp render（未知提示词）→ 错误输出不崩溃', async () => {
+    const lines: string[] = []
+    const { hooks } = makeHooks([])
+    const r = await handleSlashCommand('/mcp render mock ghost', store, (s) => lines.push(s), undefined, hooks)
+    expect(r).toBe('continue')
+    expect(lines.join('\n')).toContain('未知提示词: ghost')
+  })
+
+  it('/mcp render（缺 prompt）→ 提示用法（不调用）', async () => {
+    const lines: string[] = []
+    const { hooks, calls } = makeHooks([])
+    const r = await handleSlashCommand('/mcp render mock', store, (s) => lines.push(s), undefined, hooks)
+    expect(r).toBe('continue')
+    expect(calls.renders).toEqual([])
+    expect(lines.join('\n')).toContain('用法')
+  })
+
+  it('/mcp render（hooks 未提供 renderPrompt 方法）→ 提示不可用（向后兼容旧宿主）', async () => {
+    const lines: string[] = []
+    const { hooks } = makeHooks([])
+    const legacy = { ...hooks } as McpCommandHooks
+    delete (legacy as any).renderPrompt
+    const r = await handleSlashCommand('/mcp render mock greet', store, (s) => lines.push(s), undefined, legacy)
+    expect(r).toBe('continue')
+    expect(lines.join('\n')).toContain('未提供提示词渲染')
+  })
+
+  it('/mcp 用法错误 → 提示用法（含 read / render 子命令）', async () => {
+    const lines: string[] = []
+    const { hooks } = makeHooks([])
+    const r = await handleSlashCommand('/mcp bogus', store, (s) => lines.push(s), undefined, hooks)
+    expect(r).toBe('continue')
+    const text = lines.join('\n')
+    expect(text).toContain('read <server> <uri>')
+    expect(text).toContain('render <server> <prompt>')
   })
 })

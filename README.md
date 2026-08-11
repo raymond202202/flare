@@ -338,6 +338,27 @@ Interactive mode commands:
 
 > 中文条目 / Chinese entries · English summary for each version
 
+#### v0.6.39 (2026-08-12) — CLI 交互模式 `/mcp read` / `/mcp render`（资源内容读取 + 提示词渲染）
+
+- ✨ **CLI 交互模式两个 /mcp 子命令（src/cli/index.ts + 测试）**：
+-  v0.6.38 给 server 协议补了 `mcp_read_resource` / `mcp_get_prompt`（宿主能读资源内容/渲染
+-  提示词），但 **CLI 交互模式的 `/mcp` 还只能列清单**（`/mcp resources` / `/mcp prompts`
+-  只显示元数据）——本轮对称补齐（纯 CLI 外围，零 agent.ts 改动）：
+- - **`/mcp read <server> <uri>`**：读取已连接服务器的资源内容（`resources/read` 代理，与协议
+-  `mcp_read_resource` 同源）——直接显示 `📄 uri [mimeType]` + 内容文本；服务器未连接/未知资源
+-  错误输出不崩溃
+- - **`/mcp render <server> <prompt> [k=v ...]`**：渲染已连接服务器的提示词（`prompts/get` 代理，
+-  与协议 `mcp_get_prompt` 同源）——直接显示 `💬 role: text` 消息序列 + 可选描述；`k=v` 传提示词
+-  参数（如 `/mcp render mock summarize topic=flare`）；未知提示词错误输出不崩溃
+- - `McpCommandHooks` 新增可选 `readResource?` / `renderPrompt?`（旧 hooks 形状向后兼容——
+-  未提供时友好提示不可用，不崩溃）；`/help` 注册两行；用法提示更新
+- - 📚 docs/mcp.md（交互模式 read/render 说明）+ README Changelog + 版本号 0.6.39
+- - 🧪 **745/745 全绿**（735 + 10 新增 tests/mcp-command.test.ts：/mcp read 成功显示内容（代理
+-  转发 + mimeType）/ 未连接错误不崩溃 / 缺 uri 用法提示不调用 / 旧 hooks 无 readResource 降级；
+-  /mcp render 成功显示消息 / k=v 参数透传 + 描述展示 / 未知提示词错误不崩溃 / 缺 prompt 用法
+-  提示不调用 / 旧 hooks 无 renderPrompt 降级；用法错误提示含 read/render），tsc 0 错误，
+-  **零 agent.ts 改动**
+
 #### v0.6.38 (2026-08-12) — server 协议 MCP 资源内容读取 + 提示词渲染代理（mcp_read_resource / mcp_get_prompt）
 
 - ✨ **server 协议两个只读代理接口（src/server.ts + 测试）**：
