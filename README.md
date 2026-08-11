@@ -338,6 +338,35 @@ Interactive mode commands:
 
 > 中文条目 / Chinese entries · English summary for each version
 
+#### v0.6.29 (2026-08-11) — prompt caching 基建 P0：system 前缀稳定 + usage 缓存回传
+- 🧱 **system 前缀稳定（P0-1，src/core/agent.ts 构造函数 + context.ts）**：原来记忆拼进 system 前缀，
+  记忆一变整条 system 变 → DeepSeek 前缀缓存全失效（50 倍差价）。现在 system 拆成**独立消息序列**：
+  稳定前缀（systemPrompt，永远不变）→ 身份段（identity/flareIntro，独立 system）→ 记忆段
+  （「关于这个用户」，独立 system）——记忆变化只影响最后一条 system，稳定前缀 + 工具定义永远命中缓存；
+  `setContext` 宿主状态快照改为**独立 system 消息追加到消息末尾**（动态区，历史之后），重复调用替换、
+  清空移除，不再污染稳定前缀；`trimContextMessages`/`suggestTrim` 改为**开头连续 system 块全保底**
+  （身份/记忆不因裁剪丢失；末尾「当前状态」不挪位按最近优先保留）；`summarizeTrimmedMessages` 摘要
+  紧随开头 system 块之后；全部纯函数改动 + 构造拆消息，**run 循环零改动**
+- 💰 **usage 回传增强（P0-2，src/core/llm.ts + memory/store.ts + server.ts + cli）**：`LLMResponse.usage`
+  新增 `cache_read_tokens`（DeepSeek prompt_cache_hit_tokens / OpenAI cached_tokens 双格式兼容）/
+  `cache_write_tokens`（Anthropic 风格）；`estimateCostUsd` 纯函数按模型定价估算成本（deepseek-chat
+  $0.27/$0.07/$1.10 每 M，命中价 ≈1/4 未命中价；reasoner 更高；本地/未知模型 null）；`extractUsageCache`
+  提取纯函数；usage_log 表加列（cache_read/cache_write/estimated_cost_usd）+ **老库自动迁移补列**；
+  `logUsage` 可选 extra 参数（缺省与旧版完全一致）；`getUsageStats`/`getSessionUsage`/`perModel` 汇总
+  缓存与成本；server 协议 get_usage/session_usage 透传；CLI `/usage` 显示缓存命中行（tokens + 命中率）
+  与估算成本
+- 📚 docs/flare-token-architecture.md 落地状态更新（P0-1/P0-2 已实施，验收标准）+ docs/host-protocol.md
+  §9 usage 响应示例 + README Changelog + 版本号 0.6.29
+- 🧪 新增 25 项测试（llm 12：estimateCostUsd 6——命中/部分命中/reasoner/未知 null/封顶防御；extractUsageCache
+  6——DeepSeek/OpenAI 双格式/共存优先/cache_write/无字段/负数防御；store 2——logUsage extra 落库+汇总、
+  老库迁移补列不报错；agent 3——身份独立 system 消息/前缀稳定（记忆变化首条 system 不变）/setContext
+  末尾独立+替换+清空；context 4——trim 多 system 全保底/末尾当前状态不挪位/极小预算保底/单 system 零回归、
+  suggestTrim 多 system 对称+keepSystem:false、summarize 摘要紧随 system 块；CLI 2——/usage 缓存行+命中率+成本、
+  无缓存零回归）；**630/630 全绿**（605 + 25），tsc 0 错误，run 循环零改动
+- 🔥 冒烟实测：estimateCostUsd 1M 未命中 $1.37 vs 全命中 $1.17（缓存省钱可见）；记忆变化重建 Agent 稳定前缀
+  逐字节一致；logUsage 带缓存落库 getUsageStats/getSessionUsage 往返正确；setContext 追加末尾独立 system，
+  SMOKE PASS
+
 #### v0.6.28 (2026-08-11) — 外部 MCP 资源透传（动态资源提供器）
 - 🧩 **`MCPServer` 动态资源提供器 `resourceProvider`（src/mcp/server.ts）**：resources 除构造时注入的静态
   列表外，可挂动态提供器——`resources/list` 实时合并（静态优先、同 uri 去重）、`resources/read` 代理读取
