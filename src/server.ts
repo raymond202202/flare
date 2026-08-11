@@ -678,6 +678,27 @@ export function startHostServer(opts: HostServerOptions) {
           reply({ type: 'sessions', sessions })
           break
         }
+        case 'search_sessions': {
+          // 宿主按标题/消息内容搜索会话（v0.6.43；只读，不触发生成）——list_sessions 只能全量
+          // 列出，本接口按关键词过滤（LIKE 匹配标题或会话内消息），宿主面板搜索框用
+          const query = req.query === undefined || req.query === null ? '' : String(req.query).trim()
+          if (!query) {
+            reply({ type: 'error', message: 'search_sessions 需要 query 参数（搜索关键词），用法: {"type":"search_sessions","query":"关键词"}' })
+            break
+          }
+          const limitRaw = req.limit === undefined || req.limit === null ? 20 : Number(req.limit)
+          if (!Number.isInteger(limitRaw) || limitRaw < 1 || limitRaw > 100) {
+            reply({ type: 'error', message: 'search_sessions 的 limit 必须是 1~100 的整数' })
+            break
+          }
+          const sessionId = String(req.sessionId || 'default')
+          const agent = getAgent(sessionId)
+          const sessions = (typeof (agent as any).store?.searchSessions === 'function')
+            ? await (agent as any).store.searchSessions(query, limitRaw)
+            : []
+          reply({ type: 'search_sessions', query, sessions })
+          break
+        }
         case 'recent_sessions': {
           // 最近会话列表 + 预览（v0.6.0）：首条 user 消息作标题/预览，宿主会话面板展示用（只读不生成）
           const agent = getAgent(String(req.sessionId || 'default'))

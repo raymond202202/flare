@@ -338,6 +338,26 @@ Interactive mode commands:
 
 > 中文条目 / Chinese entries · English summary for each version
 
+#### v0.6.43 (2026-08-12) — server 协议 `search_sessions`（按标题/消息内容搜索会话）
+
+- ✨ **`search_sessions` 会话搜索（src/memory/store.ts + src/server.ts + 测试）**：
+-  宿主面板搜索框数据源——`list_sessions` 只能全量列出，无法按关键词过滤；`search_messages`
+-  （v0.6.24）返回**消息级**结果，缺**会话级**搜索；本轮补齐（纯外围，零 agent.ts 改动）：
+-  `MemoryStore.searchSessions(query, limit=20)` LIKE 匹配**会话标题或会话内任意消息内容**
+-  （DISTINCT 去重，一会话多条命中只出现一次；结构同 getAllSessions 含消息数/归档标记，
+-  按更新时间倒序；空 query 返回空数组不误搜全部）；server 协议 `search_sessions {query,
+-  limit?}` → `{type:'search_sessions', query, sessions:[...]}`——query 必填（缺省 error 含
+-  用法）、limit 1~100 整数（非法 error 含提示）、无匹配返回空数组不报错；只读不触发生成
+- - 🧪 **774/774 全绿**（760 + 14 新增 tests/session-search.test.ts：MemoryStore 单测 8——
+-  标题 LIKE 匹配（中文）/ 消息内容匹配（标题不含关键词也命中+messageCount）/ DISTINCT 去重 /
+-  空·空白 query 空数组 / 无匹配空数组 / limit 收窄 / updated_at 倒序（秒级粒度 sleep 越过）/
+-  结构同 getAllSessions+归档不过滤；server e2e 6——真实子进程 + 预置 DB（不走 chat/LLM）：
+-  标题匹配闭环 / 内容匹配闭环 / 无匹配空数组 / 缺 query error 含用法 / limit 非法
+-  （0/-1/1.5/abc/101）error / limit 收窄多命中生效），tsc 0 错误，**零 agent.ts 改动**
+- - **冒烟实测**（真实 dist CLI 子进程 + 预置 DB）：search_sessions `{query:'集成'}` →
+-  `flutter 集成指南` 命中（messageCount 1）；`{query:'前缀稳定'}` → 两个会话命中（limit 1
+-  收窄为 1）；缺 query / limit 0 → error 含用法，SMOKE PASS
+
 #### v0.6.42 (2026-08-12) — CLI `/usage` perModel 缓存命中显示（prompt caching 基建深化）
 
 - ✨ **CLI `/usage` 按模型分解显示缓存命中（src/cli/index.ts + 测试）**：
