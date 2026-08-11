@@ -237,8 +237,11 @@ export function extractUsageCache(usage: any): { cacheReadTokens: number; cacheW
   const cacheRead =
     usage?.prompt_cache_hit_tokens ??
     details?.cached_tokens ??
+    // 归一化字段回退（v0.6.45）：OpenAIProvider.chat 归一化后只保留 cache_read_tokens，
+    // 原始格式字段被丢弃——本函数需兼容两种形态（原始 usage / LLMResponse.usage）
+    usage?.cache_read_tokens ??
     0
-  const cacheWrite = details?.cache_creation_input_tokens ?? 0
+  const cacheWrite = details?.cache_creation_input_tokens ?? usage?.cache_write_tokens ?? 0
   return {
     cacheReadTokens: Number.isFinite(cacheRead) && cacheRead > 0 ? cacheRead : 0,
     cacheWriteTokens: Number.isFinite(cacheWrite) && cacheWrite > 0 ? cacheWrite : 0,

@@ -149,6 +149,13 @@ describe('extractUsageCache（usage 缓存字段提取，v0.6.29 P0）', () => {
     expect(extractUsageCache({ prompt_cache_hit_tokens: 111, prompt_tokens_details: { cached_tokens: 222 } })).toEqual({ cacheReadTokens: 111, cacheWriteTokens: 0 })
   })
 
+  it('归一化格式：cache_read_tokens / cache_write_tokens（v0.6.45，LLMResponse.usage 形态）', () => {
+    expect(extractUsageCache({ cache_read_tokens: 888 })).toEqual({ cacheReadTokens: 888, cacheWriteTokens: 0 })
+    expect(extractUsageCache({ cache_write_tokens: 777 })).toEqual({ cacheReadTokens: 0, cacheWriteTokens: 777 })
+    // 原始 + 归一化共存 → 原始优先（值相同场景无差异）
+    expect(extractUsageCache({ prompt_cache_hit_tokens: 111, cache_read_tokens: 888 })).toEqual({ cacheReadTokens: 111, cacheWriteTokens: 0 })
+  })
+
   it('Anthropic 风格 cache_creation_input_tokens → cacheWrite', () => {
     expect(extractUsageCache({ prompt_tokens_details: { cache_creation_input_tokens: 999 } })).toEqual({ cacheReadTokens: 0, cacheWriteTokens: 999 })
   })

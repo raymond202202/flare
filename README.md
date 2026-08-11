@@ -338,6 +338,29 @@ Interactive mode commands:
 
 > 中文条目 / Chinese entries · English summary for each version
 
+#### v0.6.45 (2026-08-12) — `flare cache-check` prompt caching 验收工具（方向① P0 验收自动化）
+
+- ✨ **`flare cache-check`（src/core/cache-check.ts + src/cli/index.ts + 测试）**：
+-  P0 验收标准是「连续两轮调用（间隔 <5min）第二轮 cache_read_tokens > 0」，但此前只能靠
+-  宿主/开发者手工对比 /usage——本轮把验收自动化（纯外围，零 agent.ts 改动）：
+-  `runCacheCheck(llm?)`（库级导出，llm 依赖注入）构造**稳定长前缀**（约 1.2K 字符重复块，
+-  模拟真实会话稳定 system 前缀）连续两次调用（仅末尾 user 内容不同）——第一轮 miss 基准、
+-  第二轮期望命中；兼容 DeepSeek `prompt_cache_hit_tokens` 与 OpenAI
+-  `prompt_tokens_details.cached_tokens` 两种格式（复用 extractUsageCache）；DeepSeek 系列按
+-  命中价 vs 未命中价估算节省成本；**调用失败不抛**（返回 ok:false + 原因，CLI 报错不崩）
+- - **CLI**：`flare cache-check [--model <模型>]`——显示模型/两轮 prompt 与命中量/估算节省/
+-  ✅ PASS 或 ⚠️ 未命中（exit 1）；`--help` 注册；真实调用走 ~/.flare/.env 配置密钥
+-  （本地诊断，不输出任何密钥）
+- - docs/flare-token-architecture.md 验收标准 + README Changelog + 版本号 0.6.45
+- - 🧪 **788/788 全绿**（781 + 7 新增 tests/cache-check.test.ts：第二轮命中（DeepSeek 格式）
+-  → ok:true + 命中量 + **前缀逐字节一致断言**（两次 system 相同、仅 user 数字不同、前缀长度
+-  >500 字符）/ OpenAI cached_tokens 格式兼容 / 未命中 ok:false + 外部因素 detail / 第一次
+-  调用失败不抛 / 第二次调用失败不抛 / DeepSeek 节省成本 > 0 / 无法定价模型 savedUsd null），
+-  tsc 0 错误，**零 agent.ts 改动**
+- - **冒烟实测**（真实 DeepSeek API + dist CLI）：flare cache-check → 模型
+-  deepseek-v4-flash、prompt 971 → 第二轮命中 896 tokens → ✅ PASS（真实缓存命中，P0
+-  验收通过；两轮均命中说明缓存跨进程持久，前缀已写入服务端），SMOKE PASS
+
 #### v0.6.44 (2026-08-12) — CLI `/sessions <关键词>` 会话搜索（server search_sessions 的 CLI 对称）
 
 - ✨ **CLI `/sessions <关键词>`（src/cli/index.ts + 测试）**：
