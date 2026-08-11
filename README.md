@@ -341,6 +341,19 @@ Interactive mode commands:
 
 > 中文条目 / Chinese entries · English summary for each version
 
+#### v0.6.68 (2026-08-12) — CLI mcp 单次命令 `--header` 鉴权请求头（方向③ MCP 增强，与 v0.6.67 对称）
+
+- ✨ **`flare mcp call/resources/prompts/tools/complete` 全部支持 `--header <k:v>`（可重复）**（src/cli/index.ts + 测试）：
+-  v0.6.67 给库层（`MCPHttpClientOptions.headers`）和配置层（`McpServerConfig.headers`）补了
+-  鉴权头，但 **CLI 单次命令侧未对称**——`--url` 直连远程受保护 HTTP 服务器时仍无法带 token，
+-  必须临时改配置文件；本轮补齐（纯外围，零 agent.ts 改动）
+- - **`--header "Authorization: Bearer <token>"`**：5 个单次命令全部支持（可重复收集多个键）；
+-  `--url` 直连与配置路径都生效；与配置 `headers` 合并时 **CLI 优先**（覆盖同名键）
+- - **非法格式**（缺冒号/空键）→ 退出码 1 + `--header 格式应为 key:value` 用法提示（不崩溃）
+- - docs/mcp.md（CLI 章节 --header 示例）+ README Changelog + 版本号 0.6.68
+- - 🧪 **857/857 全绿**（新增 3 用例：call --url --header 服务器收到 Authorization / 可重复
+-  --header 与配置 headers 合并 CLI 优先 / 非法格式退出码 1），tsc 0 错误，**零 agent.ts 改动**
+
 #### v0.6.67 (2026-08-12) — MCP HTTP transport 鉴权请求头支持（方向③ MCP 增强）
 
 - ✨ **`MCPHttpClient({ headers })` + `McpServerConfig.headers` + `McpManager.connect` 透传（src/mcp/http-client.ts + src/mcp/types.ts + src/mcp/manager.ts + 测试）**：

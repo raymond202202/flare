@@ -327,3 +327,58 @@ describe('CLI flare mcp complete（v0.6.60）', () => {
     expect(stderr).toMatch(/未配置 MCP 服务器/)
   }, 20000)
 })
+
+describe('CLI flare mcp 单次命令 --header（v0.6.68：HTTP transport 鉴权请求头，可重复）', () => {
+  it('call --url --header → 服务器收到 Authorization + 调用成功', async () => {
+    const h = await startMcpHttpServer({ tools: [echoTool] })
+    handles.push(h)
+    const seenAuth: string[] = []
+    h.http.on('request', (req) => {
+      const auth = req.headers['authorization']
+      if (auth) seenAuth.push(String(auth))
+    })
+    const { code, stdout, stderr } = await runCli([
+      'mcp', 'call', 'remote', 'echo', '{"text":"hi-header"}', '--url', h.url,
+      '--header', 'Authorization: Bearer cli-token-789',
+    ])
+    expect(code).toBe(0)
+    expect(stdout.trim()).toBe('hi-header')
+    expect(stderr).toBe('')
+    expect(seenAuth.length).toBeGreaterThanOrEqual(1)
+    expect(seenAuth.every((a) => a === 'Bearer cli-token-789')).toBe(true)
+  }, 20000)
+
+  it('可重复 --header（多个键）→ 全部携带；与配置 headers 合并时 CLI 优先', async () => {
+    const h = await startMcpHttpServer({ tools: [echoTool] })
+    handles.push(h)
+    const seen: { auth?: string; xenv?: string }[] = []
+    h.http.on('request', (req) => {
+      seen.push({
+        ...(req.headers['authorization'] ? { auth: String(req.headers['authorization']) } : {}),
+        ...(req.headers['x-env'] ? { xenv: String(req.headers['x-env']) } : {}),
+      })
+    })
+    const cfgPath = join(dir, 'mcp.json')
+    // 配置带 headers；CLI --header 覆盖 Authorization（x-env 仅配置有 → 保留）
+    writeFileSync(cfgPath, JSON.stringify({
+      servers: [{ name: 'remote', url: h.url, headers: { Authorization: 'Bearer cfg-token', 'X-Env': 'prod' } }],
+    }))
+    const { code, stdout } = await runCli([
+      'mcp', 'call', 'remote', 'echo', '{"text":"merge"}', '--config', cfgPath,
+      '--header', 'Authorization: Bearer cli-token',
+    ])
+    expect(code).toBe(0)
+    expect(stdout.trim()).toBe('merge')
+    expect(seen.length).toBeGreaterThanOrEqual(1)
+    expect(seen.every((s) => s.auth === 'Bearer cli-token')).toBe(true)
+    expect(seen.every((s) => s.xenv === 'prod')).toBe(true)
+  }, 20000)
+
+  it('--header 非法格式（缺冒号）→ 退出码 1 + 用法提示（不崩溃）', async () => {
+    const h = await startMcpHttpServer({ tools: [echoTool] })
+    handles.push(h)
+    const { code, stderr } = await runCli(['mcp', 'call', 'remote', 'echo', '{}', '--url', h.url, '--header', 'no-colon'])
+    expect(code).toBe(1)
+    expect(stderr).toMatch(/key:value/)
+  }, 20000)
+})
