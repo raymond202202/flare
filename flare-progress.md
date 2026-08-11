@@ -3,16 +3,15 @@
 > 目标：flare 是 Pulse/StorySpire 依赖的 AI Agent 引擎（TS）。任何改动必须安全（tsc 0 错 + 测试全绿才 commit）。
 > 铁律：禁止 push；禁止修改 src/core/agent.ts 的 Agent.run 核心循环。
 
-> **最新状态（v0.6.41）**：**CLI 交互模式 `/mcp call`**（方向②③交叉）——
-> v0.6.40 给 server 协议补了 `mcp_call`（宿主能直接调用外部 MCP 工具），但 **CLI 交互模式的
-> `/mcp` 还没有 call 子命令**（v0.6.39 补了 read/render，call 缺）——本轮对称补齐
-> （纯 CLI 外围，零 agent.ts 改动）：`/mcp call <server> <tool> [JSON参数]` 调用已连接服务器
-> 工具（tools/call 代理，与协议 mcp_call 同源，直接显示工具返回文本；工具级失败 isError 显示
-> 失败信息；非法 JSON 参数提示不调用；未知工具/未连接错误不崩溃）；McpCommandHooks 新增可选
-> callTool?（旧 hooks 向后兼容降级提示）；/help 注册一行 + 用法提示更新；**759/759 全绿**
-> （752 + 7 新增），tsc 0 错误，零 agent.ts 改动；冒烟实测真实 McpManager.callTool 全链路，
-> SMOKE PASS。
-> （v0.6.40：server 协议 mcp_call + McpManager.callTool；v0.6.39：CLI /mcp read/render；v0.6.38：server 协议 mcp_read_resource/mcp_get_prompt 读取渲染代理。）
+> **最新状态（v0.6.42）**：**CLI `/usage` perModel 缓存命中显示**（方向① prompt caching
+> 基建深化）——v0.6.29 P0 已回传 cache_read_tokens（总行显示命中率），getUsageStats.perModel
+> 也早已聚合 cacheReadTokens，但 **CLI `/usage` 的 perModel 行只显示 totalTokens + calls**——
+> 多模型场景（如 chat + reasoner 混合）看不到每个模型的缓存命中分布：本轮补齐（纯 CLI 外围，
+> 零 agent.ts 改动）——模型行下有命中的追加缩进子行 `缓存命中: N tokens（R%）`（命中率按该
+> 模型 promptTokens 计算）；无命中不显示子行（与旧版输出兼容）；总命中率/成本行照旧；
+> **760/760 全绿**（759 + 1 新增），tsc 0 错误，零 agent.ts 改动；冒烟实测真实 MemoryStore +
+> dist CLI 全链路，SMOKE PASS。
+> （v0.6.41：CLI /mcp call；v0.6.40：server 协议 mcp_call + McpManager.callTool；v0.6.39：CLI /mcp read/render。）
 
 > 【🔴 当前最高优先级方向（2026-08-11 用户拍板）】**prompt caching 基建 P0 已基本落地**：
 > P0-1 前缀稳定 + P0-2 usage 回传（v0.6.29 完成）。验收：连续两轮调用（间隔<5min）第二轮
@@ -22,7 +21,8 @@
 > 下一步候选（按优先级）：
 > ① 【P1】分层上下文（Layer 1 异步滚动摘要——摘要内容升级为 LLM 生成语义级压缩，需评估 run 循环外异步）
 > ② 其他安全的外围增强（server 协议其他管理接口、MCP 工具集完善、测试稳定性等）
->    已覆盖：/mcp call 交互命令（v0.6.41）✓ /
+>    已覆盖：/usage perModel 缓存命中显示（v0.6.42）✓ /
+>    /mcp call 交互命令（v0.6.41）✓ /
 >    mcp_call 协议+callTool 代理（v0.6.40）✓ /
 >    /mcp read/render 交互命令（v0.6.39）✓ /
 >    mcp_read_resource/mcp_get_prompt 读取渲染代理（v0.6.38）✓ /
@@ -34,7 +34,28 @@
 >
 > ---
 >
-> ### 2026-08-12 第四十轮实施（v0.6.41）——CLI 交互模式 `/mcp call`（方向②③，直接调用外部 MCP 工具）
+> ### 2026-08-12 第四十一轮实施（v0.6.42）——CLI `/usage` perModel 缓存命中显示（方向①，prompt caching 基建深化）
+
+- **P71 CLI `/usage` 按模型分解显示缓存命中**（src/cli/index.ts + 测试，commit `814ff91`）：
+  - **缺口定位**：v0.6.29 P0 已回传 cache_read_tokens（总行显示命中率），
+    getUsageStats.perModel 也早已聚合 cacheReadTokens，但 **CLI `/usage` 的 perModel 行只显示
+    totalTokens + calls**——多模型场景（如 chat + reasoner 混合）看不到每个模型的缓存命中
+    分布（宿主/用户无法判断哪个模型真正吃到缓存）；本轮补齐（纯 CLI 外围，零 agent.ts 改动）
+  - **显示**：`模型 <name>: N tokens（M 次调用）` 行下，有缓存命中的模型追加缩进子行
+    `缓存命中: N tokens（R%）`（命中率按该模型 promptTokens 计算）；无命中不显示子行
+    （与旧版输出兼容）；总命中率/成本行照旧
+  - **760/760 全绿**（759 + 1 新增 tests/prompt-caching.test.ts：两个模型——
+    deepseek-chat 有命中 400/1000=40% 显示命中子行，deepseek-reasoner 无命中不显示子行、
+    总命中率 400/1200=33% 照旧），tsc 0 错误，**零 agent.ts 改动**
+  - **冒烟实测**（真实 MemoryStore + dist CLI）：/usage 输出 perModel 行带
+    `缓存命中: 400 tokens（40%）`，总行 `缓存命中: 400 tokens（33%）`，SMOKE PASS
+- **下一步候选**：① 【P1】分层上下文（Layer 1 异步滚动摘要——摘要内容升级为 LLM 生成语义级压缩，
+  需评估 run 循环外异步）；② 其他安全的外围增强（server 协议其他管理接口、MCP 工具集完善、测试
+  稳定性等）
+
+---
+
+### 2026-08-12 第四十轮实施（v0.6.41）——CLI 交互模式 `/mcp call`（方向②③，直接调用外部 MCP 工具）
 
 - **P70 CLI 交互模式 `/mcp call` 子命令**（src/cli/index.ts + 测试，commit `765111b`）：
   - **缺口定位**：v0.6.40 给 server 协议补了 `mcp_call`（宿主能直接调用外部 MCP 工具），但
