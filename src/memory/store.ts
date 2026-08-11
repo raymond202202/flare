@@ -27,6 +27,16 @@ interface MemoryRow {
   created_at: string
 }
 
+/** P0（v0.6.29）：缓存/成本用量附加字段（logUsage 可选扩展，缺省行为与旧版一致） */
+export interface UsageExtra {
+  /** 缓存命中 input tokens（DeepSeek prompt_cache_hit_tokens / OpenAI cached_tokens） */
+  cacheReadTokens?: number
+  /** 缓存写入 tokens（Anthropic 风格；多数端点无） */
+  cacheWriteTokens?: number
+  /** 估算成本 USD（无法可靠估算的模型 null） */
+  estimatedCostUsd?: number | null
+}
+
 /**
  * content 序列化：多模态数组（含图片）存 JSON，纯文本原样
  * 图片 part 用占位符替代——不把 base64 图片数据落库（防止 SQLite 膨胀、FTS 污染）
@@ -117,6 +127,9 @@ export class MemoryStore {
         prompt_tokens INTEGER NOT NULL DEFAULT 0,
         completion_tokens INTEGER NOT NULL DEFAULT 0,
         model TEXT,
+        cache_read_tokens INTEGER NOT NULL DEFAULT 0,
+        cache_write_tokens INTEGER NOT NULL DEFAULT 0,
+        estimated_cost_usd REAL,
         created_at TEXT DEFAULT (datetime('now'))
       );
 
@@ -209,6 +222,18 @@ export class MemoryStore {
     }
     if (!colNames.includes('name')) {
       this.db.exec('ALTER TABLE messages ADD COLUMN name TEXT')
+    }
+    // P0（v0.6.29）：usage_log 补缓存/成本列（老库升级，ALTER 幂等）
+    const ucols = this.db.prepare('PRAGMA table_info(usage_log)').all() as any[]
+    const ucolNames = ucols.map(c => c.name)
+    if (!ucolNames.includes('cache_read_tokens')) {
+      this.db.exec('ALTER TABLE usage_log ADD COLUMN cache_read_tokens INTEGER NOT NULL DEFAULT 0')
+    }
+    if (!ucolNames.includes('cache_write_tokens')) {
+      this.db.exec('ALTER TABLE usage_log ADD COLUMN cache_write_tokens INTEGER NOT NULL DEFAULT 0')
+    }
+    if (!ucolNames.includes('estimated_cost_usd')) {
+      this.db.exec('ALTER TABLE usage_log ADD COLUMN estimated_cost_usd REAL')
     }
   }
 
@@ -437,19 +462,31 @@ export class MemoryStore {
     return res.changes
   }
 
-  /** 记录一次 LLM 调用的 token 用量 */
-  logUsage(sessionId: string | null, promptTokens: number, completionTokens: number, model?: string) {
+  /** 记录一次 LLM 调用的 token 用量（v0.6.29 起支持缓存/成本附加字段） */
+  logUsage(sessionId: string | null, promptTokens: number, completionTokens: number, model?: string, extra?: UsageExtra) {
     this.db.prepare(
-      'INSERT INTO usage_log (session_id, prompt_tokens, completion_tokens, model) VALUES (?, ?, ?, ?)'
-    ).run(sessionId, promptTokens, completionTokens, model || null)
+      `INSERT INTO usage_log (session_id, prompt_tokens, completion_tokens, model, cache_read_tokens, cache_write_tokens, estimated_cost_usd)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`
+    ).run(
+      sessionId,
+      promptTokens,
+      completionTokens,
+      model || null,
+      extra?.cacheReadTokens || 0,
+      extra?.cacheWriteTokens || 0,
+      extra?.estimatedCostUsd != null ? extra.estimatedCostUsd : null
+    )
   }
 
-  /** 汇总 token 用量（v0.6.18 起含 perModel 按模型分解：宿主成本核算数据源） */
+  /** 汇总 token 用量（v0.6.18 起含 perModel 按模型分解；v0.6.29 起含缓存/成本汇总） */
   getUsageStats() {
     const row = this.db.prepare(
       `SELECT
          COALESCE(SUM(prompt_tokens), 0) as promptTokens,
          COALESCE(SUM(completion_tokens), 0) as completionTokens,
+         COALESCE(SUM(cache_read_tokens), 0) as cacheReadTokens,
+         COALESCE(SUM(cache_write_tokens), 0) as cacheWriteTokens,
+         COALESCE(SUM(estimated_cost_usd), 0) as estimatedCostUsd,
          COUNT(*) as sessionCount
        FROM usage_log`
     ).get() as any
@@ -458,7 +495,8 @@ export class MemoryStore {
       `SELECT COALESCE(model, 'unknown') as model,
               COUNT(*) as calls,
               COALESCE(SUM(prompt_tokens), 0) as promptTokens,
-              COALESCE(SUM(completion_tokens), 0) as completionTokens
+              COALESCE(SUM(completion_tokens), 0) as completionTokens,
+              COALESCE(SUM(cache_read_tokens), 0) as cacheReadTokens
        FROM usage_log
        GROUP BY model
        ORDER BY calls DESC`
@@ -466,6 +504,9 @@ export class MemoryStore {
     return {
       promptTokens: row.promptTokens,
       completionTokens: row.completionTokens,
+      cacheReadTokens: row.cacheReadTokens,
+      cacheWriteTokens: row.cacheWriteTokens,
+      estimatedCostUsd: row.estimatedCostUsd,
       totalTokens: row.promptTokens + row.completionTokens,
       sessionCount: row.sessionCount,
       perModel: rows.map((m) => ({
@@ -473,17 +514,21 @@ export class MemoryStore {
         calls: m.calls,
         promptTokens: m.promptTokens,
         completionTokens: m.completionTokens,
+        cacheReadTokens: m.cacheReadTokens,
         totalTokens: m.promptTokens + m.completionTokens,
       })),
     }
   }
 
-  /** 单个会话的 token 用量（v0.6.17）：按 session_id 过滤 usage_log（宿主面板\"本会话用量\"数据源） */
+  /** 单个会话的 token 用量（v0.6.17）：按 session_id 过滤 usage_log（宿主面板"本会话用量"数据源；v0.6.29 含缓存） */
   getSessionUsage(sessionId: string) {
     const row = this.db.prepare(
       `SELECT
          COALESCE(SUM(prompt_tokens), 0) as promptTokens,
          COALESCE(SUM(completion_tokens), 0) as completionTokens,
+         COALESCE(SUM(cache_read_tokens), 0) as cacheReadTokens,
+         COALESCE(SUM(cache_write_tokens), 0) as cacheWriteTokens,
+         COALESCE(SUM(estimated_cost_usd), 0) as estimatedCostUsd,
          COUNT(*) as callCount
        FROM usage_log WHERE session_id = ?`
     ).get(sessionId) as any
@@ -491,6 +536,9 @@ export class MemoryStore {
       sessionId,
       promptTokens: row.promptTokens,
       completionTokens: row.completionTokens,
+      cacheReadTokens: row.cacheReadTokens,
+      cacheWriteTokens: row.cacheWriteTokens,
+      estimatedCostUsd: row.estimatedCostUsd,
       totalTokens: row.promptTokens + row.completionTokens,
       callCount: row.callCount,
     }

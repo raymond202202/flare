@@ -113,7 +113,9 @@ export interface SuggestTrimOptions {
  * 内部安全裁剪，LLM 收到拆散的 tool 配对会 400）。
  *
  * 策略：
- *   - system 消息保底（首条 role=system 始终保留）
+ *   - **开头连续 system 块**保底（v0.6.29 起 system 拆成稳定前缀/身份/记忆多条，
+ *     开头块全部保底——只保底首条会丢身份/记忆；末尾的「当前状态」system 属动态区，
+ *     按最近优先正常收集，不挪位置、不占保底预算）
  *   - 其余从尾部向前收集，直到条数达到 maxMessages（默认 30）**或**
  *     token 预算 maxTokens 耗尽（两者任一先到即停；均未配置不裁剪）
  *   - 配对保护：tool 响应向后（实际向前收集时）连带它的 assistant(tool_calls)
@@ -139,13 +141,18 @@ export function trimContextMessages(messages: Message[], options: TrimContextOpt
     return messages
   }
 
-  const systemMsg = messages.find(m => m.role === 'system')
+  // 保底开头连续的 system 块（稳定前缀/身份/记忆——v0.6.29 多条 system），保持相对顺序
+  let sysBlockEnd = 0
+  while (sysBlockEnd < messages.length && messages[sysBlockEnd].role === 'system') {
+    sysBlockEnd++
+  }
+  const systemMsgs = messages.slice(0, sysBlockEnd)
   // 预计算每条消息 token（避免循环内重复估算）
   const tokens = messages.map(m => estimateMessagesTokens([m]))
   const kept: Message[] = []
   let pendingToolCallIds = new Set<string>() // 需要找 tool_calls 的 ID
   // system 保底占用预算（最后单独加回，但 token 计入预算，保证保留部分不超）
-  let usedTokens = systemMsg ? estimateMessagesTokens([systemMsg]) : 0
+  let usedTokens = systemMsgs.reduce((sum, m) => sum + estimateMessagesTokens([m]), 0)
 
   // 停止条件（普通消息加入前检查，放不下就不放——保留部分不超预算）：
   //   条数达到上限（maxMessages>0 时）或 加入本条后 token 预算耗尽
@@ -157,6 +164,11 @@ export function trimContextMessages(messages: Message[], options: TrimContextOpt
   for (let i = messages.length - 1; i >= 0; i--) {
     const msg = messages[i]
     const t = tokens[i]
+
+    // 开头 system 块已在保底集合中，跳过（避免重复收集）
+    if (i < sysBlockEnd) {
+      continue
+    }
 
     // tool 响应：无条件保留（配对链，不可拆散）并记录待配对
     if (msg.role === 'tool' && msg.tool_call_id) {
@@ -183,7 +195,7 @@ export function trimContextMessages(messages: Message[], options: TrimContextOpt
       continue
     }
 
-    // user / assistant(无 tool_calls) / system：配对完整且放不下 → 停；否则保留
+    // user / assistant(无 tool_calls) / 末尾 system（当前状态）：配对完整且放不下 → 停；否则保留
     // 极小预算保底：kept 为空时无条件保留第一条（最新输入）
     if (kept.length > 0 && pendingToolCallIds.size === 0 && overLimit(t)) {
       break
@@ -192,10 +204,8 @@ export function trimContextMessages(messages: Message[], options: TrimContextOpt
     usedTokens += t
   }
 
-  // system 保底（若被收集进 kept 则去重，避免重复）；其余保持原顺序
-  return systemMsg
-    ? [systemMsg, ...kept.filter(m => m !== systemMsg)]
-    : kept
+  // system 块保底在前；其余保持原顺序（末尾「当前状态」system 若被收集则保持原位）
+  return [...systemMsgs, ...kept]
 }
 
 export function suggestTrim(messages: Message[], budgetTokens: number, options: SuggestTrimOptions = {}): TrimSuggestion {
@@ -205,12 +215,16 @@ export function suggestTrim(messages: Message[], budgetTokens: number, options: 
   const reserve = Math.max(0, options.reserveForOutput ?? 0)
   const budget = Math.max(0, budgetTokens - reserve)
 
-  // 分离 system（保底）与其余消息
+  // 分离开头 system 块（保底——v0.6.29 起多条 system：稳定前缀/身份/记忆）与其余消息
   const system: Message[] = []
   let rest: Message[]
-  if (options.keepSystem !== false && messages[0]?.role === 'system') {
-    system.push(messages[0])
-    rest = messages.slice(1)
+  if (options.keepSystem !== false) {
+    let end = 0
+    while (end < messages.length && messages[end].role === 'system') {
+      system.push(messages[end])
+      end++
+    }
+    rest = messages.slice(end)
   } else {
     rest = messages
   }
@@ -419,10 +433,17 @@ export function summarizeTrimmedMessages(
   }
   const summaryMsg: Message = { role, content: buildSummaryText(stats, options) }
 
-  // 组装：system 保底在前 → 摘要紧随其后 → 其余保留消息
-  const first = keptWithoutOldSummary[0]
-  if (first && first.role === 'system') {
-    return [first, summaryMsg, ...keptWithoutOldSummary.slice(1)]
+  // 组装：开头 system 块（稳定前缀/身份/记忆）保底在前 → 摘要紧随其后 → 其余保留消息
+  let sysEnd = 0
+  while (sysEnd < keptWithoutOldSummary.length && keptWithoutOldSummary[sysEnd].role === 'system') {
+    sysEnd++
+  }
+  if (sysEnd > 0) {
+    return [
+      ...keptWithoutOldSummary.slice(0, sysEnd),
+      summaryMsg,
+      ...keptWithoutOldSummary.slice(sysEnd),
+    ]
   }
   return [summaryMsg, ...keptWithoutOldSummary]
 }

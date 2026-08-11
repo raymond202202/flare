@@ -138,10 +138,13 @@ flare server --profile <expert-profile-file> --storage <db-path> [--mcp <mcp-con
 {"type":"get_usage"}
 ```
 
-响应：`{"type":"usage","stats":{"promptTokens":123,"completionTokens":456,"totalTokens":579,"sessionCount":3,"perModel":[{"model":"deepseek-chat","calls":2,"promptTokens":80,"completionTokens":100,"totalTokens":180},{"model":"qwen2.5:7b","calls":1,"promptTokens":43,"completionTokens":356,"totalTokens":399}]}}`
+响应：`{"type":"usage","stats":{"promptTokens":123,"completionTokens":456,"cacheReadTokens":80,"cacheWriteTokens":0,"estimatedCostUsd":0.0002,"totalTokens":579,"sessionCount":3,"perModel":[{"model":"deepseek-chat","calls":2,"promptTokens":80,"completionTokens":100,"cacheReadTokens":50,"totalTokens":180},{"model":"qwen2.5:7b","calls":1,"promptTokens":43,"completionTokens":356,"cacheReadTokens":0,"totalTokens":399}]}}`
 
 - 宿主展示用量统计（成本监控）、AI 面板显示 token 消耗时使用
 - `perModel`（v0.6.18）：按模型分组的用量分解（`model` / `calls` 调用次数 / `promptTokens` / `completionTokens` / `totalTokens`，按调用次数降序；无模型记录归 `unknown`）——成本核算/用量分布数据源
+- `cacheReadTokens` / `cacheWriteTokens` / `estimatedCostUsd`（v0.6.29 P0）：缓存命中/写入 input tokens
+  与估算成本 USD——宿主面板可显示「本轮缓存命中率」（promptTokens 中命中占比），引导连续执行省钱
+  （DeepSeek 前缀缓存命中价 ≈ 未命中的 1/4；`estimatedCostUsd` 无法可靠估算的模型为 0）
 - 与 get_messages 一样只读，不触发生成
 
 #### 9.1 session_usage — 读取单个会话 token 用量（v0.6.17，只读，不生成）
@@ -150,7 +153,7 @@ flare server --profile <expert-profile-file> --storage <db-path> [--mcp <mcp-con
 {"type":"session_usage","sessionId":"s1"}
 ```
 
-响应：`{"type":"session_usage","sessionId":"s1","stats":{"sessionId":"s1","promptTokens":100,"completionTokens":50,"totalTokens":150,"callCount":2}}`
+响应：`{"type":"session_usage","sessionId":"s1","stats":{"sessionId":"s1","promptTokens":100,"completionTokens":50,"cacheReadTokens":40,"cacheWriteTokens":0,"estimatedCostUsd":0.0001,"totalTokens":150,"callCount":2}}`
 
 - 按会话过滤 usage_log：宿主面板"本会话用量/成本"数据源（区别于 get_usage 的全局汇总）
 - `callCount`：该会话的 LLM 调用次数；无用量记录的会话返回全 0（幂等，不抛错）

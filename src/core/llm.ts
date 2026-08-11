@@ -187,6 +187,61 @@ export interface LLMResponse {
   usage?: {
     prompt_tokens: number
     completion_tokens: number
+    /** P0（v0.6.29）：缓存命中 input tokens（DeepSeek prompt_cache_hit_tokens / OpenAI prompt_tokens_details.cached_tokens） */
+    cache_read_tokens?: number
+    /** P0（v0.6.29）：缓存写入 tokens（Anthropic 风格 cache_creation_input_tokens；DeepSeek/OpenAI 通常无此字段） */
+    cache_write_tokens?: number
+    /** P0（v0.6.29）：估算成本 USD（按模型定价；无法可靠估算的模型为 null） */
+    estimated_cost_usd?: number | null
+  }
+}
+
+/**
+ * P0（v0.6.29）：按模型估算一次调用的成本（USD）。
+ *
+ * 定价（每百万 token，2026-08 公开价）：
+ *   - deepseek-chat：输入未命中 $0.27 / 命中 $0.07 / 输出 $1.10
+ *   - deepseek-reasoner：输入未命中 $0.55 / 命中 $0.14 / 输出 $2.19
+ * 其余模型（本地 Ollama / 其他云端）无法可靠估算 → 返回 null（宿主自行处理）。
+ *
+ * 缓存命中的 input 按命中价计（≈1/4 未命中价）；prompt_tokens 已含命中部分。
+ */
+export function estimateCostUsd(
+  model: string,
+  promptTokens: number,
+  completionTokens: number,
+  cacheReadTokens = 0
+): number | null {
+  const pricing: Record<string, { input: number; cacheHit: number; output: number }> = {
+    'deepseek-chat': { input: 0.27, cacheHit: 0.07, output: 1.10 },
+    'deepseek-reasoner': { input: 0.55, cacheHit: 0.14, output: 2.19 },
+  }
+  const p = pricing[model]
+  if (!p) return null
+  const read = Math.min(Math.max(0, cacheReadTokens), Math.max(0, promptTokens))
+  const miss = Math.max(0, promptTokens - read)
+  const usd = (miss / 1e6) * p.input + (read / 1e6) * p.cacheHit + (Math.max(0, completionTokens) / 1e6) * p.output
+  return Math.round(usd * 1e6) / 1e6
+}
+
+/**
+ * P0（v0.6.29）：从 OpenAI 兼容 usage 响应提取缓存字段（纯函数，可单测）。
+ *
+ * 兼容两套格式：
+ *   - DeepSeek：usage.prompt_cache_hit_tokens（命中数）
+ *   - OpenAI：usage.prompt_tokens_details.cached_tokens（命中数）
+ * 缓存写入：Anthropic 风格 prompt_tokens_details.cache_creation_input_tokens（多数兼容端点无此字段 → 0）
+ */
+export function extractUsageCache(usage: any): { cacheReadTokens: number; cacheWriteTokens: number } {
+  const details = usage?.prompt_tokens_details || {}
+  const cacheRead =
+    usage?.prompt_cache_hit_tokens ??
+    details?.cached_tokens ??
+    0
+  const cacheWrite = details?.cache_creation_input_tokens ?? 0
+  return {
+    cacheReadTokens: Number.isFinite(cacheRead) && cacheRead > 0 ? cacheRead : 0,
+    cacheWriteTokens: Number.isFinite(cacheWrite) && cacheWrite > 0 ? cacheWrite : 0,
   }
 }
 
@@ -320,10 +375,23 @@ export class OpenAIProvider implements LLMProvider {
             },
           })),
           model: response.model,
-          usage: response.usage ? {
-            prompt_tokens: response.usage.prompt_tokens,
-            completion_tokens: response.usage.completion_tokens,
-          } : undefined,
+          usage: response.usage ? (() => {
+            // P0（v0.6.29）：缓存命中/写入 + 成本估算（宿主可见缓存命中率）
+            const cache = extractUsageCache(response.usage)
+            const usage: NonNullable<LLMResponse['usage']> = {
+              prompt_tokens: response.usage!.prompt_tokens,
+              completion_tokens: response.usage!.completion_tokens,
+              estimated_cost_usd: estimateCostUsd(
+                response.model,
+                response.usage!.prompt_tokens,
+                response.usage!.completion_tokens,
+                cache.cacheReadTokens
+              ),
+            }
+            if (cache.cacheReadTokens > 0) usage.cache_read_tokens = cache.cacheReadTokens
+            if (cache.cacheWriteTokens > 0) usage.cache_write_tokens = cache.cacheWriteTokens
+            return usage
+          })() : undefined,
         }
       } catch (e: any) {
         lastError = e

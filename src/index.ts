@@ -16,6 +16,8 @@ export {
   createVisionProvider,
   OpenAIProvider,
   resolveProviderOptions,
+  estimateCostUsd,
+  extractUsageCache,
   type LLMProvider,
   type LLMResponse,
   type Message,
@@ -153,6 +155,7 @@ export type {
 
 // ===== 记忆系统 =====
 export { MemoryStore, getMemoryStore, serializeContent, deserializeContent } from './memory/store.js'
+export type { UsageExtra } from './memory/store.js'
 
 // ===== 配置（M2 将解耦为可注入；先导出保留现状）=====
 export { config } from './core/config.js'

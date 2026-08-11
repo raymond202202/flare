@@ -116,40 +116,58 @@ export class Agent {
     }
 
     // M2: 身份 + flare 介绍注入系统提示（品牌共生话术）
+    // P0（v0.6.29）：system 前缀稳定——稳定前缀（systemPrompt）独立、身份独立、记忆独立，
+    // 记忆一变只影响最后一条 system 消息，稳定前缀 + 工具定义永远不变 → DeepSeek 前缀缓存不失效
     let basePrompt = config.systemPrompt || DEFAULT_SYSTEM_PROMPT
-    if (config.identity) {
-      basePrompt += `\n\n## 你的身份\n当用户问"你是谁"、"你是什么助手"或"你叫什么"时，按以下话术回答（自然融入，不要生硬照抄）：\n${config.identity}`
-    }
-    if (config.flareIntro) {
-      basePrompt += `\n\n## 关于 Flare\n当用户问"flare 是什么"、"你是由什么驱动的"、"flare 和你的关系"时，按以下话术回答（可稍作润色，保持核心信息）：\n${config.flareIntro}`
+
+    // 组装 system 消息序列：稳定前缀 → 身份 → 记忆（记忆动态变化不污染前缀）
+    const sysMessages: Message[] = [{ role: 'system', content: basePrompt }]
+
+    // 身份段（构建时确定，会话内不变；拆独立 system 消息放稳定前缀之后）
+    if (config.identity || config.flareIntro) {
+      let identityBlock = ''
+      if (config.identity) {
+        identityBlock += `\n\n## 你的身份\n当用户问"你是谁"、"你是什么助手"或"你叫什么"时，按以下话术回答（自然融入，不要生硬照抄）：\n${config.identity}`
+      }
+      if (config.flareIntro) {
+        identityBlock += `\n\n## 关于 Flare\n当用户问"flare 是什么"、"你是由什么驱动的"、"flare 和你的关系"时，按以下话术回答（可稍作润色，保持核心信息）：\n${config.flareIntro}`
+      }
+      sysMessages.push({ role: 'system', content: identityBlock.trim() })
     }
 
-    // 加载相关记忆
+    // 记忆段（动态：/remember 后变化；独立 system 消息放最后，缓存前缀不受影响）
     const memories = store.getAllMemories()
     if (memories.length > 0) {
       const memoryContext = memories.slice(0, 5).map(m => m.content).join('\n')
-      this.messages.unshift({
-        role: 'system',
-        content: `${basePrompt}\n\n## 关于这个用户\n${memoryContext}`,
-      })
-    } else {
-      this.messages.unshift({
-        role: 'system',
-        content: basePrompt,
-      })
+      sysMessages.push({ role: 'system', content: `## 关于这个用户\n${memoryContext}` })
     }
+
+    this.messages = [...sysMessages, ...this.messages]
   }
 
   /**
    * 动态注入额外系统上下文（如宿主应用当前状态快照）
    * 不污染消息历史；重复调用会替换上一次的注入（避免累积）
+   *
+   * P0（v0.6.29）：作为**独立 system 消息追加到消息末尾**（动态区，历史之后）——
+   * 宿主状态快照每轮变化只影响末尾 token，稳定前缀 + 身份 + 记忆 + 历史全部命中
+   * DeepSeek 前缀缓存（旧版拼进第一条 system 会污染稳定前缀，缓存全失效）
    */
   setContext(extra: string) {
-    const sysMsg = this.messages.find(m => m.role === 'system')
-    if (sysMsg && typeof sysMsg.content === 'string') {
-      const marker = '\n\n## 当前状态'
-      const base = sysMsg.content.split(marker)[0]
-      sysMsg.content = extra ? `${base}${marker}\n${extra}` : base
+    const marker = '## 当前状态'
+    // 查找已有注入（以 marker 开头的独立 system 消息）→ 替换；否则追加到末尾
+    const existingIdx = this.messages.findIndex(
+      m => m.role === 'system' && typeof m.content === 'string' && m.content.startsWith(marker)
+    )
+    if (!extra) {
+      if (existingIdx >= 0) this.messages.splice(existingIdx, 1)
+      return
+    }
+    const msg: Message = { role: 'system', content: `${marker}\n${extra}` }
+    if (existingIdx >= 0) {
+      this.messages[existingIdx] = msg
+    } else {
+      this.messages.push(msg)
     }
   }
 
@@ -288,7 +306,13 @@ export class Agent {
             this.config.sessionId || null,
             response.usage.prompt_tokens,
             response.usage.completion_tokens,
-            response.model
+            response.model,
+            // P0（v0.6.29）：缓存命中/写入 + 成本估算（宿主可见缓存命中率）
+            {
+              cacheReadTokens: response.usage.cache_read_tokens,
+              cacheWriteTokens: response.usage.cache_write_tokens,
+              estimatedCostUsd: response.usage.estimated_cost_usd,
+            }
           )
         } catch { /* 用量记录失败不影响主流程 */ }
       }

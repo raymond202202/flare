@@ -886,6 +886,15 @@ export async function handleSlashCommand(
         output(`  ${chalk.gray('Completion:')} ${usage.completionTokens.toLocaleString()}`)
         output(`  ${chalk.gray('总计:')}       ${usage.totalTokens.toLocaleString()} tokens`)
         output(`  ${chalk.gray('会话数:')}     ${usage.sessionCount}`)
+        // P0（v0.6.29）：缓存命中率 + 估算成本（宿主引导连续执行）
+        const cacheRead = usage.cacheReadTokens || 0
+        if (cacheRead > 0) {
+          const hitRate = usage.promptTokens > 0 ? Math.round((cacheRead / usage.promptTokens) * 100) : 0
+          output(`  ${chalk.gray('缓存命中:')}   ${cacheRead.toLocaleString()} tokens（${hitRate}%）`)
+        }
+        if (typeof usage.estimatedCostUsd === 'number' && usage.estimatedCostUsd > 0) {
+          output(`  ${chalk.gray('估算成本:')}   $${usage.estimatedCostUsd.toFixed(4)}`)
+        }
         // 按模型分解（v0.6.18：getUsageStats.perModel——用量分布/成本核算）
         if (Array.isArray(usage.perModel) && usage.perModel.length > 0) {
           for (const m of usage.perModel) {

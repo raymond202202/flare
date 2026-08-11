@@ -172,6 +172,61 @@ describe('MemoryStore', () => {
     expect(none.callCount).toBe(0)
   })
 
+  it('用量缓存/成本字段（v0.6.29 P0）：logUsage extra 落库 + 汇总', () => {
+    store.logUsage('s1', 1000, 500, 'deepseek-chat', { cacheReadTokens: 800, cacheWriteTokens: 200, estimatedCostUsd: 0.001234 })
+    store.logUsage('s1', 2000, 1000, 'deepseek-chat', { cacheReadTokens: 1500, estimatedCostUsd: 0.002 })
+
+    const stats = store.getUsageStats()
+    expect(stats.cacheReadTokens).toBe(2300)
+    expect(stats.cacheWriteTokens).toBe(200)
+    expect(stats.estimatedCostUsd).toBeCloseTo(0.003234, 6)
+    // perModel 含缓存分解
+    const ds = stats.perModel.find((m: any) => m.model === 'deepseek-chat')
+    expect(ds).toBeTruthy()
+    expect(ds!.cacheReadTokens).toBe(2300)
+
+    // 单会话汇总同样带缓存
+    const s1 = store.getSessionUsage('s1')
+    expect(s1.cacheReadTokens).toBe(2300)
+    expect(s1.cacheWriteTokens).toBe(200)
+    expect(s1.estimatedCostUsd).toBeCloseTo(0.003234, 6)
+  })
+
+  it('老库迁移（v0.6.29 P0）：旧 usage_log 无缓存列 → 打开时自动补列', () => {
+    // 先关掉当前 store，手工建一个"老版本"库（usage_log 无 cache_read_tokens 等列）
+    store.close()
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const Database = require('better-sqlite3')
+    const db = new Database(join(tempDir, 'test.db'))
+    db.exec(`
+      DROP TABLE IF EXISTS usage_log;
+      CREATE TABLE usage_log (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        session_id TEXT,
+        prompt_tokens INTEGER NOT NULL DEFAULT 0,
+        completion_tokens INTEGER NOT NULL DEFAULT 0,
+        model TEXT,
+        created_at TEXT DEFAULT (datetime('now'))
+      );
+    `)
+    db.prepare('INSERT INTO usage_log (session_id, prompt_tokens, completion_tokens, model) VALUES (?, ?, ?, ?)')
+      .run('s-old', 100, 50, 'deepseek-chat')
+    db.close()
+
+    // 重新打开 → migrate 自动补列
+    const reopened = new MemoryStore(join(tempDir, 'test.db'))
+    const stats = reopened.getUsageStats()
+    expect(stats.promptTokens).toBe(100)
+    expect(stats.cacheReadTokens).toBe(0) // 老数据无缓存 → 0（不报错）
+    expect(stats.estimatedCostUsd).toBe(0)
+    // 新写入带缓存字段正常
+    reopened.logUsage('s-new', 500, 250, 'deepseek-chat', { cacheReadTokens: 300, estimatedCostUsd: 0.0005 })
+    const stats2 = reopened.getUsageStats()
+    expect(stats2.cacheReadTokens).toBe(300)
+    expect(stats2.totalTokens).toBe(900)
+    reopened.close()
+  })
+
   it('老库迁移：缺少 tool_call_id 列时自动补充', () => {
     // 模拟旧库：先建表不带 tool_call_id
     const oldDb = store['db']
