@@ -1596,6 +1596,24 @@ export function main() {
     .command('mcp')
     .description('MCP 服务器工具调用/状态（v0.6.6）')
 
+  // v0.6.68：`--header <k:v>` 可重复收集器（HTTP transport 鉴权请求头，与 config headers 合并时 CLI 优先）
+  const collectHeader = (v: string, prev: string[]): string[] => [...prev, v]
+  function parseHeaderKvs(kvs: string[] | undefined): Record<string, string> {
+    const headers: Record<string, string> = {}
+    for (const kv of kvs || []) {
+      const idx = kv.indexOf(':')
+      if (idx <= 0) throw new Error(`--header 格式应为 key:value（收到 "${kv}"）`)
+      const key = kv.slice(0, idx).trim()
+      if (!key) throw new Error(`--header 格式应为 key:value（收到 "${kv}"）`)
+      headers[key] = kv.slice(idx + 1).trim()
+    }
+    return headers
+  }
+  function httpClientHeaders(cfgHeaders: Record<string, string> | undefined, cliKvs: string[] | undefined): Record<string, string> | undefined {
+    const merged = { ...(cfgHeaders || {}), ...parseHeaderKvs(cliKvs) }
+    return Object.keys(merged).length > 0 ? merged : undefined
+  }
+
   mcpCmd
     .command('status')
     .description('查看配置的 MCP 服务器（~/.flare/mcp.json，含传输类型/端点/命令与连接状态；v0.6.51 起统一走 status()）')
@@ -1635,7 +1653,8 @@ export function main() {
     .option('--url <url>', '直接连 HTTP transport 端点（如 http://127.0.0.1:8931/mcp），跳过配置查找')
     .option('--config <path>', 'MCP 配置文件路径（默认 ~/.flare/mcp.json）')
     .option('--timeout <ms>', '单请求超时毫秒（默认 15000）')
-    .action(async (server: string, tool: string, jsonArgs: string | undefined, options: { url?: string; config?: string; timeout?: string }) => {
+    .option('--header <kv>', '附加请求头 key:value（可重复；HTTP transport 鉴权，如 --header "Authorization: Bearer <token>"，v0.6.68）', collectHeader, [])
+    .action(async (server: string, tool: string, jsonArgs: string | undefined, options: { url?: string; config?: string; timeout?: string; header?: string[] }) => {
       try {
         const { MCPClient, MCPHttpClient, McpManager } = await import('../index.js')
         const timeoutMs = options.timeout ? Number(options.timeout) : 15000
@@ -1655,7 +1674,7 @@ export function main() {
         let client: InstanceType<typeof MCPClient> | InstanceType<typeof MCPHttpClient>
         let label = server
         if (options.url) {
-          client = new MCPHttpClient({ url: options.url, timeoutMs })
+          client = new MCPHttpClient({ url: options.url, timeoutMs, headers: httpClientHeaders(undefined, options.header) })
           label = `${server}（${options.url}）`
         } else {
           const mgr = new McpManager({ configPath: options.config })
@@ -1667,7 +1686,7 @@ export function main() {
             throw new Error(`MCP 服务器 ${server} 配置无效：需提供 command（stdio）或 url（HTTP transport）`)
           }
           client = cfg.url
-            ? new MCPHttpClient({ url: cfg.url, timeoutMs: cfg.timeoutMs || timeoutMs })
+            ? new MCPHttpClient({ url: cfg.url, timeoutMs: cfg.timeoutMs || timeoutMs, headers: httpClientHeaders(cfg.headers, options.header) })
             : new MCPClient({ command: cfg.command as string, args: cfg.args, env: cfg.env, timeoutMs })
           if (cfg.url) label = `${server}（${cfg.url}）`
         }
@@ -1695,7 +1714,8 @@ export function main() {
     .option('--config <path>', 'MCP 配置文件路径（默认 ~/.flare/mcp.json）')
     .option('--timeout <ms>', '单请求超时毫秒（默认 15000）')
     .option('--read <uri>', '读取指定资源内容（替代列出元数据）')
-    .action(async (server: string, options: { url?: string; config?: string; timeout?: string; read?: string }) => {
+    .option('--header <kv>', '附加请求头 key:value（可重复；HTTP transport 鉴权，v0.6.68）', collectHeader, [])
+    .action(async (server: string, options: { url?: string; config?: string; timeout?: string; read?: string; header?: string[] }) => {
       try {
         const { MCPClient, MCPHttpClient, McpManager } = await import('../index.js')
         const timeoutMs = options.timeout ? Number(options.timeout) : 15000
@@ -1703,7 +1723,7 @@ export function main() {
         let client: InstanceType<typeof MCPClient> | InstanceType<typeof MCPHttpClient>
         let label = server
         if (options.url) {
-          client = new MCPHttpClient({ url: options.url, timeoutMs })
+          client = new MCPHttpClient({ url: options.url, timeoutMs, headers: httpClientHeaders(undefined, options.header) })
           label = `${server}（${options.url}）`
         } else {
           const mgr = new McpManager({ configPath: options.config })
@@ -1715,7 +1735,7 @@ export function main() {
             throw new Error(`MCP 服务器 ${server} 配置无效：需提供 command（stdio）或 url（HTTP transport）`)
           }
           client = cfg.url
-            ? new MCPHttpClient({ url: cfg.url, timeoutMs: cfg.timeoutMs || timeoutMs })
+            ? new MCPHttpClient({ url: cfg.url, timeoutMs: cfg.timeoutMs || timeoutMs, headers: httpClientHeaders(cfg.headers, options.header) })
             : new MCPClient({ command: cfg.command as string, args: cfg.args, env: cfg.env, timeoutMs })
           if (cfg.url) label = `${server}（${cfg.url}）`
         }
@@ -1759,7 +1779,8 @@ export function main() {
     .option('--timeout <ms>', '单请求超时毫秒（默认 15000）')
     .option('--get <name>', '渲染指定提示词（替代列出元数据）')
     .option('--args <json>', '渲染提示词的参数（--get 时可选，JSON 对象）')
-    .action(async (server: string, options: { url?: string; config?: string; timeout?: string; get?: string; args?: string }) => {
+    .option('--header <kv>', '附加请求头 key:value（可重复；HTTP transport 鉴权，v0.6.68）', collectHeader, [])
+    .action(async (server: string, options: { url?: string; config?: string; timeout?: string; get?: string; args?: string; header?: string[] }) => {
       try {
         const { MCPClient, MCPHttpClient, McpManager } = await import('../index.js')
         const timeoutMs = options.timeout ? Number(options.timeout) : 15000
@@ -1767,7 +1788,7 @@ export function main() {
         let client: InstanceType<typeof MCPClient> | InstanceType<typeof MCPHttpClient>
         let label = server
         if (options.url) {
-          client = new MCPHttpClient({ url: options.url, timeoutMs })
+          client = new MCPHttpClient({ url: options.url, timeoutMs, headers: httpClientHeaders(undefined, options.header) })
           label = `${server}（${options.url}）`
         } else {
           const mgr = new McpManager({ configPath: options.config })
@@ -1779,7 +1800,7 @@ export function main() {
             throw new Error(`MCP 服务器 ${server} 配置无效：需提供 command（stdio）或 url（HTTP transport）`)
           }
           client = cfg.url
-            ? new MCPHttpClient({ url: cfg.url, timeoutMs: cfg.timeoutMs || timeoutMs })
+            ? new MCPHttpClient({ url: cfg.url, timeoutMs: cfg.timeoutMs || timeoutMs, headers: httpClientHeaders(cfg.headers, options.header) })
             : new MCPClient({ command: cfg.command as string, args: cfg.args, env: cfg.env, timeoutMs })
           if (cfg.url) label = `${server}（${cfg.url}）`
         }
@@ -1829,7 +1850,8 @@ export function main() {
     .option('--url <url>', '直接连 HTTP transport 端点（如 http://127.0.0.1:8931/mcp），跳过配置查找')
     .option('--config <path>', 'MCP 配置文件路径（默认 ~/.flare/mcp.json）')
     .option('--timeout <ms>', '单请求超时毫秒（默认 15000）')
-    .action(async (server: string, options: { url?: string; config?: string; timeout?: string }) => {
+    .option('--header <kv>', '附加请求头 key:value（可重复；HTTP transport 鉴权，v0.6.68）', collectHeader, [])
+    .action(async (server: string, options: { url?: string; config?: string; timeout?: string; header?: string[] }) => {
       try {
         const { MCPClient, MCPHttpClient, McpManager } = await import('../index.js')
         const timeoutMs = options.timeout ? Number(options.timeout) : 15000
@@ -1837,7 +1859,7 @@ export function main() {
         let client: InstanceType<typeof MCPClient> | InstanceType<typeof MCPHttpClient>
         let label = server
         if (options.url) {
-          client = new MCPHttpClient({ url: options.url, timeoutMs })
+          client = new MCPHttpClient({ url: options.url, timeoutMs, headers: httpClientHeaders(undefined, options.header) })
           label = `${server}（${options.url}）`
         } else {
           const mgr = new McpManager({ configPath: options.config })
@@ -1849,7 +1871,7 @@ export function main() {
             throw new Error(`MCP 服务器 ${server} 配置无效：需提供 command（stdio）或 url（HTTP transport）`)
           }
           client = cfg.url
-            ? new MCPHttpClient({ url: cfg.url, timeoutMs: cfg.timeoutMs || timeoutMs })
+            ? new MCPHttpClient({ url: cfg.url, timeoutMs: cfg.timeoutMs || timeoutMs, headers: httpClientHeaders(cfg.headers, options.header) })
             : new MCPClient({ command: cfg.command as string, args: cfg.args, env: cfg.env, timeoutMs })
           if (cfg.url) label = `${server}（${cfg.url}）`
         }
@@ -1879,7 +1901,8 @@ export function main() {
     .option('--url <url>', '直接连 HTTP transport 端点（如 http://127.0.0.1:8931/mcp），跳过配置查找')
     .option('--config <path>', 'MCP 配置文件路径（默认 ~/.flare/mcp.json）')
     .option('--timeout <ms>', '单请求超时毫秒（默认 15000）')
-    .action(async (server: string, prompt: string, argument: string, value: string | undefined, options: { url?: string; config?: string; timeout?: string }) => {
+    .option('--header <kv>', '附加请求头 key:value（可重复；HTTP transport 鉴权，v0.6.68）', collectHeader, [])
+    .action(async (server: string, prompt: string, argument: string, value: string | undefined, options: { url?: string; config?: string; timeout?: string; header?: string[] }) => {
       try {
         const { MCPClient, MCPHttpClient, McpManager } = await import('../index.js')
         const timeoutMs = options.timeout ? Number(options.timeout) : 15000
@@ -1887,7 +1910,7 @@ export function main() {
         let client: InstanceType<typeof MCPClient> | InstanceType<typeof MCPHttpClient>
         let label = server
         if (options.url) {
-          client = new MCPHttpClient({ url: options.url, timeoutMs })
+          client = new MCPHttpClient({ url: options.url, timeoutMs, headers: httpClientHeaders(undefined, options.header) })
           label = `${server}（${options.url}）`
         } else {
           const mgr = new McpManager({ configPath: options.config })
@@ -1899,7 +1922,7 @@ export function main() {
             throw new Error(`MCP 服务器 ${server} 配置无效：需提供 command（stdio）或 url（HTTP transport）`)
           }
           client = cfg.url
-            ? new MCPHttpClient({ url: cfg.url, timeoutMs: cfg.timeoutMs || timeoutMs })
+            ? new MCPHttpClient({ url: cfg.url, timeoutMs: cfg.timeoutMs || timeoutMs, headers: httpClientHeaders(cfg.headers, options.header) })
             : new MCPClient({ command: cfg.command as string, args: cfg.args, env: cfg.env, timeoutMs })
           if (cfg.url) label = `${server}（${cfg.url}）`
         }
