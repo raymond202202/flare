@@ -3,20 +3,20 @@
 > 目标：flare 是 Pulse/StorySpire 依赖的 AI Agent 引擎（TS）。任何改动必须安全（tsc 0 错 + 测试全绿才 commit）。
 > 铁律：禁止 push；禁止修改 src/core/agent.ts 的 Agent.run 核心循环。
 
-> **最新状态（v0.6.45）**：**`flare cache-check` prompt caching 验收工具**（方向① P0 验收
-> 自动化，最高优先级）——P0 验收标准「连续两轮调用（间隔<5min）第二轮 cache_read_tokens>0」
-> 此前只能手工对比 /usage：本轮自动化（纯外围，零 agent.ts run 循环改动）——
-> `runCacheCheck(llm?)`（库级导出，llm 依赖注入）：构造**稳定长前缀**（12 块重复 ≈1.2K 字符）
-> 连续两次调用（仅末尾 user 数字不同），第一轮 miss 基准、第二轮期望命中；兼容 DeepSeek
-> `prompt_cache_hit_tokens` / OpenAI `cached_tokens`；DeepSeek 系列按命中价估算节省；调用失败
-> 不抛；CLI `flare cache-check [--model]` → PASS/未命中 exit 1；**顺带修 bug**：
-> `extractUsageCache` 只读原始格式字段，但 `OpenAIProvider.chat` 归一化后丢弃
-> `prompt_cache_hit_tokens` 只留 `usage.cache_read_tokens` → 读不到恒 0（真实冒烟暴露），补
-> 归一化字段回退；**789/789 全绿**（781 + 7 + 1），tsc 0 错误；冒烟实测真实 DeepSeek API——
-> deepseek-v4-flash prompt 971 第二轮命中 896 tokens ✅ PASS（两轮均命中说明缓存跨进程持久），
-> SMOKE PASS。
-> （v0.6.44：CLI /sessions 关键词搜索；v0.6.43：server 协议 search_sessions；v0.6.42：
-> CLI /usage perModel 缓存命中显示；v0.6.41：CLI /mcp call。）
+> **最新状态（v0.6.46）**：**CLI `/trim` 智能裁剪 + `/context` 裁剪提示**（方向④ suggestTrim
+> 宿主接线 CLI 侧）——server 侧 apply_trim（v0.6.35）早已闭环，但 **CLI 交互模式缺裁剪入口**：
+> 上下文超预算只能 `/clear`（清空全部）无法外科手术式裁剪：本轮补齐（纯 CLI 外围 + hooks 参数，
+> 零 agent.ts 改动）——`ContextTrimHooks`（handleSlashCommand 新增可选参数，宿主注入）：
+> `suggest()` 返回建议删除量（suggestTrim 纯函数：system 保底+最近优先+tool_calls↔tool 配对）、
+> `apply(budget?)` 执行裁剪（agent.applyTrim）；CLI 交互模式接线真实 Agent（budget 缺省取
+> config.maxContextTokens 默认 16000，reserveForOutput 1024）；`/context` 超预算追加
+> `💡 可裁剪: 建议删 N 条消息（约 X tokens）——/trim 执行智能裁剪`（预算内/无 hooks 不显示
+> 零回归）；`/trim [budgetTokens]` 执行显示保留/删除条数、预算内「无需裁剪」、非法预算
+> （abc/0/-5/1.5）用法提示不调用、无 hooks 降级「裁剪不可用」不崩溃；**800/800 全绿**
+> （789 + 11 新增），tsc 0 错误，零 agent.ts 改动；冒烟实测真实 MemoryStore+Agent——
+> /trim 300 → 保留 2 删 4（重建 Agent 后仍 2 条，store 同步删除），SMOKE PASS。
+> （v0.6.45：flare cache-check 验收工具；v0.6.44：CLI /sessions 关键词搜索；v0.6.43：
+> server 协议 search_sessions；v0.6.42：CLI /usage perModel 缓存命中显示。）
 
 > 【🔴 当前最高优先级方向（2026-08-11 用户拍板）】**prompt caching 基建 P0 已基本落地 + 验收工具化**：
 > P0-1 前缀稳定 + P0-2 usage 回传（v0.6.29 完成）。验收：`flare cache-check` 一键验收
@@ -27,7 +27,8 @@
 > 下一步候选（按优先级）：
 > ① 【P1】分层上下文（Layer 1 异步滚动摘要——摘要内容升级为 LLM 生成语义级压缩，需评估 run 循环外异步）
 > ② 其他安全的外围增强（server 协议其他管理接口、MCP 工具集完善、测试稳定性等）
->    已覆盖：cache-check 验收工具（v0.6.45）✓ /
+>    已覆盖：CLI /trim 智能裁剪 + /context 提示（v0.6.46）✓ /
+>    cache-check 验收工具（v0.6.45）✓ /
 >    CLI /sessions 关键词搜索（v0.6.44）✓ /
 >    search_sessions 会话搜索（v0.6.43）✓ /
 >    /usage perModel 缓存命中显示（v0.6.42）✓ /
@@ -40,6 +41,39 @@
 >    terminal 退出码（v0.6.33）✓ / CLI 归档命令（v0.6.32）✓ / 归档 API（v0.6.31）✓ /
 >    工具输出治理（v0.6.30）✓ / prompt caching P0（v0.6.29）✓ / MCP 动态资源提供器（v0.6.28）✓ /
 >    confirm 描述（v0.6.27）✓
+
+> ---
+
+> ### 2026-08-12 第四十五轮实施（v0.6.46）——CLI /trim 智能裁剪 + /context 裁剪提示（方向④ suggestTrim 宿主接线 CLI 侧）
+
+> - **P75 CLI `/trim` + `/context` 裁剪提示**（src/cli/index.ts + 测试，commit `464ce04`）：
+>   - **缺口定位**：方向④「suggestTrim 宿主接线」server 侧早已闭环（v0.6.35 apply_trim），
+>     但 **CLI 交互模式缺裁剪入口**——上下文超预算时只能 `/clear`（清空全部），无法外科手术式
+>     裁剪；本轮补齐（纯 CLI 外围 + hooks 参数，零 agent.ts 改动）
+>   - **`ContextTrimHooks`**（handleSlashCommand 新增**可选参数第 10 位**，宿主注入）：
+>     `suggest()` 返回建议删除量（suggestTrim 纯函数：system 保底 + 最近优先 + tool_calls↔tool
+>     配对）、`apply(budget?)` 执行裁剪（`agent.applyTrim`，store 同步删除被裁消息）；
+>     CLI 交互模式接线真实 Agent（budget 缺省取 `config.maxContextTokens` 默认 16000，
+>     `reserveForOutput: 1024`）
+>   - **`/context` 增强**：超预算时追加 `💡 可裁剪: 建议删 N 条消息（约 X tokens）——/trim
+>     执行智能裁剪`（预算内/无 contextTrim 不显示，既有 toContain 断言零回归）；
+>     **`/trim [budgetTokens]`**：执行智能裁剪显示 `✅ 已智能裁剪: 保留 N 条，删除 M 条`;
+>     预算内显示「无需裁剪」；非法预算（abc/0/-5/1.5）用法提示**不调用 apply**；无 hooks /
+>     apply 返回 null 降级「裁剪不可用」不崩溃；`/help` 注册两行（/context 提示 + /trim）
+>   - docs/context-observability.md（「一键执行」小节：apply_trim + CLI /trim）+ README
+>     Changelog + 版本号 0.6.46
+>   - **800/800 全绿**（789 + 11 新增 tests/trim-command.test.ts：/trim 缺省预算调 apply
+>     （undefined 透传）+ 成功显示保留/删除条数 / 显式预算 8000 透传 / 4 种非法预算用法提示
+>     不调 apply / 无 hooks 降级 / apply 返回 null 降级 / 预算内无需裁剪 / 不触发命令不调
+>     apply / help 注册；/context 超预算显示可裁剪提示（建议删 5 条 + 8,800 tokens + /trim
+>     指引）/ 预算内不显示 / 无 contextTrim 零回归），tsc 0 错误，**零 agent.ts 改动**
+>   - **冒烟实测**（真实 MemoryStore + Agent，`storage` 路径注入——Agent 的 store 来自
+>     config.storage 而非 config.store，冒烟脚本踩坑修正）：/trim 300 →
+>     `✅ 已智能裁剪: 保留 2 条，删除 4 条`（system 保底 + 最新消息保留；重建 Agent 后仍
+>     2 条——store 同步删除被裁消息）；/trim abc → 用法提示，SMOKE PASS
+> - **下一步候选**：① 【P1】分层上下文（Layer 1 异步滚动摘要——摘要内容升级为 LLM 生成语义级压缩，
+>   需评估 run 循环外异步）；② 其他安全的外围增强（server 协议其他管理接口、MCP 工具集完善、测试
+>   稳定性等）
 
 > ---
 
