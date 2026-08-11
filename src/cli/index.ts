@@ -1631,10 +1631,11 @@ export function main() {
 
   mcpCmd
     .command('status')
-    .description('查看配置的 MCP 服务器（~/.flare/mcp.json，含传输类型/端点/命令与连接状态；v0.6.51 起统一走 status()）')
+    .description('查看配置的 MCP 服务器（~/.flare/mcp.json，含传输类型/端点/命令与连接状态；v0.6.51 起统一走 status()；v0.6.80 起 --json 结构化输出）')
     .option('--config <path>', 'MCP 配置文件路径（默认 ~/.flare/mcp.json）')
     .option('--connect', '先连接全部配置服务器再显示（真实连接状态 + 工具数；失败不阻塞，错误可见）')
-    .action(async (options: { config?: string; connect?: boolean }) => {
+    .option('--json', 'JSON 结构化输出（v0.6.80：host/脚本程序化消费；含 name/transport/target/connected/toolCount/auth 等，与 server mcp_status 同源；--connect 语义保留）')
+    .action(async (options: { config?: string; connect?: boolean; json?: boolean }) => {
       const { McpManager } = await import('../index.js')
       const mgr = new McpManager({ configPath: options.config })
       // v0.6.51 --connect：先连接全部配置服务器（Promise.allSettled 容错——失败服务器错误在
@@ -1643,6 +1644,11 @@ export function main() {
         await Promise.allSettled(mgr.servers.map((s) => mgr.connect(s.name).catch(() => {})))
       }
       const st = mgr.status()
+      // v0.6.80 --json：结构化输出（未配置 → []，exit code 语义不变；只打印 JSON 不混彩色）
+      if (options.json) {
+        console.log(JSON.stringify(st, null, 2))
+        return
+      }
       if (st.length === 0) {
         console.log(chalk.yellow('未配置 MCP 服务器（~/.flare/mcp.json 的 servers 列表）'))
         return

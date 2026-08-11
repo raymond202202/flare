@@ -341,6 +341,17 @@ Interactive mode commands:
 
 > 中文条目 / Chinese entries · English summary for each version
 
+#### v0.6.80 (2026-08-12) — `flare mcp status --json` 结构化输出（方向② 外围增强）
+
+- ✨ **`flare mcp status` 支持 `--json` 结构化输出**（host/脚本程序化消费）：
+- - 输出与 server mcp_status 同源的 `McpServerStatus[]`（name/transport/target/connected/
+-  toolCount/auth 等；auth 只传布尔不传 token，JSON 不泄漏鉴权信息）
+- - `--connect` 语义保留（先连接再输出真实状态）；未配置 → `[]`（稳定形状，退出码 0）
+- - 人类可读输出不变（向后兼容）；只打印 JSON 不混彩色
+- - README Changelog + 版本号 0.6.80
+- - 🧪 **877/877 全绿**（新增 2 用例：--json 字段齐全 + auth 布尔不泄漏 token；无配置 → []），
+-   tsc 0 错误，**零 agent.ts 改动**
+
 #### v0.6.79 (2026-08-12) — cache-check 人类可读输出命中率百分比（prompt caching 基建深化）
 
 - ✨ **`cache-check` 每轮行加命中率百分比**：`命中 896 tokens（75%）`（prompt 为 0 时不显示）：
