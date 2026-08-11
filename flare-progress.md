@@ -3,21 +3,19 @@
 > 目标：flare 是 Pulse/StorySpire 依赖的 AI Agent 引擎（TS）。任何改动必须安全（tsc 0 错 + 测试全绿才 commit）。
 > 铁律：禁止 push；禁止修改 src/core/agent.ts 的 Agent.run 核心循环。
 
-> **最新状态（v0.6.69）**：**MCP HTTP transport 服务端 Bearer 鉴权**（方向③ MCP 增强，与
-> v0.6.67/68 客户端鉴权闭环）：v0.6.67/68 只解决了「flare 连受保护服务器」但 flare 自己当 HTTP
-> 服务器时仍全开放（仅 127.0.0.1 兜底），跨机/半可信网络暴露原生工具风险高；本轮补齐服务端
-> （纯外围，零 agent.ts 改动）——`startMcpHttpServer({ authToken })`（不匹配 → 401 + -32001
-> Unauthorized 不进入协议处理；未设置匿名照常向后兼容）+ `flare mcp-server --http-auth-token-env
-> <VAR>`（token 从环境变量读不落命令行；未设置报错退出；启动日志标注鉴权已启用）。
-> **864/864 全绿**（新增 7 用例：服务端 401 无 token/错误 token/正确 token 200/未设置向后兼容 +
-> CLI e2e --http-auth-token-env 401→200 + 客户端闭环带 headers 成功/不带 401 reject），tsc 0
-> 错误，**零 agent.ts 改动**。
-> （v0.6.68：CLI mcp 单次命令 --header 鉴权请求头；v0.6.67：MCP HTTP transport 鉴权请求头支持；
-> v0.6.66：/help 同步 /usage 描述；v0.6.65：/usage perModel 行带缓存节省金额；v0.6.64：usage
-> 统计带缓存节省金额估算；v0.6.63：MCP 子命令提示对称补齐；v0.6.62：MCP 单次命令文档补齐；
-> v0.6.61：MCP 命令提示面补全；v0.6.60：flare mcp complete 单次命令；v0.6.59：flare mcp tools
-> 单次命令；v0.6.58：mcp_tools 工具清单桥接三层；v0.6.57：mcp_complete 提示词参数补全桥接；
-> v0.6.56：server mcp_connect/mcp_disconnect 控制面；v0.6.55：/mcp connect 摘要 transport/target；
+> **最新状态（v0.6.74）**：**README 命令行摘要表补齐 v0.6.54/68/69/70 能力**（文档对称）：
+> v0.6.54/68/69/70 的能力在 README 命令行摘要表未同步——用户看不到多轮验收/HTTP 服务端鉴权/
+> --header 鉴权头/[auth] 标记入口；本轮补齐（纯文档，与 v0.6.62 先例一致）——mcp-server
+> --http/--http-auth-token-env、mcp call --header、mcp status [auth]、cache-check --rounds。
+> **868/868 全绿**（纯文档改动），tsc 0 错误，**零 agent.ts 改动**。
+> （v0.6.73：get_config mcpServers 带 auth 标记；v0.6.72：/mcp connect 摘要带 [auth]；v0.6.71：
+> host-protocol --mcp 配置文档补齐；v0.6.70：MCP 状态带 auth 标记；v0.6.69：HTTP 服务端 Bearer
+> 鉴权；v0.6.68：CLI mcp 单次命令 --header；v0.6.67：HTTP transport 鉴权请求头支持；v0.6.66：
+> /help 同步 /usage 描述；v0.6.65：/usage perModel 行带缓存节省金额；v0.6.64：usage 统计带缓存
+> 节省金额估算；v0.6.63：MCP 子命令提示对称补齐；v0.6.62：MCP 单次命令文档补齐；v0.6.61：MCP
+> 命令提示面补全；v0.6.60：flare mcp complete 单次命令；v0.6.59：flare mcp tools 单次命令；
+> v0.6.58：mcp_tools 工具清单桥接三层；v0.6.57：mcp_complete 提示词参数补全桥接；v0.6.56：
+> server mcp_connect/mcp_disconnect 控制面；v0.6.55：/mcp connect 摘要 transport/target；
 > v0.6.54：cache-check --rounds 多轮验收；v0.6.53：CLI /usage 本会话 perModel 子行；v0.6.52：
 > session_usage perModel；v0.6.51：CLI mcp status 统一 status()+--connect；v0.6.50：MCP 连接状态
 > transport/target；v0.6.49：CLI /usage 本会话行缓存命中；v0.6.48：cache-check --json 结构化输出；
@@ -69,6 +67,25 @@
 >    terminal 退出码（v0.6.33）✓ / CLI 归档命令（v0.6.32）✓ / 归档 API（v0.6.31）✓ /
 >    工具输出治理（v0.6.30）✓ / prompt caching P0（v0.6.29）✓ / MCP 动态资源提供器（v0.6.28）✓ /
 >    confirm 描述（v0.6.27）✓
+
+> ---
+
+> ### 2026-08-12 第六十九~七十三轮实施（v0.6.70~74）——MCP 鉴权闭环观测面 + 文档对称（方向③ MCP 增强）
+
+> - **P99 (v0.6.70) `McpServerStatus.auth` + CLI [auth] 标记**（commit `5ed760c`）：v0.6.67~69 建好
+>   客户端↔服务端鉴权但观测面缺失（宿主/CLI 看不出哪些服务器配了鉴权）——status().auth（HTTP 配
+>   headers → true，只传布尔不传 token）+ server mcp_status 自动透传 + CLI /mcp 与 flare mcp
+>   status 显示 [auth]；866/866（+2）
+> - **P100 (v0.6.71) host-protocol --mcp 配置文档补齐**（commit `c800427`，纯文档）：url/headers/
+>   timeoutMs 扩展后 --mcp 示例仍停在 name/command/args/env——补说明 + stdio/HTTP 鉴权双服务器示例
+> - **P101 (v0.6.72) /mcp connect 摘要带 [auth]**（commit `2644c44`）：v0.6.70 只改了状态行，
+>   connect 成功摘要仍无鉴权标记——对称补齐（auth 与 /mcp 状态行同源）；867/867（+1）
+> - **P102 (v0.6.73) get_config.mcpServers 带 auth**（commit `8a057c0`）：运行态 mcp_status 有 auth
+>   但配置视角 get_config 仍只有 name/transport——宿主「设置/关于」看不出鉴权配置；868/868（+1）
+> - **P103 (v0.6.74) README 命令表补齐**（commit `6c283fb`，纯文档）：mcp-server --http/
+>   --http-auth-token-env、mcp call --header、mcp status [auth]、cache-check --rounds
+> - **下一步候选**：① 【P1】分层上下文（Layer 1 异步滚动摘要——需评估 run 循环外异步）；② 其他
+>   安全的外围增强；③ 方向③ MCP 鉴权闭环（v0.6.67~74 客户端/服务端/观测/文档）已完整，转 ①②
 
 > ---
 
