@@ -1409,8 +1409,9 @@ export function main() {
     .option('-p, --port <port>', 'HTTP 监听端口（默认 0 = 随机；仅监听 127.0.0.1 本机）')
     .option('--bridge-resources', '透传外部 MCP 服务器资源（v0.6.28：连接 ~/.flare/mcp.json 全部服务器，外部资源/模板经 flare 暴露给客户端，读取实时代理转发）')
     .option('--bridge-prompts', '透传外部 MCP 服务器提示词（v0.6.37：连接 ~/.flare/mcp.json 全部服务器，外部提示词经 flare 暴露给客户端，渲染实时代理转发）')
-    .option('--config <path>', 'MCP 配置文件路径（--bridge-resources / --bridge-prompts 用，默认 ~/.flare/mcp.json）')
-    .action(async (options: { tools?: string; http?: boolean; port?: string; bridgeResources?: boolean; bridgePrompts?: boolean; config?: string }) => {
+    .option('--bridge-tools', '透传外部 MCP 服务器工具（v0.6.47：连接 ~/.flare/mcp.json 全部服务器，外部工具经 flare 暴露给客户端，调用实时代理转发）')
+    .option('--config <path>', 'MCP 配置文件路径（--bridge-resources / --bridge-prompts / --bridge-tools 用，默认 ~/.flare/mcp.json）')
+    .action(async (options: { tools?: string; http?: boolean; port?: string; bridgeResources?: boolean; bridgePrompts?: boolean; bridgeTools?: boolean; config?: string }) => {
       const { MCPServer, startMcpHttpServer, tools: builtinTools, McpManager } = await import('../index.js')
       const names = options.tools
         ? options.tools.split(',').map((s) => s.trim()).filter(Boolean)
@@ -1421,17 +1422,19 @@ export function main() {
       // v0.6.28：--bridge-resources 把外部 MCP 服务器资源透传给 flare 自身 MCPServer 的客户端——
       // 连接配置的全部服务器，外部资源/模板实时合并进 resources/list，读取时按 uri 找到所属服务器代理转发
       // v0.6.37：--bridge-prompts 对称透传提示词（prompts/list 元数据 + prompts/get 渲染代理）
+      // v0.6.47：--bridge-tools 对称透传工具（getAllTools 代理 Tool 并集——调用经 flare 转发到外部服务器）
       let resourceProvider: import('../index.js').McpResourceProvider | undefined
       let bridgedPrompts: import('../index.js').McpPrompt[] | undefined
-      if (options.bridgeResources || options.bridgePrompts) {
+      let bridgedToolList: import('../index.js').Tool[] = []
+      if (options.bridgeResources || options.bridgePrompts || options.bridgeTools) {
         const mgr = new McpManager({ configPath: options.config })
         const servers = mgr.servers
         if (servers.length === 0) {
-          console.error(chalk.yellow(`${options.bridgeResources ? '--bridge-resources' : '--bridge-prompts'} 但未配置 MCP 服务器（~/.flare/mcp.json 的 servers 列表），仅暴露 flare 自身能力`))
+          console.error(chalk.yellow(`${options.bridgeResources ? '--bridge-resources' : ''}${options.bridgePrompts ? ' --bridge-prompts' : ''}${options.bridgeTools ? ' --bridge-tools' : ''} 但未配置 MCP 服务器（~/.flare/mcp.json 的 servers 列表），仅暴露 flare 自身能力`))
         } else {
           await Promise.allSettled(servers.map((s) => mgr.connect(s.name)))
           const connected = mgr.status().filter((s) => s.connected).length
-          console.error(chalk.gray(`资源透传：已连接 ${connected}/${servers.length} 个外部 MCP 服务器`))
+          console.error(chalk.gray(`桥接：已连接 ${connected}/${servers.length} 个外部 MCP 服务器`))
           if (options.bridgeResources) {
             resourceProvider = {
               listResources: () => mgr.getAllResources().map((r) => ({ uri: r.uri, name: r.name, ...(r.description ? { description: r.description } : {}), ...(r.mimeType ? { mimeType: r.mimeType } : {}) })),
@@ -1457,12 +1460,20 @@ export function main() {
               },
             }))
           }
+          if (options.bridgeTools) {
+            // 外部工具并集（createMcpTools 已包装成 flare Tool 代理——execute 经 flare 转发到所属服务器；
+            // 同名工具保留原名，与 flare 内置同名时客户端按名调用以先注册者为准，可用 -t 收窄内置避免冲突）
+            bridgedToolList = mgr.getAllTools()
+            console.error(chalk.gray(`工具透传：${bridgedToolList.length} 个外部工具已并入工具集（调用实时代理转发）`))
+          }
         }
       }
+      // 工具集 = 内置（-t 收窄）+ 透传的外部工具（--bridge-tools）
+      const finalTools = [...selected, ...bridgedToolList]
       if (options.http) {
         // HTTP transport（v0.6.3）：常驻监听 POST /mcp，Ctrl+C 退出
         const h = await startMcpHttpServer({
-          tools: selected,
+          tools: finalTools,
           resourceProvider,
           ...(bridgedPrompts ? { prompts: bridgedPrompts } : {}),
           port: options.port ? Number(options.port) : undefined,
@@ -1472,7 +1483,7 @@ export function main() {
       }
       // 常驻监听 stdin（MCP 客户端经 stdio 连接），直到 EOF 退出
       const server = new MCPServer({
-        tools: selected,
+        tools: finalTools,
         resourceProvider,
         ...(bridgedPrompts ? { prompts: bridgedPrompts } : {}),
       })
