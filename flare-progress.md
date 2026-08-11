@@ -3,28 +3,31 @@
 > 目标：flare 是 Pulse/StorySpire 依赖的 AI Agent 引擎（TS）。任何改动必须安全（tsc 0 错 + 测试全绿才 commit）。
 > 铁律：禁止 push；禁止修改 src/core/agent.ts 的 Agent.run 核心循环。
 
-> **最新状态（v0.6.48）**：**`flare cache-check --json` 结构化输出**（方向① prompt caching 基建
-> 深化——宿主/CI 程序化验收）——v0.6.45 验收工具只有人类可读输出，宿主/CI 无法程序化消费验收结果
-> （面板「缓存健康度」/ CI「命中才放行」只能解析彩色文本）：本轮补 `cacheCheckToJson` 纯函数
-> （库级导出，序列化 ok/model/hitTokens/savedUsd/detail + first/second 两轮用量快照，不触网不读
-> 密钥）+ CLI `-j/--json`（只打印纯 JSON 不混入彩色行，**exit code 语义保留**：ok → 0、未命中/失败
-> → 1，CI 可直接断言；与 `--model` 可组合）；**804/804 全绿**（802 + 2 新增），tsc 0 错误，
-> 零 agent.ts 改动；冒烟实测真实 API：`cache-check --json` → 纯 JSON ok:true 命中 896 tokens
-> （第一轮也 896——缓存跨进程持久），EXIT=0，SMOKE PASS。
-> （v0.6.47：mcp-server --bridge-tools 工具透传；v0.6.46：CLI /trim 智能裁剪 + /context 裁剪提示；
-> v0.6.45：flare cache-check 验收工具；v0.6.44：CLI /sessions 关键词搜索；v0.6.43：server 协议
-> search_sessions；v0.6.42：CLI /usage perModel 缓存命中显示。）
+> **最新状态（v0.6.49）**：**CLI `/usage` 本会话行缓存命中显示**（方向① prompt caching 基建
+> 深化——观测面补齐）——v0.6.42 给总行 + perModel 行加了缓存命中，但**本会话行**（sessionId
+> 分支）仍是旧格式 `N tokens（M 次调用）`，宿主看「当前会话吃了多少缓存」只能自己从 get_usage
+> 算：本轮补齐（纯 CLI 外围，零 agent.ts 改动）——`getSessionUsage` 本就含 cacheReadTokens，
+> CLI 侧有命中时追加 `· 缓存命中 N tokens（R%）`（命中率按本会话 promptTokens 算）；无命中不
+> 追加（与旧版输出兼容）；**806/806 全绿**（804 + 2 新增），tsc 0 错误，零 agent.ts 改动；
+> 冒烟实测真实 MemoryStore + dist handleSlashCommand：/usage 带 sessionId → 本会话行
+> `1,500 tokens（1 次调用） · 缓存命中 400 tokens（40%）`，SMOKE PASS。
+> （v0.6.48：cache-check --json 结构化输出；v0.6.47：mcp-server --bridge-tools 工具透传；
+> v0.6.46：CLI /trim 智能裁剪 + /context 裁剪提示；v0.6.45：flare cache-check 验收工具；
+> v0.6.44：CLI /sessions 关键词搜索；v0.6.43：server 协议 search_sessions；v0.6.42：CLI /usage
+> perModel 缓存命中显示。）
 
 > 【🔴 当前最高优先级方向（2026-08-11 用户拍板）】**prompt caching 基建 P0 已基本落地 + 验收工具化**：
 > P0-1 前缀稳定 + P0-2 usage 回传（v0.6.29 完成）。验收：`flare cache-check` 一键验收
-> （v0.6.45，真实 API 冒烟 PASS：第二轮命中 896 tokens）+ `--json` 程序化消费（v0.6.48）——
-> 前缀稳定已保证命中基础，实际命中还取决于 DeepSeek 服务端缓存（外部因素）。
+> （v0.6.45，真实 API 冒烟 PASS：第二轮命中 896 tokens）+ `--json` 程序化消费（v0.6.48）+
+> /usage 观测面补齐（v0.6.49）——前缀稳定已保证命中基础，实际命中还取决于 DeepSeek 服务端缓存
+> （外部因素）。
 > 剩余方向：P1 分层上下文（Layer 1 异步滚动摘要，需评估 run 循环外异步）、P2 模型路由钩子。
 
 > 下一步候选（按优先级）：
 > ① 【P1】分层上下文（Layer 1 异步滚动摘要——摘要内容升级为 LLM 生成语义级压缩，需评估 run 循环外异步）
 > ② 其他安全的外围增强（server 协议其他管理接口、MCP 工具集完善、测试稳定性等）
->    已覆盖：cache-check --json 结构化输出（v0.6.48）✓ /
+>    已覆盖：/usage 本会话行缓存命中（v0.6.49）✓ /
+>    cache-check --json 结构化输出（v0.6.48）✓ /
 >    mcp-server --bridge-tools 工具透传（v0.6.47）✓ /
 >    CLI /trim 智能裁剪 + /context 提示（v0.6.46）✓ /
 >    cache-check 验收工具（v0.6.45）✓ /
@@ -43,27 +46,22 @@
 
 > ---
 
-> ### 2026-08-12 第四十七轮实施（v0.6.48）——`flare cache-check --json` 结构化输出（方向① prompt caching 基建深化）
+> ### 2026-08-12 第四十八轮实施（v0.6.49）——CLI `/usage` 本会话行缓存命中显示（方向① prompt caching 基建深化）
 
-> - **P77 `cacheCheckToJson` + CLI `--json`**（src/core/cache-check.ts + src/cli/index.ts + 测试，
->   commit `0a5df7e`）：
->   - **缺口定位**：v0.6.45 验收工具只有人类可读输出，宿主/CI **无法程序化消费**验收结果（面板要
->     显示「缓存健康度」、CI 要断言「命中才放行」只能解析彩色文本）——验收闭环缺「程序化出口」；
->     本轮补齐（纯外围，零 agent.ts 改动）
->   - **`cacheCheckToJson(r)`**（库级导出，纯函数不触网/不读密钥）：序列化全部结构化字段
->     （ok/model/hitTokens/savedUsd/detail + first/second 两轮用量快照）
->   - **CLI**：`flare cache-check -j/--json` 只打印纯 JSON（不混入彩色/人类可读行，宿主直接
->     `JSON.parse`），**exit code 语义保留**（ok → 0，未命中/调用失败 → 1，CI 可直接断言）；
->     与 `--model` 可组合；`--help` 注册
->   - docs/flare-token-architecture.md（验收标准补「验收程序化消费」小节）+ README Changelog +
->     CLI 命令表 + 版本号 0.6.48
->   - **804/804 全绿**（802 + 2 新增 tests/cache-check.test.ts：命中结果 JSON 合法 + 全部结构化
->     字段逐字段断言（首字符即 `{` 无前缀行、ok/hitTokens/detail/savedUsd/first/second）；
->     失败结果也结构化（ok:false + detail + model 空 + savedUsd null，不抛异常）），tsc 0 错误，
->     **零 agent.ts 改动**
->   - **冒烟实测**（真实 DeepSeek API + dist CLI）：`cache-check --json` → 纯 JSON
->     `ok:true, model:deepseek-v4-flash, hitTokens:896, detail:第二轮命中缓存 896 tokens`
->     （第一轮 cacheReadTokens 也 896——缓存跨进程持久，前缀已写入服务端），EXIT=0，SMOKE PASS
+> - **P78 CLI `/usage` 本会话行追加缓存命中**（src/cli/index.ts + 测试，commit `7587e6e`）：
+>   - **缺口定位**：v0.6.42 给总行 + perModel 行加了缓存命中，但**本会话行**（sessionId 分支）
+>     仍是旧格式 `N tokens（M 次调用）`——宿主看「当前会话吃了多少缓存」只能自己从 get_usage
+>     算（观测面三行缺一）；本轮补齐（纯 CLI 外围，零 agent.ts 改动）
+>   - **实现**：`getSessionUsage` 本就含 cacheReadTokens（v0.6.29 回传），CLI 侧有命中时追加
+>     `· 缓存命中 N tokens（R%）`（命中率按本会话 promptTokens 算）；无命中不追加（与旧版输出
+>     兼容，既有断言零回归）
+>   - README Changelog + 版本号 0.6.49
+>   - **806/806 全绿**（804 + 2 新增 tests/prompt-caching.test.ts：本会话行命中显示（sessionId
+>     透传、命中 400/1000=40%、另一会话 s2 不影响统计——getSessionUsage 按 session 过滤）；
+>     本会话无命中不追加段（不显示「缓存命中 0」）），tsc 0 错误，**零 agent.ts 改动**
+>   - **冒烟实测**（真实 MemoryStore + dist handleSlashCommand，smoke-usage-session.mjs）：
+>     /usage 带 sessionId → 本会话行 `本会话: 1,500 tokens（1 次调用） · 缓存命中 400 tokens
+>     （40%）`（与总行/perModel 行 40% 一致），SMOKE PASS
 > - **下一步候选**：① 【P1】分层上下文（Layer 1 异步滚动摘要——摘要内容升级为 LLM 生成语义级压缩，
 >   需评估 run 循环外异步）；② 其他安全的外围增强（server 协议其他管理接口、MCP 工具集完善、测试
 >   稳定性等）
