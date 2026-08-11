@@ -338,6 +338,38 @@ Interactive mode commands:
 
 > 中文条目 / Chinese entries · English summary for each version
 
+#### v0.6.35 (2026-08-11) — 上下文裁剪执行 API（apply_trim：suggestTrim 建议 → 服务器执行闭环）
+- ✂️ **server 协议 `apply_trim`（src/server.ts + core/agent.ts + memory/store.ts）**：
+-  context_status 此前只返回裁剪**建议**（keepIndexes）宿主却无法实际执行（set_context 只能追加状态
+-  快照）——本轮补「建议 → 执行」闭环，宿主一条请求真正瘦身上下文：
+- - **`Agent.applyTrim(keepIndexes)`（run 循环外独立 API）**：按索引保留集立即裁剪内存上下文——
+-  开头连续 system 块（稳定前缀/身份/记忆）无条件保底保持相对顺序；非法索引（非整数/越界）宽松
+-  过滤、重复去重；**空数组/全非法保守不裁剪**（误传不清空上下文）；store 同步只删「构造时加载且
+-  有映射」的被裁消息（run/setContext 新增与内存未加载的 store 消息不受影响，不误删全量历史）；
+-  store 删除失败不影响内存裁剪
+- - **零 run 循环改动**：`storedIdByMsg`（消息对象 → store id）映射只在构造时建立，依赖
+-  trimContextMessages/suggestTrim **保留原对象引用**（unshift/slice 均原引用，已确认）——数组重组后
+-  映射依然有效，无需在 run 循环任何 push 点插桩
+- - **store 层**：`getMessagesWithIds`（含自增 id，结构同 getMessages）/ `deleteMessages(sessionId,
+-  ids)`（只删明确指定的，幂等）——重建 Agent 后裁剪依然生效（上下文持久瘦身）
+- - **双模式**：`{keepIndexes}` 回传 context_status 建议索引立即执行；`{budgetTokens,
+-  reserveForOutput?}` 服务器按 suggestTrim 计算并执行（配对保护由 suggestTrim 保证）；两者任一必填，
+-  非法值（keepIndexes 非整数/负数/越界、budgetTokens 非正整数、reserveForOutput 负数）回 error 含
+-  用法，不触发生成；响应带 keptCount/droppedCount/messageCount/estimatedKeptTokens/
+-  estimatedDroppedTokens（宿主面板可展示裁剪效果）
+- - 📚 docs/host-protocol.md 请求类型列表 + 新章节（apply_trim 双模式示例 + 响应结构）+
+-  README Changelog + 版本号 0.6.35
+- - 🧪 **711/711 全绿**（699 + 12 新增 tests/apply-trim.test.ts：store 3——getMessagesWithIds 结构
+-  与 getMessages 一致+limit+空会话幂等 / deleteMessages 只删指定+空数组·不存在幂等；Agent 集成 5——
+-  保底 system+按索引保留 / store 同步（重建后裁剪生效）/ 非法索引过滤+重复去重+空数组保守 /
+-  无 sessionId 只裁内存不崩 / 多 system 块（身份+记忆形态）整块保底相对顺序；server e2e 4——
+-  参数校验（无参/keepIndexes 非法/budgetTokens 非法/reserveForOutput 非法）/ budgetTokens 模式
+-  （suggestTrim 裁剪+store 同步 get_messages 验证）/ keepIndexes 模式（执行+幂等）/ reserve 合法路径），
+-  tsc 0 错误，**零 agent.ts run 循环改动**
+- - **冒烟实测**：真实 dist CLI 子进程 + 预置历史会话——context_status messageCount 4 →
+-  apply_trim budgetTokens:1 → ok keptCount 2 droppedCount 2 → get_messages 被裁消息消失（仅剩最新）；
+-  keepIndexes 越界/负数/budgetTokens 0 → error 含用法，SMOKE PASS
+
 #### v0.6.34 (2026-08-11) — 工具输出治理策略可配置化（AgentConfig + server 协议 + CLI）
 - 🎛️ **工具输出治理策略全链路可配置（src/core/tool-output.ts + core/agent.ts + server.ts + cli/index.ts）**：
 -  v0.6.30 的按工具类型截断（探索型留头尾/终端型留尾部/长度预算/省略标记）策略此前是硬编码默认值——

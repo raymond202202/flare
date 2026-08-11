@@ -3,7 +3,7 @@
 > 供非 Node 宿主（如 Qt 应用）调用 flare 引擎的本地协议。
 > 传输：stdin/stdout · JSON Lines（每行一个 JSON 对象）
 > 实现：`src/server.ts`（`flare server` 命令）
-> 请求类型：chat / cancel / set_context / list_sessions / recent_sessions / get_messages / search_messages / get_usage / session_usage / context_status / ping / version / create_session / rename_session / clear_session / delete_session / end_session / restore_session / list_archived_sessions / remember / get_memories / delete_memory / tool_result / confirm_result / confirm_status / confirm_revoke / confirm_allow / models / get_config / tools / mcp_status / mcp_resources
+> 请求类型：chat / cancel / set_context / list_sessions / recent_sessions / get_messages / search_messages / get_usage / session_usage / context_status / apply_trim / ping / version / create_session / rename_session / clear_session / delete_session / end_session / restore_session / list_archived_sessions / remember / get_memories / delete_memory / tool_result / confirm_result / confirm_status / confirm_revoke / confirm_allow / models / get_config / tools / mcp_status / mcp_resources
 
 ## 启动
 
@@ -188,11 +188,31 @@ flare server --profile <expert-profile-file> --storage <db-path> [--mcp <mcp-con
 
 - `budgetTokens`：上下文 token 预算（正整数）。带此参数时按建议式裁剪（system 保底 + 最近优先，见 `suggestTrim`）计算应保留哪些消息
 - `reserveForOutput`（可选）：为模型输出预留的 token 数（非负数值），保留部分最多占 `budgetTokens - reserveForOutput`
-- `suggestion.keepIndexes`：建议保留的消息在上下文中的索引（单调递增，首条必为 0 即 system 保底；宿主按索引裁剪后回 `set_context` 即可让裁剪生效）
+- `suggestion.keepIndexes`：建议保留的消息在上下文中的索引（单调递增，首条必为 0 即 system 保底；宿主回传 `apply_trim` 即可让裁剪真正生效）
 - `suggestion.droppedCount`：建议丢弃的消息数
 - `suggestion.estimatedKeptTokens` / `suggestion.estimatedDroppedTokens`：保留/丢弃部分的估算 tokens
 - 非法 `budgetTokens`（非正整数）或 `reserveForOutput`（负数）→ 回 `error`（含原因提示），不触发生成
-- 宿主按预算自管理上下文的推荐流程：`context_status` 带预算取建议 → 裁剪 → `set_context` 回写（零 agent.ts 改动）
+- 宿主按预算自管理上下文的推荐流程：`context_status` 带预算取建议 → `apply_trim` 回传执行（v0.6.35，见 10.2；`set_context` 只能追加状态快照，不能删消息）
+
+#### 10.2 apply_trim — 实际执行上下文裁剪（v0.6.35，不触发生成）
+
+`context_status` 只返回裁剪**建议**；`apply_trim` 才是执行接口——立即裁剪 Agent 内存上下文，并同步删除记忆库中明确被裁的历史消息（重建 Agent 后裁剪依然生效）。双模式，任一必填：
+
+```json
+{"type":"apply_trim","sessionId":"s1","keepIndexes":[0,29,30]}
+```
+
+```json
+{"type":"apply_trim","sessionId":"s1","budgetTokens":4000,"reserveForOutput":500}
+```
+
+响应：`{"type":"ok","sessionId":"s1","keptCount":3,"droppedCount":28,"messageCount":3,"estimatedKeptTokens":1890,"estimatedDroppedTokens":253}`
+
+- `keepIndexes`（数组）：回传 `context_status` 建议的保留索引立即执行；元素必须是非负整数且 < 当前消息数（越界/负数/非整数 → `error` 含用法）
+- `budgetTokens`（正整数）+ `reserveForOutput`（可选，非负数值）：服务器按 `suggestTrim` 计算保留集并执行（system 保底 + 最近优先 + tool_calls↔tool 配对保护）
+- 安全规则：开头连续 system 块（稳定前缀/身份/记忆）无条件保底；只删除「构造时加载且被裁」的历史消息，`run`/`set_context` 新增与内存未加载的消息不受影响（不误删全量历史）；空数组保守不裁剪
+- 响应 `keptCount` / `droppedCount`：保留/丢弃消息数；`messageCount`：裁剪后上下文消息数；`estimatedKeptTokens` / `estimatedDroppedTokens`：裁剪后保留/丢弃部分估算 tokens（宿主面板可展示裁剪效果）
+- 两者都无 → `error`（用法提示）；只读操作不调 LLM、不触发生成
 
 ### 11. create_session — 显式创建会话（宿主会话管理）
 

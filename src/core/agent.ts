@@ -95,6 +95,13 @@ export class Agent {
   private tools: ToolDefinition[] = []
   private toolExecutors: Map<string, Tool> = new Map()
   private store: MemoryStore
+  /**
+   * 消息对象 → store 自增 id（v0.6.35，apply_trim 上下文裁剪的 store 同步用）。
+   * 只在构造时加载的历史消息建立映射；run/setContext 新增消息无映射（不参与删除）。
+   * 依赖 trimContextMessages/suggestTrim 保留原对象引用（已确认 unshift/slice 均原引用）——
+   * 数组重组后映射依然有效，因此无需改动 run 循环。
+   */
+  private storedIdByMsg = new Map<Message, number>()
 
   constructor(config: AgentConfig = {}) {
     this.llm = config.llm || createProvider()
@@ -114,8 +121,10 @@ export class Agent {
     // 加载会话历史
     const store = this.store
     if (config.sessionId) {
-      const history = store.getMessages(config.sessionId)
-      this.messages = history
+      const history = store.getMessagesWithIds(config.sessionId)
+      this.messages = history.map(h => h.message)
+      // v0.6.35：建立消息对象 → store id 映射（apply_trim 裁剪后按 id 同步删除被裁消息）
+      for (const h of history) this.storedIdByMsg.set(h.message, h.id)
       // 清理历史中不完整的 tool_calls 配对（尾部孤儿消息）
       this.cleanOrphanTail()
     }
@@ -458,6 +467,55 @@ export class Agent {
     this.messages = this.config.contextSummarize
       ? summarizeTrimmedMessages(this.messages, base)
       : trimContextMessages(this.messages, base)
+  }
+
+  /**
+   * 宿主显式执行上下文裁剪（v0.6.35，run 循环外独立 API）：按消息索引保留集立即裁剪内存上下文，
+   * 并同步删除 store 中明确被裁的历史消息（重建 Agent 后裁剪依然生效）。
+   *
+   * 安全规则：
+   *   - 开头连续 system 块（稳定前缀/身份/记忆）无条件保底，保持相对顺序
+   *   - 非法索引（非整数/越界）宽松过滤；重复索引去重
+   *   - 只删除「构造时加载且有映射」的被裁消息——run/setContext 新增（无映射）与内存未加载的
+   *     store 消息不受影响（保守：不误删宿主仍可读的全量历史）
+   *   - 失败（store 删除异常）不影响内存裁剪
+   *
+   * @param keepIndexes 保留的消息索引数组（相对 getMessages() 全量索引；建议来自
+   *   suggestTrim / context_status 的 keepIndexes——配对保护由调用方保证）
+   */
+  applyTrim(keepIndexes: number[]): { keptCount: number; droppedCount: number } {
+    const len = this.messages.length
+    // 无合法索引（空数组或全非法）→ 保守不裁剪（返回现状；宿主误传空数组不清空上下文）
+    const legal = (keepIndexes || []).filter(i => Number.isInteger(i) && i >= 0 && i < len)
+    if (legal.length === 0) {
+      return { keptCount: len, droppedCount: 0 }
+    }
+    const wanted = new Set<number>(legal)
+    // 保底：开头连续 system 块（v0.6.29 多条 system：稳定前缀/身份/记忆）
+    let sysBlockEnd = 0
+    while (sysBlockEnd < len && this.messages[sysBlockEnd].role === 'system') {
+      wanted.add(sysBlockEnd)
+      sysBlockEnd++
+    }
+    const kept = this.messages.filter((_, i) => wanted.has(i))
+    const keptSet = new Set(kept)
+    // store 同步：删除有映射且不在保留集的消息（只删明确被裁的）
+    const droppedIds: number[] = []
+    for (const [msg, id] of this.storedIdByMsg) {
+      if (!keptSet.has(msg)) droppedIds.push(id)
+    }
+    if (this.config.sessionId && droppedIds.length > 0) {
+      try {
+        this.store.deleteMessages(this.config.sessionId, droppedIds)
+      } catch { /* store 删除失败不影响内存裁剪 */ }
+    }
+    // 清理映射（只保留保留集条目；Map 迭代中删除当前项安全）
+    for (const msg of this.storedIdByMsg.keys()) {
+      if (!keptSet.has(msg)) this.storedIdByMsg.delete(msg)
+    }
+    const droppedCount = this.messages.length - kept.length
+    this.messages = kept
+    return { keptCount: kept.length, droppedCount }
   }
 
   /** 获取当前消息列表 */

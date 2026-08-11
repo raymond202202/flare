@@ -386,6 +386,41 @@ export class MemoryStore {
   }
 
   /**
+   * 获取会话消息历史（含自增 id，v0.6.35）——结构同 getMessages（最早 limit 条，时间正序）。
+   * 宿主/Agent 执行上下文裁剪（apply_trim）时需要 id 才能在 store 精确定位被裁消息。
+   */
+  getMessagesWithIds(sessionId: string, limit = 50): { id: number; message: Message }[] {
+    const rows = this.db.prepare(
+      'SELECT id, role, content, tool_call_id, name, tool_calls FROM messages WHERE session_id = ? ORDER BY created_at ASC LIMIT ?'
+    ).all(sessionId, limit) as any[]
+
+    return rows.map(r => ({
+      id: Number(r.id),
+      message: {
+        role: r.role as Message['role'],
+        content: deserializeContent(r.content || ''),
+        ...(r.tool_call_id ? { tool_call_id: r.tool_call_id } : {}),
+        ...(r.name ? { name: r.name } : {}),
+        ...(r.tool_calls ? { tool_calls: JSON.parse(r.tool_calls) } : {}),
+      },
+    }))
+  }
+
+  /**
+   * 按 id 删除会话消息（v0.6.35）——上下文裁剪的 store 同步（apply_trim 只删明确被裁的；
+   * 空数组/不存在幂等返回 0；FTS 触发器联动清索引）。
+   */
+  deleteMessages(sessionId: string, ids: number[]): number {
+    if (!ids || ids.length === 0) return 0
+    const uniq = [...new Set(ids)]
+    const placeholders = uniq.map(() => '?').join(',')
+    const res = this.db.prepare(
+      `DELETE FROM messages WHERE session_id = ? AND id IN (${placeholders})`
+    ).run(sessionId, ...uniq)
+    return Number(res.changes) || 0
+  }
+
+  /**
    * 获取会话**最近**的消息（v0.6.21）：时间倒序取最近 limit 条后反转回正序返回——
    * 宿主面板\"最近对话/当前上下文\"数据源（区别于 getMessages 取最早 limit 条，
    * 长会话下 getMessages 看到的是开头而非最新内容）。空/不存在会话幂等返回 []。
