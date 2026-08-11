@@ -105,5 +105,9 @@ Layer 3: 当前轮（最新输入）           ← 必留
 - ✅ **多轮连续命中验收（v0.6.54）**：`flare cache-check --rounds <N>`（2~5，默认 2）——第 1 轮为
   miss 基准，第 2..N 轮**全部**命中才算 PASS（验证服务端缓存持续稳定，避免偶发命中误判）；结果含
   rounds/runs 每轮快照（--json 同步输出）；非法 --rounds → 退出码 1 + 用法提示
+- ✅ **运行期节省观测（v0.6.64~66）**：usage 统计新增 `cacheSavedUsd`（命中价 vs 未命中价差值，
+  按 perModel 逐模型估算；无法定价模型不计入）——store getUsageStats/getSessionUsage + server
+  get_usage/session_usage 透传；CLI /usage 总览/本会话/perModel 行显示「缓存节省 $X」（>0 才显示）；
+  /help 同步说明。宿主面板可显示「缓存已节省 $X」量化缓存价值
 - ⏳ 单次迭代 fire 的 prompt tokens 相比 v0.6.27 基线下降 ≥ 30%（P0-1 后测量；工具定义瘦身 P1 候选）
 - ✅ 全部改动 tsc 0 错 + 测试全绿（v0.6.29：630/630）
