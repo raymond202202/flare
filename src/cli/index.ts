@@ -1052,6 +1052,27 @@ export async function handleSlashCommand(
     return 'continue'
   }
 
+  // /sessions <关键词> 按标题/消息内容搜索会话（v0.6.44：与 server search_sessions 对称——
+  // store.searchSessions LIKE 匹配标题或会话内任意消息内容，找回「聊过什么但忘了哪个会话」）
+  if (lower.startsWith('/sessions ')) {
+    const kw = cmd.replace(/^\/sessions\s+/, '').trim()
+    if (!kw) {
+      output(chalk.yellow('\n用法: /sessions <关键词>（搜索标题或消息内容含关键词的会话）'))
+      return 'continue'
+    }
+    const hits = store.searchSessions(kw, 20)
+    if (hits.length === 0) {
+      output(chalk.gray(`\n未找到包含「${kw}」的会话（标题或消息内容）`))
+    } else {
+      output(chalk.cyan(`\n💬 搜索会话「${kw}」（${hits.length} 个，按更新时间倒序）:`))
+      hits.forEach(s => {
+        const arch = s.archived ? chalk.gray('（已归档）') : ''
+        output(`  ${chalk.gray(`[${formatSessionTime(s.updatedAt)}]`)} ${s.title}${arch} ${chalk.gray(`(${s.messageCount} 条消息)`)}`)
+      })
+    }
+    return 'continue'
+  }
+
   switch (lower) {
     case '/help':
       output(chalk.cyan('\n可用命令:'))
@@ -1063,7 +1084,7 @@ export async function handleSlashCommand(
       output('  /forget      - 删除记忆（如: /forget 浅色主题，删除包含该关键词的记忆）')
       output('  /usage       - 查看 token 用量')
       output('  /context     - 查看当前会话上下文占用（消息数/估算 tokens）')
-      output('  /sessions    - 查看会话列表')
+      output('  /sessions    - 查看会话列表；带关键词搜索会话（如: /sessions 缓存，v0.6.44）')
       output('  /archived    - 查看归档会话（v0.6.32，/archive 归档的会话）')
       output('  /archive [会话ID] - 归档会话（缺省当前会话；数据保留，/restore 可恢复）')
       output('  /restore <会话ID> - 恢复归档会话')
