@@ -192,9 +192,11 @@ describe('server 协议 end_session / restore_session / list_archived_sessions�
 
   it('end_session 后再次 chat 可重建 Agent 正常对话', async () => {
     // 归档后销毁缓存 Agent，chat 应重建（不报错；无 API key 场景走 error 流程而非崩溃）
+    // 注意：子进程 config.ts 会重新加载 ~/.flare/.env（dotenv），可能注入真实 key 走远端 API，
+    // 远端网络慢时超过 vitest 默认 5s —— 显式放宽该测试超时（与 server.test.ts chat 测试同模式）
     await request({ id: ++nextId, type: 'create_session', sessionId: 'arch3', title: '归档会话C' }, ['ok'])
     await request({ id: ++nextId, type: 'end_session', sessionId: 'arch3' }, ['ok'])
     const chat = await request({ id: ++nextId, type: 'chat', sessionId: 'arch3', message: '还在吗' }, ['done', 'error'], 20000)
     expect(['done', 'error']).toContain(chat[chat.length - 1]?.type ?? chat[0]?.type)
-  })
+  }, 45000)
 })
