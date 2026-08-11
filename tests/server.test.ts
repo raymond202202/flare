@@ -582,6 +582,89 @@ describe('flare host server 协议', () => {
     }
   }, 30000)
 
+  it('mcp_connect 缺 server → error（v0.6.56 控制面补齐）', async () => {
+    const msgs = await request({ type: 'mcp_connect' }, { expect: ['error'] })
+    expect(msgs[0].message).toContain('mcp_connect')
+    expect(msgs[0].message).toContain('server')
+  }, 30000)
+
+  it('mcp_connect 未配置的服务器 → error（不崩，提示配置缺失）', async () => {
+    // 无 --mcp：McpManager.connect 对未配置名 throw → 服务端 catch 转 error
+    const msgs = await request({ type: 'mcp_connect', server: 'ghost' }, { expect: ['error'] })
+    expect(msgs[0].message).toContain('未配置 MCP 服务器')
+  }, 30000)
+
+  it('mcp_disconnect 缺 server → error（参数校验）', async () => {
+    const msgs = await request({ type: 'mcp_disconnect' }, { expect: ['error'] })
+    expect(msgs[0].message).toContain('mcp_disconnect')
+    expect(msgs[0].message).toContain('server')
+  }, 30000)
+
+  it('mcp_disconnect 未连接的服务器 → disconnected:false 幂等（不报错）', async () => {
+    // 无 --mcp 服务器；disconnect 未连接 → false（服务不崩、不回 error）
+    const msgs = await request({ type: 'mcp_disconnect', server: 'ghost' }, { expect: ['mcp_disconnect'] })
+    expect(msgs[0].disconnected).toBe(false)
+  }, 30000)
+
+  it('mcp_disconnect / mcp_connect 闭环：断开后 status 未连接 → 重连后已连接 + 工具数/transport/target（v0.6.56）', async () => {
+    // 独立子进程：--mcp mock 配置（本地子进程，无网络）；验证控制面闭环
+    const dir = mkdtempSync(path.join(os.tmpdir(), 'flare-mcp-ctl-test-'))
+    const mcpCfg = path.join(dir, 'mcp.json')
+    const mockServer = path.join(__dirname, 'fixtures', 'mcp-mock-server.mjs')
+    writeFileSync(mcpCfg, JSON.stringify({ servers: [{ name: 'mock', command: process.execPath, args: [mockServer] }] }))
+    const env: Record<string, string> = { ...process.env } as Record<string, string>
+    delete env.DEEPSEEK_API_KEY
+    const c = spawn(process.execPath, [CLI, 'server', '--storage', path.join(dir, 'test.db'), '--mcp', mcpCfg], { env, stdio: ['pipe', 'pipe', 'pipe'] })
+    const rl2 = createInterface({ input: c.stdout! })
+    // 独立子进程请求助手：发一行请求，等首个匹配类型
+    const ask = (msg: any, expectTypes: string[]): Promise<any> => new Promise((resolve, reject) => {
+      const timer = setTimeout(() => { cleanup(); reject(new Error(`超时（mcp 控制面 ${JSON.stringify(msg).slice(0, 80)}）`)) }, 15000)
+      const handler = (line: string) => {
+        try {
+          const parsed = JSON.parse(line)
+          if (expectTypes.includes(parsed.type)) {
+            cleanup()
+            resolve(parsed)
+          }
+        } catch { /* 非 JSON 行忽略 */ }
+      }
+      const cleanup = () => { clearTimeout(timer); rl2.removeListener('line', handler) }
+      rl2.on('line', handler)
+      c.stdin!.write(JSON.stringify(msg) + '\n')
+    })
+    try {
+      // 启动时后台已连接（与 mcp_status 测试一致）→ 先断开
+      const dis = await ask({ type: 'mcp_disconnect', server: 'mock' }, ['mcp_disconnect', 'error'])
+      expect(dis.type).toBe('mcp_disconnect')
+      expect(dis.disconnected).toBe(true)
+      // 断开后 status：connected:false
+      const st1 = await ask({ type: 'mcp_status' }, ['mcp_status'])
+      const s1 = st1.servers.find((s: any) => s.name === 'mock')
+      expect(s1.connected).toBe(false)
+      // 动态重连：connected:true + 工具数 + transport/target（与 mcp_status 同源）
+      const conn = await ask({ type: 'mcp_connect', server: 'mock' }, ['mcp_connect', 'error'])
+      expect(conn.type).toBe('mcp_connect')
+      expect(conn.connected).toBe(true)
+      expect(conn.toolCount).toBe(3)
+      expect(conn.transport).toBe('stdio')
+      expect(conn.target).toContain('mcp-mock-server.mjs')
+      // 重连后 status：connected:true 且 error 清空
+      const st2 = await ask({ type: 'mcp_status' }, ['mcp_status'])
+      const s2 = st2.servers.find((s: any) => s.name === 'mock')
+      expect(s2.connected).toBe(true)
+      expect(s2.toolCount).toBe(3)
+      expect(s2.error).toBeUndefined()
+      // 幂等：已连接再 connect → 直接返回已有工具（不重复连接）
+      const again = await ask({ type: 'mcp_connect', server: 'mock' }, ['mcp_connect', 'error'])
+      expect(again.type).toBe('mcp_connect')
+      expect(again.connected).toBe(true)
+    } finally {
+      c.kill()
+      rl2.close()
+      rmSync(dir, { recursive: true, force: true })
+    }
+  }, 30000)
+
   it('confirm_result 缺 id → error（v0.6.1 确认门协议校验）', async () => {
     const msgs = await request({ type: 'confirm_result', decision: 'allow_once' }, { expect: ['error'] })
     expect(msgs[0].message).toContain('id')
