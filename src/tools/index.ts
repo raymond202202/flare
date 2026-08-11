@@ -297,10 +297,17 @@ export const terminalTool: Tool = {
       })
       return { success: true, output: output.slice(0, 10000) }
     } catch (e: any) {
+      // v0.6.33：错误信息带退出码/信号——AI 可判断失败性质（127 命令不存在、1 一般错误、
+      // 超时信号 SIGTERM 等），与 v0.6.30 终端型输出治理（留尾部）互补
+      const reason = typeof e.status === 'number'
+        ? `（退出码 ${e.status}）`
+        : e.signal
+          ? `（信号 ${e.signal}，可能超时）`
+          : ''
       return {
         success: false,
         output: e.stdout || '',
-        error: `命令执行失败: ${e.message.slice(0, 500)}`,
+        error: `命令执行失败${reason}: ${e.message.slice(0, 500)}`,
       }
     }
   }) as ToolExecutor,

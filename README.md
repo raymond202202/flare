@@ -338,6 +338,18 @@ Interactive mode commands:
 
 > 中文条目 / Chinese entries · English summary for each version
 
+#### v0.6.33 (2026-08-11) — terminal 工具错误信息带退出码/信号（失败可诊断）
+- 🖥️ **terminalTool 失败诊断（src/tools/index.ts）**：命令失败时错误信息带退出码
+-  `（退出码 N）`（execSync error.status，如 127 命令不存在、1 一般错误）或信号
+-  `（信号 SIGTERM，可能超时）`（超时/被信号终止场景，status 非数值时）；无退出码无信号时
+-  输出与旧版完全一致（零回归）——AI 看到退出码可判断失败性质（命令不存在 vs 语法错误 vs 超时），
+-  与 v0.6.30 终端型输出治理（留尾部）互补；危险命令拦截等前置逻辑不变
+- 📚 README Changelog + 版本号 0.6.33
+- 🧪 **681/681 全绿**（677 + 4 新增 tests/terminal-exitcode.test.ts：成功路径零回归 / exit 3 →
+-  「退出码 3」/ 命令不存在 → 127 / exit 0 成功不误报），tsc 0 错误，零 agent.ts 改动
+- **冒烟实测**：真实库调用 terminalTool——`exit 3` →「命令执行失败（退出码 3）」、
+-  不存在命令 →「（退出码 127）」、`echo` 成功输出、`exit 0` success:true，SMOKE PASS
+
 #### v0.6.32 (2026-08-11) — CLI 会话归档命令：/archived /archive /restore（端侧对称接线）
 - 🗄️ **CLI 接线 v0.6.31 归档 API（src/cli/index.ts）**：`/archived` 列出归档会话（结构同 /sessions
 -  含首条消息预览 + 会话ID + 友好时间，空归档友好提示）；`/archive [会话ID]` 归档（缺省归档当前
