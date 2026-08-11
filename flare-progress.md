@@ -3,15 +3,13 @@
 > 目标：flare 是 Pulse/StorySpire 依赖的 AI Agent 引擎（TS）。任何改动必须安全（tsc 0 错 + 测试全绿才 commit）。
 > 铁律：禁止 push；禁止修改 src/core/agent.ts 的 Agent.run 核心循环。
 
-> **最新状态（v0.6.32 + v0.6.33）**：**CLI 会话归档命令 + terminal 退出码落地**——
-> `v0.6.32`：`/archived` 列出归档会话（含首条消息预览+会话ID+友好时间）/ `archive [会话ID]` 归档
-> （缺省当前会话，复用既有 sessionId 参数；数据保留可恢复）/ `/restore <会话ID>` 恢复（无参列出
-> 归档+用法）；三者幂等安全，与 server 协议 end_session/restore_session/list_archived_sessions
-> 语义对称；`v0.6.33`：terminal 工具失败错误信息带退出码（127 命令不存在/1 一般错误）或信号
-> （超时 SIGTERM），AI 可判断失败性质；681/681 全绿（664 + 17 新增），tsc 0 错误，零 agent.ts 改动。
-> 另修 v0.6.31 遗留 session-archive e2e chat 测试 vitest 超时放宽 45s（dotenv 注入真实 key 走
-> 远端 API，网络慢超默认 5s——与 server.test.ts 同模式）。
-> （v0.6.31 会话归档 API 已落地：end_session / restore_session / list_archived_sessions，664/664。）
+> **最新状态（v0.6.34）**：**工具输出治理策略可配置化全链路打通**——
+> `AgentConfig.toolOutputPolicy`（run 循环截断表达式一行参数化，缺省与旧版统一 slice 逐字符一致
+> 零回归）+ server 协议 chat 请求带 `toolOutputPolicy`（validateToolOutputPolicy 纯函数校验，
+> 非法值回 error 含字段名不触发生成）+ CLI `flare server --tool-output-policy '<json>'` server 级
+> 默认 + `get_config` 回显 `defaultToolOutputPolicy`；699/699 全绿（681 + 18 新增），tsc 0 错误，
+> 零 agent.ts run 循环改动；另修 server-context-trim.test.ts 既有 chat e2e vitest 超时放宽 45s。
+> （v0.6.33：terminal 退出码；v0.6.32：CLI 会话归档命令，681/681。）
 
 > 【🔴 当前最高优先级方向（2026-08-11 用户拍板）】**prompt caching 基建 P0 已基本落地**：
 > P0-1 前缀稳定 + P0-2 usage 回传（v0.6.29 完成）。验收：连续两轮调用（间隔<5min）第二轮
@@ -20,8 +18,56 @@
 
 > 下一步候选（按优先级）：
 > ① 【P1】分层上下文（Layer 1 异步滚动摘要——摘要内容升级为 LLM 生成语义级压缩，需评估 run 循环外异步）
-> ② 其他安全的外围增强（server 协议其他管理接口、MCP 工具集完善、工具输出治理策略可配置化透传
->   server 协议、测试稳定性等）
+> ② 其他安全的外围增强（server 协议其他管理接口、MCP 工具集完善、测试稳定性等）
+>    已覆盖：工具输出治理策略可配置化透传（v0.6.34）✓ / terminal 退出码（v0.6.33）✓ /
+>    CLI 归档命令（v0.6.32）✓ / 归档 API（v0.6.31）✓ / 工具输出治理（v0.6.30）✓ /
+>    prompt caching P0（v0.6.29）✓ / MCP 动态资源提供器（v0.6.28）✓ / confirm 描述（v0.6.27）✓
+>
+> ---
+>
+> ### 2026-08-11 第三十三轮实施（v0.6.34）——工具输出治理策略可配置化（候选②补强，策略透传 server 协议）
+>
+>- **P63 工具输出治理策略全链路可配置**（src/core/tool-output.ts + core/agent.ts + server.ts + cli/index.ts +
+>  测试，commit 见下）：
+>  - **缺口定位**：候选②「工具输出治理策略可配置化透传 server 协议」——v0.6.30 的按工具类型截断
+>    （探索型留头尾/终端型留尾部/长度预算/省略标记）策略是**硬编码默认值**，宿主无法按产品场景定制
+>    （如长日志终端型多留尾部、读文件少留头部、自定义省略标记语言）；本轮打通「库级 → 协议 → CLI →
+>    回显」全链路
+>  - **库级**：`AgentConfig.toolOutputPolicy?: ToolOutputPolicy`（可选）——run 循环截断表达式**一行
+>    参数化** `truncateToolOutput(name, result, this.config.toolOutputPolicy)`（缺省 undefined 与
+>    旧版统一 slice **逐字符一致零回归**——JS 默认参数在显式传 undefined 时同样生效；控制流零改动）；
+>    `validateToolOutputPolicy(v)` **纯函数库导出**（与 truncateToolOutput 同模块保证策略形状单一来源）：
+>    非对象（含数组/字符串/数字/布尔）fail、四整数字段（maxOutputChars/maxErrorChars/headChars/
+>    tailChars）非正整数 fail 含字段名、ellipsis 非字符串 fail、**数字字符串可转**（对齐既有 Number
+>    转换风格）、未知字段忽略（宽松）、null/undefined/空对象 ok（等价缺省）
+>  - **server 协议**：chat 请求带 `toolOutputPolicy`（对象）——非法值回 error 含字段名**不触发生成**；
+>    并入 `CtxChatOpts`，`ctxOptsChanged` 纳入（JSON 序列化比较——validate 归一化后字段顺序固定稳定
+>    可复现）策略变化**自动重建 Agent 立即生效**（与 maxContextMessages 同机制）；`HostServerOptions.
+>    defaultToolOutputPolicy` + CLI `flare server --tool-output-policy '<json>'` server 级默认（chat
+>    未指定时应用，请求优先）；`get_config` 回显 `defaultToolOutputPolicy`（只读，不含密钥）
+>  - **CLI flag**：`--tool-output-policy <json>`——JSON.parse + validateToolOutputPolicy 双校验，
+>    非法 JSON / 非法策略 **console.error 清晰报错 + exit(1)**（不静默吞掉）；`--help` 注册
+>  - docs/host-protocol.md chat 参数表 + get_config 响应示例 + README Changelog/CLI 表 + 版本号 0.6.34
+>  - **699/699 全绿**（681 + 18 新增：validateToolOutputPolicy 纯函数 7——合法完整对象归一化 /
+>    null·undefined 空策略 / 非对象 fail / 四整数字段非法值（0/-1/1.5/非数字）fail 含字段名 /
+>    数字字符串可转 / ellipsis 非字符串 fail / 未知字段忽略+空对象 ok；Agent 集成 2——终端型策略
+>    可配置（maxOutputChars/tailChars/ellipsis 生效，tool_result 事件与 LLM 上下文同策略治理）/
+>    默认工具 maxOutputChars 预算生效；server e2e 9——version 启动不崩 / get_config 回显默认策略 /
+>    非法非对象 / maxOutputChars 0 / headChars 'abc' / ellipsis 数字 / 合法请求覆盖默认流程完整 /
+>    空对象等价缺省 / 不带应用 server 默认），tsc 0 错误，**零 agent.ts run 循环改动**
+>    （仅截断表达式参数化 + AgentConfig 新字段）
+>  - **测试稳定性修复（既有测试）**：server-context-trim.test.ts 两个 describe 的 chat e2e 超时——
+>    子进程 dotenv 从 ~/.flare/.env 注入真实 key 走远端 API，网络慢超 vitest 默认 5s（与 v0.6.32
+>    修 session-archive 同模式）；按 server.test.ts 既有模式把 vitest 超时放宽 45s（断言语义不变）
+>  - **冒烟实测**（真实 dist CLI 子进程）：`server --tool-output-policy '{"maxOutputChars":800,
+>    "tailChars":200}'`——version 0.6.34、get_config 回显 `{maxOutputChars:800, tailChars:200}`、
+>    chat 非法 maxOutputChars(0) → 「toolOutputPolicy 的 maxOutputChars 必须是正整数（字符数预算）」
+>    error、合法请求事件流完整；`--tool-output-policy 'not-json'` → 「必须是合法 JSON 对象」报错退出、
+>    `'{"maxOutputChars":0}'` → 「无效: toolOutputPolicy 的 maxOutputChars 必须是正整数」报错退出，
+>    SMOKE PASS
+>- **下一步候选**：① 【P1】分层上下文（Layer 1 异步滚动摘要——摘要内容升级为 LLM 生成语义级压缩，
+>  需评估 run 循环外异步）；② 其他安全的外围增强（server 协议其他管理接口、MCP 工具集完善、测试
+>  稳定性等）
 
 > ---
 
