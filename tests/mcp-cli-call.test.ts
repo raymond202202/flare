@@ -162,6 +162,33 @@ describe('CLI flare mcp call', () => {
     expect(code).toBe(0)
     expect(stdout).toMatch(/未配置 MCP 服务器/)
   }, 20000)
+
+  it('mcp status --json：结构化输出（v0.6.80：host/脚本程序化消费）', async () => {
+    const cfgPath = join(dir, 'mcp.json')
+    writeFileSync(cfgPath, JSON.stringify({
+      servers: [
+        { name: 'remote', url: 'http://127.0.0.1:8931/mcp', headers: { Authorization: 'Bearer x' } },
+        { name: 'mock', command: process.execPath, args: [MOCK_SERVER] },
+      ],
+    }))
+    const { code, stdout } = await runCli(['mcp', 'status', '--json', '--config', cfgPath])
+    expect(code).toBe(0)
+    // 纯 JSON（首字符即 [，无彩色/提示行）
+    expect(stdout.trim().startsWith('[')).toBe(true)
+    const parsed = JSON.parse(stdout)
+    expect(parsed).toHaveLength(2)
+    expect(parsed[0]).toMatchObject({ name: 'remote', transport: 'http', connected: false, auth: true })
+    expect(parsed[0].target).toContain('127.0.0.1:8931')
+    // 不泄漏 token（auth 只传布尔）
+    expect(stdout).not.toContain('Bearer x')
+    expect(parsed[1]).toMatchObject({ name: 'mock', transport: 'stdio' })
+  }, 20000)
+
+  it('mcp status --json：无配置 → []（结构化消费方稳定形状，退出码 0）', async () => {
+    const { code, stdout } = await runCli(['mcp', 'status', '--json', '--config', join(dir, 'missing.json')])
+    expect(code).toBe(0)
+    expect(JSON.parse(stdout)).toEqual([])
+  }, 20000)
 })
 
 describe('CLI flare mcp prompts（v0.6.10）', () => {
