@@ -290,6 +290,7 @@ flare server --profile <expert-profile-file> --storage <db-path> [--mcp <mcp-con
 - 缺 `id` / 非法 `decision` → 回 `error`（含合法值提示）；未知 `id`（已超时/不存在）→ 静默忽略（不污染事件流）
 - 宿主弹窗让用户决策后回传；宿主未在时限内（默认 30s，`--confirm-timeout` 可配）回传 → 按安全默认 `deny` 处理
   （工具结果带超时提示，AI 收到拒绝后自然调整策略）
+- `confirm` 事件（v0.6.27）可选带 `description`（工具描述）——宿主弹窗可展示说明行「AI 想做什么」；无描述不输出字段
 
 ### 18. confirm_status — 查询确认门状态（v0.6.8，确认门管理）
 
@@ -403,7 +404,7 @@ flare server --profile <expert-profile-file> --storage <db-path> [--mcp <mcp-con
 | `text` | `sessionId, content` | AI 生成的文本块（流式） |
 | `tool_call` | `sessionId, name, args` | AI 请求调用工具 |
 | `tool_execute` | `id, name, args` | **请求宿主执行工具**（宿主回 `tool_result`） |
-| `confirm` | `sessionId, id, name, args` | **请求宿主弹窗确认**（v0.6.1，宿主回 `confirm_result`；写回类工具经确认门） |
+| `confirm` | `sessionId, id, name, args, description?` | **请求宿主弹窗确认**（v0.6.1，宿主回 `confirm_result`；写回类工具经确认门；`description` 工具描述 v0.6.27，可选） |
 | `tool_result` | `sessionId, name, content` | 工具执行结果摘要（喂回 AI） |
 | `done` | `sessionId` | 本轮生成结束 |
 | `cancelled` | `sessionId` | 生成被取消 |
@@ -440,7 +441,7 @@ flare server --profile <expert-profile-file> --storage <db-path> [--mcp <mcp-con
 AI 调用需确认的工具（默认 `memory_save`；`flare server --confirm-tools` 可扩展名单）时：
 
 ```
-服务 → confirm {sessionId, id, name, args}   ← 宿主收到：弹窗让用户决策
+服务 → confirm {sessionId, id, name, args, description?}   ← 宿主收到：弹窗让用户决策（description 工具描述 v0.6.27，弹窗可展示「AI 想做什么」）
 宿主 → confirm_result {id, decision}          ← 用户决策：allow_once/allow_session/always/deny/alternative
 服务 → 执行工具（allow_*）或返回拒绝（deny/alternative）
 服务 → tool_result（结果/拒绝喂回 AI）
@@ -449,6 +450,8 @@ AI 调用需确认的工具（默认 `memory_save`；`flare server --confirm-too
 - `allow_session`：本会话内该工具不再重复确认（跨模型重建保留）；`always`：持久化到记忆库 settings 表，跨会话记住
 - 宿主未回 `confirm_result` 超时（默认 30s，`--confirm-timeout` 可配）→ 安全默认 `deny`
 - `deny` / `alternative` 不执行原工具，AI 收到拒绝提示后自然调整策略
+- `description`（v0.6.27）：工具定义有描述时带上（如 `memory_save` 的「保存一条持久记忆…」）——宿主确认弹窗可展示说明行
+  「AI 想做什么」而非只有工具名+参数；工具无描述（如宿主注入的空描述工具）不输出该字段，向后兼容（旧宿主忽略未知字段）
 
 ## 确认门管理（v0.6.8/v0.6.10）
 

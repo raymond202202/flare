@@ -35,12 +35,20 @@ async function startInteractive(opts: { contextSummarize?: boolean } = {}) {
   const mcpManager = new McpManager()
   // 确认门（v0.6.7）：写回类工具（memory_save）执行前终端内确认——allow_session 会话记忆、
   // always 持久化到全局库 settings 表（跨会话记住），超时安全 deny；/allow 管理放行名单
+  // 工具描述（v0.6.27）：确认弹窗说明「AI 想做什么」——内置 + MCP 工具实时查（/mcp connect 后新工具也生效）
+  const currentToolDescription = (name: string): string | undefined => {
+    for (const t of [...tools, ...mcpManager.getAllTools()]) {
+      if (t.definition.function.name === name) return t.definition.function.description || undefined
+    }
+    return undefined
+  }
   const gate = new ConfirmationGate({
     sessionId,
     store: memoryStoreKv(store),
     confirmer: (toolName, args) => terminalConfirmer({
       toolName,
       args,
+      description: currentToolDescription(toolName),
       ask: (prompt) => new Promise<string>((resolve) => {
         // 确认期间渲染循环已暂停、回显已恢复：readline 读一行即可
         const rl = createInterface({ input: process.stdin, output: process.stdout })
@@ -409,13 +417,17 @@ export function parseConfirmAnswer(ans: string): ConfirmDecision {
   }
 }
 
-/** 确认 UI 文案（v0.6.7）：工具名 + 参数摘要（JSON 截断 120 字符） */
-export function formatConfirmPrompt(toolName: string, args: Record<string, any>): string {
+/** 确认 UI 文案（v0.6.7）：工具名 + 参数摘要（JSON 截断 120 字符）；v0.6.27 可选带工具描述（说明行，截断 80 字符） */
+export function formatConfirmPrompt(toolName: string, args: Record<string, any>, description?: string): string {
   const raw = args && Object.keys(args).length > 0 ? JSON.stringify(args) : ''
   const summary = raw ? raw.slice(0, 120) + (raw.length > 120 ? '…' : '') : ''
   const head = `⚠️ AI 想调用「${toolName}」${summary ? `（${summary}）` : ''}`
+  const desc = description
+    ? `  说明: ${description.slice(0, 80)}${description.length > 80 ? '…' : ''}`
+    : ''
   return [
     `\n${head}`,
+    ...(desc ? [desc] : []),
     '  [y] 允许一次    [s] 本次会话允许    [a] 总是允许    [n] 拒绝（默认）',
     '  你的选择 [y/s/a/n]: ',
   ].join('\n')
@@ -436,6 +448,8 @@ function confirmFeedbackText(decision: ConfirmDecision): string {
 export interface TerminalConfirmOptions {
   toolName: string
   args: Record<string, any>
+  /** 工具描述（v0.6.27）：确认弹窗说明行「AI 想做什么」；无描述不显示 */
+  description?: string
   /** 读行实现（CLI 用 readline question；测试注入 fake） */
   ask: (prompt: string) => Promise<string>
   /** 确认前回调（暂停动画渲染、恢复终端回显） */
@@ -454,7 +468,7 @@ export interface TerminalConfirmOptions {
 export async function terminalConfirmer(opts: TerminalConfirmOptions): Promise<ConfirmDecision> {
   opts.onPause?.()
   try {
-    const answer = await opts.ask(formatConfirmPrompt(opts.toolName, opts.args))
+    const answer = await opts.ask(formatConfirmPrompt(opts.toolName, opts.args, opts.description))
     const decision = parseConfirmAnswer(answer)
     opts.onFeedback?.(`⚠️ 工具「${opts.toolName}」${confirmFeedbackText(decision)}`)
     return decision

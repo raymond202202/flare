@@ -338,6 +338,25 @@ Interactive mode commands:
 
 > 中文条目 / Chinese entries · English summary for each version
 
+#### v0.6.27 (2026-08-11) — confirm 事件带工具描述（宿主弹窗确认流程打磨）
+- 🪟 **server 协议 `confirm` 事件带 `description`（src/server.ts）**：工具定义有描述时（如 `memory_save` 的
+  「保存一条持久记忆…」）随事件带上——宿主确认弹窗可展示说明行「AI 想做什么」，而非只有工具名+参数；
+  工具无描述（如宿主注入的空描述工具）不输出该字段（JSON.stringify 丢 undefined，**向后兼容**：旧宿主忽略未知字段）
+- 🎨 **CLI 终端确认弹窗同样带描述**：`formatConfirmPrompt` 可选第三参描述（说明行截断 80 字符）；
+  交互模式 confirmer 实时查内置 + MCP 工具描述（/mcp connect 后新工具也生效）；缺省行为与旧版完全一致（零回归）
+- 🧩 **`buildConfirmEvent` 纯函数库导出**（构造 confirm 事件，可单测）；`ConfirmEvent` 类型
+- 📚 docs/host-protocol.md §17 + 确认流章节 + 事件表（confirm 行 description?）+ README Changelog + 版本号 0.6.27
+- 🧪 新增 9 项测试（buildConfirmEvent 4：带描述字段完整 / 无描述序列化后无 key / 空描述视为无 / args 归一 {}；
+  CLI 5：formatConfirmPrompt 说明行 + 超长截断 + 缺省无说明行（与旧版一致）、terminalConfirmer 带描述透传 ask /
+  缺省无说明行）；**593/593 全绿**（584 + 9），tsc 0 错误，零 agent.ts 改动
+- 🔥 冒烟实测（真实 server 子进程 + mock OpenAI 端点）：场景1——AI 调 `memory_save` → confirm 事件带完整
+  描述（`保存一条持久记忆…`）；场景2——`--confirm-tools host_write` + 宿主注入空描述工具 → confirm 事件
+  **无 description 字段**（向后兼容）；两场景均以 done 正常收尾，SMOKE PASS
+- EN: `confirm` events now optionally carry the tool `description` (populated from tool definitions at agent
+  build time) so host confirmation dialogs can show what the AI intends to do; CLI terminal confirm prompts
+  show the same description line. Tools without a description omit the field (backward compatible).
+  593/593 green, zero Agent.run changes.
+
 #### v0.6.26 (2026-08-11) — McpManager 资源桥接 + server 协议 mcp_resources
 - 📦 **McpManager 资源桥接（src/mcp/manager.ts）**：连接外部 MCP 服务器时除桥接工具外，同时拉取
   `resources/list` + `resources/templates/list`（容错——服务器无资源能力/请求失败静默降级为空数组，
