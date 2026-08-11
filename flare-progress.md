@@ -3,15 +3,17 @@
 > 目标：flare 是 Pulse/StorySpire 依赖的 AI Agent 引擎（TS）。任何改动必须安全（tsc 0 错 + 测试全绿才 commit）。
 > 铁律：禁止 push；禁止修改 src/core/agent.ts 的 Agent.run 核心循环。
 
-> **最新状态（v0.6.42）**：**CLI `/usage` perModel 缓存命中显示**（方向① prompt caching
-> 基建深化）——v0.6.29 P0 已回传 cache_read_tokens（总行显示命中率），getUsageStats.perModel
-> 也早已聚合 cacheReadTokens，但 **CLI `/usage` 的 perModel 行只显示 totalTokens + calls**——
-> 多模型场景（如 chat + reasoner 混合）看不到每个模型的缓存命中分布：本轮补齐（纯 CLI 外围，
-> 零 agent.ts 改动）——模型行下有命中的追加缩进子行 `缓存命中: N tokens（R%）`（命中率按该
-> 模型 promptTokens 计算）；无命中不显示子行（与旧版输出兼容）；总命中率/成本行照旧；
-> **760/760 全绿**（759 + 1 新增），tsc 0 错误，零 agent.ts 改动；冒烟实测真实 MemoryStore +
-> dist CLI 全链路，SMOKE PASS。
-> （v0.6.41：CLI /mcp call；v0.6.40：server 协议 mcp_call + McpManager.callTool；v0.6.39：CLI /mcp read/render。）
+> **最新状态（v0.6.43）**：**server 协议 `search_sessions` 会话搜索**（方向② server 协议
+> 其他管理接口）——`list_sessions` 只能全量列出、`search_messages`（v0.6.24）返回**消息级**
+> 结果，宿主面板搜索框缺**会话级**搜索（先搜会话→点进会话→再定位消息的闭环）：本轮补齐
+> （纯外围，零 agent.ts 改动）——`MemoryStore.searchSessions(query, limit=20)` LIKE 匹配
+> **会话标题或会话内任意消息内容**（DISTINCT 去重、结构同 getAllSessions 含消息数/归档标记、
+> 按更新时间倒序、空 query 空数组不误搜全部）；server 协议 `search_sessions {query, limit?}`
+> → `{type:'search_sessions', query, sessions}`——query 必填 error 含用法、limit 1~100 整数
+> 非法 error、无匹配空数组不报错、只读不触发生成；**774/774 全绿**（760 + 14 新增），tsc 0
+> 错误，零 agent.ts 改动；冒烟实测真实 dist CLI 0.6.43，SMOKE PASS。
+> （v0.6.42：CLI /usage perModel 缓存命中显示；v0.6.41：CLI /mcp call；v0.6.40：server 协议
+> mcp_call + McpManager.callTool；v0.6.39：CLI /mcp read/render。）
 
 > 【🔴 当前最高优先级方向（2026-08-11 用户拍板）】**prompt caching 基建 P0 已基本落地**：
 > P0-1 前缀稳定 + P0-2 usage 回传（v0.6.29 完成）。验收：连续两轮调用（间隔<5min）第二轮
@@ -21,7 +23,8 @@
 > 下一步候选（按优先级）：
 > ① 【P1】分层上下文（Layer 1 异步滚动摘要——摘要内容升级为 LLM 生成语义级压缩，需评估 run 循环外异步）
 > ② 其他安全的外围增强（server 协议其他管理接口、MCP 工具集完善、测试稳定性等）
->    已覆盖：/usage perModel 缓存命中显示（v0.6.42）✓ /
+>    已覆盖：search_sessions 会话搜索（v0.6.43）✓ /
+>    /usage perModel 缓存命中显示（v0.6.42）✓ /
 >    /mcp call 交互命令（v0.6.41）✓ /
 >    mcp_call 协议+callTool 代理（v0.6.40）✓ /
 >    /mcp read/render 交互命令（v0.6.39）✓ /
@@ -31,9 +34,44 @@
 >    terminal 退出码（v0.6.33）✓ / CLI 归档命令（v0.6.32）✓ / 归档 API（v0.6.31）✓ /
 >    工具输出治理（v0.6.30）✓ / prompt caching P0（v0.6.29）✓ / MCP 动态资源提供器（v0.6.28）✓ /
 >    confirm 描述（v0.6.27）✓
->
+
 > ---
->
+
+> ### 2026-08-12 第四十二轮实施（v0.6.43）——server 协议 search_sessions（按标题/消息内容搜索会话，方向②）
+
+> - **P72 server 协议 `search_sessions` 会话搜索**（src/memory/store.ts + src/server.ts + 测试，
+>   commit `a027054`）：
+>   - **缺口定位**：方向②「server 协议其他管理接口」——`list_sessions` 只能**全量**列出、
+>     `search_messages`（v0.6.24）返回**消息级**结果，宿主面板搜索框缺**会话级**搜索
+>     （先搜会话→点进会话看详情→再 search_messages 定位具体消息的闭环缺失）；本轮补齐
+>     （纯外围，零 agent.ts 改动）
+>   - **`MemoryStore.searchSessions(query, limit=20)`**：LIKE 匹配**会话标题或会话内任意消息
+>     内容**（LEFT JOIN messages + `WHERE s.title LIKE ? OR m.content LIKE ?`，DISTINCT 去重——
+>     一会话多条命中只出现一次）；**结构同 getAllSessions**（id/title/createdAt/updatedAt/
+>     messageCount/archived，不过滤归档）；按更新时间倒序；**空/空白 query 返回空数组**
+>     （不误搜全部）
+>   - **server 协议 `search_sessions {query, limit?}`** → `{type:'search_sessions', query,
+>     sessions:[...]}`：query 必填（缺省/空白 error 含用法「search_sessions 需要 query 参数」）；
+>     limit 1~100 整数（0/-1/1.5/abc/101 error「limit 必须是 1~100 的整数」）；无匹配返回空数组
+>     不报错；只读不触发生成、不创建会话（getAgent 同 list_sessions 模式）
+>   - docs/host-protocol.md（请求类型列表 + §4.2 新章节 + 响应表）+ README Changelog + 版本号 0.6.43
+>   - **774/774 全绿**（760 + 14 新增 tests/session-search.test.ts：MemoryStore 单测 8——
+>     标题 LIKE 匹配（中文）/ 消息内容匹配（标题不含关键词也命中 + messageCount）/ DISTINCT
+>     去重 / 空·空白 query 空数组 / 无匹配空数组 / limit 收窄 / updated_at 倒序（datetime('now')
+>     秒级粒度，sleep 1.1s 越过）/ 结构同 getAllSessions + 归档不过滤；server e2e 6——真实
+>     子进程 + **预置 DB**（server 启动前 MemoryStore 写库，不走 chat/LLM/网络）：标题匹配闭环 /
+>     内容匹配闭环 / 无匹配空数组 / 缺 query error 含用法 / limit 非法（5 种）error / limit
+>     收窄多命中生效），tsc 0 错误，**零 agent.ts 改动**
+>   - **冒烟实测**（真实 dist CLI 0.6.43 子进程 + 预置 DB）：version 0.6.43 → search_sessions
+>     `{query:'集成'}` → `flutter 集成指南` 命中（messageCount 1）；`{query:'前缀稳定'}` → 两个
+>     会话命中（limit 1 收窄为 1）；缺 query → 「search_sessions 需要 query 参数…」；limit 0 →
+>     「search_sessions 的 limit 必须是 1~100 的整数」，SMOKE PASS
+> - **下一步候选**：① 【P1】分层上下文（Layer 1 异步滚动摘要——摘要内容升级为 LLM 生成语义级压缩，
+>   需评估 run 循环外异步）；② 其他安全的外围增强（server 协议其他管理接口、MCP 工具集完善、测试
+>   稳定性等）
+
+> ---
+
 > ### 2026-08-12 第四十一轮实施（v0.6.42）——CLI `/usage` perModel 缓存命中显示（方向①，prompt caching 基建深化）
 
 - **P71 CLI `/usage` 按模型分解显示缓存命中**（src/cli/index.ts + 测试，commit `814ff91`）：
