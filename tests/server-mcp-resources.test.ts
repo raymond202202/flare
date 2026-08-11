@@ -187,3 +187,41 @@ describe('flare host server mcp_get_prompt 协议（v0.6.38 提示词渲染代�
     expect(msgs[0].message).toMatch(/未连接/)
   }, 30000)
 })
+
+describe('flare host server mcp_call 协议（v0.6.40 工具调用代理）', () => {
+  it('mcp_call → 调用已连接服务器的工具（真实子进程闭环，参数透传）', async () => {
+    const msgs = await request({ type: 'mcp_call', server: 'mock', tool: 'add_numbers', args: { a: 2, b: 3 } }, ['mcp_call'])
+    const res = msgs[0]
+    expect(res.type).toBe('mcp_call')
+    expect(res.server).toBe('mock')
+    expect(res.tool).toBe('add_numbers')
+    expect(res.success).toBe(true)
+    expect(res.output).toBe('5')
+  }, 30000)
+
+  it('mcp_call → 工具级失败 success:false + error（isError 透传，服务不崩）', async () => {
+    const msgs = await request({ type: 'mcp_call', server: 'mock', tool: 'fail_tool' }, ['mcp_call'])
+    const res = msgs[0]
+    expect(res.type).toBe('mcp_call')
+    expect(res.success).toBe(false)
+    expect(res.error).toContain('出错了')
+  }, 30000)
+
+  it('mcp_call → 未知工具 error（透传外部服务器错误，服务不崩）', async () => {
+    const msgs = await request({ type: 'mcp_call', server: 'mock', tool: 'ghost_tool' }, ['error'])
+    expect(msgs[0].type).toBe('error')
+    expect(msgs[0].message).toMatch(/未知工具/)
+  }, 30000)
+
+  it('mcp_call → 缺 server / tool error（含用法）', async () => {
+    const msgs = await request({ type: 'mcp_call', tool: 'echo_text' }, ['error'])
+    expect(msgs[0].message).toMatch(/server 和 tool/)
+    const msgs2 = await request({ type: 'mcp_call', server: 'mock' }, ['error'])
+    expect(msgs2[0].message).toMatch(/server 和 tool/)
+  }, 30000)
+
+  it('mcp_call → 未连接服务器 error（清晰提示）', async () => {
+    const msgs = await request({ type: 'mcp_call', server: 'ghost', tool: 'echo_text' }, ['error'])
+    expect(msgs[0].message).toMatch(/未连接/)
+  }, 30000)
+})

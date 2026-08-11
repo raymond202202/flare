@@ -3,7 +3,7 @@
 > 供非 Node 宿主（如 Qt 应用）调用 flare 引擎的本地协议。
 > 传输：stdin/stdout · JSON Lines（每行一个 JSON 对象）
 > 实现：`src/server.ts`（`flare server` 命令）
-> 请求类型：chat / cancel / set_context / list_sessions / recent_sessions / get_messages / search_messages / get_usage / session_usage / context_status / apply_trim / ping / version / create_session / rename_session / clear_session / delete_session / end_session / restore_session / list_archived_sessions / remember / get_memories / delete_memory / tool_result / confirm_result / confirm_status / confirm_revoke / confirm_allow / models / get_config / tools / mcp_status / mcp_resources / mcp_prompts / mcp_read_resource / mcp_get_prompt
+> 请求类型：chat / cancel / set_context / list_sessions / recent_sessions / get_messages / search_messages / get_usage / session_usage / context_status / apply_trim / ping / version / create_session / rename_session / clear_session / delete_session / end_session / restore_session / list_archived_sessions / remember / get_memories / delete_memory / tool_result / confirm_result / confirm_status / confirm_revoke / confirm_allow / models / get_config / tools / mcp_status / mcp_resources / mcp_prompts / mcp_read_resource / mcp_get_prompt / mcp_call
 
 ## 启动
 
@@ -345,6 +345,26 @@ flare server --profile <expert-profile-file> --storage <db-path> [--mcp <mcp-con
 - 错误：缺 `server`/`prompt` → error 含用法；服务器未连接 → error「MCP 服务器未连接: <name>」；未知提示词 → 透传外部服务器错误（服务不崩）
 - 只读，不触发生成、不创建会话；等待启动时的后台连接落定（与 `mcp_status` 一致）
 
+### 16.5 mcp_call — 调用已连接 MCP 服务器的工具（v0.6.40）
+
+```json
+{"type":"mcp_call","server":"mock","tool":"add_numbers","args":{"a":2,"b":3}}
+```
+
+响应（成功）：`{"type":"mcp_call","server":"mock","tool":"add_numbers","success":true,"output":"5"}`
+
+响应（工具级失败）：`{"type":"mcp_call","server":"mock","tool":"fail_tool","success":false,"error":"出错了","output":"出错了"}`
+
+- `server`：必填，MCP 服务器名（`mcp_status`/`mcp_resources` 清单里的名称）
+- `tool`：必填，工具名（`tools` 请求清单里 `source:"mcp"` 的工具，或该服务器 tools/list 暴露的工具）
+- `args`：可选，工具参数（JSON 对象，按该工具 inputSchema 传；缺省不传）
+- 代理转发 `tools/call`（McpManager.callTool）——与 `tools`（清单）配套：清单只能看到工具元数据，
+  本接口**直接执行**外部 MCP 工具，宿主面板可一键触发/调试外部工具；**工具级失败**（isError）
+  返回 `success:false` + `error`（服务不崩，工具结果原样透传）
+- 错误：缺 `server`/`tool` → error 含用法；服务器未连接 → error「MCP 服务器未连接: <name>」；
+  未知工具/协议层错误 → 透传外部服务器错误（服务不崩）
+- 不触发生成、不创建会话；等待启动时的后台连接落定（与 `mcp_status` 一致）
+
 ### 17. confirm_result — 回传用户确认决策（v0.6.1，响应 confirm 事件）
 
 ```json
@@ -506,6 +526,7 @@ flare server --profile <expert-profile-file> --storage <db-path> [--mcp <mcp-con
 | `config` | `confirmTools, confirmTimeoutMs, defaultMaxTokens, defaultTemperature, defaultMaxContextMessages, defaultMaxContextTokens, toolTimeoutMs, namespace, storage, mcpServers` | 服务器运行配置（get_config 响应，v0.6.18，只读） |
 | `mcp_read_resource` | `server, uri, contents` | 外部 MCP 资源内容（mcp_read_resource 响应，v0.6.38） |
 | `mcp_get_prompt` | `server, prompt, description?, messages` | 外部 MCP 提示词渲染结果（mcp_get_prompt 响应，v0.6.38） |
+| `mcp_call` | `server, tool, success, output?, error?` | 外部 MCP 工具调用结果（mcp_call 响应，v0.6.40） |
 
 ## 工具执行流（宿主代理工具）
 

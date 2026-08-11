@@ -106,6 +106,15 @@ flare server --profile examples/network-expert.json --storage ~/.pulse/pulse-ai.
 {"type":"mcp_status","servers":[{"name":"fs","connected":true,"toolCount":8},{"name":"db","connected":false,"toolCount":0,"error":"..."}]}
 ```
 
+MCP 三大列表 + 操作闭环（清单 → 读取/渲染/调用，全部经 server 协议）：
+
+- `tools` 请求：查看当前会话 Agent 工具清单（`source:"mcp"` 标注外部 MCP 工具）；**执行**经
+  `mcp_call`（v0.6.40）——`{"type":"mcp_call","server":"fs","tool":"read_file","args":{...}}`
+  → `{"type":"mcp_call","server":"fs","tool":"read_file","success":true,"output":"..."}`（工具级
+  失败 `success:false` + `error`；未知工具/未连接 → error，服务不崩）
+- `mcp_resources` 请求：查看资源/模板清单；**读取内容**经 `mcp_read_resource`（v0.6.38）
+- `mcp_prompts` 请求：查看提示词清单；**渲染**经 `mcp_get_prompt`（v0.6.38）
+
 ## 编程方式（库）
 
 ```ts
