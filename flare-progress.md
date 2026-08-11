@@ -3,31 +3,30 @@
 > 目标：flare 是 Pulse/StorySpire 依赖的 AI Agent 引擎（TS）。任何改动必须安全（tsc 0 错 + 测试全绿才 commit）。
 > 铁律：禁止 push；禁止修改 src/core/agent.ts 的 Agent.run 核心循环。
 
-> **最新状态（v0.6.47）**：**CLI `mcp-server --bridge-tools` 外部 MCP 工具透传**（方向③ MCP 增强，
-> 与 v0.6.28/0.6.37 `--bridge-resources`/`--bridge-prompts` 对称）——MCP 三大列表（tools/resources/
-> prompts）中资源/提示词已能透传，唯独**工具**不能（只能注入 Agent，无法经 flare 自身 MCPServer 暴露
-> 给其他 AI 客户端）：本轮补齐（纯外围 CLI，零 agent.ts 改动）——`--bridge-tools`（与资源/提示词透传
-> 可同时用，`--config` 共用）连接 ~/.flare/mcp.json 全部服务器，把 `McpManager.getAllTools()` 的 flare
-> Tool 代理并入工具集：**并集 = 内置（-t 收窄）+ 外部透传**（stdio 与 `--http` 双传输）；**调用实时
-> 代理转发**（tools/call 经 flare 到外部服务器，内容往返 isError 原样透传）；同名工具保留原名以先
-> 注册者为准（可用 -t 收窄内置避免冲突）；无配置/连接失败提示 + 仅暴露自身工具不中断；**802/802
-> 全绿**（800 + 2 新增），tsc 0 错误，零 agent.ts 改动；冒烟实测真实 dist CLI 0.6.47 子进程 + 真实
-> mock 服务器——工具并集 9 个（6 内置 + 3 外部）→ add_numbers {a:2,b:3} → 5 → echo_text → echo: hi
-> → fail_tool → isError true「出错了」，SMOKE PASS。
-> （v0.6.46：CLI /trim 智能裁剪 + /context 裁剪提示；v0.6.45：flare cache-check 验收工具；v0.6.44：
-> CLI /sessions 关键词搜索；v0.6.43：server 协议 search_sessions；v0.6.42：CLI /usage perModel 缓存命中显示。）
+> **最新状态（v0.6.48）**：**`flare cache-check --json` 结构化输出**（方向① prompt caching 基建
+> 深化——宿主/CI 程序化验收）——v0.6.45 验收工具只有人类可读输出，宿主/CI 无法程序化消费验收结果
+> （面板「缓存健康度」/ CI「命中才放行」只能解析彩色文本）：本轮补 `cacheCheckToJson` 纯函数
+> （库级导出，序列化 ok/model/hitTokens/savedUsd/detail + first/second 两轮用量快照，不触网不读
+> 密钥）+ CLI `-j/--json`（只打印纯 JSON 不混入彩色行，**exit code 语义保留**：ok → 0、未命中/失败
+> → 1，CI 可直接断言；与 `--model` 可组合）；**804/804 全绿**（802 + 2 新增），tsc 0 错误，
+> 零 agent.ts 改动；冒烟实测真实 API：`cache-check --json` → 纯 JSON ok:true 命中 896 tokens
+> （第一轮也 896——缓存跨进程持久），EXIT=0，SMOKE PASS。
+> （v0.6.47：mcp-server --bridge-tools 工具透传；v0.6.46：CLI /trim 智能裁剪 + /context 裁剪提示；
+> v0.6.45：flare cache-check 验收工具；v0.6.44：CLI /sessions 关键词搜索；v0.6.43：server 协议
+> search_sessions；v0.6.42：CLI /usage perModel 缓存命中显示。）
 
 > 【🔴 当前最高优先级方向（2026-08-11 用户拍板）】**prompt caching 基建 P0 已基本落地 + 验收工具化**：
 > P0-1 前缀稳定 + P0-2 usage 回传（v0.6.29 完成）。验收：`flare cache-check` 一键验收
-> （v0.6.45，真实 API 冒烟 PASS：第二轮命中 896 tokens）——前缀稳定已保证命中基础，实际命中
-> 还取决于 DeepSeek 服务端缓存（外部因素）。
+> （v0.6.45，真实 API 冒烟 PASS：第二轮命中 896 tokens）+ `--json` 程序化消费（v0.6.48）——
+> 前缀稳定已保证命中基础，实际命中还取决于 DeepSeek 服务端缓存（外部因素）。
 > 剩余方向：P1 分层上下文（Layer 1 异步滚动摘要，需评估 run 循环外异步）、P2 模型路由钩子。
 
 > 下一步候选（按优先级）：
 > ① 【P1】分层上下文（Layer 1 异步滚动摘要——摘要内容升级为 LLM 生成语义级压缩，需评估 run 循环外异步）
 > ② 其他安全的外围增强（server 协议其他管理接口、MCP 工具集完善、测试稳定性等）
->    已覆盖：CLI /trim 智能裁剪 + /context 提示（v0.6.46）✓ /
+>    已覆盖：cache-check --json 结构化输出（v0.6.48）✓ /
 >    mcp-server --bridge-tools 工具透传（v0.6.47）✓ /
+>    CLI /trim 智能裁剪 + /context 提示（v0.6.46）✓ /
 >    cache-check 验收工具（v0.6.45）✓ /
 >    CLI /sessions 关键词搜索（v0.6.44）✓ /
 >    search_sessions 会话搜索（v0.6.43）✓ /
@@ -44,30 +43,27 @@
 
 > ---
 
-> ### 2026-08-12 第四十六轮实施（v0.6.47）——CLI `mcp-server --bridge-tools` 外部 MCP 工具透传（方向③ MCP 增强）
+> ### 2026-08-12 第四十七轮实施（v0.6.48）——`flare cache-check --json` 结构化输出（方向① prompt caching 基建深化）
 
-> - **P76 CLI `flare mcp-server --bridge-tools`**（src/cli/index.ts + 测试，commit `6e3605f`）：
->   - **缺口定位**：MCP 三大列表（tools/resources/prompts）中资源/提示词已能透传（v0.6.28/0.6.37），
->     唯独**工具**不能——外部 MCP 服务器工具只能注入 Agent（库级 getAllTools），无法经 flare 自身
->     MCPServer 暴露给其他 AI 客户端（v0.6.36 补齐 prompts 桥接后「三大列表」仅剩工具不可透传）；
->     本轮补齐（纯外围 CLI，零 agent.ts 改动）
->   - **新 flag**：`mcp-server --bridge-tools`（与 `--bridge-resources` / `--bridge-prompts` 可同时用；
->     `--config` 共用）——连接 ~/.flare/mcp.json 全部服务器（Promise.allSettled 容错，与资源透传同分支
->     共用连接），把 `McpManager.getAllTools()` 返回的 flare Tool 代理（createMcpTools 包装）并入工具集：
->     **工具并集 = 内置（-t 收窄）+ 外部透传**（stdio 与 `--http` 双传输都支持）；**调用实时代理转发**——
->     客户端 `tools/call` 经 flare 转发到外部服务器（内容往返，isError 原样透传）；同名工具保留原名、
->     以先注册者为准（可用 `-t` 收窄内置避免冲突）
->   - **降级**：透传不改变 initialize 能力声明（工具能力本就默认声明）；无配置/连接失败 → 提示 +
->     仅暴露 flare 自身工具（不中断，与资源透传无配置降级一致）
->   - docs/mcp.md（工具透传章节 + 嵌套循环风险同资源透传）+ README Changelog + 版本号 0.6.47
->   - **802/802 全绿**（800 + 2 新增 tests/mcp-cli-server.test.ts：--bridge-tools 真实子进程全链路——
->     外部 mock 服务器（echo_text/add_numbers/fail_tool）经 flare 透传：listTools 并集 9 个（6 内置 +
->     3 外部）+ callTool 代理转发往返（add_numbers → 5、echo_text → echo: hi）；无配置降级（仅 6 内置
->     工具，不中断）），tsc 0 错误，**零 agent.ts 改动**
->   - **冒烟实测**（真实 dist CLI 0.6.47 子进程 + 真实 mock 服务器 + 真实 MCPClient，smoke-bridge-tools.mjs）：
->     serverInfo flare 0.6.47 → 工具集并集 `read_file...memory_save, echo_text, add_numbers, fail_tool`
->     （9 个）→ callTool add_numbers `{a:2,b:3}` → `5` → echo_text → `echo: hi` → fail_tool →
->     isError true「出错了」，SMOKE PASS
+> - **P77 `cacheCheckToJson` + CLI `--json`**（src/core/cache-check.ts + src/cli/index.ts + 测试，
+>   commit `0a5df7e`）：
+>   - **缺口定位**：v0.6.45 验收工具只有人类可读输出，宿主/CI **无法程序化消费**验收结果（面板要
+>     显示「缓存健康度」、CI 要断言「命中才放行」只能解析彩色文本）——验收闭环缺「程序化出口」；
+>     本轮补齐（纯外围，零 agent.ts 改动）
+>   - **`cacheCheckToJson(r)`**（库级导出，纯函数不触网/不读密钥）：序列化全部结构化字段
+>     （ok/model/hitTokens/savedUsd/detail + first/second 两轮用量快照）
+>   - **CLI**：`flare cache-check -j/--json` 只打印纯 JSON（不混入彩色/人类可读行，宿主直接
+>     `JSON.parse`），**exit code 语义保留**（ok → 0，未命中/调用失败 → 1，CI 可直接断言）；
+>     与 `--model` 可组合；`--help` 注册
+>   - docs/flare-token-architecture.md（验收标准补「验收程序化消费」小节）+ README Changelog +
+>     CLI 命令表 + 版本号 0.6.48
+>   - **804/804 全绿**（802 + 2 新增 tests/cache-check.test.ts：命中结果 JSON 合法 + 全部结构化
+>     字段逐字段断言（首字符即 `{` 无前缀行、ok/hitTokens/detail/savedUsd/first/second）；
+>     失败结果也结构化（ok:false + detail + model 空 + savedUsd null，不抛异常）），tsc 0 错误，
+>     **零 agent.ts 改动**
+>   - **冒烟实测**（真实 DeepSeek API + dist CLI）：`cache-check --json` → 纯 JSON
+>     `ok:true, model:deepseek-v4-flash, hitTokens:896, detail:第二轮命中缓存 896 tokens`
+>     （第一轮 cacheReadTokens 也 896——缓存跨进程持久，前缀已写入服务端），EXIT=0，SMOKE PASS
 > - **下一步候选**：① 【P1】分层上下文（Layer 1 异步滚动摘要——摘要内容升级为 LLM 生成语义级压缩，
 >   需评估 run 循环外异步）；② 其他安全的外围增强（server 协议其他管理接口、MCP 工具集完善、测试
 >   稳定性等）
