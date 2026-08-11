@@ -1675,6 +1675,36 @@ export function main() {
       console.log(lines.join('\n'))
     })
 
+  program
+    .command('cache-check')
+    .description('prompt caching 验收：连续两轮调用验证第二轮 cache_read_tokens > 0（v0.6.45，P0 验收自动化）')
+    .option('-m, --model <model>', '指定模型（缺省用默认路由；如 deepseek-chat）')
+    .action(async (options: { model?: string }) => {
+      // 真实调用走 ~/.flare/.env 配置的密钥（本地诊断；不输出任何密钥）
+      const { createProvider } = await import('../core/llm.js')
+      const { runCacheCheck } = await import('../core/cache-check.js')
+      const llm = createProvider(options.model ? { model: options.model } : undefined)
+      console.log(chalk.cyan('\n🧪 prompt caching 验收（连续两轮调用，第二轮应命中缓存）:'))
+      const r = await runCacheCheck(llm)
+      if (!r.model) {
+        console.log(chalk.red(`\n❌ ${r.detail}`))
+        process.exitCode = 1
+        return
+      }
+      console.log(`  模型: ${chalk.green(r.model)}`)
+      console.log(`  第一轮: prompt ${r.first.promptTokens} · 命中 ${r.first.cacheReadTokens} tokens（miss 基准）`)
+      console.log(`  第二轮: prompt ${r.second.promptTokens} · 命中 ${r.second.cacheReadTokens} tokens`)
+      if (r.savedUsd !== null) {
+        console.log(chalk.gray(`  估算节省: $${r.savedUsd.toFixed(6)}（命中价 vs 未命中价）`))
+      }
+      if (r.ok) {
+        console.log(chalk.green(`\n✅ PASS: ${r.detail}`))
+      } else {
+        console.log(chalk.yellow(`\n⚠️  ${r.detail}`))
+        process.exitCode = 1
+      }
+    })
+
   // 默认命令（无参数时进入交互模式）
   program.action(() => {
     startInteractive()
