@@ -338,6 +338,21 @@ Interactive mode commands:
 
 > 中文条目 / Chinese entries · English summary for each version
 
+#### v0.6.42 (2026-08-12) — CLI `/usage` perModel 缓存命中显示（prompt caching 基建深化）
+
+- ✨ **CLI `/usage` 按模型分解显示缓存命中（src/cli/index.ts + 测试）**：
+-  v0.6.29 P0 已回传 cache_read_tokens（总行显示命中率），getUsageStats.perModel 也早已聚合
+-  cacheReadTokens，但 **CLI `/usage` 的 perModel 行只显示 totalTokens + calls**——多模型场景
+-  （如 chat + reasoner 混合）无法看到每个模型的缓存命中分布；本轮补齐（纯 CLI 外围，零
+-  agent.ts 改动）：`模型 <name>: N tokens（M 次调用）` 行下，有缓存命中的模型追加缩进子行
+-  `缓存命中: N tokens（R%）`（命中率按该模型 promptTokens 计算）；无命中不显示子行（与旧版
+-  输出兼容）；总命中率/成本行照旧
+- - 🧪 **760/760 全绿**（759 + 1 新增 tests/prompt-caching.test.ts：两个模型——deepseek-chat
+-  有命中 400/1000=40% 显示命中子行，deepseek-reasoner 无命中不显示子行、总命中率 400/1200=33%
+-  照旧），tsc 0 错误，**零 agent.ts 改动**
+- - **冒烟实测**（真实 MemoryStore + dist CLI）：/usage 输出 perModel 行带
+-  `缓存命中: 400 tokens（40%）`，总行 `缓存命中: 400 tokens（33%）`，SMOKE PASS
+
 #### v0.6.41 (2026-08-12) — CLI 交互模式 `/mcp call`（直接调用外部 MCP 工具）
 
 - ✨ **CLI 交互模式 `/mcp call` 子命令（src/cli/index.ts + 测试）**：
