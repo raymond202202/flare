@@ -3,27 +3,28 @@
 > 目标：flare 是 Pulse/StorySpire 依赖的 AI Agent 引擎（TS）。任何改动必须安全（tsc 0 错 + 测试全绿才 commit）。
 > 铁律：禁止 push；禁止修改 src/core/agent.ts 的 Agent.run 核心循环。
 
-> **最新状态（v0.6.79）**：**cache-check 人类可读输出命中率百分比**（方向① prompt caching 基建
-> 深化）：每轮行加 `（N%）` 命中率，与 /usage 命中率观测面对称（v0.6.49 起 /usage 有百分比、
-> cache-check 只有绝对量）——用户一眼看出前缀命中比例（服务端缓存通常部分命中非 100%）；纯显示层
-> 改动（核心判定/--json 结构不变）。**875/875 全绿**，tsc 0 错误，**零 agent.ts 改动**。
-> （v0.6.78：cache-check 基准轮命中诊断；v0.6.77：README 命令表补 cache-check v0.6.75/76 能力；
-> v0.6.76：cache-check 每轮节省明细 runSavedUsd；v0.6.75：cache-check 多轮 savedUsd 累加所有命中
-> 轮；v0.6.74：README 命令行摘要表补齐；v0.6.73：get_config mcpServers 带 auth 标记；v0.6.72：
-> /mcp connect 摘要带 [auth]；v0.6.71：host-protocol --mcp 配置文档补齐；v0.6.70：MCP 状态带
-> auth 标记；v0.6.69：HTTP 服务端 Bearer 鉴权；v0.6.68：CLI mcp 单次命令 --header；v0.6.67：
-> HTTP transport 鉴权请求头支持；v0.6.66：/help 同步 /usage 描述；v0.6.65：/usage perModel
-> 行带缓存节省金额；v0.6.64：usage 统计带缓存节省金额估算；v0.6.63：MCP 子命令提示对称补齐；
-> v0.6.62：MCP 单次命令文档补齐；v0.6.61：MCP 命令提示面补全；v0.6.60：flare mcp complete
-> 单次命令；v0.6.59：flare mcp tools 单次命令；v0.6.58：mcp_tools 工具清单桥接三层；v0.6.57：
-> mcp_complete 提示词参数补全桥接；v0.6.56：server mcp_connect/mcp_disconnect 控制面；v0.6.55：
-> /mcp connect 摘要 transport/target；v0.6.54：cache-check --rounds 多轮验收；v0.6.53：CLI
-> /usage 本会话 perModel 子行；v0.6.52：session_usage perModel；v0.6.51：CLI mcp status
-> 统一 status()+--connect；v0.6.50：MCP 连接状态 transport/target；v0.6.49：CLI /usage 本会话
-> 行缓存命中；v0.6.48：cache-check --json 结构化输出；v0.6.47：mcp-server --bridge-tools
-> 工具透传；v0.6.46：CLI /trim 智能裁剪 + /context 裁剪提示；v0.6.45：flare cache-check
-> 验收工具；v0.6.44：CLI /sessions 关键词搜索；v0.6.43：server 协议 search_sessions；
-> v0.6.42：CLI /usage perModel 缓存命中显示。）
+> **最新状态（v0.6.80）**：**`flare mcp status --json` 结构化输出**（方向② 外围增强）：CLI 单次
+> 命令 mcp status 只有人类可读输出，host/脚本程序化消费 MCP 配置状态只能解析文本——本轮加 --json
+> （输出与 server mcp_status 同源的 McpServerStatus[]：name/transport/target/connected/
+> toolCount/auth 等，auth 只传布尔不泄漏 token；--connect 语义保留；未配置 → [] 稳定形状退出码 0；
+> 人类可读输出不变向后兼容）。**877/877 全绿**，tsc 0 错误，**零 agent.ts 改动**。
+> （v0.6.79：cache-check 命中率百分比显示；v0.6.78：cache-check 基准轮命中诊断；v0.6.77：README
+> 命令表补 cache-check v0.6.75/76 能力；v0.6.76：cache-check 每轮节省明细 runSavedUsd；v0.6.75：
+> cache-check 多轮 savedUsd 累加所有命中轮；v0.6.74：README 命令行摘要表补齐；v0.6.73：get_config
+> mcpServers 带 auth 标记；v0.6.72：/mcp connect 摘要带 [auth]；v0.6.71：host-protocol --mcp
+> 配置文档补齐；v0.6.70：MCP 状态带 auth 标记；v0.6.69：HTTP 服务端 Bearer 鉴权；v0.6.68：CLI
+> mcp 单次命令 --header；v0.6.67：HTTP transport 鉴权请求头支持；v0.6.66：/help 同步 /usage
+> 描述；v0.6.65：/usage perModel 行带缓存节省金额；v0.6.64：usage 统计带缓存节省金额估算；
+> v0.6.63：MCP 子命令提示对称补齐；v0.6.62：MCP 单次命令文档补齐；v0.6.61：MCP 命令提示面补全；
+> v0.6.60：flare mcp complete 单次命令；v0.6.59：flare mcp tools 单次命令；v0.6.58：mcp_tools
+> 工具清单桥接三层；v0.6.57：mcp_complete 提示词参数补全桥接；v0.6.56：server
+> mcp_connect/mcp_disconnect 控制面；v0.6.55：/mcp connect 摘要 transport/target；v0.6.54：
+> cache-check --rounds 多轮验收；v0.6.53：CLI /usage 本会话 perModel 子行；v0.6.52：session_usage
+> perModel；v0.6.51：CLI mcp status 统一 status()+--connect；v0.6.50：MCP 连接状态
+> transport/target；v0.6.49：CLI /usage 本会话行缓存命中；v0.6.48：cache-check --json 结构化
+> 输出；v0.6.47：mcp-server --bridge-tools 工具透传；v0.6.46：CLI /trim 智能裁剪 + /context
+> 裁剪提示；v0.6.45：flare cache-check 验收工具；v0.6.44：CLI /sessions 关键词搜索；v0.6.43：
+> server 协议 search_sessions；v0.6.42：CLI /usage perModel 缓存命中显示。）
 
 > 【🔴 当前最高优先级方向（2026-08-11 用户拍板）】**prompt caching 基建 P0 已基本落地 + 验收工具化**：
 > P0-1 前缀稳定 + P0-2 usage 回传（v0.6.29 完成）。验收：`flare cache-check` 一键验收
@@ -69,6 +70,23 @@
 >    terminal 退出码（v0.6.33）✓ / CLI 归档命令（v0.6.32）✓ / 归档 API（v0.6.31）✓ /
 >    工具输出治理（v0.6.30）✓ / prompt caching P0（v0.6.29）✓ / MCP 动态资源提供器（v0.6.28）✓ /
 >    confirm 描述（v0.6.27）✓
+
+> ---
+
+> ### 2026-08-12 第七十九轮实施（v0.6.80）——flare mcp status --json（方向② 外围增强）
+
+> - **P109 `flare mcp status --json` 结构化输出**（src/cli/index.ts + 测试，commit `c0819e0`）：
+>   - **缺口定位**：CLI 单次命令 mcp status 只有人类可读输出，host/脚本程序化消费 MCP 配置
+>     状态只能解析文本；本轮加 --json（纯外围，零 agent.ts 改动）
+>   - **输出**：与 server mcp_status 同源的 `McpServerStatus[]`（name/transport/target/
+>     connected/toolCount/auth 等；auth 只传布尔不泄漏 token）；--connect 语义保留（先连接再
+>     输出真实状态）；未配置 → `[]`（稳定形状，退出码 0）；人类可读输出不变（向后兼容）
+>   - README Changelog + 版本号 0.6.80（注：CLI spawn 测试用 dist，需 npx tsc 重编译）
+>   - **877/877 全绿**（新增 2 用例：--json 字段齐全 + auth 布尔不泄漏 token；无配置 → []），
+>     tsc 0 错误，**零 agent.ts 改动**
+> - **下一步候选**：① 【P1】分层上下文（Layer 1 异步滚动摘要——需评估 run 循环外异步）；② 其他
+>   安全的外围增强（server 协议其他管理接口、MCP 工具集完善、测试稳定性等）；③ 方向①继续：
+>   cache-check 收尾（边际价值递减）
 
 > ---
 
