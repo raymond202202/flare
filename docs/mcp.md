@@ -54,14 +54,16 @@
   /mcp connect <name> 连接 | /mcp disconnect <name> 断开
 
 🔥 flare> /mcp connect fs
-  ✅ 已连接 fs（8 个 MCP 工具）
+  ✅ 已连接 fs [stdio] npx @modelcontextprotocol/server-filesystem /tmp（8 个 MCP 工具）
   （会话已按新工具集重建，历史从记忆库恢复）
 
 🔥 flare> 帮我列出 /tmp 下的文件并读取 a.txt
 ```
 
 - `/mcp`：查看全部配置服务器状态（`●` 已连接 + 工具数，连接失败显示原因）
-- `/mcp connect <name>`：连接并桥接工具（内置工具保留，重建会话生效）
+- `/mcp connect <name>`：连接并桥接工具（内置工具保留，重建会话生效）；v0.6.55 起摘要带
+  `[stdio]`/`[HTTP]` 传输类型标记 + 连接目标（与 `/mcp` 状态行同源——连接后立即看到刚连的是哪种
+  传输、连到哪）
 - `/mcp disconnect <name>`：断开并移除其工具
 - v0.6.26：已连接服务器状态行带 `（N 个工具 · M 资源 · K 模板）`——连接时同时拉取该服务器
   `resources/list` + `resources/templates/list`（资源桥接），外部服务器暴露的资源/动态资源模板

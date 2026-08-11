@@ -253,7 +253,11 @@ async function startInteractive(opts: { contextSummarize?: boolean } = {}) {
         const extra = resCount || tmplCount || promptCount
           ? ` · ${resCount} 个资源${tmplCount ? ` · ${tmplCount} 个模板` : ''}${promptCount ? ` · ${promptCount} 个提示词` : ''}`
           : ''
-        return `已连接 ${name}（${mcpTools.length} 个 MCP 工具${extra}）`
+        // v0.6.55：摘要带传输类型标记（与 /mcp 状态行同源——连接后立即看到 [stdio]/[HTTP] + 目标）
+        const st = mcpManager.status().find((s) => s.name === name)
+        const transport = st?.transport === 'http' ? '[HTTP]' : '[stdio]'
+        const target = st?.target ? ` ${st.target}` : ''
+        return `已连接 ${name} ${chalk.gray(transport)}${chalk.gray(target)}（${mcpTools.length} 个 MCP 工具${extra}）`
       },
       disconnect: (name) => mcpManager.disconnect(name),
       // v0.6.26：列出已桥接资源/模板（资源桥接——连接时拉取 resources/list + resources/templates/list）
