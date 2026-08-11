@@ -338,6 +338,24 @@ Interactive mode commands:
 
 > 中文条目 / Chinese entries · English summary for each version
 
+#### v0.6.44 (2026-08-12) — CLI `/sessions <关键词>` 会话搜索（server search_sessions 的 CLI 对称）
+
+- ✨ **CLI `/sessions <关键词>`（src/cli/index.ts + 测试）**：
+-  v0.6.43 给 server 协议补了 `search_sessions`（按标题/消息内容搜索会话），但 **CLI 交互模式
+-  没有对称入口**——`/search`（v0.6.24）只搜**消息**，`/sessions` 只能**全量**列出最近会话，
+-  「记不清哪个会话聊过 X」时无从下手；本轮补齐（纯 CLI 外围，零 agent.ts 改动）：
+-  `/sessions <关键词>` 调用 store.searchSessions（与协议同源）——按**标题或会话内任意消息
+-  内容** LIKE 匹配，显示 `[时间] 标题（N 条消息）`（formatSessionTime 复用 /sessions 时间
+-  格式；归档会话带 `（已归档）` 标记仍可搜到）；无匹配友好提示「未找到包含「kw」的会话」；
+-  `/sessions`（无关键词）走原 switch 分支**逐字符零回归**（最近会话列表）
+- - 🧪 **781/781 全绿**（774 + 7 新增 tests/session-search-cli.test.ts：按标题匹配显示
+-  标题+消息数 / 按消息内容匹配（标题不含关键词也命中）/ 归档标记 / 无匹配提示 / 空白关键词
+-  用法提示 / 无关键词原行为零回归（未走搜索分支）/ /help 注册），tsc 0 错误，
+-  **零 agent.ts 改动**
+- - **冒烟实测**（真实 MemoryStore + handleSlashCommand）：/sessions 集成 →
+-  `[今天 02:39] flutter 集成指南 (1 条消息)`；/sessions 前缀稳定 → 普通标题命中；归档会话带
+-  （已归档）；无匹配/空白关键词提示，SMOKE PASS
+
 #### v0.6.43 (2026-08-12) — server 协议 `search_sessions`（按标题/消息内容搜索会话）
 
 - ✨ **`search_sessions` 会话搜索（src/memory/store.ts + src/server.ts + 测试）**：
