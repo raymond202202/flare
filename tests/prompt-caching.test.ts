@@ -215,6 +215,14 @@ describe('CLI /usage 缓存显示（v0.6.29 P0）', () => {
     expect(out).not.toContain('估算成本')
   })
 
+  it('/help 同步 /usage 描述（v0.6.65：含缓存命中/节省说明）', async () => {
+    const lines: string[] = []
+    await handleSlashCommand('/help', store, (s) => lines.push(s))
+    const out = lines.join('\n')
+    expect(out).toContain('/usage')
+    expect(out).toContain('缓存命中/节省')
+  })
+
   it('无法定价模型命中 → 不显示缓存节省（本地模型不计入，向后兼容）', async () => {
     // qwen2.5:7b 无法定价（estimateCostUsd → null）：显示缓存命中行但不显示节省
     store.logUsage('s1', 1000, 500, 'qwen2.5:7b', { cacheReadTokens: 600 })
