@@ -714,7 +714,7 @@ streamable HTTP 的同步子集：一次 `POST /mcp` 处理一个 JSON-RPC 消�
 ```ts
 import { startMcpHttpServer } from 'flare-agent'
 
-const h = await startMcpHttpServer({ tools: builtinTools, port: 8931 })
+const h = await startMcpHttpServer({ tools: builtinTools, port: 8931, authToken: 's3cret' })
 // POST http://127.0.0.1:8931/mcp  {"jsonrpc":"2.0","id":1,"method":"tools/list"}
 await h.close()
 ```
@@ -722,7 +722,12 @@ await h.close()
 - 有 id 的请求 → `200` + JSON-RPC 响应（错误对象不抛出，-32601/-32602/-32603 同 stdio）
 - 通知类（无 id）→ `202` 空体（无需响应）；非法 JSON → `400` + parse error（-32700）
 - 非 POST / 错误路径 → `404`；默认仅监听 `127.0.0.1`（安全默认），`port: 0` = 随机端口
-- CLI 一键起 HTTP 服务器：`flare mcp-server --http --port 8931`（stdio 仍为默认传输）
+- **Bearer 鉴权（v0.6.69）**：`authToken` 设置后所有请求必须带 `Authorization: Bearer <token>`
+  （不匹配 → `401` + `-32001 Unauthorized`，不进入协议处理）——与客户端 headers
+  （`MCPHttpClient({ headers })` / `mcp.json` 配置 / CLI `--header`）闭环
+- CLI 一键起 HTTP 服务器：`flare mcp-server --http --port 8931`（stdio 仍为默认传输）；
+  `--http-auth-token-env <VAR>` 从环境变量读 Bearer token（如 `FLARE_MCP_TOKEN`，token 不落命令行；
+  环境变量未设置 → 报错退出）
 
 #### HTTP 客户端（v0.6.4）：MCPHttpClient
 

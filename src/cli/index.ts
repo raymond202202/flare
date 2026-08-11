@@ -1508,11 +1508,12 @@ export function main() {
     .option('-t, --tools <names>', '要暴露的工具（逗号分隔，默认全部内置工具）')
     .option('--http', '用 HTTP transport 替代 stdio（POST /mcp，JSON-RPC over HTTP，v0.6.3）')
     .option('-p, --port <port>', 'HTTP 监听端口（默认 0 = 随机；仅监听 127.0.0.1 本机）')
+    .option('--http-auth-token-env <var>', 'HTTP Bearer 鉴权 token 的环境变量名（v0.6.69：如 FLARE_MCP_TOKEN；设置了则客户端须带 Authorization: Bearer <env值>，否则 401；token 不落命令行）')
     .option('--bridge-resources', '透传外部 MCP 服务器资源（v0.6.28：连接 ~/.flare/mcp.json 全部服务器，外部资源/模板经 flare 暴露给客户端，读取实时代理转发）')
     .option('--bridge-prompts', '透传外部 MCP 服务器提示词（v0.6.37：连接 ~/.flare/mcp.json 全部服务器，外部提示词经 flare 暴露给客户端，渲染实时代理转发）')
     .option('--bridge-tools', '透传外部 MCP 服务器工具（v0.6.47：连接 ~/.flare/mcp.json 全部服务器，外部工具经 flare 暴露给客户端，调用实时代理转发）')
     .option('--config <path>', 'MCP 配置文件路径（--bridge-resources / --bridge-prompts / --bridge-tools 用，默认 ~/.flare/mcp.json）')
-    .action(async (options: { tools?: string; http?: boolean; port?: string; bridgeResources?: boolean; bridgePrompts?: boolean; bridgeTools?: boolean; config?: string }) => {
+    .action(async (options: { tools?: string; http?: boolean; port?: string; httpAuthTokenEnv?: string; bridgeResources?: boolean; bridgePrompts?: boolean; bridgeTools?: boolean; config?: string }) => {
       const { MCPServer, startMcpHttpServer, tools: builtinTools, McpManager } = await import('../index.js')
       const names = options.tools
         ? options.tools.split(',').map((s) => s.trim()).filter(Boolean)
@@ -1573,13 +1574,23 @@ export function main() {
       const finalTools = [...selected, ...bridgedToolList]
       if (options.http) {
         // HTTP transport（v0.6.3）：常驻监听 POST /mcp，Ctrl+C 退出
+        // v0.6.69：--http-auth-token-env 从环境变量读 Bearer token（不落命令行；设置了则客户端须带鉴权头）
+        let authToken: string | undefined
+        if (options.httpAuthTokenEnv) {
+          authToken = process.env[options.httpAuthTokenEnv]
+          if (!authToken) {
+            console.error(chalk.red(`❌ 环境变量 ${options.httpAuthTokenEnv} 未设置（--http-auth-token-env 指定的 token 来源）`))
+            process.exit(1)
+          }
+        }
         const h = await startMcpHttpServer({
           tools: finalTools,
           resourceProvider,
           ...(bridgedPrompts ? { prompts: bridgedPrompts } : {}),
           port: options.port ? Number(options.port) : undefined,
+          ...(authToken ? { authToken } : {}),
         })
-        console.log(`MCP HTTP 服务器已启动: ${h.url}（POST JSON-RPC；Ctrl+C 退出）`)
+        console.log(`MCP HTTP 服务器已启动: ${h.url}（POST JSON-RPC；Ctrl+C 退出）${authToken ? '（Bearer 鉴权已启用）' : ''}`)
         return
       }
       // 常驻监听 stdin（MCP 客户端经 stdio 连接），直到 EOF 退出

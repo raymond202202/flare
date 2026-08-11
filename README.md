@@ -341,6 +341,22 @@ Interactive mode commands:
 
 > 中文条目 / Chinese entries · English summary for each version
 
+#### v0.6.69 (2026-08-12) — MCP HTTP transport 服务端 Bearer 鉴权（方向③ MCP 增强，与 v0.6.67/68 客户端鉴权闭环）
+
+- ✨ **`startMcpHttpServer({ authToken })` + `flare mcp-server --http-auth-token-env <VAR>`**（src/mcp/http.ts + src/cli/index.ts + 测试）：
+-  v0.6.67/68 只解决了「flare 连受保护服务器」——**flare 自己当 HTTP 服务器时仍全开放**
+-  （仅 127.0.0.1 兜底），跨机/半可信网络暴露 flare 原生工具（terminal 等）风险高；本轮补齐服务端
+-  侧（纯外围，零 agent.ts 改动），客户端↔服务端鉴权形成完整闭环
+- - **库层**：`McpHttpServerOptions.authToken`——设置后所有请求必须带 `Authorization: Bearer
+-  <token>`，不匹配 → `401` + `-32001 Unauthorized`（不进入协议处理）；不设置 → 匿名照常（向后兼容）
+- - **CLI**：`flare mcp-server --http --http-auth-token-env FLARE_MCP_TOKEN`——从环境变量读
+-  token（**不落命令行**，避免 shell history 泄漏）；环境变量未设置 → 报错退出码 1；启动日志标注
+-  「Bearer 鉴权已启用」
+- - docs/mcp.md（HTTP 服务器 Bearer 鉴权 + CLI 用法）+ README Changelog + 版本号 0.6.69
+- - 🧪 **864/864 全绿**（新增 7 用例：服务端 401 无 token/错误 token/正确 token 200/未设置向后兼容 +
+-  CLI e2e --http-auth-token-env 401→200 + 客户端闭环带 headers 成功/不带 401 reject），tsc 0 错误，
+-  **零 agent.ts 改动**
+
 #### v0.6.68 (2026-08-12) — CLI mcp 单次命令 `--header` 鉴权请求头（方向③ MCP 增强，与 v0.6.67 对称）
 
 - ✨ **`flare mcp call/resources/prompts/tools/complete` 全部支持 `--header <k:v>`（可重复）**（src/cli/index.ts + 测试）：

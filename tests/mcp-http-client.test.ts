@@ -332,4 +332,24 @@ describe('MCPHttpClient 自定义请求头（v0.6.67：HTTP transport 鉴权，�
     await client.listTools()
     expect(seenAuth).toBe(false)
   })
+
+  it('闭环：headers 客户端连 authToken 服务器 → 握手/调用成功（v0.6.69 服务端鉴权）', async () => {
+    const h = await startMcpHttpServer({ tools: [echoTool], authToken: 's3cret-token' })
+    handles.push(h)
+    const client = new MCPHttpClient({ url: h.url, headers: { Authorization: 'Bearer s3cret-token' } })
+    clients.push(client)
+    await client.initialize()
+    const tools = await client.listTools()
+    expect(tools).toHaveLength(1)
+    const res = await client.callTool('echo', { text: 'authed' })
+    expect(res.content[0]?.text).toBe('authed')
+  })
+
+  it('闭环：无 headers 客户端连 authToken 服务器 → 401 reject（清晰错误）', async () => {
+    const h = await startMcpHttpServer({ tools: [echoTool], authToken: 's3cret-token' })
+    handles.push(h)
+    const client = new MCPHttpClient({ url: h.url })
+    clients.push(client)
+    await expect(client.initialize()).rejects.toThrow(/401|Unauthorized/)
+  })
 })

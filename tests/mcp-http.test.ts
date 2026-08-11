@@ -39,6 +39,22 @@ async function postJson(url: string, body: unknown): Promise<{ status: number; j
   return { status: res.status, json }
 }
 
+/** v0.6.69：带可选 Authorization 头的 POST（Bearer 鉴权测试用） */
+async function postJsonWithAuth(url: string, body: unknown, auth?: string): Promise<{ status: number; json: any }> {
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(auth ? { Authorization: auth } : {}),
+    },
+    body: typeof body === 'string' ? body : JSON.stringify(body),
+  })
+  const text = await res.text()
+  let json: any = null
+  try { json = text ? JSON.parse(text) : null } catch { /* 非 JSON 响应 */ }
+  return { status: res.status, json }
+}
+
 const handles: McpHttpServerHandle[] = []
 const children: ChildProcess[] = []
 
@@ -138,6 +154,40 @@ describe('MCP HTTP transport', () => {
   })
 })
 
+describe('MCP HTTP transport Bearer 鉴权（v0.6.69：authToken 服务端校验）', () => {
+  it('设置 authToken：无 Authorization → 401 Unauthorized（不进入协议处理）', async () => {
+    const h = await startMcpHttpServer({ tools: [echoTool], authToken: 's3cret-token' })
+    handles.push(h)
+    const { status, json } = await postJsonWithAuth(h.url, { jsonrpc: '2.0', id: 1, method: 'tools/list' })
+    expect(status).toBe(401)
+    expect(json.error.code).toBe(-32001)
+    expect(json.error.message).toBe('Unauthorized')
+  })
+
+  it('设置 authToken：错误 token → 401', async () => {
+    const h = await startMcpHttpServer({ tools: [echoTool], authToken: 's3cret-token' })
+    handles.push(h)
+    const { status } = await postJsonWithAuth(h.url, { jsonrpc: '2.0', id: 2, method: 'ping' }, 'Bearer wrong-token')
+    expect(status).toBe(401)
+  })
+
+  it('设置 authToken：正确 Bearer → 200 正常处理', async () => {
+    const h = await startMcpHttpServer({ tools: [echoTool], authToken: 's3cret-token' })
+    handles.push(h)
+    const { status, json } = await postJsonWithAuth(h.url, { jsonrpc: '2.0', id: 3, method: 'tools/list' }, 'Bearer s3cret-token')
+    expect(status).toBe(200)
+    expect(json.result.tools[0].name).toBe('echo')
+  })
+
+  it('未设置 authToken（默认）→ 匿名请求正常（向后兼容）', async () => {
+    const h = await startMcpHttpServer({ tools: [echoTool] })
+    handles.push(h)
+    const { status, json } = await postJsonWithAuth(h.url, { jsonrpc: '2.0', id: 4, method: 'tools/list' })
+    expect(status).toBe(200)
+    expect(json.result.tools).toHaveLength(1)
+  })
+})
+
 describe('CLI flare mcp-server --http', () => {
   it('spawn dist CLI --http --port → 真实握手 + 工具列表', async () => {
     // 用固定高位端口避免冲突（随机端口由 CLI 打印，解析更麻烦；固定端口在 CI/本机通常可用）
@@ -161,5 +211,32 @@ describe('CLI flare mcp-server --http', () => {
     // -t echo 过滤：只暴露 echo（CLI 内置工具里没有 echo，列表为空属正常——验证 -t 过滤生效）
     const list = await postJson(url, { jsonrpc: '2.0', id: 3, method: 'tools/list' })
     expect(list.json.result.tools).toBeDefined()
+  }, 15000)
+
+  it('--http-auth-token-env：无 token → 401；带环境变量 token → 200（v0.6.69）', async () => {
+    const port = 19631 + Math.floor(Math.random() * 500)
+    const child = spawn(process.execPath, [CLI, 'mcp-server', '--http', '--port', String(port), '--http-auth-token-env', 'FLARE_TEST_MCP_TOKEN'], {
+      stdio: ['pipe', 'pipe', 'pipe'],
+      env: { ...process.env, FLARE_TEST_MCP_TOKEN: 'env-token-123' },
+    })
+    children.push(child)
+    const url = `http://127.0.0.1:${port}/mcp`
+    // 等待服务器就绪（最多 5s；就绪探测本身不带 token → 401 也算就绪）
+    let ready = false
+    for (let i = 0; i < 25; i++) {
+      try {
+        const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'ping' }) })
+        if (res.status === 401 || res.ok) { ready = true; break }
+      } catch { /* 未就绪 */ }
+      await new Promise((r) => setTimeout(r, 200))
+    }
+    expect(ready).toBe(true)
+    // 无 token → 401
+    const anon = await postJson(url, { jsonrpc: '2.0', id: 2, method: 'tools/list' })
+    expect(anon.status).toBe(401)
+    // 带环境变量里的 token → 200
+    const authed = await postJsonWithAuth(url, { jsonrpc: '2.0', id: 3, method: 'tools/list' }, 'Bearer env-token-123')
+    expect(authed.status).toBe(200)
+    expect(authed.json.result.tools).toBeDefined()
   }, 15000)
 })
