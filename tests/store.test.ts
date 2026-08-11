@@ -211,6 +211,14 @@ describe('MemoryStore', () => {
     expect(s1.cacheSavedUsd).toBeCloseTo(0.00046, 6)
     const s2 = store.getSessionUsage('s2')
     expect(s2.cacheSavedUsd).toBe(0)
+
+    // perModel 每项带本模型节省（v0.6.65）：chat 0.00046、reasoner 0、qwen 0（无法定价）
+    const chatPm = stats.perModel.find((m: any) => m.model === 'deepseek-chat')
+    const reasonerPm = stats.perModel.find((m: any) => m.model === 'deepseek-reasoner')
+    const qwenPm = stats.perModel.find((m: any) => m.model === 'qwen2.5:7b')
+    expect(chatPm!.cacheSavedUsd).toBeCloseTo(0.00046, 6)
+    expect(reasonerPm!.cacheSavedUsd).toBe(0)
+    expect(qwenPm!.cacheSavedUsd).toBe(0)
   })
 
   it('单会话 perModel 分解（v0.6.52）：按模型分组 + 缓存命中，与 getUsageStats 对称', () => {

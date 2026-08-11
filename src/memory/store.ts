@@ -625,6 +625,8 @@ export class MemoryStore {
       completionTokens: m.completionTokens,
       cacheReadTokens: m.cacheReadTokens,
       totalTokens: m.promptTokens + m.completionTokens,
+      // v0.6.65：本模型缓存节省（同口径单模型差值；无法定价 → 0）
+      cacheSavedUsd: this.estimateCacheSavedUsd([m]),
     }))
     return {
       promptTokens: row.promptTokens,
@@ -672,6 +674,8 @@ export class MemoryStore {
       completionTokens: m.completionTokens,
       cacheReadTokens: m.cacheReadTokens,
       totalTokens: m.promptTokens + m.completionTokens,
+      // v0.6.65：本模型缓存节省（同口径单模型差值；无法定价 → 0）
+      cacheSavedUsd: this.estimateCacheSavedUsd([m]),
     }))
     return {
       sessionId,

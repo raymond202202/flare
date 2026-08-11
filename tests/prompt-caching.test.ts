@@ -226,6 +226,23 @@ describe('CLI /usage 缓存显示（v0.6.29 P0）', () => {
     expect(out).not.toContain('缓存节省')
   })
 
+  it('perModel 子行带节省金额（v0.6.65：总览 + 本会话与汇总行同口径）', async () => {
+    // deepseek-chat 命中 600 → 节省 0.00012 → 显示（$0.0001）；reasoner 无命中无子行
+    store.logUsage('s1', 1000, 500, 'deepseek-chat', { cacheReadTokens: 600 })
+    store.logUsage('s1', 200, 100, 'deepseek-reasoner')
+    const lines: string[] = []
+    await handleSlashCommand('/usage', store, (s) => lines.push(s), undefined, undefined, undefined, undefined, undefined, 's1')
+    const out = lines.join('\n')
+    // 总览 perModel 子行：命中行尾带（节省 $0.0001）
+    expect(out).toContain('缓存命中: 600 tokens（60%）（节省 $0.0001）')
+    // 本会话 perModel 子行：同样带节省（缩进层级不同，内容一致）
+    expect(out).toContain('缓存命中: 600 tokens（60%）（节省 $0.0001）')
+    // reasoner 无命中 → 带节省后缀的命中子行仅 2 个（总览 perModel + 本会话 perModel），
+    // 第三个「缓存命中:」是总览汇总行（不带节省后缀）
+    expect(out.match(/缓存命中: 600 tokens（60%）（节省 \$0\.0001）/g)).toHaveLength(2)
+    expect(out.match(/缓存命中:/g)).toHaveLength(3)
+  })
+
   it('本会话 perModel 子行（v0.6.53：多模型本会话命中分布，与总览行对称）', async () => {
     // 本会话 s1 两个模型：chat 有命中、reasoner 无；另一会话 s2 不影响本会话
     store.logUsage('s1', 1000, 500, 'deepseek-chat', { cacheReadTokens: 400 })

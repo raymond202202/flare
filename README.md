@@ -341,6 +341,21 @@ Interactive mode commands:
 
 > 中文条目 / Chinese entries · English summary for each version
 
+#### v0.6.65 (2026-08-12) — /usage perModel 行带缓存节省金额（方向① prompt caching 基建深化，对称补齐）
+
+- ✨ **perModel 每项带 `cacheSavedUsd` + CLI 子行显示节省（src/memory/store.ts + src/cli/index.ts + 测试）**：
+-  v0.6.64 只给了汇总级节省（总览行/本会话行），**perModel 行只有命中量**——多模型场景看不出
+-  「哪个模型吃到了缓存的钱」；本轮对称补齐（纯外围，零 agent.ts 改动）
+- - **store 层**：`getUsageStats()` / `getSessionUsage()` 的 perModel 每项新增 `cacheSavedUsd`
+-  （同口径单模型差值，复用 `estimateCacheSavedUsd([m])`；无法定价 → 0）——宿主面板 perModel
+-  列表可直接显示每个模型的缓存节省
+- - **CLI /usage**：总览与本会话的 perModel「缓存命中」子行行尾追加 `（节省 $X.XXXX）`（>0 才显示；
+-  本地模型命中子行无节省后缀，向后兼容；汇总行/本会话行格式不变）
+- - docs/host-protocol.md（§9 / §9.1 perModel 项说明）+ README Changelog + 版本号 0.6.65
+- - 🧪 **850/850 全绿**（新增 1 用例：perModel 子行带节省金额（总览+本会话，reasoner 无命中无
+-  子行）；store 缓存节省用例补 perModel 项断言 chat/reasoner/qwen），tsc 0 错误，
+-  **零 agent.ts 改动**
+
 #### v0.6.64 (2026-08-12) — usage 统计带缓存节省金额估算（方向① prompt caching 基建深化）
 
 - ✨ **`cacheSavedUsd`：运行期用量统计量化「缓存命中省了多少钱」（src/memory/store.ts + src/cli/index.ts + src/server.ts + 测试）**：
