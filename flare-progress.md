@@ -3,22 +3,21 @@
 > 目标：flare 是 Pulse/StorySpire 依赖的 AI Agent 引擎（TS）。任何改动必须安全（tsc 0 错 + 测试全绿才 commit）。
 > 铁律：禁止 push；禁止修改 src/core/agent.ts 的 Agent.run 核心循环。
 
-> **最新状态（v0.6.54）**：**cache-check `--rounds` 多轮连续命中验收**（方向① prompt caching 基建
-> 深化——验收升级）：v0.6.45 的两轮验收只能证明「某一次」前缀命中——服务端缓存是否**持续稳定**
-> （连续多轮都命中）无法验证（偶发命中一次也会误判 PASS）；本轮升级（纯外围，零 agent.ts 改动）——
-> `runCacheCheck(llm,{rounds?})` 第 1 轮为 miss 基准、第 2..N 轮**全部**命中才算 ok（默认 2——两轮
-> 行为与旧版逐字段一致零回归；合法 2~5，非法回退 2 不崩）；结果新增 `rounds` + `runs`（每轮用量
-> 快照数组，first=基准、second=最后一轮，旧字段语义保留）；CLI `cache-check --rounds <N>` 显示每一
-> 轮命中（第一轮标注 miss 基准）、多轮中断 detail 指出中断轮次、非法 --rounds 退出码 1+用法提示；
-> `--json` 同步输出 rounds/runs；**815/815 全绿**（811 + 4 新增），tsc 0 错误，零 agent.ts 改动；
-> 冒烟实测真实 DeepSeek API：`cache-check --rounds 3` → 三轮 prompt 971 全部命中 896 tokens →
-> ✅ PASS（连续 2 轮命中，服务端缓存跨进程持续稳定）；`--rounds 99` → 退出码 1，SMOKE PASS。
-> （v0.6.53：CLI /usage 本会话 perModel 子行；v0.6.52：session_usage perModel；v0.6.51：CLI mcp
-> status 统一 status()+--connect；v0.6.50：MCP 连接状态 transport/target；v0.6.49：CLI /usage
-> 本会话行缓存命中；v0.6.48：cache-check --json 结构化输出；v0.6.47：mcp-server --bridge-tools
-> 工具透传；v0.6.46：CLI /trim 智能裁剪 + /context 裁剪提示；v0.6.45：flare cache-check 验收工具；
-> v0.6.44：CLI /sessions 关键词搜索；v0.6.43：server 协议 search_sessions；v0.6.42：CLI /usage
-> perModel 缓存命中显示。）
+> **最新状态（v0.6.55）**：**`/mcp connect` 摘要带传输类型标记**（方向③ MCP 增强——观测面补齐）：
+> v0.6.50 给 /mcp 状态行加了 transport/target（[stdio]/[HTTP] + 端点/命令），但 `/mcp connect` 成功
+> 摘要仍是旧格式 `已连接 X（N 个 MCP 工具）`——连接成功后看不到刚连的是哪种传输、连到哪；本轮
+> 对称补齐（纯外围，零 agent.ts 改动）——connect 摘要 `已连接 <name> [stdio|HTTP] <target>（N 个
+> MCP 工具[ · 资源/模板/提示词数]）`，transport/target 与 /mcp 状态行**同源**（都来自
+> McpManager.status()），连接后立即可见传输类型与连接目标；旧形状 status（缺字段）降级默认
+> [stdio] 不崩溃；**816/816 全绿**（815 + 1 新增），tsc 0 错误，零 agent.ts 改动；冒烟实测真实
+> McpManager + in-process HTTP 服务器：connect 后 status() 返回 transport=http target=端点 url
+> （CLI 组装同源数据），SMOKE PASS。
+> （v0.6.54：cache-check --rounds 多轮验收；v0.6.53：CLI /usage 本会话 perModel 子行；v0.6.52：
+> session_usage perModel；v0.6.51：CLI mcp status 统一 status()+--connect；v0.6.50：MCP 连接状态
+> transport/target；v0.6.49：CLI /usage 本会话行缓存命中；v0.6.48：cache-check --json 结构化输出；
+> v0.6.47：mcp-server --bridge-tools 工具透传；v0.6.46：CLI /trim 智能裁剪 + /context 裁剪提示；
+> v0.6.45：flare cache-check 验收工具；v0.6.44：CLI /sessions 关键词搜索；v0.6.43：server 协议
+> search_sessions；v0.6.42：CLI /usage perModel 缓存命中显示。）
 
 > 【🔴 当前最高优先级方向（2026-08-11 用户拍板）】**prompt caching 基建 P0 已基本落地 + 验收工具化**：
 > P0-1 前缀稳定 + P0-2 usage 回传（v0.6.29 完成）。验收：`flare cache-check` 一键验收
@@ -30,7 +29,8 @@
 > 下一步候选（按优先级）：
 > ① 【P1】分层上下文（Layer 1 异步滚动摘要——摘要内容升级为 LLM 生成语义级压缩，需评估 run 循环外异步）
 > ② 其他安全的外围增强（server 协议其他管理接口、MCP 工具集完善、测试稳定性等）
->    已覆盖：cache-check --rounds 多轮验收（v0.6.54）✓ /
+>    已覆盖：/mcp connect 摘要 transport/target（v0.6.55）✓ /
+>    cache-check --rounds 多轮验收（v0.6.54）✓ /
 >    /usage 本会话 perModel 子行（v0.6.53）✓ /
 >    session_usage perModel（v0.6.52）✓ /
 >    mcp status 统一 status()+--connect（v0.6.51）✓ /
@@ -55,6 +55,26 @@
 
 > ---
 
+> ### 2026-08-12 第五十四轮实施（v0.6.55）——`/mcp connect` 摘要带传输类型标记（方向③ MCP 增强）
+>
+> - **P84 CLI 交互 `/mcp connect` 摘要补 transport/target**（src/cli/index.ts + 测试，commit `c85ebc3`）：
+>   - **缺口定位**：v0.6.50 给 /mcp 状态行加了 transport/target（[stdio]/[HTTP] + 端点/命令），但
+>     `/mcp connect` 成功摘要仍是旧格式 `已连接 X（N 个 MCP 工具）`——连接成功后看不到刚连的是哪种
+>     传输、连到哪；本轮对称补齐（纯外围，零 agent.ts 改动）
+>   - **connect 摘要**：`已连接 <name> [stdio|HTTP] <target>（N 个 MCP 工具[ · 资源/模板/提示词数]）`
+>     ——transport/target 与 `/mcp` 状态行**同源**（都来自 `McpManager.status()`），连接后立即可见
+>     传输类型与连接目标；旧形状 status（缺字段）降级默认 `[stdio]` 不崩溃
+>   - docs/mcp.md（交互模式 connect 摘要示例更新）+ README Changelog + 版本号 0.6.55
+>   - **816/816 全绿**（815 + 1 新增 mcp-command.test.ts：connect 摘要 stdio 带 [stdio]+命令目标 /
+>     HTTP 带 [HTTP]+端点 url，透传显示完整 + onChanged 计数），tsc 0 错误，**零 agent.ts 改动**
+>   - **冒烟实测**（真实 McpManager + in-process HTTP 服务器）：connect 后 status() 返回
+>     transport=http target=端点 url（CLI 组装同源数据），SMOKE PASS
+> - **下一步候选**：① 【P1】分层上下文（Layer 1 异步滚动摘要——摘要内容升级为 LLM 生成语义级压缩，
+>   需评估 run 循环外异步）；② 其他安全的外围增强（server 协议其他管理接口、MCP 工具集完善、测试
+>   稳定性等）
+>
+> ---
+>
 > ### 2026-08-12 第五十三轮实施（v0.6.54）——cache-check `--rounds` 多轮连续命中验收（方向① prompt caching 基建深化）
 >
 > - **P83 `runCacheCheck` rounds 多轮 + CLI `cache-check --rounds <N>`**（src/core/cache-check.ts +
