@@ -806,6 +806,59 @@ export function startHostServer(opts: HostServerOptions) {
           })
           break
         }
+        case 'apply_trim': {
+          // 宿主实际执行上下文裁剪（v0.6.35）：context_status 只给建议（keepIndexes）宿主无法执行——
+          // 本轮补「建议 → 执行」闭环：回传 keepIndexes 立即裁剪，或给 budgetTokens 由服务器按
+          // suggestTrim 计算并执行（Agent 内存裁剪 + store 同步删除被裁消息，重建后依然生效；
+          // 不触发生成、不调 LLM）
+          const sessionId = String(req.sessionId || 'default')
+          const agent = getAgent(sessionId)
+          const messages = agent.getMessages()
+          const hasKeep = Array.isArray(req.keepIndexes)
+          const hasBudget = req.budgetTokens !== undefined && req.budgetTokens !== null
+          if (!hasKeep && !hasBudget) {
+            reply({ type: 'error', message: 'apply_trim 需要 keepIndexes（保留的消息索引数组，来自 context_status 建议）或 budgetTokens（上下文 token 预算）' })
+            break
+          }
+          let keepIndexes: number[]
+          if (hasKeep) {
+            const arr = req.keepIndexes as unknown[]
+            if (arr.some((i: unknown) => !Number.isInteger(i) || (i as number) < 0 || (i as number) >= messages.length)) {
+              reply({ type: 'error', message: 'apply_trim 的 keepIndexes 必须是非负整数数组（消息索引，须 < 当前消息数）' })
+              break
+            }
+            keepIndexes = arr as number[]
+          } else {
+            const budget = Number(req.budgetTokens)
+            if (!Number.isInteger(budget) || budget <= 0) {
+              reply({ type: 'error', message: 'apply_trim 的 budgetTokens 必须是正整数（上下文 token 预算）' })
+              break
+            }
+            const reserve = (req.reserveForOutput === undefined || req.reserveForOutput === null)
+              ? 0
+              : Number(req.reserveForOutput)
+            if (!Number.isFinite(reserve) || reserve < 0) {
+              reply({ type: 'error', message: 'apply_trim 的 reserveForOutput 必须是非负数值' })
+              break
+            }
+            const trim = suggestTrim(messages, budget, { reserveForOutput: reserve })
+            keepIndexes = trim.keep.map((m) => messages.indexOf(m))
+          }
+          const beforeTokens = estimateMessagesTokens(agent.getMessages())
+          const result = agent.applyTrim(keepIndexes)
+          const afterMessages = agent.getMessages()
+          const afterTokens = estimateMessagesTokens(afterMessages)
+          reply({
+            type: 'ok',
+            sessionId,
+            keptCount: result.keptCount,
+            droppedCount: result.droppedCount,
+            messageCount: afterMessages.length,
+            estimatedKeptTokens: afterTokens,
+            estimatedDroppedTokens: Math.max(0, beforeTokens - afterTokens),
+          })
+          break
+        }
         case 'remember': {
           // 宿主保存持久记忆（记忆生命周期 v0.5.4：AI 面板"记住"、用户偏好写入）
           const sessionId = String(req.sessionId || 'default')
