@@ -9,7 +9,7 @@ import Database from 'better-sqlite3'
 import { join, dirname } from 'path'
 import { existsSync, mkdirSync } from 'fs'
 import { config } from '../core/config.js'
-import { Message } from '../core/llm.js'
+import { Message, estimateCostUsd } from '../core/llm.js'
 
 const DB_PATH = join(config.flareHome, 'flare.db')
 
@@ -578,7 +578,24 @@ export class MemoryStore {
     )
   }
 
-  /** 汇总 token 用量（v0.6.18 起含 perModel 按模型分解；v0.6.29 起含缓存/成本汇总） */
+  /**
+   * 估算「缓存命中省下的成本」（v0.6.64，方向① prompt caching 基建深化）：
+   * 对每个模型分别按 estimateCostUsd 算「未命中成本 - 命中成本」差值并求和——
+   * 定价只依赖 model + prompt/completion/cacheRead 三个 token 数且线性，perModel 聚合后计算精确；
+   * 无法定价的模型（estimateCostUsd 返回 null，如本地 Ollama）跳过不计入（贡献 0）。
+   * 纯函数不触网；返回 6 位四舍五入 USD（无可定价模型时 0）。
+   */
+  private estimateCacheSavedUsd(rows: { model: string; promptTokens: number; completionTokens: number; cacheReadTokens: number }[]): number {
+    let saved = 0
+    for (const m of rows) {
+      const miss = estimateCostUsd(m.model, m.promptTokens, m.completionTokens, 0)
+      const hit = estimateCostUsd(m.model, m.promptTokens, m.completionTokens, m.cacheReadTokens)
+      if (miss !== null && hit !== null) saved += miss - hit
+    }
+    return Math.round(saved * 1e6) / 1e6
+  }
+
+  /** 汇总 token 用量（v0.6.18 起含 perModel 按模型分解；v0.6.29 起含缓存/成本汇总；v0.6.64 起含缓存节省估算） */
   getUsageStats() {
     const row = this.db.prepare(
       `SELECT
@@ -601,22 +618,25 @@ export class MemoryStore {
        GROUP BY model
        ORDER BY calls DESC`
     ).all() as any[]
+    const perModel = rows.map((m) => ({
+      model: m.model,
+      calls: m.calls,
+      promptTokens: m.promptTokens,
+      completionTokens: m.completionTokens,
+      cacheReadTokens: m.cacheReadTokens,
+      totalTokens: m.promptTokens + m.completionTokens,
+    }))
     return {
       promptTokens: row.promptTokens,
       completionTokens: row.completionTokens,
       cacheReadTokens: row.cacheReadTokens,
       cacheWriteTokens: row.cacheWriteTokens,
       estimatedCostUsd: row.estimatedCostUsd,
+      // v0.6.64：缓存命中省下的成本（未命中价 vs 命中价的差；无法定价模型不计入）
+      cacheSavedUsd: this.estimateCacheSavedUsd(perModel),
       totalTokens: row.promptTokens + row.completionTokens,
       sessionCount: row.sessionCount,
-      perModel: rows.map((m) => ({
-        model: m.model,
-        calls: m.calls,
-        promptTokens: m.promptTokens,
-        completionTokens: m.completionTokens,
-        cacheReadTokens: m.cacheReadTokens,
-        totalTokens: m.promptTokens + m.completionTokens,
-      })),
+      perModel,
     }
   }
 
@@ -645,6 +665,14 @@ export class MemoryStore {
        GROUP BY model
        ORDER BY calls DESC`
     ).all(sessionId) as any[]
+    const perModel = rows.map((m) => ({
+      model: m.model,
+      calls: m.calls,
+      promptTokens: m.promptTokens,
+      completionTokens: m.completionTokens,
+      cacheReadTokens: m.cacheReadTokens,
+      totalTokens: m.promptTokens + m.completionTokens,
+    }))
     return {
       sessionId,
       promptTokens: row.promptTokens,
@@ -652,16 +680,11 @@ export class MemoryStore {
       cacheReadTokens: row.cacheReadTokens,
       cacheWriteTokens: row.cacheWriteTokens,
       estimatedCostUsd: row.estimatedCostUsd,
+      // v0.6.64：本会话缓存命中省下的成本（与 getUsageStats.cacheSavedUsd 同口径）
+      cacheSavedUsd: this.estimateCacheSavedUsd(perModel),
       totalTokens: row.promptTokens + row.completionTokens,
       callCount: row.callCount,
-      perModel: rows.map((m) => ({
-        model: m.model,
-        calls: m.calls,
-        promptTokens: m.promptTokens,
-        completionTokens: m.completionTokens,
-        cacheReadTokens: m.cacheReadTokens,
-        totalTokens: m.promptTokens + m.completionTokens,
-      })),
+      perModel,
     }
   }
 

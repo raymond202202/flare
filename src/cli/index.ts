@@ -1253,10 +1253,15 @@ export async function handleSlashCommand(
         output(`  ${chalk.gray('总计:')}       ${usage.totalTokens.toLocaleString()} tokens`)
         output(`  ${chalk.gray('会话数:')}     ${usage.sessionCount}`)
         // P0（v0.6.29）：缓存命中率 + 估算成本（宿主引导连续执行）
+        // v0.6.64：缓存节省金额（命中价 vs 未命中价的差——命中量的价值量化）
         const cacheRead = usage.cacheReadTokens || 0
         if (cacheRead > 0) {
           const hitRate = usage.promptTokens > 0 ? Math.round((cacheRead / usage.promptTokens) * 100) : 0
           output(`  ${chalk.gray('缓存命中:')}   ${cacheRead.toLocaleString()} tokens（${hitRate}%）`)
+          const saved = typeof usage.cacheSavedUsd === 'number' ? usage.cacheSavedUsd : 0
+          if (saved > 0) {
+            output(`  ${chalk.gray('缓存节省:')}   $${saved.toFixed(4)}`)
+          }
         }
         if (typeof usage.estimatedCostUsd === 'number' && usage.estimatedCostUsd > 0) {
           output(`  ${chalk.gray('估算成本:')}   $${usage.estimatedCostUsd.toFixed(4)}`)
@@ -1282,6 +1287,11 @@ export async function handleSlashCommand(
           if (mineCache > 0) {
             const mineRate = mine.promptTokens > 0 ? Math.round((mineCache / mine.promptTokens) * 100) : 0
             mineLine += ` · 缓存命中 ${mineCache.toLocaleString()} tokens（${mineRate}%）`
+            // v0.6.64：本会话缓存节省金额（与总览同口径；无法定价/无命中不显示）
+            const mineSaved = typeof mine.cacheSavedUsd === 'number' ? mine.cacheSavedUsd : 0
+            if (mineSaved > 0) {
+              mineLine += ` · 缓存节省 $${mineSaved.toFixed(4)}`
+            }
           }
           output(chalk.gray(mineLine))
           if (Array.isArray(mine.perModel) && mine.perModel.length > 0) {

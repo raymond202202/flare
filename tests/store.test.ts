@@ -192,6 +192,27 @@ describe('MemoryStore', () => {
     expect(s1.estimatedCostUsd).toBeCloseTo(0.003234, 6)
   })
 
+  it('缓存节省估算（v0.6.64）：cacheSavedUsd 命中价 vs 未命中价差值，无法定价模型不计入', () => {
+    // deepseek-chat：命中 800+1500=2300 tokens → 节省 2300/1e6 * (0.27-0.07) = 0.00046
+    store.logUsage('s1', 1000, 500, 'deepseek-chat', { cacheReadTokens: 800 })
+    store.logUsage('s1', 2000, 1000, 'deepseek-chat', { cacheReadTokens: 1500 })
+    // deepseek-reasoner：无命中 → 节省 0（命中 0）
+    store.logUsage('s1', 300, 150, 'deepseek-reasoner')
+    // 本地模型：无法定价（estimateCostUsd → null）→ 即使有命中也不计入
+    store.logUsage('s2', 300, 120, 'qwen2.5:7b', { cacheReadTokens: 100 })
+
+    const stats = store.getUsageStats()
+    expect(stats.cacheSavedUsd).toBeCloseTo(0.00046, 6)
+    // estimatedCostUsd 只反映实际成本，cacheSavedUsd 独立于它（命中价 vs 未命中价）
+    expect(stats.cacheSavedUsd).toBeGreaterThan(0)
+
+    // 单会话同口径：s1 命中 2300 → 0.00046；s2 无法定价 → 0
+    const s1 = store.getSessionUsage('s1')
+    expect(s1.cacheSavedUsd).toBeCloseTo(0.00046, 6)
+    const s2 = store.getSessionUsage('s2')
+    expect(s2.cacheSavedUsd).toBe(0)
+  })
+
   it('单会话 perModel 分解（v0.6.52）：按模型分组 + 缓存命中，与 getUsageStats 对称', () => {
     store.logUsage('s1', 1000, 500, 'deepseek-chat', { cacheReadTokens: 400 })
     store.logUsage('s1', 200, 100, 'deepseek-reasoner')

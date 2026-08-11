@@ -366,6 +366,9 @@ describe('flare host server 协议', () => {
     expect(typeof msgs[0].stats.cacheReadTokens).toBe('number')
     expect(typeof msgs[0].stats.cacheWriteTokens).toBe('number')
     expect(typeof msgs[0].stats.estimatedCostUsd).toBe('number')
+    // v0.6.64：缓存节省金额透传（命中价 vs 未命中价；无可定价用量 → 0）
+    expect(typeof msgs[0].stats.cacheSavedUsd).toBe('number')
+    expect(msgs[0].stats.cacheSavedUsd).toBe(0)
     // perModel 分解（v0.6.18）：数组，每项含 model/calls/totalTokens
     expect(Array.isArray(msgs[0].stats.perModel)).toBe(true)
     for (const m of msgs[0].stats.perModel) {
@@ -387,6 +390,9 @@ describe('flare host server 协议', () => {
     // P0（v0.6.29）：会话级缓存字段透传
     expect(typeof msgs[0].stats.cacheReadTokens).toBe('number')
     expect(typeof msgs[0].stats.estimatedCostUsd).toBe('number')
+    // v0.6.64：本会话缓存节省金额透传（与 get_usage 对称）
+    expect(typeof msgs[0].stats.cacheSavedUsd).toBe('number')
+    expect(msgs[0].stats.cacheSavedUsd).toBe(0)
     // perModel 分解（v0.6.52）：数组，每项含 model/calls/totalTokens（与 get_usage 对称）
     expect(Array.isArray(msgs[0].stats.perModel)).toBe(true)
     // 未产生用量的会话：全 0（幂等，不抛错）

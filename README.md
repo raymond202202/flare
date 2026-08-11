@@ -341,6 +341,24 @@ Interactive mode commands:
 
 > 中文条目 / Chinese entries · English summary for each version
 
+#### v0.6.64 (2026-08-12) — usage 统计带缓存节省金额估算（方向① prompt caching 基建深化）
+
+- ✨ **`cacheSavedUsd`：运行期用量统计量化「缓存命中省了多少钱」（src/memory/store.ts + src/cli/index.ts + src/server.ts + 测试）**：
+-  /usage 已显示缓存命中 tokens（v0.6.29/42）但看不到**价值**——cache-check 单次验收有 savedUsd
+-  （v0.6.45）而运行期统计缺失；宿主面板只看到命中量、不知道命中价 vs 未命中价的差距；本轮补齐
+-  （纯外围，零 agent.ts 改动）
+- - **store 层**：`getUsageStats()` / `getSessionUsage()` 新增 `cacheSavedUsd`——按 perModel 逐模型
+-  用 `estimateCostUsd` 算「未命中成本 − 命中成本」差值求和（定价线性，聚合后计算精确）；无法定价的
+-  模型（本地 Ollama）跳过不计入；无命中/无定价 → 0（幂等）
+- - **server 协议**：`get_usage` / `session_usage` 透传 `cacheSavedUsd`（fallback 补 0）——宿主面板可显示
+-  「缓存已节省 $X」
+- - **CLI /usage**：总览缓存命中行下追加 `缓存节省: $X.XXXX`；本会话行追加 ` · 缓存节省 $X.XXXX`
+-  （>0 才显示；本地模型命中只显示命中量不显示节省，向后兼容）
+- - docs/host-protocol.md（§9 / §9.1 响应结构 + cacheSavedUsd 说明）+ README Changelog + 版本号 0.6.64
+- - 🧪 **849/849 全绿**（新增 3 用例：store 缓存节省差值求和+无法定价不计入 / CLI 总览+本会话行节省
+-  显示 / 本地模型命中不显示节省；server e2e 补 2 断言透传 cacheSavedUsd=0），tsc 0 错误，
+-  **零 agent.ts 改动**
+
 #### v0.6.63 (2026-08-12) — MCP 子命令提示对称补齐（方向③ MCP 增强）
 
 - ✨ **交互 `/mcp resources`/`/mcp prompts` 分支提示补 tools 入口（src/cli/index.ts + 测试）**：
