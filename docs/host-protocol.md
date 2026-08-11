@@ -3,7 +3,7 @@
 > 供非 Node 宿主（如 Qt 应用）调用 flare 引擎的本地协议。
 > 传输：stdin/stdout · JSON Lines（每行一个 JSON 对象）
 > 实现：`src/server.ts`（`flare server` 命令）
-> 请求类型：chat / cancel / set_context / list_sessions / recent_sessions / get_messages / search_messages / get_usage / session_usage / context_status / apply_trim / ping / version / create_session / rename_session / clear_session / delete_session / end_session / restore_session / list_archived_sessions / remember / get_memories / delete_memory / tool_result / confirm_result / confirm_status / confirm_revoke / confirm_allow / models / get_config / tools / mcp_status / mcp_resources / mcp_prompts / mcp_read_resource / mcp_get_prompt / mcp_call
+> 请求类型：chat / cancel / set_context / list_sessions / recent_sessions / search_sessions / get_messages / search_messages / get_usage / session_usage / context_status / apply_trim / ping / version / create_session / rename_session / clear_session / delete_session / end_session / restore_session / list_archived_sessions / remember / get_memories / delete_memory / tool_result / confirm_result / confirm_status / confirm_revoke / confirm_allow / models / get_config / tools / mcp_status / mcp_resources / mcp_prompts / mcp_read_resource / mcp_get_prompt / mcp_call
 
 ## 启动
 
@@ -71,6 +71,21 @@ flare server --profile <expert-profile-file> --storage <db-path> [--mcp <mcp-con
 - `preview`：该会话第一条 user 消息的前 120 字符（空白折叠）——宿主会话面板展示标题/预览用；
   空会话 preview 为空串
 - 与 `list_sessions`（全量 + 消息数）互补：recent_sessions 面向"最近会话列表"展示场景，只读不生成
+
+### 4.2 search_sessions — 按标题/消息内容搜索会话（v0.6.43）
+
+```json
+{"type":"search_sessions","query":"flutter"}                    // 搜索会话（默认返回最多 20 条）
+{"type":"search_sessions","query":"flutter","limit":5}          // 指定条数（1~100，默认 20）
+```
+
+响应：`{"type":"search_sessions","query":"flutter","sessions":[{"id":"s1","title":"...","createdAt":"...","updatedAt":"...","messageCount":3,"archived":false}]}`
+
+- `query` 必填（非空字符串）——LIKE 匹配**会话标题或会话内任意消息内容**（DISTINCT 去重，
+  一个会话多条命中只出现一次）；结构同 `list_sessions`（含消息数/归档标记），按更新时间倒序
+- 与 `search_messages`（v0.6.24，返回**消息级**结果）互补：本接口返回**会话级**结果——
+  宿主面板搜索框先搜会话（可点进会话看详情），再按需 `search_messages` 定位具体消息
+- 只读不触发生成；不存在的关键词返回空数组 `sessions:[]`（不报错）
 
 ### 5. get_messages — 读取指定会话消息历史（只读，不生成）
 
@@ -513,6 +528,7 @@ flare server --profile <expert-profile-file> --storage <db-path> [--mcp <mcp-con
 | `error` | `message` | 错误（含未配置 key 等） |
 | `sessions` | `sessions` | 会话列表 |
 | `recent_sessions` | `sessions` | 最近会话列表（含 preview，v0.6.0） |
+| `search_sessions` | `query, sessions` | 会话搜索结果（search_sessions 响应，v0.6.43） |
 | `messages` | `sessionId, messages` | 指定会话的消息历史 |
 | `memories` | `memories` | 记忆列表（get_memories 响应） |
 | `ok` | `sessionId, deleted?/tool?/resetSession?/mode?/title?/cleared?` | 通用确认（set_context/cancel/create_session/rename_session/clear_session/delete_session/remember/delete_memory/confirm_revoke/confirm_allow） |

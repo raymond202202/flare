@@ -273,6 +273,28 @@ export class MemoryStore {
     }))
   }
 
+  /** 按标题/消息内容搜索会话（v0.6.43）：LIKE 匹配标题或会话内消息内容（DISTINCT 去重），结构同 getAllSessions，按更新时间倒序 */
+  searchSessions(query: string, limit = 20): { id: string; title: string; createdAt: string; updatedAt: string; messageCount: number; archived: boolean }[] {
+    const q = (query || '').trim()
+    if (!q) return []
+    const rows = this.db.prepare(`
+      SELECT DISTINCT s.id, s.title, s.created_at, s.updated_at, s.archived,
+             (SELECT COUNT(*) FROM messages m WHERE m.session_id = s.id) AS message_count
+      FROM sessions s
+      LEFT JOIN messages m ON m.session_id = s.id
+      WHERE s.title LIKE ? OR m.content LIKE ?
+      ORDER BY s.updated_at DESC LIMIT ?
+    `).all(`%${q}%`, `%${q}%`, limit) as any[]
+    return rows.map(r => ({
+      id: r.id,
+      title: r.title || '新会话',
+      createdAt: r.created_at || '',
+      updatedAt: r.updated_at || '',
+      messageCount: Number(r.message_count) || 0,
+      archived: Number(r.archived) === 1,
+    }))
+  }
+
   /**
    * 归档会话（v0.6.31）：标记 archived=1，会话数据保留（消息/用量都在），
    * 从「最近会话」隐藏但可 listArchivedSessions 找回 / restoreSession 恢复。
