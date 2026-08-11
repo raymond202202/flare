@@ -3,17 +3,46 @@
 > 目标：flare 是 Pulse/StorySpire 依赖的 AI Agent 引擎（TS）。任何改动必须安全（tsc 0 错 + 测试全绿才 commit）。
 > 铁律：禁止 push；禁止修改 src/core/agent.ts 的 Agent.run 核心循环。
 
-> **最新状态（v0.6.26）**：**McpManager 资源桥接**——连接外部 MCP 服务器时除桥接工具外同时拉取
-> `resources/list` + `resources/templates/list`（此前只桥接工具、资源完全没消费，方向 2「resources
-> 真实暴露打磨」的客户端侧缺口）；新增 `getAllResources()` / `getAllResourceTemplates()` /
-> `readResource(name, uri)`（带来源 server 名，未连接 reject 清晰错误），`status()` 已连接时带
-> `resourceCount`/`templateCount`（可选字段向后兼容），disconnect 随连接清理；server 协议新增
-> `mcp_resources` 请求（宿主查看外部 MCP 资源/模板清单，按服务器分组，只读不触发生成）+ CLI `/mcp`
-> 状态行显示 `（N 个工具 · M 资源 · K 模板）` + `/mcp resources [name]` 子命令；584/584 全绿
-> （583 + 1）。下一步候选：
+> **最新状态（v0.6.27）**：**confirm 事件带工具描述**——宿主弹窗确认流程打磨（方向 1「CLI/server 接入
+> ConfirmationGate」的收尾：确认流/写回类工具经确认门早已就绪，缺口是弹窗只能看到工具名+参数、无法说明
+> 「AI 想做什么」）；server 协议 confirm 事件可选带 `description`（getAgent 构建工具集时从工具定义填充，
+> 无描述不输出字段向后兼容）；CLI 终端确认弹窗同样带说明行（内置+MCP 工具实时查描述）；`buildConfirmEvent`
+> 纯函数库导出；593/593 全绿（584 + 9）。下一步候选：
 > ① 其他安全的外围增强（server 协议其他管理接口、CLI 交互增强、MCP 工具集完善等）；
 > ② 摘要内容升级为 LLM 生成（语义级压缩，需评估 run 循环外异步）；
 > ③ 资源桥接的宿主接线打磨（如外部 MCP 资源透传到 flare 自身 MCPServer 的 resources，需评估循环）。
+
+### 2026-08-11 第二十七轮实施（v0.6.27）——confirm 事件带工具描述（宿主弹窗确认流程打磨）
+
+- **P54 confirm 事件带工具描述**（src/server.ts + cli/index.ts + index.ts + 测试，commit `fbb4104`）：
+  - **缺口定位**：方向 1「CLI/server 接入 ConfirmationGate」的确认流早已闭环（v0.6.1 server confirm 事件
+    → 宿主回 confirm_result；v0.6.7 CLI 终端确认；v0.6.8/0.6.10 确认门管理；v0.6.18 get_config 回显名单）——
+    本轮收尾打磨：confirm 事件/终端弹窗只能看到**工具名+参数**，宿主弹窗无法说明「AI 想做什么」
+  - **server 协议**：`confirm` 事件可选带 `description`（工具定义描述）——getAgent 构建工具集时从工具定义
+    填充 `toolDescriptions` Map（gatedTools 循环 `fn.description` 非空才 set），getGate confirmer 执行时
+    实时查（gate 早建无妨，工具执行必在 Agent 构建后）；**无描述不输出字段**（buildConfirmEvent 纯函数
+    `...(description ? {description} : {})`，JSON.stringify 丢 undefined）——旧宿主忽略未知字段，向后兼容；
+    宿主注入的空描述工具（如 `--confirm-tools host_write` + 无描述 host 工具）confirm 事件无 description key
+  - **CLI 交互模式**：`formatConfirmPrompt(toolName, args, description?)` 可选第三参——说明行
+    `  说明: <描述>`（截断 80 字符）置于选项行前；`TerminalConfirmOptions.description` + terminalConfirmer
+    透传；startInteractive confirmer 用 `currentToolDescription` 实时查内置 + MCP 工具描述
+    （/mcp connect 后新工具也生效）；**缺省（无描述）输出与旧版逐字符一致**（零回归，测试断言相等）
+  - **库导出**：`buildConfirmEvent` 纯函数 + `ConfirmEvent` 类型（index.ts re-export，与 describeTools 等
+    同模式可单测）
+  - docs/host-protocol.md §17（confirm_result 补 description 说明）+ 确认流章节（事件示例 + 兼容性说明）
+    + 事件表 confirm 行 `description?` + README Changelog + 版本号 0.6.27
+  - **593/593 全绿**（584 + 9 新增：buildConfirmEvent 4——带描述字段完整 / 无描述序列化后无 key /
+    空描述视为无 / args 归一 {}；CLI 5——formatConfirmPrompt 说明行、超长截断 80、缺省与旧版相等、
+    terminalConfirmer 带描述透传 ask / 缺省无说明行），tsc 0 错误，零 agent.ts 改动
+  - **冒烟实测**（真实 server 子进程 + mock OpenAI 兼容端点，两场景完整 chat 流）：场景1 默认名单——
+    AI 调 memory_save → confirm 事件带完整描述（`保存一条持久记忆（跨会话长期记住）…`）→ 回 allow_once
+    → done；场景2 `--confirm-tools host_write` + 宿主注入空描述工具 → confirm 事件**无 description 字段**
+    （序列化后无该 key）→ 回 allow_once + tool_result → done，SMOKE PASS
+- **下一步候选**：① 其他安全的外围增强（server 协议其他管理接口、CLI 交互增强、MCP 工具集完善等）；
+  ② 摘要内容升级为 LLM 生成（语义级压缩，需评估 run 循环外异步）；
+  ③ 资源桥接的宿主接线打磨（外部 MCP 资源透传 flare 自身 MCPServer 的 resources，需评估嵌套循环风险）
+
+---
 
 ### 2026-08-11 第二十六轮实施（v0.6.26）——McpManager 资源桥接 + server 协议 mcp_resources
 
