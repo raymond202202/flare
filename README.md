@@ -341,6 +341,17 @@ Interactive mode commands:
 
 > 中文条目 / Chinese entries · English summary for each version
 
+#### v0.6.76 (2026-08-12) — cache-check 每轮节省明细 runSavedUsd（prompt caching 基建深化）
+
+- ✨ **`cache-check` 新增每轮节省明细 `runSavedUsd`**（与 runs 对齐，第 i 项 = 第 i+1 轮
+-  miss 价 − hit 价；无法定价 → null；基准/未命中轮为 0）：
+- - `--json` 输出新增 `runSavedUsd` 字段（宿主/CI 可逐轮看省钱分布，非只看到总节省）
+- - 人类可读输出每轮行尾追加 `（节省 $X.XXXXXX）`（>0 才显示，与总节省同口径）
+- - 总节省 `savedUsd` 语义不变（v0.6.75 起累加所有命中轮）；向后兼容
+- - README Changelog + 版本号 0.6.76
+- - 🧪 **873/873 全绿**（新增 2 用例 + 1 断言：多轮每轮明细精确相等且总节省 = 明细和；无法定价
+-   全部 null；--json 含 runSavedUsd），tsc 0 错误，**零 agent.ts 改动**
+
 #### v0.6.75 (2026-08-12) — cache-check 多轮验收 savedUsd 累加所有命中轮（prompt caching 基建深化）
 
 - ✨ **`cache-check --rounds >2` 时 `savedUsd` 从「只算最后一轮」改为「累加所有命中轮」**：
