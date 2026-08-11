@@ -3,28 +3,77 @@
 > 目标：flare 是 Pulse/StorySpire 依赖的 AI Agent 引擎（TS）。任何改动必须安全（tsc 0 错 + 测试全绿才 commit）。
 > 铁律：禁止 push；禁止修改 src/core/agent.ts 的 Agent.run 核心循环。
 
-> **最新状态（v0.6.28）**：**外部 MCP 资源透传**（候选 ④ 资源桥接宿主接线的落地）——MCPServer 新增动态
-> 资源提供器 `resourceProvider`：resources/list 实时合并静态+动态（静态优先去重）、resources/read 代理
-> 读取（文本包 contents/数组透传/null→-32602）、动态 uri 可订阅退订、有提供器声明 capabilities.resources
-> （subscribe+listTemplates）、提供器抛错降级不中断请求；CLI `flare mcp-server --bridge-resources` 一键
-> 连接 ~/.flare/mcp.json 外部服务器并透传资源（stdio+--http 双传输；提示走 stderr 不污染协议通道）；
-> 605/605 全绿（593 + 12）。
->
-> 【🔴 当前最高优先级方向（2026-08-11 用户拍板，下一轮先做这个）】**prompt caching 基建**：
-> 完整架构见 `docs/flare-token-architecture.md`（双机方案整合定稿）。核心：缓存命中 0.02元/M vs 未命中
-> 1元/M（50 倍差价），比任何压缩都省钱。P0 第一步 = **system 前缀稳定**（agent.ts 现在把记忆拼进 system
-> 前缀，记忆一变缓存全失效 → 把身份/记忆拆成独立 system 消息放稳定前缀之后）；P0 第二步 = **usage 回传增强**
-> （llm.ts 已记录 prompt/completion，补 cache_read/cache_write 字段 + estimated_cost_usd，宿主可见缓存命中率）。
-> 验收：连续两轮调用（间隔<5min）第二轮 cache_read_tokens > 0。
->
+> **最新状态（v0.6.29）**：**prompt caching 基建 P0 落地**（用户拍板最高优先级，
+> docs/flare-token-architecture.md 第二/六节）——P0-1 system 前缀稳定：system 拆成独立消息序列
+> （稳定前缀 / 身份段 / 记忆段），记忆变化只影响最后一条 system，稳定前缀 + 工具定义永远命中
+> DeepSeek 前缀缓存；setContext 状态快照改为独立 system 消息追加消息末尾（动态区）；trim/suggestTrim
+> 开头 system 块全保底；summarize 摘要紧随 system 块。P0-2 usage 回传增强：usage 补
+> cache_read/cache_write + estimated_cost_usd（DeepSeek/OpenAI 双格式提取 + 按模型定价估算），
+> usage_log 加列 + 老库迁移，get_usage/session_usage 透传，CLI /usage 显示缓存命中率；
+> 630/630 全绿（605 + 25），tsc 0 错误，run 循环零改动。
+
+> 【🔴 当前最高优先级方向（2026-08-11 用户拍板）】**prompt caching 基建 P0 已基本落地**：
+> P0-1 前缀稳定 + P0-2 usage 回传（v0.6.29 完成）。验收：连续两轮调用（间隔<5min）第二轮
+> cache_read_tokens > 0——前缀稳定已保证命中基础，实际命中还取决于 DeepSeek 服务端缓存（外部因素）。
+> 剩余方向：P1 分层上下文（Layer 1 异步滚动摘要，需评估 run 循环外异步）、P1 工具输出治理
+> （按工具类型定制截断）、P1 会话归档 API（server 协议 endSession）、P2 模型路由钩子。
+
 > 下一步候选（按优先级）：
-> ① 【最高优先】prompt caching 基建（P0，见 docs/flare-token-architecture.md 第二/六节，先做 system 前缀稳定 + usage 回传增强，禁止改 Agent.run 核心循环）
-> ② 其他安全的外围增强（server 协议其他管理接口、CLI 交互增强、MCP 工具集完善等）；
-> ③ 摘要内容升级为 LLM 生成（语义级压缩，需评估 run 循环外异步）。
->
+> ① 【P1】分层上下文（Layer 1 异步滚动摘要——摘要内容升级为 LLM 生成语义级压缩，需评估 run 循环外异步）
+> ② 【P1】工具输出治理（按工具类型定制截断：读文件留头尾、终端留尾部+退出码）
+> ③ 【P1】会话归档 API（server 协议 endSession）
+> ④ 其他安全的外围增强（server 协议其他管理接口、CLI 交互增强、MCP 工具集完善等）
+
 > ---
->
-> ### 2026-08-11 第二十八轮实施（v0.6.28）——外部 MCP 资源透传（动态资源提供器，候选 ④ 资源桥接宿主接线落地）
+
+### 2026-08-11 第二十九轮实施（v0.6.29）——prompt caching 基建 P0（system 前缀稳定 + usage 缓存回传）
+
+- **P57 system 前缀稳定（P0-1）**（src/core/agent.ts 构造函数 + context.ts，commit `fc9c56d`）：
+  - **缺口定位**：agent.ts 原来把记忆拼进 system 前缀（`basePrompt + ## 关于这个用户 + 记忆`）——
+    记忆一变整条 system 变 → DeepSeek 前缀缓存全失效（0.02元/M vs 1元/M，50 倍差价，比任何压缩都省钱）
+  - **system 拆成独立消息序列**：稳定前缀（systemPrompt，永远不变）→ 身份段（identity/flareIntro，
+    独立 system 消息）→ 记忆段（「关于这个用户」，独立 system）——记忆变化只影响最后一条 system，
+    稳定前缀 + 工具定义永远命中缓存；构造拆消息，**run 循环零改动**
+  - **setContext 语义升级**：宿主状态快照（server chat context / set_context）原实现拼进第一条 system
+    会污染稳定前缀——改为**独立 system 消息追加到消息末尾**（动态区，历史之后）：每轮快照变化只影响
+    末尾 token，稳定前缀 + 身份 + 记忆 + 历史全部命中缓存；重复调用替换（startsWith marker 查找）、
+    清空移除；getMessages 结构可被宿主读取
+  - **裁剪保底升级**：trimContextMessages/suggestTrim 原只保底首条 system——拆多条后身份/记忆会被裁掉
+    （AI 丢身份丢长期记忆）→ 改为**开头连续 system 块全保底**（保持相对顺序）；末尾「当前状态」system
+    属动态区**不挪位**（按最近优先正常收集，不占保底预算——若挪到最前则它一变历史全失效，违背缓存目标）；
+    summarizeTrimmedMessages 摘要紧随开头 system 块之后（原来只认第一条）；单 system 旧形态零回归
+- **P58 usage 回传增强（P0-2）**（src/core/llm.ts + memory/store.ts + server.ts + cli/index.ts，同 commit）：
+  - **LLMResponse.usage 扩展**：`cache_read_tokens`（DeepSeek prompt_cache_hit_tokens / OpenAI
+    prompt_tokens_details.cached_tokens 双格式兼容，extractUsageCache 纯函数）/ `cache_write_tokens`
+    （Anthropic 风格 cache_creation_input_tokens）/ `estimated_cost_usd`（estimateCostUsd 纯函数按模型
+    定价：deepseek-chat $0.27/$0.07/$1.10 每 M，命中价≈1/4 未命中价；reasoner $0.55/$0.14/$2.19；
+    本地/未知模型 null 不假装精确）——三个纯函数均库导出可单测
+  - **落库 + 迁移**：usage_log 表加列 cache_read_tokens/cache_write_tokens/estimated_cost_usd；
+    migrate() 老库自动 ALTER 补列（幂等，老数据读取 0 不报错）；`logUsage` 可选第 5 参 extra
+    （cacheReadTokens/cacheWriteTokens/estimatedCostUsd，缺省与旧版完全一致）
+  - **汇总与透传**：getUsageStats 加 cacheReadTokens/cacheWriteTokens/estimatedCostUsd 全局汇总 +
+    perModel 每项 cacheReadTokens；getSessionUsage 同样带缓存/成本；server 协议 get_usage/session_usage
+    响应透传（fallback 同步补默认 0）；CLI `/usage` 显示缓存命中行（`缓存命中: N tokens（命中率%）`）
+    与估算成本行（有命中/成本才显示，无缓存输出与旧版一致零回归）
+  - docs/flare-token-architecture.md 落地状态更新（P0-1/P0-2 已实施 + 验收标准标注）+ docs/host-protocol.md
+    §9 响应示例 + README Changelog + 版本号 0.6.29
+  - **630/630 全绿**（605 + 25 新增：llm 12——estimateCostUsd 6（1M 未命中 $1.37/全命中 $1.17/部分命中/
+    reasoner/未知 null/封顶防御）+ extractUsageCache 6（DeepSeek/OpenAI 双格式/共存优先/cache_write/
+    无字段/负数防御）；store 2——logUsage extra 落库+汇总、老库迁移补列不报错；agent 3——身份独立
+    system 消息/前缀稳定（记忆变化首条 system 逐字节不变）/setContext 末尾独立+替换+清空；context 4——
+    trim 多 system 全保底/末尾当前状态不挪位/极小预算保底/单 system 零回归 + suggestTrim 多 system 对称 +
+    summarize 摘要紧随 system 块；CLI 2——/usage 缓存行+命中率+成本/无缓存零回归），tsc 0 错误，
+    **run 循环零改动**（logUsage 调用仅扩展传参，控制流不变）
+  - **冒烟实测**：estimateCostUsd 1M 未命中 $1.37 vs 全命中 $1.17（缓存省钱可见）；记忆变化重建 Agent
+    稳定前缀逐字节一致；logUsage 带缓存落库 getUsageStats/getSessionUsage 往返正确；setContext 追加
+    末尾独立 system；真实 server 子进程 engine 0.6.29、get_usage/session_usage 缓存字段透传（空库 0），
+    SMOKE PASS
+- **下一步候选**：① 【P1】分层上下文（Layer 1 异步滚动摘要——LLM 语义级摘要，需评估 run 循环外异步）；
+  ② 【P1】工具输出治理；③ 【P1】会话归档 API（endSession）；④ 其他安全的外围增强
+
+---
+
+### 2026-08-11 第二十八轮实施（v0.6.28）——外部 MCP 资源透传（动态资源提供器，候选 ④ 资源桥接宿主接线落地）
 >
 > - **P55 MCPServer 动态资源提供器 `resourceProvider`**（src/mcp/server.ts + index.ts + 测试，commit 见下）：
 >   - **缺口定位**：候选 ④「外部 MCP 资源透传 flare 自身 MCPServer 的 resources」——flare 同时作为 MCP
