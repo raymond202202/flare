@@ -117,7 +117,7 @@ export type {
 
 // ===== MCP 服务器端（v0.5.8）：flare 工具集经 MCP 标准协议暴露给外部客户端 =====
 export { MCPServer, toMcpTool, startMcpServer, MCP_LOG_LEVELS, MCP_DEFAULT_LOG_LEVEL, matchResourceTemplate } from './mcp/server.js'
-export type { MCPServerOptions } from './mcp/server.js'
+export type { MCPServerOptions, McpResourceProvider } from './mcp/server.js'
 // MCP HTTP transport（v0.6.3）：POST /mcp 同步 JSON-RPC，复用同一 MCPServer 核心
 export { startMcpHttpServer } from './mcp/http.js'
 export type { McpHttpServerOptions, McpHttpServerHandle } from './mcp/http.js'

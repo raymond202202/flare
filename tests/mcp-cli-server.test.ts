@@ -7,10 +7,14 @@
 import { describe, it, expect } from 'vitest'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
+import { tmpdir } from 'node:os'
+import { writeFileSync, mkdtempSync } from 'node:fs'
 import { MCPClient } from '../src/mcp/client.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const CLI = path.join(__dirname, '..', 'dist', 'cli', 'index.js')
+const TSK_CLI = path.join(__dirname, '..', 'node_modules', 'tsx', 'dist', 'cli.mjs')
+const EXT_FIXTURE = path.join(__dirname, 'fixtures', 'mcp-flare-server-templates.ts')
 
 function spawnCli(args: string[], timeoutMs = 10000): MCPClient {
   return new MCPClient({
@@ -58,6 +62,57 @@ describe('CLI mcp-server 命令（MCP stdio 服务器）', () => {
       const res = await client.callTool('terminal', { command: 'rm -rf /' })
       expect(res.isError).toBe(true)
       expect(res.content[0]?.text).toContain('安全策略拦截')
+    } finally {
+      client.close()
+    }
+  })
+
+  it('flare mcp-server --bridge-resources：外部 MCP 服务器资源/模板经 flare 透传给客户端（读取代理转发）', async () => {
+    // 临时 MCP 配置：外部 stdio MCP 服务器（mcp-flare-server-templates fixture，暴露 memory://preferences + 模板）
+    const dir = mkdtempSync(path.join(tmpdir(), 'flare-mcp-bridge-'))
+    const configPath = path.join(dir, 'mcp.json')
+    writeFileSync(configPath, JSON.stringify({
+      servers: [
+        { name: 'ext', command: process.execPath, args: [TSK_CLI, EXT_FIXTURE] },
+      ],
+    }))
+
+    const client = spawnCli(['mcp-server', '--bridge-resources', '--config', configPath], 15000)
+    try {
+      const init = await client.initialize()
+      expect(init.serverInfo?.name).toBe('flare')
+      // 有提供器 → resources 能力声明（subscribe + listTemplates）
+      expect((client as any).capabilities?.resources?.subscribe).toBe(true)
+      expect((client as any).capabilities?.resources?.listTemplates).toBe(true)
+      // 外部资源透传：listResources 能看到外部服务器的资源
+      const resources = await client.listResources()
+      expect(resources).toEqual([
+        { uri: 'memory://preferences', name: '用户偏好', description: '用户偏好设置', mimeType: 'text/plain' },
+      ])
+      // 外部资源模板透传
+      const templates = await client.listResourceTemplates()
+      expect(templates).toEqual([
+        { uriTemplate: 'memory://{noteId}', name: '记忆条目', description: '记忆库中的单条记忆（动态资源）', mimeType: 'text/plain' },
+      ])
+      // 读取外部资源：flare 代理转发到外部服务器（内容往返）
+      const contents = await client.readResource('memory://preferences')
+      expect(contents[0].text).toBe('主题: 浅色')
+      // flare 自身工具照常可用（透传不破坏工具）
+      const tools = await client.listTools()
+      expect(tools.map((t) => t.name)).toContain('read_file')
+    } finally {
+      client.close()
+    }
+  })
+
+  it('flare mcp-server --bridge-resources（无配置）：提示 + 仅暴露 flare 自身资源（空列表，不中断）', async () => {
+    const client = spawnCli(['mcp-server', '--bridge-resources', '--config', path.join(tmpdir(), 'flare-mcp-nonexistent.json')])
+    try {
+      await client.initialize()
+      const resources = await client.listResources()
+      expect(resources).toEqual([])
+      const tools = await client.listTools()
+      expect(tools.length).toBe(6)
     } finally {
       client.close()
     }

@@ -338,6 +338,21 @@ Interactive mode commands:
 
 > 中文条目 / Chinese entries · English summary for each version
 
+#### v0.6.28 (2026-08-11) — 外部 MCP 资源透传（动态资源提供器）
+- 🧩 **`MCPServer` 动态资源提供器 `resourceProvider`（src/mcp/server.ts）**：resources 除构造时注入的静态
+  列表外，可挂动态提供器——`resources/list` 实时合并（静态优先、同 uri 去重）、`resources/read` 代理读取
+  （文本包成 contents / 数组原样透传）；提供器抛错 → 降级（列表空 / 读取 Unknown resource -32602），
+  请求不中断；动态 uri 同样可订阅/退订；有提供器时 `capabilities.resources` 声明 subscribe + listTemplates
+- 🔀 **CLI `flare mcp-server --bridge-resources`**：连接 ~/.flare/mcp.json 全部外部 MCP 服务器，把外部
+  资源/模板透传给 flare 自身 MCPServer 的客户端（宿主）——外部资源经 flare 中转暴露，读取实时代理转发
+  （stdio 与 --http 双传输都支持；提示走 stderr 不污染协议通道；未配置服务器安全提示 + 仅暴露自身资源）
+- 📚 docs/mcp.md 资源透传章节（接线示例 + 嵌套循环风险说明）+ README Changelog + 版本号 0.6.28
+- 🧪 新增 12 项测试（MCPServer 10：列表合并异步/静态优先去重 / 提供器抛错·非数组降级 / 模板合并 /
+  读取文本包 contents·数组透传 / 未知·抛错 -32602 / 静态优先读 / 动态订阅退订 / initialize 声明 +
+  无提供器零回归；**真实互通 e2e**——MCPClient ↔ 带提供器的真实子进程：合并列表 + 动态读取闭环 +
+  未知 reject 连接不断；CLI 2：--bridge-resources 全链路透传（资源/模板/读取往返/工具不受影响）、
+  无配置降级）；**605/605 全绿**（593 + 12），tsc 0 错误，零 agent.ts 改动
+
 #### v0.6.27 (2026-08-11) — confirm 事件带工具描述（宿主弹窗确认流程打磨）
 - 🪟 **server 协议 `confirm` 事件带 `description`（src/server.ts）**：工具定义有描述时（如 `memory_save` 的
   「保存一条持久记忆…」）随事件带上——宿主确认弹窗可展示说明行「AI 想做什么」，而非只有工具名+参数；

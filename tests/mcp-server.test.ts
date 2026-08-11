@@ -4,10 +4,10 @@ import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { readFileSync } from 'node:fs'
-import { MCPServer, toMcpTool, matchResourceTemplate } from '../src/mcp/server.js'
+import { MCPServer, toMcpTool, matchResourceTemplate, type McpResourceProvider } from '../src/mcp/server.js'
 import { MCPClient } from '../src/mcp/client.js'
 import { readFileTool, type Tool } from '../src/tools/index.js'
-import type { McpPrompt, McpResource, McpProgressParams, McpResourceTemplate } from '../src/mcp/types.js'
+import type { McpPrompt, McpResource, McpProgressParams, McpResourceTemplate, McpResourceInfo, McpResourceTemplateInfo, McpResourceContents } from '../src/mcp/types.js'
 import { MCP_PROTOCOL_VERSION } from '../src/mcp/client.js'
 import pkg from '../package.json' with { type: 'json' }
 
@@ -1400,6 +1400,216 @@ describe('MCPServer 列表变化通知（v0.6.20：notifications/tools/list_chan
       // 连接仍正常
       const res = await client.listResources()
       expect(res.length).toBe(1)
+    } finally {
+      client.close()
+    }
+  })
+})
+
+describe('MCPServer 动态资源提供器（v0.6.28：外部 MCP 资源透传 flare 自身 MCPServer 的服务器侧基础）', () => {
+  const staticResources: McpResource[] = [
+    { uri: 'flare://static', name: '静态资源', description: 'flare 本地', read: () => '静态内容' },
+  ]
+  const dynamicResources: McpResourceInfo[] = [
+    { uri: 'ext://remote', name: '外部资源', description: '外部服务器', mimeType: 'text/plain' },
+    // 与静态同 uri：合并时应被静态优先去重
+    { uri: 'flare://static', name: '重复（应被丢弃）', description: '重复' },
+  ]
+  const dynamicTemplates: McpResourceTemplateInfo[] = [
+    { uriTemplate: 'ext://{id}', name: '外部模板', description: '外部动态资源形态' },
+  ]
+
+  /** 进程内测试台（带静态资源 + 可选动态提供器） */
+  function createProviderHarness(provider?: McpResourceProvider) {
+    const writes: string[] = []
+    const input = new Readable({ read() {} })
+    const server = new MCPServer({ resources: staticResources, resourceProvider: provider, write: (l) => writes.push(l), input })
+    server.start()
+    const send = (obj: unknown) => { input.push(JSON.stringify(obj) + '\n') }
+    const flush = () => new Promise<void>((r) => setTimeout(r, 30))
+    const responses = () => writes.map((w) => JSON.parse(w))
+    const last = () => responses()[responses().length - 1]
+    return { server, send, flush, responses, last }
+  }
+
+  it('resources/list：静态 + 动态提供器合并（异步），静态优先、同 uri 去重', async () => {
+    const h = createProviderHarness({
+      listResources: async () => dynamicResources,
+      listResourceTemplates: () => [],
+      readResource: () => null,
+    })
+    h.send({ jsonrpc: '2.0', id: 1, method: 'resources/list', params: {} })
+    await h.flush()
+    const res = h.last()
+    expect(res.result.resources).toEqual([
+      { uri: 'flare://static', name: '静态资源', description: 'flare 本地' },
+      { uri: 'ext://remote', name: '外部资源', description: '外部服务器', mimeType: 'text/plain' },
+    ])
+    h.server.close()
+  })
+
+  it('resources/list：提供器抛错 / 返回非数组 → 降级只返回静态（请求不中断）', async () => {
+    const h = createProviderHarness({
+      listResources: async () => { throw new Error('外部服务器不可用') },
+      listResourceTemplates: () => [],
+      readResource: () => null,
+    })
+    h.send({ jsonrpc: '2.0', id: 1, method: 'resources/list', params: {} })
+    h.send({ jsonrpc: '2.0', id: 2, method: 'resources/list', params: {} })
+    await h.flush()
+    const resps = h.responses()
+    expect(resps[0].result.resources).toEqual([{ uri: 'flare://static', name: '静态资源', description: 'flare 本地' }])
+    expect(resps[1].result.resources).toEqual([{ uri: 'flare://static', name: '静态资源', description: 'flare 本地' }])
+    h.server.close()
+  })
+
+  it('resources/templates/list：静态模板 + 提供器动态模板合并（异步）', async () => {
+    const h = createProviderHarness({
+      listResources: () => [],
+      listResourceTemplates: async () => dynamicTemplates,
+      readResource: () => null,
+    })
+    const server = h.server
+    const template: McpResourceTemplate = { uriTemplate: 'flare://{id}', name: '本地模板' }
+    ;(server as any).templateList.push(template)
+    h.send({ jsonrpc: '2.0', id: 1, method: 'resources/templates/list', params: {} })
+    await h.flush()
+    const res = h.last()
+    expect(res.result.resourceTemplates).toEqual([
+      { uriTemplate: 'flare://{id}', name: '本地模板' },
+      { uriTemplate: 'ext://{id}', name: '外部模板', description: '外部动态资源形态' },
+    ])
+    h.server.close()
+  })
+
+  it('resources/read：动态命中 → 提供器返回文本包成 text contents', async () => {
+    const h = createProviderHarness({
+      listResources: () => dynamicResources,
+      listResourceTemplates: () => [],
+      readResource: (uri) => (uri === 'ext://remote' ? '外部内容' : null),
+    })
+    h.send({ jsonrpc: '2.0', id: 1, method: 'resources/read', params: { uri: 'ext://remote' } })
+    await h.flush()
+    const res = h.last()
+    expect(res.result.contents).toEqual([{ uri: 'ext://remote', text: '外部内容' }])
+    h.server.close()
+  })
+
+  it('resources/read：提供器返回内容数组 → 原样透传（含 mimeType）', async () => {
+    const contents: McpResourceContents[] = [{ uri: 'ext://remote', mimeType: 'application/json', text: '{"a":1}' }]
+    const h = createProviderHarness({
+      listResources: () => dynamicResources,
+      listResourceTemplates: () => [],
+      readResource: () => contents,
+    })
+    h.send({ jsonrpc: '2.0', id: 1, method: 'resources/read', params: { uri: 'ext://remote' } })
+    await h.flush()
+    const res = h.last()
+    expect(res.result.contents).toEqual(contents)
+    h.server.close()
+  })
+
+  it('resources/read：动态未知 uri（提供器返回 null）/ 提供器抛错 → Unknown resource -32602', async () => {
+    const h = createProviderHarness({
+      listResources: () => dynamicResources,
+      listResourceTemplates: () => [],
+      readResource: (uri) => (uri === 'boom' ? (() => { throw new Error('读取失败') })() : null),
+    })
+    h.send({ jsonrpc: '2.0', id: 1, method: 'resources/read', params: { uri: 'ext://ghost' } })
+    h.send({ jsonrpc: '2.0', id: 2, method: 'resources/read', params: { uri: 'boom' } })
+    await h.flush()
+    const resps = h.responses()
+    expect(resps[0].error.code).toBe(-32602)
+    expect(resps[0].error.message).toContain('Unknown resource: ext://ghost')
+    expect(resps[1].error.code).toBe(-32602)
+    h.server.close()
+  })
+
+  it('resources/read：静态优先——静态与动态同 uri 时读静态内容', async () => {
+    const h = createProviderHarness({
+      listResources: () => dynamicResources,
+      listResourceTemplates: () => [],
+      readResource: () => '动态内容（不应被读到）',
+    })
+    h.send({ jsonrpc: '2.0', id: 1, method: 'resources/read', params: { uri: 'flare://static' } })
+    await h.flush()
+    const res = h.last()
+    expect(res.result.contents[0].text).toBe('静态内容')
+    h.server.close()
+  })
+
+  it('resources/subscribe + unsubscribe：动态提供器资源同样可订阅/退订，未知动态 uri -32602', async () => {
+    const h = createProviderHarness({
+      listResources: () => dynamicResources,
+      listResourceTemplates: () => [],
+      readResource: () => null,
+    })
+    h.send({ jsonrpc: '2.0', id: 1, method: 'resources/subscribe', params: { uri: 'ext://remote' } })
+    await h.flush()
+    expect(h.last().result).toEqual({})
+    expect(h.server.subscribedResources).toEqual(['ext://remote'])
+    h.send({ jsonrpc: '2.0', id: 2, method: 'resources/unsubscribe', params: { uri: 'ext://remote' } })
+    await h.flush()
+    expect(h.last().result).toEqual({})
+    expect(h.server.subscribedResources).toEqual([])
+    h.send({ jsonrpc: '2.0', id: 3, method: 'resources/subscribe', params: { uri: 'ext://ghost' } })
+    await h.flush()
+    expect(h.last().error.code).toBe(-32602)
+    h.server.close()
+  })
+
+  it('initialize：有提供器 → 声明 resources 能力（subscribe + listTemplates）；无提供器 → 不声明（零回归）', async () => {
+    const h = createProviderHarness({
+      listResources: () => [],
+      listResourceTemplates: () => [],
+      readResource: () => null,
+    })
+    h.send({ jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: MCP_PROTOCOL_VERSION, capabilities: {}, clientInfo: { name: 't', version: '0' } } })
+    await h.flush()
+    expect(h.last().result.capabilities.resources).toEqual({ subscribe: true, listTemplates: true })
+    h.server.close()
+
+    // 无提供器 + 有静态资源：与旧版一致（只有 subscribe，无 listTemplates）
+    const h2 = createProviderHarness()
+    h2.send({ jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: MCP_PROTOCOL_VERSION, capabilities: {}, clientInfo: { name: 't', version: '0' } } })
+    await h2.flush()
+    expect(h2.last().result.capabilities.resources).toEqual({ subscribe: true })
+    h2.server.close()
+  })
+
+  it('动态资源提供器真实互通 e2e：MCPClient listResources/readResource ↔ 真实 MCPServer 子进程（静态 + 外部透传合并）', async () => {
+    const client = new MCPClient({
+      command: process.execPath,
+      args: [TSK_CLI, join(__dirname, 'fixtures', 'mcp-flare-server-provider.ts')],
+      timeoutMs: 8000,
+    })
+    try {
+      await client.initialize()
+      // 提供器 → resources 能力声明（subscribe + listTemplates）
+      expect((client as any).capabilities?.resources?.subscribe).toBe(true)
+      expect((client as any).capabilities?.resources?.listTemplates).toBe(true)
+      // 合并列表：静态在前 + 外部动态资源
+      const resources = await client.listResources()
+      expect(resources).toEqual([
+        { uri: 'flare://static', name: '静态资源' },
+        { uri: 'ext://remote', name: '外部资源', description: '经 flare 透传的外部服务器资源', mimeType: 'text/plain' },
+      ])
+      // 外部动态模板透传
+      const templates = await client.listResourceTemplates()
+      expect(templates).toEqual([
+        { uriTemplate: 'ext://{id}', name: '外部模板', description: '外部动态资源形态' },
+      ])
+      // 动态资源读取闭环（经 flare 代理）
+      const contents = await client.readResource('ext://remote')
+      expect(contents[0].text).toBe('外部资源内容')
+      // 静态资源读取不受影响
+      const staticContents = await client.readResource('flare://static')
+      expect(staticContents[0].text).toBe('静态内容')
+      // 未知动态资源 → 协议错误（连接不断）
+      await expect(client.readResource('ext://ghost')).rejects.toThrow()
+      // 连接仍正常
+      const again = await client.listResources()
+      expect(again.length).toBe(2)
     } finally {
       client.close()
     }
