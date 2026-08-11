@@ -3,13 +3,16 @@
 > 目标：flare 是 Pulse/StorySpire 依赖的 AI Agent 引擎（TS）。任何改动必须安全（tsc 0 错 + 测试全绿才 commit）。
 > 铁律：禁止 push；禁止修改 src/core/agent.ts 的 Agent.run 核心循环。
 
-> **最新状态（v0.6.34）**：**工具输出治理策略可配置化全链路打通**——
-> `AgentConfig.toolOutputPolicy`（run 循环截断表达式一行参数化，缺省与旧版统一 slice 逐字符一致
-> 零回归）+ server 协议 chat 请求带 `toolOutputPolicy`（validateToolOutputPolicy 纯函数校验，
-> 非法值回 error 含字段名不触发生成）+ CLI `flare server --tool-output-policy '<json>'` server 级
-> 默认 + `get_config` 回显 `defaultToolOutputPolicy`；699/699 全绿（681 + 18 新增），tsc 0 错误，
-> 零 agent.ts run 循环改动；另修 server-context-trim.test.ts 既有 chat e2e vitest 超时放宽 45s。
-> （v0.6.33：terminal 退出码；v0.6.32：CLI 会话归档命令，681/681。）
+> **最新状态（v0.6.35）**：**上下文裁剪执行 API `apply_trim`（suggestTrim 宿主接线完整化）**——
+> `context_status` 此前只返回裁剪**建议**（keepIndexes）宿主却无法实际执行（set_context 只能追加状态
+> 快照）——本轮补「建议 → 执行」闭环：`Agent.applyTrim(keepIndexes)` **run 循环外独立 API**（开头
+> 连续 system 块无条件保底、非法索引宽松过滤、空数组保守不裁剪）+ store 同步（storedIdByMsg 消息
+> 对象→id 映射，依赖 trimContextMessages/suggestTrim 保留原对象引用，**零 run 循环改动**）——重建
+> Agent 后裁剪依然生效；server 协议 `apply_trim` 双模式（keepIndexes 回传执行 / budgetTokens 服务器
+> 按 suggestTrim 计算执行），非法值 error 含用法不触发生成，响应带 keptCount/droppedCount/
+> messageCount/estimatedKeptTokens/estimatedDroppedTokens；711/711 全绿（699 + 12 新增），tsc 0 错误，
+> 零 agent.ts run 循环改动；冒烟实测真实 dist CLI 子进程全链路，SMOKE PASS。
+> （v0.6.34：工具输出治理策略可配置化；v0.6.33：terminal 退出码；v0.6.32：CLI 会话归档命令。）
 
 > 【🔴 当前最高优先级方向（2026-08-11 用户拍板）】**prompt caching 基建 P0 已基本落地**：
 > P0-1 前缀稳定 + P0-2 usage 回传（v0.6.29 完成）。验收：连续两轮调用（间隔<5min）第二轮
@@ -19,9 +22,55 @@
 > 下一步候选（按优先级）：
 > ① 【P1】分层上下文（Layer 1 异步滚动摘要——摘要内容升级为 LLM 生成语义级压缩，需评估 run 循环外异步）
 > ② 其他安全的外围增强（server 协议其他管理接口、MCP 工具集完善、测试稳定性等）
->    已覆盖：工具输出治理策略可配置化透传（v0.6.34）✓ / terminal 退出码（v0.6.33）✓ /
->    CLI 归档命令（v0.6.32）✓ / 归档 API（v0.6.31）✓ / 工具输出治理（v0.6.30）✓ /
->    prompt caching P0（v0.6.29）✓ / MCP 动态资源提供器（v0.6.28）✓ / confirm 描述（v0.6.27）✓
+>    已覆盖：上下文裁剪执行 apply_trim（v0.6.35）✓ / 工具输出治理策略可配置化透传（v0.6.34）✓ /
+>    terminal 退出码（v0.6.33）✓ / CLI 归档命令（v0.6.32）✓ / 归档 API（v0.6.31）✓ /
+>    工具输出治理（v0.6.30）✓ / prompt caching P0（v0.6.29）✓ / MCP 动态资源提供器（v0.6.28）✓ /
+>    confirm 描述（v0.6.27）✓
+>
+> ---
+>
+> ### 2026-08-11 第三十四轮实施（v0.6.35）——上下文裁剪执行 API apply_trim（方向 4 suggestTrim 宿主接线完整化）
+>
+>- **P64 上下文裁剪执行 `apply_trim`**（src/core/agent.ts + memory/store.ts + server.ts + 测试，commit `90f417e`）：
+>  - **缺口定位**：方向 4「上下文优化（suggestTrim 宿主接线等）」——context_status（v0.6.4）只返回
+>    裁剪**建议**（keepIndexes/droppedCount/估算 tokens），宿主却**无法实际执行**：set_context 只能
+>    追加「当前状态」快照（setContext），不能删消息——「建议 → 执行」闭环缺失（旧文档「裁剪后回
+>    set_context 生效」指引本身就是错的，本轮一并修正）
+>  - **`Agent.applyTrim(keepIndexes)` run 循环外独立 API**（不触发生成、不调 LLM）：按索引保留集立即
+>    裁剪内存上下文——**开头连续 system 块（稳定前缀/身份/记忆）无条件保底**保持相对顺序（与
+>    trimContextMessages 同规则）；非法索引（非整数/越界）宽松过滤、重复去重；**空数组/全非法保守
+>    不裁剪**（宿主误传空数组不清空上下文）；store 删除失败不影响内存裁剪
+>  - **store 同步（重建 Agent 后裁剪依然生效）**：新增 `storedIdByMsg`（消息对象 → store 自增 id）
+>    映射，只在构造时建立（getMessagesWithIds 加载历史）；**关键洞察**：trimContextMessages /
+>    suggestTrim 均用 unshift/slice **保留原对象引用**（逐行确认）——数组重组后映射依然有效，因此
+>    **无需在 run 循环任何 push 点插桩**（零 agent.ts run 循环改动，纯外围）；被裁 ids = 有映射且
+>    不在保留集 → `deleteMessages`（DELETE ... id IN (...)，只删明确被裁的——run/setContext 新增
+>    （无映射）与内存未加载的 store 消息不受影响，不误删全量历史）
+>  - **store 层**：`getMessagesWithIds(sessionId, limit)`（含自增 id，结构同 getMessages 零回归）/
+>    `deleteMessages(sessionId, ids)`（空数组/不存在幂等返回 0，FTS 触发器联动清索引）
+>  - **server 协议 `apply_trim`**（双模式，任一必填）：`{keepIndexes}` 回传 context_status 建议索引
+>    立即执行（元素必须非负整数且 < 当前消息数，越界/负数/非整数 error 含用法）；`{budgetTokens,
+>    reserveForOutput?}` 服务器按 suggestTrim 计算保留集并执行（system 保底 + 最近优先 + tool_calls↔
+>    tool 配对保护）；两者都无 error；响应 `{type:'ok', sessionId, keptCount, droppedCount,
+>    messageCount, estimatedKeptTokens, estimatedDroppedTokens}`（宿主面板可展示裁剪效果）；只读不
+>    触发生成
+>  - docs/host-protocol.md 请求类型列表 + §10.2 新章节（双模式示例 + 响应结构 + 安全规则）+ README
+>    Changelog + 版本号 0.6.35
+>  - **711/711 全绿**（699 + 12 新增 tests/apply-trim.test.ts：store 3——getMessagesWithIds 结构与
+>    getMessages 一致+limit+空会话幂等 / deleteMessages 只删指定+空数组·不存在幂等；Agent 集成 5——
+>    保底 system+按索引保留（内存正确）/ store 同步（重建 Agent 后裁剪依然生效）/ 非法索引过滤+重复
+>    去重+空数组保守 / 无 sessionId 只裁内存不崩 / 多 system 块（身份+记忆 v0.6.29 形态）整块保底
+>    相对顺序；server e2e 4——参数校验（无参/keepIndexes 非法/budgetTokens 非法/reserveForOutput
+>    非法）/ budgetTokens 模式（suggestTrim 裁剪+store 同步 get_messages 验证）/ keepIndexes 模式
+>    （执行+幂等）/ reserve 合法路径），tsc 0 错误，**零 agent.ts run 循环改动**（仅构造加载换
+>    getMessagesWithIds + 新增独立方法）
+>  - **冒烟实测**（真实 dist CLI 子进程 + 预置历史会话）：context_status messageCount 4（system+3
+>    历史）→ apply_trim budgetTokens:1 → ok keptCount 2 droppedCount 2 messageCount 2 →
+>    get_messages 只剩「旧问题二」（被裁消息已从 store 删除）→ keepIndexes 越界、budgetTokens 0、
+>    无参数均 error 含用法，SMOKE PASS
+>- **下一步候选**：① 【P1】分层上下文（Layer 1 异步滚动摘要——摘要内容升级为 LLM 生成语义级压缩，
+>  需评估 run 循环外异步）；② 其他安全的外围增强（server 协议其他管理接口、MCP 工具集完善、测试
+>  稳定性等）
 >
 > ---
 >
