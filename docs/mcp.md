@@ -72,6 +72,14 @@
 - `/mcp prompts [name]`（v0.6.36）：列出已桥接提示词（`✨ name（参数: a, b）— 描述`）；带 `<name>`
   只列该服务器的；无提示词友好提示；`mcp_prompts` 协议请求可查看/透传（渲染经库级
   `McpManager.getPrompt` 代理）
+- `/mcp read <server> <uri>`（v0.6.39）：**读取已连接服务器的资源内容**（`resources/read` 代理，
+  与 `mcp_read_resource` 协议请求同源）——`/mcp resources` 只能看元数据，本命令直接显示资源
+  真实内容（uri + mimeType + text）；服务器未连接/未知资源错误输出不崩溃
+- `/mcp render <server> <prompt> [k=v ...]`（v0.6.39）：**渲染已连接服务器的提示词**
+  （`prompts/get` 代理，与 `mcp_get_prompt` 协议请求同源）——`/mcp prompts` 只能看元数据，
+  本命令直接显示渲染后的消息序列（`💬 role: text` + 可选描述）；`k=v` 传提示词参数
+  （如 `/mcp render mock summarize topic=flare`）；未知提示词错误输出不崩溃
+- `/help` 已注册 read/render 两行用法（v0.6.39）
 
 ### 3. 单次查询
 
