@@ -155,7 +155,7 @@ cp .env.example ~/.flare/.env
 | `flare mcp status` | 查看配置的 MCP 服务器（名称 + 传输类型 + 端点/命令 + [auth] 鉴权标记；--json 结构化输出 v0.6.80；v0.6.6/v0.6.70） |
 | `flare mcp resources <服务器> [--read <uri>]` | 查看/读取 MCP 服务器暴露的资源（v0.6.10） |
 | `flare mcp prompts <服务器> [--get <名称>]` | 查看/渲染 MCP 服务器暴露的提示词（v0.6.10） |
-| `flare cache-check [--model <模型>] [--json] [--rounds <N>]` | prompt caching 验收：连续两轮调用验证第二轮 cache_read_tokens > 0（v0.6.45；v0.6.48 起 --json 结构化输出供宿主/CI 消费；v0.6.54 起 --rounds 2~5 多轮连续命中验收；v0.6.75 起多轮 savedUsd 累加所有命中轮；v0.6.76 起 --json/输出含 runSavedUsd 每轮节省明细） |
+| `flare cache-check [--model <模型>] [--json] [--rounds <N>]` | prompt caching 验收：连续两轮调用验证第二轮 cache_read_tokens > 0（v0.6.45；v0.6.48 起 --json 结构化输出供宿主/CI 消费；v0.6.54 起 --rounds 2~5 多轮连续命中验收；v0.6.75 起多轮 savedUsd 累加所有命中轮；v0.6.76 起 --json/输出含 runSavedUsd 每轮节省明细；v0.6.78 起基准轮命中带残留缓存诊断；v0.6.79 起每轮命中率百分比） |
 
 交互模式命令：
 
@@ -340,6 +340,14 @@ Interactive mode commands:
 ### Changelog / Release Notes
 
 > 中文条目 / Chinese entries · English summary for each version
+
+#### v0.6.82 (2026-08-12) — README 命令表补齐 cache-check v0.6.78/79 能力（文档对称）
+
+- ✨ **README 命令表 `flare cache-check` 行补 v0.6.78/79 能力**（纯文档，零代码变更）：
+-  v0.6.78/79 的能力（基准轮残留缓存诊断、每轮命中率百分比）在命令行摘要表未同步——用户从
+-  README 看不到；本轮补齐（与 v0.6.74/0.6.77/0.6.81 纯文档先例一致）
+- - README Changelog + 版本号 0.6.82
+- - 🧪 **877/877 全绿**（纯文档改动，无代码变更），tsc 0 错误，**零 agent.ts 改动**
 
 #### v0.6.81 (2026-08-12) — README/docs 同步 mcp status --json（文档对称，纯文档）
 
