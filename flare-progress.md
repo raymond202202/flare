@@ -3,20 +3,20 @@
 > 目标：flare 是 Pulse/StorySpire 依赖的 AI Agent 引擎（TS）。任何改动必须安全（tsc 0 错 + 测试全绿才 commit）。
 > 铁律：禁止 push；禁止修改 src/core/agent.ts 的 Agent.run 核心循环。
 
-> **最新状态（v0.6.50）**：**MCP 连接状态带传输类型/端点**（方向③ MCP 增强——HTTP transport 观测面
-> 补齐）——`mcp_status`（v0.5.5）只有 name/connected/toolCount，宿主面板**无法区分 stdio/HTTP 两种
-> 连接方式、看不到端点/命令**（配了 url 的 HTTP transport 服务器与 stdio 服务器长得一样）：本轮补齐
-> （纯外围，零 agent.ts 改动）——`McpServerStatus` 新增 `transport`（`'stdio'|'http'`，配置 url 走
-> http、command 走 stdio）+ `target`（http 为端点 url、stdio 为 command + args），`McpManager.status()`
-> 直接填充（CLI /mcp 与 server mcp_status 同源）；CLI 交互模式 `/mcp` 状态行显示 `[stdio]`/`[HTTP]`
-> 标记 + 目标端点/命令（未连接也显示——配置即可见），旧形状 status（缺字段）降级默认 `[stdio]`
-> 不崩溃；**808/808 全绿**（806 + 2 新增），tsc 0 错误，零 agent.ts 改动；冒烟实测真实 McpManager +
-> in-process HTTP 服务器：stdio 服务器 transport=stdio target=node mcp-mock-server.mjs tools=3、
-> HTTP 服务器 transport=http target=端点 url，SMOKE PASS。
-> （v0.6.49：CLI /usage 本会话行缓存命中；v0.6.48：cache-check --json 结构化输出；v0.6.47：
-> mcp-server --bridge-tools 工具透传；v0.6.46：CLI /trim 智能裁剪 + /context 裁剪提示；v0.6.45：
-> flare cache-check 验收工具；v0.6.44：CLI /sessions 关键词搜索；v0.6.43：server 协议
-> search_sessions；v0.6.42：CLI /usage perModel 缓存命中显示。）
+> **最新状态（v0.6.51）**：**CLI `mcp status` 统一走 `status()` + `--connect` 真实连接状态**（方向③
+> MCP 增强——观测面补齐）：v0.6.50 给 McpServerStatus 补了 transport/target（CLI /mcp 与 server
+> mcp_status 同源），但 CLI 一次性命令 `flare mcp status` 仍**自己拼配置行**（不显示连接状态/工具数），
+> 两处输出形状不一致；本轮统一走 `McpManager.status()`（纯外围，零 agent.ts 改动）——输出
+> `●/○ 连接标记 + 传输类型 + 端点/命令 + （已连接）N 个工具 + [错误]`（未连接也显示、连接失败错误
+> 红字可见）；新增 `--connect` 选项先连接全部配置服务器再显示（Promise.allSettled 容错，与 server
+> mcp_status 等待连接落定同语义），CLI 一次性命令可看真实连接状态与工具数；**809/809 全绿**
+> （808 + 1 新增 status --connect 真实 HTTP 服务器 ●+1 个工具 + 既有 status 测试补 ○ 未连接断言），
+> tsc 0 错误，零 agent.ts 改动；冒烟实测真实 dist CLI + in-process HTTP 服务器：status 未连接 ○+
+> 端点 url；status --connect ●+1 个工具，SMOKE PASS。
+> （v0.6.50：MCP 连接状态 transport/target；v0.6.49：CLI /usage 本会话行缓存命中；v0.6.48：
+> cache-check --json 结构化输出；v0.6.47：mcp-server --bridge-tools 工具透传；v0.6.46：CLI /trim
+> 智能裁剪 + /context 裁剪提示；v0.6.45：flare cache-check 验收工具；v0.6.44：CLI /sessions 关键词
+> 搜索；v0.6.43：server 协议 search_sessions；v0.6.42：CLI /usage perModel 缓存命中显示。）
 
 > 【🔴 当前最高优先级方向（2026-08-11 用户拍板）】**prompt caching 基建 P0 已基本落地 + 验收工具化**：
 > P0-1 前缀稳定 + P0-2 usage 回传（v0.6.29 完成）。验收：`flare cache-check` 一键验收
@@ -28,7 +28,8 @@
 > 下一步候选（按优先级）：
 > ① 【P1】分层上下文（Layer 1 异步滚动摘要——摘要内容升级为 LLM 生成语义级压缩，需评估 run 循环外异步）
 > ② 其他安全的外围增强（server 协议其他管理接口、MCP 工具集完善、测试稳定性等）
->    已覆盖：MCP 状态 transport/target（v0.6.50）✓ /
+>    已覆盖：mcp status 统一 status()+--connect（v0.6.51）✓ /
+>    MCP 状态 transport/target（v0.6.50）✓ /
 >    /usage 本会话行缓存命中（v0.6.49）✓ /
 >    cache-check --json 结构化输出（v0.6.48）✓ /
 >    mcp-server --bridge-tools 工具透传（v0.6.47）✓ /
@@ -49,6 +50,27 @@
 
 > ---
 
+> ### 2026-08-12 第五十轮实施（v0.6.51）——CLI `mcp status` 统一走 `status()` + `--connect` 真实连接状态（方向③ MCP 增强）
+>
+> - **P80 `flare mcp status [--connect]`**（src/cli/index.ts + 测试，commit `d0b78a6`）：
+>   - **缺口定位**：v0.6.50 给 McpServerStatus 补了 transport/target（CLI /mcp 与 server mcp_status
+>     同源），但 CLI 一次性命令 `flare mcp status` 仍**自己拼配置行**（不显示连接状态/工具数）——
+>     两处输出形状不一致、CLI 一次性命令看不到真实连接状态；本轮统一（纯外围，零 agent.ts 改动）
+>   - **统一输出**：`●/○ 连接标记 + 传输类型（HTTP/stdio）+ 端点/命令 + （已连接）N 个工具 +
+>     [错误]`（未连接也显示——配置即可见；连接失败服务器的错误在 status() 的 error 字段红字可见）
+>   - **`--connect` 选项**：先连接全部配置服务器再显示（`Promise.allSettled` 容错——失败不阻塞其余，
+>     与 server mcp_status 等待连接落定同语义），CLI 一次性命令可看真实连接状态与工具数
+>   - docs/mcp.md（status/--connect 用法）+ README Changelog + 版本号 0.6.51
+>   - **809/809 全绿**（808 + 1 新增 mcp-cli-call.test.ts：status --connect 真实 HTTP 服务器 ●+1 个
+>     工具；既有 status 测试补 ○ 未连接断言），tsc 0 错误，**零 agent.ts 改动**
+>   - **冒烟实测**（真实 dist CLI + in-process HTTP 服务器）：status（未连接）○ + 端点 url；status
+>     --connect ● + 1 个工具，SMOKE PASS
+> - **下一步候选**：① 【P1】分层上下文（Layer 1 异步滚动摘要——摘要内容升级为 LLM 生成语义级压缩，
+>   需评估 run 循环外异步）；② 其他安全的外围增强（server 协议其他管理接口、MCP 工具集完善、测试
+>   稳定性等）
+>
+> ---
+>
 > ### 2026-08-12 第四十九轮实施（v0.6.50）——MCP 连接状态带传输类型/端点（方向③ MCP 增强）
 
 > - **P79 `McpServerStatus.transport/target` + CLI /mcp + server mcp_status**（src/mcp/types.ts +
