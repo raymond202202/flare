@@ -1786,30 +1786,40 @@ export function main() {
 
   program
     .command('cache-check')
-    .description('prompt caching 验收：连续两轮调用验证第二轮 cache_read_tokens > 0（v0.6.45，P0 验收自动化；v0.6.48 起 --json 结构化输出）')
+    .description('prompt caching 验收：连续调用验证 cache_read_tokens > 0（v0.6.45，P0 验收自动化；v0.6.48 起 --json 结构化输出；v0.6.54 起 --rounds 多轮连续命中验收）')
     .option('-m, --model <model>', '指定模型（缺省用默认路由；如 deepseek-chat）')
-    .option('-j, --json', 'JSON 结构化输出（宿主/CI 程序化消费：ok/model/hitTokens/savedUsd/detail/两轮用量；exit code 语义不变）')
-    .action(async (options: { model?: string; json?: boolean }) => {
+    .option('-j, --json', 'JSON 结构化输出（宿主/CI 程序化消费：ok/model/hitTokens/savedUsd/detail/rounds/runs/两轮用量；exit code 语义不变）')
+    .option('-r, --rounds <n>', '验收轮数（默认 2；2~5——第 1 轮为 miss 基准，第 2..N 轮全部命中才算 PASS，多轮更严格验证缓存稳定性）')
+    .action(async (options: { model?: string; json?: boolean; rounds?: string }) => {
       // 真实调用走 ~/.flare/.env 配置的密钥（本地诊断；不输出任何密钥）
       const { createProvider } = await import('../core/llm.js')
       const { runCacheCheck, cacheCheckToJson } = await import('../core/cache-check.js')
       const llm = createProvider(options.model ? { model: options.model } : undefined)
-      const r = await runCacheCheck(llm)
+      const rounds = options.rounds !== undefined ? Number(options.rounds) : 2
+      if (options.rounds !== undefined && (!Number.isInteger(rounds) || rounds < 2 || rounds > 5)) {
+        console.error(chalk.red('❌ --rounds 必须是 2~5 的整数（第 1 轮为 miss 基准，第 2..N 轮验证命中）'))
+        process.exitCode = 1
+        return
+      }
+      const r = await runCacheCheck(llm, { rounds })
       if (options.json) {
         // 结构化输出：只打印 JSON（不混入彩色/人类可读行），exit code 语义保留
         console.log(cacheCheckToJson(r))
         if (!r.ok) process.exitCode = 1
         return
       }
-      console.log(chalk.cyan('\n🧪 prompt caching 验收（连续两轮调用，第二轮应命中缓存）:'))
+      console.log(chalk.cyan(`\n🧪 prompt caching 验收（${r.rounds} 轮调用，第 2..${r.rounds} 轮应命中缓存）:`))
       if (!r.model) {
         console.log(chalk.red(`\n❌ ${r.detail}`))
         process.exitCode = 1
         return
       }
       console.log(`  模型: ${chalk.green(r.model)}`)
-      console.log(`  第一轮: prompt ${r.first.promptTokens} · 命中 ${r.first.cacheReadTokens} tokens（miss 基准）`)
-      console.log(`  第二轮: prompt ${r.second.promptTokens} · 命中 ${r.second.cacheReadTokens} tokens`)
+      r.runs.forEach((u, i) => {
+        const label = i === 0 ? '第一轮' : `第${i + 1}轮`
+        const note = i === 0 ? '（miss 基准）' : ''
+        console.log(`  ${label}: prompt ${u.promptTokens} · 命中 ${u.cacheReadTokens} tokens${note}`)
+      })
       if (r.savedUsd !== null) {
         console.log(chalk.gray(`  估算节省: $${r.savedUsd.toFixed(6)}（命中价 vs 未命中价）`))
       }

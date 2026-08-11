@@ -341,6 +341,26 @@ Interactive mode commands:
 
 > 中文条目 / Chinese entries · English summary for each version
 
+#### v0.6.54 (2026-08-12) — cache-check `--rounds` 多轮连续命中验收（方向① prompt caching 基建深化，验收升级）
+
+- ✨ **`runCacheCheck` 支持 rounds 多轮 + CLI `cache-check --rounds <N>`（src/core/cache-check.ts +
+-  src/cli/index.ts + 测试）**：
+-  v0.6.45 的两轮验收只能证明「某一次」前缀命中——服务端缓存是否**持续稳定**（连续多轮都命中）
+-  无法验证（偶发命中一次也会误判 PASS）；本轮升级（纯外围，零 agent.ts 改动）：
+- - **`runCacheCheck(llm, { rounds? })`**：第 1 轮为 miss 基准，第 2..N 轮**全部**命中才算 ok
+-  （默认 2——两轮行为与旧版逐字段一致，零回归；合法范围 2~5，非法回退 2 不崩）
+- - **结果新增 `rounds` + `runs`**（每轮用量快照数组，含基准轮）：`first`=基准、`second`=最后一轮
+-  （旧字段语义保留——host 侧旧消费逻辑不破坏）；`--json` 同步输出 rounds/runs
+- - **CLI `cache-check --rounds <N>`**：显示每一轮命中（第一轮标注 miss 基准）；多轮中断时
+-  detail 指出中断轮次（`第 N 轮 cache_read_tokens = 0（连续命中中断…）`）；`--rounds` 非法
+-  （非 2~5 整数）→ 退出码 1 + 用法提示
+- - docs/flare-token-architecture.md（多轮验收说明）+ README Changelog + 版本号 0.6.54
+- - 🧪 **815/815 全绿**（811 + 4 新增 cache-check.test.ts：rounds 3 全命中 ok + rounds/runs 快照 +
+-  前缀逐字节一致 + user 递增 / 第 3 轮中断 ok:false + 中断轮次 / rounds 非法回退 2（1/6/1.5/NaN）
+-  / JSON 含 rounds/runs），tsc 0 错误，**零 agent.ts 改动**；冒烟实测真实 DeepSeek API：
+-  `cache-check --rounds 3` → 三轮 prompt 971 全部命中 896 tokens → ✅ PASS（连续 2 轮命中，
+-  服务端缓存跨进程持续稳定）；`--rounds 99` → 退出码 1 + 用法提示，SMOKE PASS
+
 #### v0.6.53 (2026-08-12) — CLI `/usage` 本会话 perModel 子行（方向① prompt caching 基建深化，观测面闭环）
 
 - ✨ **`/usage` sessionId 分支显示本会话 perModel 分解（src/cli/index.ts + 测试）**：
