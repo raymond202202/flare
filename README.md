@@ -341,6 +341,26 @@ Interactive mode commands:
 
 > 中文条目 / Chinese entries · English summary for each version
 
+#### v0.6.58 (2026-08-12) — MCP 工具清单查看 `mcp_tools`（方向③ MCP 增强）
+
+- ✨ **工具清单桥接到三层（src/mcp/manager.ts + src/mcp/types.ts + src/server.ts + src/cli/index.ts + 测试）**：
+-  `mcp_resources`（v0.6.26）/`mcp_prompts`（v0.6.36）都有清单接口（按服务器分组透传元数据），
+-  唯独**工具只有 `mcp_status` 的 toolCount 数量**——宿主面板看不到已连接服务器暴露了哪些工具
+-  （名称/描述），无法在 `mcp_call` 前发现可用工具；本轮对称补齐（纯外围，零 agent.ts 改动）：
+- - **`McpManager.getAllToolsRef()`**：已连接服务器的工具引用并集（含来源服务器名 + 名称/描述，
+-  与 getAllResources/getAllPrompts 同构；未连接返回空数组幂等不抛错）
+- - **server 协议 `mcp_tools`**：按服务器分组返回 `{name, connected, toolCount, tools:[{name,
+-  description?, server}], error?}`（与 mcp_resources/mcp_prompts 同形状）；等待启动连接落定；
+-  只读不触发生成、不创建会话
+- - **CLI `/mcp tools [name]`**：显示 `🔧 name — 描述` 清单（数量 + 全部/单服务器过滤）；无工具
+-  友好提示；hooks 未提供 tools → 提示不可用（向后兼容旧宿主）；/help + 用法提示更新
+- - docs/host-protocol.md（§16.9 mcp_tools + 请求类型清单 + 响应表）+ docs/mcp.md + README Changelog
+-  + 版本号 0.6.58
+- - 🧪 **839/839 全绿**（830 + 9 新增：manager getAllToolsRef（含来源/名称/描述/未连接空数组）/
+-  server mcp_tools e2e（mock 子进程真实返回 3 工具清单 + 描述 + 来源 + 与 mcp_call 闭环调用）/
+-  CLI /mcp tools（清单显示/无描述不崩/单服务器过滤/无工具提示/hooks 缺失兼容/用法含 tools/
+-  /help 注册）），tsc 0 错误，**零 agent.ts 改动**
+
 #### v0.6.57 (2026-08-12) — MCP 提示词参数补全桥接 `mcp_complete`（方向③ MCP 增强）
 
 - ✨ **提示词参数补全 completion/complete 桥接到三层（src/mcp/manager.ts + src/server.ts + src/cli/index.ts + 测试）**：

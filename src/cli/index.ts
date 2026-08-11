@@ -8,7 +8,7 @@
  */
 
 import { Command } from 'commander'
-import { Agent, createProvider, getMemoryStore, config, tools, McpManager, estimateMessagesTokens, suggestTrim, ConfirmationGate, memoryStoreKv, wrapConfirmTools, describeTools, validateToolOutputPolicy, type AgentConfig, type McpServerStatus, type ConfirmDecision, type McpResourceRef, type McpResourceTemplateRef, type McpPromptRef, type McpResourceContents, type McpPromptResult, type McpCompletionResult, type McpCallResult, type ToolOutputPolicy } from '../index.js'
+import { Agent, createProvider, getMemoryStore, config, tools, McpManager, estimateMessagesTokens, suggestTrim, ConfirmationGate, memoryStoreKv, wrapConfirmTools, describeTools, validateToolOutputPolicy, type AgentConfig, type McpServerStatus, type ConfirmDecision, type McpResourceRef, type McpResourceTemplateRef, type McpPromptRef, type McpResourceContents, type McpPromptResult, type McpCompletionResult, type McpCallResult, type McpToolRef, type ToolOutputPolicy } from '../index.js'
 import chalk from 'chalk'
 import { execSync } from 'child_process'
 import { createRequire } from 'module'
@@ -274,6 +274,11 @@ async function startInteractive(opts: { contextSummarize?: boolean } = {}) {
         name
           ? mcpManager.getAllPrompts().filter((p) => p.server === name)
           : mcpManager.getAllPrompts(),
+      // v0.6.58：列出已桥接工具（工具清单——连接时拉取 tools/list，与 /mcp call 配套）
+      tools: (name) =>
+        name
+          ? mcpManager.getAllToolsRef().filter((t) => t.server === name)
+          : mcpManager.getAllToolsRef(),
       // v0.6.39：读取已连接服务器资源内容（代理转发 resources/read——与 server 协议 mcp_read_resource 同源）
       readResource: (server, uri) => mcpManager.readResource(server, uri),
       // v0.6.39：渲染已连接服务器提示词（代理转发 prompts/get——与 server 协议 mcp_get_prompt 同源）
@@ -546,6 +551,8 @@ export interface McpCommandHooks {
   resources?(name?: string): McpResourceListing
   /** 列出已桥接提示词（v0.6.36）：name 缺省返回全部已连接服务器；未提供回退旧行为（提示不可用） */
   prompts?(name?: string): McpPromptRef[]
+  /** 列出已桥接工具（v0.6.58）：name 缺省返回全部已连接服务器；未提供回退旧行为（提示不可用） */
+  tools?(name?: string): McpToolRef[]
   /** 读取已连接服务器资源内容（v0.6.39）：代理转发 resources/read；未提供回退提示不可用 */
   readResource?(server: string, uri: string): Promise<McpResourceContents[]>
   /** 渲染已连接服务器提示词（v0.6.39）：代理转发 prompts/get；未提供回退提示不可用 */
@@ -808,6 +815,29 @@ export async function handleSlashCommand(
       output(chalk.gray('\n  /mcp prompts [name] 查看提示词 | /mcp resources [name] 查看资源 | /mcp connect <name> 连接'))
       return 'continue'
     }
+    // /mcp tools [name]（v0.6.58）：列出已桥接工具（工具清单——mcp_status 只有数量，
+    // 与 /mcp resources / /mcp prompts 对称：外部服务器暴露的工具名/描述真实可见，
+    // 配合 /mcp call 使用——调用前先看有哪些工具）
+    if (sub === 'tools') {
+      if (typeof mcp.tools !== 'function') {
+        output(chalk.yellow('\n  当前环境未提供工具桥接（MCP 管理器不支持工具清单）'))
+        return 'continue'
+      }
+      const name = rest.join(' ').trim() || undefined
+      const tools = mcp.tools(name)
+      const scope = name ? `「${name}」` : '全部已连接服务器'
+      if (tools.length === 0) {
+        output(chalk.yellow(`\n  ${scope} 无已桥接工具（服务器未暴露 tools 或未连接）`))
+      } else {
+        output(chalk.gray(`\n  ${scope} 的工具（${tools.length}）：`))
+        for (const t of tools) {
+          const desc = t.description ? chalk.gray(` — ${t.description}`) : ''
+          output(`    🔧 ${chalk.cyan(t.name)}${desc}`)
+        }
+      }
+      output(chalk.gray('\n  /mcp tools [name] 查看工具 | /mcp call <server> <tool> [JSON参数] 调用 | /mcp connect <name> 连接'))
+      return 'continue'
+    }
     // /mcp read <server> <uri>（v0.6.39）：读取已连接服务器资源内容（与 server 协议 mcp_read_resource 对称）
     if (sub === 'read' && rest.length >= 2) {
       if (typeof mcp.readResource !== 'function') {
@@ -922,7 +952,7 @@ export async function handleSlashCommand(
       }
       return 'continue'
     }
-    output(chalk.yellow('\n  用法: /mcp | /mcp resources [name] | /mcp prompts [name] | /mcp read <server> <uri> | /mcp render <server> <prompt> [k=v ...] | /mcp complete <server> <prompt> <argument> [value] | /mcp call <server> <tool> [JSON参数] | /mcp connect <name> | /mcp disconnect <name>'))
+    output(chalk.yellow('\n  用法: /mcp | /mcp resources [name] | /mcp prompts [name] | /mcp tools [name] | /mcp read <server> <uri> | /mcp render <server> <prompt> [k=v ...] | /mcp complete <server> <prompt> <argument> [value] | /mcp call <server> <tool> [JSON参数] | /mcp connect <name> | /mcp disconnect <name>'))
     return 'continue'
   }
 
@@ -1197,6 +1227,7 @@ export async function handleSlashCommand(
       output('  /mcp         - 查看 MCP 服务器状态（~/.flare/mcp.json 配置）')
       output('  /mcp resources [name] - 查看已桥接资源/模板（v0.6.26，外部 MCP 服务器暴露的资源）')
       output('  /mcp prompts [name] - 查看已桥接提示词（v0.6.36，外部 MCP 服务器暴露的提示词）')
+      output('  /mcp tools [name] - 查看已桥接工具（v0.6.58，外部 MCP 服务器暴露的工具名/描述）')
       output('  /mcp read <server> <uri> - 读取外部 MCP 资源内容（v0.6.39，resources/read 代理）')
       output('  /mcp render <server> <prompt> [k=v ...] - 渲染外部 MCP 提示词（v0.6.39，prompts/get 代理）')
       output('  /mcp complete <server> <prompt> <argument> [value] - 提示词参数补全候选（v0.6.57，completion/complete 代理）')

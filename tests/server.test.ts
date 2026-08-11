@@ -723,6 +723,65 @@ describe('flare host server 协议', () => {
     }
   }, 30000)
 
+  it('mcp_tools（--mcp mock 配置）→ 返回工具清单（名称/描述，v0.6.58 与 mcp_resources/mcp_prompts 对称）', async () => {
+    // 独立子进程：--mcp mock 配置（本地子进程，无网络）
+    const dir = mkdtempSync(path.join(os.tmpdir(), 'flare-mcp-tools-test-'))
+    const mcpCfg = path.join(dir, 'mcp.json')
+    const mockServer = path.join(__dirname, 'fixtures', 'mcp-mock-server.mjs')
+    writeFileSync(mcpCfg, JSON.stringify({ servers: [{ name: 'mock', command: process.execPath, args: [mockServer] }] }))
+    const env: Record<string, string> = { ...process.env } as Record<string, string>
+    delete env.DEEPSEEK_API_KEY
+    const c = spawn(process.execPath, [CLI, 'server', '--storage', path.join(dir, 'test.db'), '--mcp', mcpCfg], { env, stdio: ['pipe', 'pipe', 'pipe'] })
+    const rl2 = createInterface({ input: c.stdout! })
+    const ask = (msg: any, expectTypes: string[]): Promise<any> => new Promise((resolve, reject) => {
+      const timer = setTimeout(() => { cleanup(); reject(new Error(`超时（mcp_tools ${JSON.stringify(msg).slice(0, 80)}）`)) }, 15000)
+      const handler = (line: string) => {
+        try {
+          const parsed = JSON.parse(line)
+          if (expectTypes.includes(parsed.type)) {
+            cleanup()
+            resolve(parsed)
+          }
+        } catch { /* 非 JSON 行忽略 */ }
+      }
+      const cleanup = () => { clearTimeout(timer); rl2.removeListener('line', handler) }
+      rl2.on('line', handler)
+      c.stdin!.write(JSON.stringify(msg) + '\n')
+    })
+    try {
+      // 启动时后台已连接 → 工具清单按服务器分组透传（与 mcp_prompts 同形状）
+      const res = await ask({ type: 'mcp_tools' }, ['mcp_tools', 'error'])
+      expect(res.type).toBe('mcp_tools')
+      expect(Array.isArray(res.servers)).toBe(true)
+      const mock = res.servers.find((s: any) => s.name === 'mock')
+      expect(mock).toBeTruthy()
+      expect(mock.connected).toBe(true)
+      expect(mock.toolCount).toBe(3)
+      expect(Array.isArray(mock.tools)).toBe(true)
+      expect(mock.tools.length).toBe(3)
+      // 名称 + 描述（mcp_status 只有数量，mcp_call 前需要知道具体工具名/描述）
+      const names = mock.tools.map((t: any) => t.name)
+      expect(names).toContain('echo_text')
+      expect(names).toContain('add_numbers')
+      expect(names).toContain('fail_tool')
+      const echo = mock.tools.find((t: any) => t.name === 'echo_text')
+      expect(echo.description).toBe('回显输入文本')
+      const add = mock.tools.find((t: any) => t.name === 'add_numbers')
+      expect(add.description).toBe('两个数相加')
+      // 每项含来源服务器名（与 mcp_resources/mcp_prompts 清单同构）
+      for (const t of mock.tools) expect(t.server).toBe('mock')
+      // 工具清单与 mcp_call 可闭环：清单里的工具可直接调用
+      const call = await ask({ type: 'mcp_call', server: 'mock', tool: 'add_numbers', args: { a: 2, b: 3 } }, ['mcp_call', 'error'])
+      expect(call.type).toBe('mcp_call')
+      expect(call.success).toBe(true)
+      expect(call.output).toBe('5')
+    } finally {
+      c.kill()
+      rl2.close()
+      rmSync(dir, { recursive: true, force: true })
+    }
+  }, 30000)
+
   it('confirm_result 缺 id → error（v0.6.1 确认门协议校验）', async () => {
     const msgs = await request({ type: 'confirm_result', decision: 'allow_once' }, { expect: ['error'] })
     expect(msgs[0].message).toContain('id')

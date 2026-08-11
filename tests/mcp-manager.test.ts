@@ -80,6 +80,31 @@ describe('McpManager', () => {
     mgr.closeAll()
   })
 
+  it('getAllToolsRef：返回工具引用（含来源服务器名 + 名称/描述，v0.6.58 工具清单）', async () => {
+    writeFileSync(configPath, JSON.stringify({ servers: [{ name: 'mock', command: process.execPath, args: [MOCK_SERVER] }] }))
+    const mgr = new McpManager({ configPath })
+    await mgr.connect('mock')
+    const refs = mgr.getAllToolsRef()
+    expect(refs.length).toBe(3)
+    // 含来源服务器名（与 getAllResources/getAllPrompts 同构）
+    for (const r of refs) expect(r.server).toBe('mock')
+    // 名称 + 描述（mcp_status 只有 toolCount 数量，宿主在 mcp_call 前需要知道具体工具名/描述）
+    const echo = refs.find((r) => r.name === 'echo_text')
+    expect(echo?.description).toBe('回显输入文本')
+    const add = refs.find((r) => r.name === 'add_numbers')
+    expect(add?.description).toBe('两个数相加')
+    const fail = refs.find((r) => r.name === 'fail_tool')
+    expect(fail?.description).toBe('总是失败的工具（测 isError 映射）')
+    mgr.closeAll()
+  })
+
+  it('getAllToolsRef：未连接时返回空数组（幂等不抛错）', async () => {
+    writeFileSync(configPath, JSON.stringify({ servers: [{ name: 'mock', command: process.execPath, args: [MOCK_SERVER] }] }))
+    const mgr = new McpManager({ configPath })
+    expect(mgr.getAllToolsRef()).toEqual([])
+    mgr.closeAll()
+  })
+
   it('connect 幂等：重复连接返回已有工具（不重复 spawn）', async () => {
     writeFileSync(configPath, JSON.stringify({ servers: [{ name: 'mock', command: process.execPath, args: [MOCK_SERVER] }] }))
     const mgr = new McpManager({ configPath })

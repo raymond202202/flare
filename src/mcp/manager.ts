@@ -40,6 +40,7 @@ import type {
   McpPromptResult,
   McpCompletionResult,
   McpCallResult,
+  McpToolRef,
 } from './types.js'
 import type { Tool } from '../tools/index.js'
 
@@ -106,6 +107,23 @@ export class McpManager {
     const all: Tool[] = []
     for (const tools of this.tools.values()) {
       all.push(...tools)
+    }
+    return all
+  }
+
+  /** 全部已连接服务器的工具引用并集（v0.6.58，含来源服务器名 + 名称/描述——与 getAllResources/
+   *  getAllPrompts 同构；宿主展示/调用前发现：mcp_status 只能看到 toolCount 数量，宿主在 mcp_call
+   *  前需要知道具体工具名/描述） */
+  getAllToolsRef(): McpToolRef[] {
+    const all: McpToolRef[] = []
+    for (const [server, list] of this.tools) {
+      for (const t of list) {
+        all.push({
+          name: t.definition.function.name,
+          description: t.definition.function.description,
+          server,
+        })
+      }
     }
     return all
   }

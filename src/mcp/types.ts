@@ -87,6 +87,14 @@ export interface McpPromptRef extends McpPromptInfo {
   server: string
 }
 
+/** 带来源的工具引用（v0.6.58 McpManager 工具清单：getAllToolsRef 返回项，含所属服务器名——
+ *  mcp_status 只能看到 toolCount 数量，宿主在 mcp_call 前需要知道具体工具名/描述） */
+export interface McpToolRef {
+  name: string
+  description?: string
+  server: string
+}
+
 /** MCP 资源（v0.6.1 resources 真实暴露）：宿主注入的资源描述 + 内容读取函数 */
 export interface McpResource {
   /** 资源唯一标识（如 file:///etc/hosts、memory://preferences） */
