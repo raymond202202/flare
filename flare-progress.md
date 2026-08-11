@@ -3,11 +3,13 @@
 > 目标：flare 是 Pulse/StorySpire 依赖的 AI Agent 引擎（TS）。任何改动必须安全（tsc 0 错 + 测试全绿才 commit）。
 > 铁律：禁止 push；禁止修改 src/core/agent.ts 的 Agent.run 核心循环。
 
-> **最新状态（v0.6.31）**：**会话归档 API 落地**（候选② P1）——server 协议
-> `end_session`（标记归档、数据保留、从最近会话隐藏、销毁缓存 Agent）/ `restore_session`（恢复）/
-> `list_archived_sessions`（已归档清单）；sessions 表加 archived 列（老库自动迁移），getRecentSessions
-> 排除归档、getAllSessions 带 archived 字段；664/664 全绿（654 + 10），tsc 0 错误，零 agent.ts 改动。
-> （v0.6.30 工具输出治理已落地：read_file/search_files 留头尾、terminal 留尾部、默认零回归。）
+> **最新状态（v0.6.32）**：**CLI 会话归档命令落地**（候选③）——`/archived` 列出归档会话
+> （含首条消息预览+会话ID+友好时间）/ `archive [会话ID]` 归档（缺省当前会话，复用既有 sessionId
+> 参数；数据保留可恢复）/ `/restore <会话ID>` 恢复（无参列出归档+用法）；三者幂等安全，与 server
+> 协议 end_session/restore_session/list_archived_sessions 语义对称；/help 注册；677/677 全绿
+> （664 + 13 新增），tsc 0 错误，零 agent.ts 改动。另修 v0.6.31 遗留 session-archive e2e chat 测试
+> vitest 超时放宽 45s（dotenv 注入真实 key 走远端 API，网络慢超默认 5s——与 server.test.ts 同模式）。
+> （v0.6.31 会话归档 API 已落地：end_session / restore_session / list_archived_sessions，664/664。）
 
 > 【🔴 当前最高优先级方向（2026-08-11 用户拍板）】**prompt caching 基建 P0 已基本落地**：
 > P0-1 前缀稳定 + P0-2 usage 回传（v0.6.29 完成）。验收：连续两轮调用（间隔<5min）第二轮
@@ -17,10 +19,47 @@
 > 下一步候选（按优先级）：
 > ① 【P1】分层上下文（Layer 1 异步滚动摘要——摘要内容升级为 LLM 生成语义级压缩，需评估 run 循环外异步）
 > ② 【P1】工具输出治理补强（terminal 工具侧暴露退出码后截断带退出码；或策略可配置化透传 server 协议）
-> ③ CLI /server 交互增强（/archive /restore 命令；/sessions 显示归档标记）
-> ④ 其他安全的外围增强（server 协议其他管理接口、MCP 工具集完善等）
+> ③ 其他安全的外围增强（server 协议其他管理接口、MCP 工具集完善、测试稳定性等）
 
 > ---
+
+### 2026-08-11 第三十二轮实施（v0.6.32）——CLI 会话归档命令（候选③，端侧对称接线 v0.6.31 归档 API）
+
+- **P61 CLI 会话归档命令**（src/cli/index.ts + tests/session-archive-cli.test.ts，commit `3051acd`）：
+  - **缺口定位**：v0.6.31 归档 API 只暴露在 server 协议（end_session / restore_session /
+    list_archived_sessions），**CLI 交互模式没有对应命令**——用户在终端里无法归档/恢复会话，
+    端侧不对称；候选③「CLI /server 交互增强（/archive /restore；/sessions 显示归档标记）」落地
+  - **`/archived`**：列出归档会话（`store.listArchivedSessions`，结构同 /sessions 含首条 user 消息
+    预览 + 会话ID + 友好时间[今天 HH:MM/昨天/M月D日，formatSessionTime 模块级辅助函数] + 恢复提示）；
+    无归档友好提示「暂无归档会话（/archive 可归档当前会话）」；**只列归档**（活跃会话不出现，
+    与 server list_archived_sessions 语义一致）
+  - **`/archive [会话ID]`**：缺省归档**当前会话**（复用 handleSlashCommand 既有 sessionId 参数，
+    v0.6.17 /usage 同款）；指定 id 归档任意会话；成功绿色提示含恢复指引；**幂等安全**（会话
+    不存在/已归档 → 黄色「未归档」提示不报错）；归档后数据保留（消息/用量都在），从 /sessions
+    （getRecentSessions 已排除归档）隐藏
+  - **`/restore <会话ID>`**：恢复归档会话回最近列表；**无参**时列出归档会话 + 用法提示（用户直接
+    看到可恢复项）；不存在/未归档 → 黄色「未恢复」幂等不报错
+  - **`/help` 注册**三行（/archived /archive /restore）；命令用前缀匹配分支（/remember /vision
+    同模式）置于 switch 前，**switch 零改动**、/sessions 等既有命令输出逐字符不变零回归
+  - **677/677 全绿**（664 + 13 新增 session-archive-cli.test.ts：/archive 指定 id 归档成功
+    （recent 隐藏+进归档+数据保留）/ 缺省归档当前会话（sessionId 参数）/ 无参无 sessionId 用法提示 /
+    不存在幂等 / 重复归档幂等；/restore 恢复成功回最近+出归档 / 无参列出+用法 / 无归档用法提示 /
+    不存在幂等；/archived 列出含预览+id+恢复提示 / 无归档提示 / 只列归档不列活跃；/help 注册三行），
+    tsc 0 错误，**零 agent.ts 改动**
+  - **测试稳定性修复（既有测试）**：session-archive.test.ts 的「end_session 后再次 chat 可重建
+    Agent」e2e 超时——子进程 config.ts 的 dotenv 会从 ~/.flare/.env 注入真实 key，chat 走真实
+    DeepSeek API，网络慢时超过 vitest 默认 5s（v0.6.31 全绿时网络快）；按 server.test.ts chat
+    测试既有模式把 vitest 超时放宽到 45s（注释说明原因，断言语义不变）
+  - **冒烟实测**（真实 dist 0.6.32 + 真实 server 子进程 + 真实 store）：server 协议闭环
+    version engine 0.6.32 → create_session → end_session archived:true → list_archived_sessions
+    出现 → restore_session restored:true → recent_sessions 重新出现；CLI 命令组合
+    `/archive`（缺省当前会话）→ `/archived` 列出「[07:57] 这是一条冒烟测试消息 (flare_…)」→
+    `/restore` 无参列出 + 用法 → `/restore <id>` ✅ 已恢复 → `/sessions` 重新出现，SMOKE PASS
+- **下一步候选**：① 【P1】分层上下文（Layer 1 异步滚动摘要——LLM 语义级摘要，需评估 run 循环外异步）；
+  ② 【P1】工具输出治理补强（terminal 工具侧暴露退出码 / 策略可配置化透传 server 协议）；
+  ③ 其他安全的外围增强（server 协议其他管理接口、MCP 工具集完善、测试稳定性等）
+
+---
 
 ### 2026-08-11 第三十一轮实施（v0.6.31）——会话归档 API（候选② P1，end_session / restore_session / list_archived_sessions）
 
