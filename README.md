@@ -341,6 +341,15 @@ Interactive mode commands:
 
 > 中文条目 / Chinese entries · English summary for each version
 
+#### v0.6.66 (2026-08-12) — /help 同步 /usage 描述（方向① prompt caching 基建深化，观察面对齐）
+
+- ✨ **`/help` 的 `/usage` 行补「含缓存命中/节省」说明（src/cli/index.ts + 测试）**：
+-  v0.6.64/65 给 /usage 加了缓存节省显示但 /help 描述还停在「查看 token 用量」——用户从帮助
+-  入口看不到该能力；本轮同步（纯外围，零 agent.ts 改动）
+- - README Changelog + 版本号 0.6.66
+- - 🧪 **851/851 全绿**（新增 1 断言：/help 含 /usage + 「缓存命中/节省」），tsc 0 错误，
+-  **零 agent.ts 改动**
+
 #### v0.6.65 (2026-08-12) — /usage perModel 行带缓存节省金额（方向① prompt caching 基建深化，对称补齐）
 
 - ✨ **perModel 每项带 `cacheSavedUsd` + CLI 子行显示节省（src/memory/store.ts + src/cli/index.ts + 测试）**：
