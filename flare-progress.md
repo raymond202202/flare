@@ -3,28 +3,23 @@
 > 目标：flare 是 Pulse/StorySpire 依赖的 AI Agent 引擎（TS）。任何改动必须安全（tsc 0 错 + 测试全绿才 commit）。
 > 铁律：禁止 push；禁止修改 src/core/agent.ts 的 Agent.run 核心循环。
 
-> **最新状态（v0.6.58）**：**MCP 工具清单查看 `mcp_tools`**（方向③ MCP 增强）：
-> `mcp_resources`（v0.6.26）/`mcp_prompts`（v0.6.36）都有清单接口（按服务器分组透传元数据），
-> 唯独**工具只有 `mcp_status` 的 toolCount 数量**——宿主面板看不到已连接服务器暴露了哪些工具
-> （名称/描述），无法在 `mcp_call` 前发现可用工具；本轮三层对称补齐（纯外围，零 agent.ts 改动）
-> ——`McpManager.getAllToolsRef()`（已连接服务器工具引用并集，含来源服务器名 + 名称/描述，与
-> getAllResources/getAllPrompts 同构，未连接空数组幂等）；server 协议 `mcp_tools`（按服务器分组
-> 返回 `{name, connected, toolCount, tools:[{name, description?, server}], error?}`，与
-> mcp_resources/mcp_prompts 同形状，等待启动连接落定，只读不触发生成）；CLI `/mcp tools [name]`
-> 显示 `🔧 name — 描述` 清单（数量 + 全部/单服务器过滤，无工具友好提示，hooks 缺 tools 回退提示
-> 不可用——向后兼容旧宿主，/help + 用法提示更新）。
-> **839/839 全绿**（830 + 9 新增，tsc 0 错误，零 agent.ts 改动）：manager getAllToolsRef（含来源/
-> 名称/描述/未连接空数组）/ server mcp_tools e2e（mock 子进程真实返回 3 工具清单 + 描述 + 来源 +
-> 与 mcp_call 闭环调用）/ CLI /mcp tools（清单显示/无描述不崩/单服务器过滤/无工具提示/hooks 缺失
-> 兼容/用法含 tools//help 注册）。
-> （v0.6.57：mcp_complete 提示词参数补全桥接；v0.6.56：server mcp_connect/mcp_disconnect 控制面；
-> v0.6.55：/mcp connect 摘要 transport/target；v0.6.54：cache-check --rounds 多轮验收；v0.6.53：
-> CLI /usage 本会话 perModel 子行；v0.6.52：session_usage perModel；v0.6.51：CLI mcp status 统一
-> status()+--connect；v0.6.50：MCP 连接状态 transport/target；v0.6.49：CLI /usage 本会话行缓存命中；
-> v0.6.48：cache-check --json 结构化输出；v0.6.47：mcp-server --bridge-tools 工具透传；v0.6.46：
-> CLI /trim 智能裁剪 + /context 裁剪提示；v0.6.45：flare cache-check 验收工具；v0.6.44：CLI
-> /sessions 关键词搜索；v0.6.43：server 协议 search_sessions；v0.6.42：CLI /usage perModel 缓存命中
-> 显示。）
+> **最新状态（v0.6.59）**：**CLI 单次命令 `flare mcp tools` 工具清单**（方向③ MCP 增强）：
+> v0.6.58 给交互模式（`/mcp tools`）和 server 协议（`mcp_tools`）补了工具清单，但**一次性命令
+> 侧未对称**——`flare mcp call/resources/prompts` 都有，唯独没有「先看有哪些工具」的入口；
+> 本轮补齐（纯外围，零 agent.ts 改动）——`flare mcp tools <server>` 列出服务器 `tools/list`
+> 暴露的工具（名称 + 描述，含数量），与 `flare mcp resources`/`prompts` 同构（`--url` 直连
+> HTTP / `--config` 查配置 stdio 或 HTTP / `--timeout`）；空清单友好提示；未配置服务器 → 退出码
+> 1 + 错误提示；提示行引导 `flare mcp call <服务器> <工具> [JSON参数]` 调用。
+> **842/842 全绿**（839 + 3 新增，tsc 0 错误，零 agent.ts 改动）：HTTP --url 直连列工具名+描述 /
+> stdio --config mock 子进程真实 3 工具（echo_text/add_numbers/fail_tool）/ 未配置服务器退出码 1。
+> （v0.6.58：mcp_tools 工具清单桥接三层；v0.6.57：mcp_complete 提示词参数补全桥接；v0.6.56：
+> server mcp_connect/mcp_disconnect 控制面；v0.6.55：/mcp connect 摘要 transport/target；
+> v0.6.54：cache-check --rounds 多轮验收；v0.6.53：CLI /usage 本会话 perModel 子行；v0.6.52：
+> session_usage perModel；v0.6.51：CLI mcp status 统一 status()+--connect；v0.6.50：MCP 连接
+> 状态 transport/target；v0.6.49：CLI /usage 本会话行缓存命中；v0.6.48：cache-check --json
+> 结构化输出；v0.6.47：mcp-server --bridge-tools 工具透传；v0.6.46：CLI /trim 智能裁剪 +
+> /context 裁剪提示；v0.6.45：flare cache-check 验收工具；v0.6.44：CLI /sessions 关键词搜索；
+> v0.6.43：server 协议 search_sessions；v0.6.42：CLI /usage perModel 缓存命中显示。）
 
 > 【🔴 当前最高优先级方向（2026-08-11 用户拍板）】**prompt caching 基建 P0 已基本落地 + 验收工具化**：
 > P0-1 前缀稳定 + P0-2 usage 回传（v0.6.29 完成）。验收：`flare cache-check` 一键验收
@@ -36,7 +31,8 @@
 > 下一步候选（按优先级）：
 > ① 【P1】分层上下文（Layer 1 异步滚动摘要——摘要内容升级为 LLM 生成语义级压缩，需评估 run 循环外异步）
 > ② 其他安全的外围增强（server 协议其他管理接口、MCP 工具集完善、测试稳定性等）
->    已覆盖：mcp_tools 工具清单查看（v0.6.58）✓ /
+>    已覆盖：flare mcp tools 单次命令（v0.6.59）✓ /
+>    mcp_tools 工具清单查看（v0.6.58）✓ /
 >    mcp_complete 参数补全桥接（v0.6.57）✓ /
 >    server mcp_connect/mcp_disconnect 控制面（v0.6.56）✓ /
 >    /mcp connect 摘要 transport/target（v0.6.55）✓ /
@@ -62,6 +58,26 @@
 >    terminal 退出码（v0.6.33）✓ / CLI 归档命令（v0.6.32）✓ / 归档 API（v0.6.31）✓ /
 >    工具输出治理（v0.6.30）✓ / prompt caching P0（v0.6.29）✓ / MCP 动态资源提供器（v0.6.28）✓ /
 >    confirm 描述（v0.6.27）✓
+
+> ---
+
+> ### 2026-08-12 第五十八轮实施（v0.6.59）——CLI 单次命令 `flare mcp tools` 工具清单（方向③ MCP 增强）
+
+> - **P88 单次命令补工具清单**（src/cli/index.ts + 测试）：
+>   - **缺口定位**：v0.6.58 给交互模式（`/mcp tools`）和 server 协议（`mcp_tools`）补了工具清单，
+>     但**一次性命令侧未对称**——`flare mcp call/resources/prompts` 都有，唯独没有「先看有哪些
+>     工具」的入口；本轮补齐（纯外围，零 agent.ts 改动）
+>   - **`flare mcp tools <server>`**：列出服务器 `tools/list` 暴露的工具（名称 + 描述，含数量），
+>     与 `flare mcp resources`/`prompts` 同构（`--url` 直连 HTTP / `--config` 查配置 stdio 或
+>     HTTP / `--timeout`）；空清单友好提示；未配置服务器 → 退出码 1 + 错误提示；提示行引导
+>     `flare mcp call <服务器> <工具> [JSON参数]` 调用
+>   - docs/mcp.md（单次命令 tools 说明）+ README Changelog + 版本号 0.6.59
+>   - **842/842 全绿**（839 + 3 新增 mcp-cli-call.test.ts：HTTP --url 直连列工具名+描述 / stdio
+>     --config mock 子进程真实 3 工具（echo_text/add_numbers/fail_tool）/ 未配置服务器退出码 1），
+>     tsc 0 错误，**零 agent.ts 改动**
+> - **下一步候选**：① 【P1】分层上下文（Layer 1 异步滚动摘要——摘要内容升级为 LLM 生成语义级压缩，
+>   需评估 run 循环外异步）；② 其他安全的外围增强（server 协议其他管理接口、MCP 工具集完善、测试
+>   稳定性等）
 
 > ---
 

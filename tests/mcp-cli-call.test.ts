@@ -255,3 +255,34 @@ describe('CLI flare mcp resources（v0.6.10）', () => {
     expect(stderr).toMatch(/未配置 MCP 服务器/)
   }, 20000)
 })
+
+describe('CLI flare mcp tools（v0.6.59）', () => {
+  it('列出工具清单（名称 + 描述）', async () => {
+    const h = await startMcpHttpServer({ tools: [echoTool] })
+    handles.push(h)
+    const { code, stdout } = await runCli(['mcp', 'tools', 'remote', '--url', h.url])
+    expect(code).toBe(0)
+    expect(stdout).toMatch(/echo/)
+    expect(stdout).toMatch(/回显输入文本/)
+    expect(stdout).toMatch(/1\）/)
+  }, 20000)
+
+  it('配置 command（--config 指定）→ 走 stdio（mock fixture 真实子进程 3 工具）', async () => {
+    const cfgPath = join(dir, 'mcp.json')
+    writeFileSync(cfgPath, JSON.stringify({ servers: [{ name: 'mock', command: process.execPath, args: [MOCK_SERVER] }] }))
+    const { code, stdout } = await runCli(['mcp', 'tools', 'mock', '--config', cfgPath])
+    expect(code).toBe(0)
+    expect(stdout).toMatch(/echo_text/)
+    expect(stdout).toMatch(/回显输入文本/)
+    expect(stdout).toMatch(/add_numbers/)
+    expect(stdout).toMatch(/两个数相加/)
+    expect(stdout).toMatch(/fail_tool/)
+    expect(stdout).toMatch(/3\）/)
+  }, 20000)
+
+  it('未配置服务器 → 退出码 1 + 错误提示', async () => {
+    const { code, stderr } = await runCli(['mcp', 'tools', 'nope', '--config', join(dir, 'missing.json')])
+    expect(code).toBe(1)
+    expect(stderr).toMatch(/未配置 MCP 服务器/)
+  }, 20000)
+})

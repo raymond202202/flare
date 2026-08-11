@@ -341,6 +341,21 @@ Interactive mode commands:
 
 > 中文条目 / Chinese entries · English summary for each version
 
+#### v0.6.59 (2026-08-12) — CLI 单次命令 `flare mcp tools` 工具清单（方向③ MCP 增强）
+
+- ✨ **单次命令补工具清单（src/cli/index.ts + 测试）**：
+-  v0.6.58 给交互模式（`/mcp tools`）和 server 协议（`mcp_tools`）补了工具清单，但**一次性命令
+-  侧未对称**——`flare mcp call/resources/prompts` 都有，唯独没有「先看有哪些工具」的入口；
+-  本轮补齐（纯外围，零 agent.ts 改动）：
+- - **`flare mcp tools <server>`**：列出服务器 `tools/list` 暴露的工具（名称 + 描述，含数量），
+-  与 `flare mcp resources`/`prompts` 同构（`--url` 直连 HTTP / `--config` 查配置 stdio 或 HTTP /
+-  `--timeout`）；空清单友好提示；未配置服务器 → 退出码 1 + 错误提示；提示行引导
+-  `flare mcp call <服务器> <工具> [JSON参数]` 调用
+- - docs/mcp.md（单次命令 tools 说明）+ README Changelog + 版本号 0.6.59
+- - 🧪 **842/842 全绿**（839 + 3 新增 mcp-cli-call.test.ts：HTTP --url 直连列工具名+描述 / stdio
+-  --config mock 子进程真实 3 工具（echo_text/add_numbers/fail_tool）/ 未配置服务器退出码 1），
+-  tsc 0 错误，**零 agent.ts 改动**
+
 #### v0.6.58 (2026-08-12) — MCP 工具清单查看 `mcp_tools`（方向③ MCP 增强）
 
 - ✨ **工具清单桥接到三层（src/mcp/manager.ts + src/mcp/types.ts + src/server.ts + src/cli/index.ts + 测试）**：
