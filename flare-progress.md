@@ -1,13 +1,13 @@
 # Flare 引擎迭代进度（夜间调研 agent）
 
-> **【已发布】v0.6.94 装机完成（P124 flare confirm-status，19:4x 引导模式本机安装版，自循环）**
-> 上一版 v0.6.93 装机完成（P122 flare config；P123 测试稳定性同轮小步）
+> **【已发布】v0.6.95 装机完成（P125 flare ping，引导模式本机安装版，自循环）**
+> 上一版 v0.6.94 装机完成（P124 flare confirm-status）
 
 > 目标：flare 是 Pulse/StorySpire 依赖的 AI Agent 引擎（TS）。任何改动必须安全（tsc 0 错 + 测试全绿才 commit）。
 > 铁律：禁止 push；禁止修改 src/core/agent.ts 的 Agent.run 核心循环。
 
-> **【✅ 第九十七轮完成】P124 (v0.6.94) flare confirm-status 单次命令已装机**：commit `74554c6`，
-> 950/950 全绿、tsc 0 错误、零 agent.ts 改动（详情见下方第九十七轮条目）。
+> **【✅ 第九十八轮完成】P125 (v0.6.95) flare ping 健康检查单次命令已装机**：commit `90dd0ad`，
+> 956/956 全绿、tsc 0 错误、零 agent.ts 改动（详情见下方第九十八轮条目）。
 > **【✅ 第九十六轮完成】P122 (v0.6.93) flare config 单次命令已装机**：commit `0fe2ecd`，
 > 944/944 全绿、tsc 0 错误、零 agent.ts 改动（详情见下方第九十六轮条目）。
 > **【✅ 同轮小步】P123 测试稳定性修复**：commit `7c54985`（server.test.ts tools/chat
@@ -218,6 +218,49 @@
   测试口径），纯测试层 1 行，零 src 风险；② flare 自主诊断根因 + 迭代超时值的过程
   正确（试 20000 失败后按指令调整），本轮 flare 汇报与实况完全一致；③ 纯测试改动
   无版本变化 → 无需自安装（dist 未变）
+
+---
+
+### 2026-08-13 第九十八轮实施（v0.6.95）——P125 flare ping 健康检查单次命令（装机完成）
+
+> **P125 完成**（commit `90dd0ad`）：新增 CLI 单次命令 `flare ping`——与 server ping
+> （宿主健康检查：进程存活即回 { type: 'pong', ts }，不依赖任何初始化）对称的只读健康检查
+> 入口，与 P113-124 系列（server 接口补 CLI 单次命令）同构；宿主/脚本场景此前无单次命令
+> 健康检查入口（CLI 内置 --version 只查版本，不验证进程/安装可用性）。
+> - **实现**（src/cli/index.ts 纯新增 15 行，插在 confirm-status 命令与默认交互命令之间）：
+>   默认输出「pong + ISO 时间戳」+ 引擎版本提示；--json 结构化输出 { type: 'pong', ts }
+>   （与 server ping 回包同构）；**action 内不调用 getMemoryStore()**——ping 不依赖任何
+>   初始化，FLARE_HOME 指向不存在目录/无 FLARE_HOME 环境变量均可正常 pong（CLI 顶层
+>   无全局 store 初始化，main() parse 前零副作用）；复用顶部已 import 的 chalk/pkg（零新 import）
+> - **测试**（新建 tests/cli-ping.test.ts，6 用例 spawn dist CLI + FLARE_HOME 隔离）：
+>   默认输出 pong exit 0 / --json 输出 { type: pong, ts } 字段完整 / ts 接近当前时间 /
+>   FLARE_HOME 指向不存在目录仍 pong / 无 FLARE_HOME 环境变量仍 pong（ping 不初始化存储）/
+>   非 json 输出含引擎版本号（与 package.json 一致）
+> - README 命令表补 ping 行 + Changelog v0.6.95 条目（## 版本标题在顶部）
+> - **956/956 全绿**（新增 6 用例，62 文件），tsc 0 错误，**零 agent.ts 改动**，零 push、
+>   零敏感信息；自安装完成：installed 0.6.95 = repo 0.6.95（安装版冒烟
+>   `FLARE_HOME=$(mktemp -d) ... ping --json` → { type: pong, ts } 已验证）；
+>   真实 ~/.flare 零污染（冒烟均用 FLARE_HOME 临时目录）
+> - **下一步候选**：① 【P1】分层上下文（Layer 1 异步滚动摘要——需评估 run 循环外异步）；
+>   ② 其他安全的外围增强（server 协议管理接口如 confirm_allow/confirm_revoke 为写操作
+>   需评估确认门语义、MCP 工具集完善、测试稳定性等）——server 只读接口补 CLI 单次命令
+>   系列新增 ping 后，剩余未补的只读接口已很少（version 已有 --version；cancel/ping 之外
+>   的只读接口基本补齐），下一小步可转向写操作接口评估或 MCP 工具集完善
+
+**引导过程记录（引导 agent 视角，1 次调用 + 引导 agent 直接收尾）**：
+- 第 1 次调用（完整代码 + 硬声明无关领域 + 白名单/禁止清单 + 不要求 commit）→ **命令
+  实现 +15 行落地且位置正确、测试 6 用例落盘、新测试 6/6 绿、tsc 0**，但耗尽 30 迭代：
+  最后阶段反复复核测试与 diff（汇报/全量验证未完成）
+- 收尾由**引导 agent 直接完成**：独立 tsc 0 → 新测试 6/6 → 全量 956/956 → 冒烟
+  （隔离 FLARE_HOME ping / ping --json 均 exit 0）→ 敏感扫描 0 → 修正代码风格小瑕疵
+  （program 换行缩进 + 注释版本号 v0.6.94+ → v0.6.95）→ 补 README 命令表 + Changelog +
+  package.json 0.6.95 → 重编译 dist（携带新版本号）→ git add 指定 4 文件 → commit
+  `90dd0ad` → flare 自安装（installed 0.6.95 = repo 0.6.95，安装版冒烟通过）
+- **教训**：① 极简只读命令（ping 零 store 依赖）flare 一轮可落地核心，但「最后阶段
+  反复自我复核」会耗尽迭代预算——收尾（README/版本/commit）由引导 agent 执行最稳，
+  与 P122-124 结论一致；② 「无 FLARE_HOME 仍可用」用例如实验证了 ping 的零初始化
+  设计（CLI main() parse 前无全局 store 初始化），是健康检查命令的关键语义；③ 引导
+  agent 修正 flare 代码风格（跨行链式缩进）后需重跑 tsc + 冒烟确认无回归（956/956 复核一致）
 
 ---
 
