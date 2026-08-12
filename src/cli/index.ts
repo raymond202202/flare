@@ -2406,6 +2406,57 @@ program
         console.log(' ' + chalk.green(t.name) + confirm + src + ' - ' + (t.description || '（无描述）'))
       }
     })
+  // flare config：查看运行配置（只读；与 server get_config 对称；不含任何密钥，v0.6.93）
+  program
+    .command('config')
+    .description('查看运行配置（只读；与 server get_config 对称；不含任何密钥，v0.6.93）')
+    .option('--json', 'JSON 结构化输出（与 server get_config 同源字段：model/flareHome/confirmTools/mcpServers 等）')
+    .option('--config <path>', 'MCP 配置文件路径（默认 ~/.flare/mcp.json）')
+    .action(async (options: { json?: boolean; config?: string }) => {
+      // 主模型：运行时 /model 切换优先（settings 表），models 命令同款逻辑
+      let mainModel = config.get('DEFAULT_MODEL') || 'deepseek-chat'
+      try {
+        const saved = getMemoryStore().getSetting('main_model')
+        if (saved) mainModel = saved
+      } catch { /* 无全局库（宿主环境）用默认 */ }
+      const visionModel = config.get('VISION_MODEL') || 'qwen2.5vl:3b'
+      // MCP 服务器静态配置（只读 mcp.json，不连接；与 server get_config mcpServers 同源——
+      // 名称/传输类型/auth 布尔标记，绝不输出 token）
+      const mgr = new McpManager({ configPath: options.config })
+      const mcpServers = mgr.servers.map((s) => ({
+        name: s.name,
+        transport: s.url ? 'http' : 'stdio',
+        ...(s.url && s.headers ? { auth: true } : {}),
+      }))
+      // 确认门：CLI 默认 memory_save 需确认（超时 30000ms，与 server 默认一致）
+      const data = {
+        model: mainModel,
+        visionModel,
+        flareHome: config.get('FLARE_HOME') || config.flareHome,
+        confirmTools: CLI_CONFIRM_TOOLS,
+        confirmTimeoutMs: 30000,
+        mcpServers,
+      }
+      if (options.json) {
+        console.log(JSON.stringify(data, null, 2))
+        return
+      }
+      console.log(chalk.cyan('⚙️ flare 运行配置（只读；不含任何密钥）:'))
+      console.log(' 数据目录: ' + chalk.green(data.flareHome))
+      console.log(' 主模型: ' + chalk.green(data.model))
+      console.log(' 视觉模型: ' + chalk.green(data.visionModel))
+      console.log(' 确认门: ' + (data.confirmTools.length > 0 ? chalk.yellow(data.confirmTools.join(', ')) + chalk.gray('（需确认；超时 ' + data.confirmTimeoutMs + 'ms）') : chalk.gray('无（所有工具直接执行）')))
+      if (data.mcpServers.length === 0) {
+        console.log(chalk.gray(' MCP 服务器: 未配置（~/.flare/mcp.json 的 servers 列表）'))
+      } else {
+        console.log(chalk.cyan(' MCP 服务器:'))
+        for (const s of data.mcpServers) {
+          const auth = s.auth ? chalk.yellow(' [auth]') : ''
+          console.log(' ' + chalk.green(s.name) + chalk.gray(' ' + s.transport) + auth)
+        }
+      }
+      console.log(chalk.gray(' 提示: flare mcp status 查看 MCP 连接状态；flare models 查看可用模型'))
+    })
   // 默认命令（无参数时进入交互模式）
   program.action(() => {
     startInteractive()
