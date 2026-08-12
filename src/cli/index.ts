@@ -2384,6 +2384,28 @@ program
         console.log(' ' + chalk.gray('[' + formatSessionTime(m.created_at) + ']') + ' #' + m.id + ' ' + chalk.gray('(' + m.type + ')') + ' ' + line)
       }
     })
+  // flare tools：查看可用工具清单（v0.6.92，与 server tools 对称；内置工具，含确认门标注）
+  program
+    .command('tools')
+    .description('查看可用工具清单（内置；含确认门标注；--json 结构化输出，v0.6.92）')
+    .option('-j, --json', 'JSON 结构化输出')
+    .action((options: { json?: boolean }) => {
+      const metas = describeTools(tools, CLI_CONFIRM_TOOLS)
+      if (options.json) {
+        console.log(JSON.stringify(metas, null, 2))
+        return
+      }
+      if (metas.length === 0) {
+        console.log(chalk.yellow('暂无可用工具'))
+        return
+      }
+      console.log(chalk.cyan('\n🔧 可用工具（' + metas.length + ' 个）:'))
+      for (const t of metas) {
+        const confirm = t.confirmed ? chalk.yellow(' [确认]') : ''
+        const src = t.source && t.source !== 'builtin' ? chalk.gray(' (' + t.source + ')') : ''
+        console.log(' ' + chalk.green(t.name) + confirm + src + ' - ' + (t.description || '（无描述）'))
+      }
+    })
   // 默认命令（无参数时进入交互模式）
   program.action(() => {
     startInteractive()
