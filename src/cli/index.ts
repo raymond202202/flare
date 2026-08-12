@@ -2187,6 +2187,21 @@ program
 
 
 
+  // flare rename <sessionId> <title>：重命名会话（写操作：仅修改标题；与 server rename_session 对称，v0.6.97）
+  program
+    .command('rename <sessionId> <title>')
+    .description('重命名会话（写操作：仅修改标题；title 非空必填；与 server rename_session 对称）')
+    .action((sessionId: string, title: string) => {
+      const t = (title || '').trim()
+      if (!t) {
+        console.log(chalk.yellow('标题不能为空（rename_session 需要非空 title）'))
+        process.exitCode = 1
+        return
+      }
+      const store = getMemoryStore()
+      store.updateSessionTitle(sessionId, t)
+      console.log(chalk.green('已重命名会话 ') + chalk.cyan(sessionId) + chalk.gray(' → ') + chalk.white(t))
+    })
   // flare archived-sessions：查看归档会话列表（v0.6.88，与 server list_archived_sessions 对称）
   program
     .command('archived-sessions')
