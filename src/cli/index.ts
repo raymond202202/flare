@@ -2300,13 +2300,14 @@ program
       }
     })
 
-  // flare messages <sessionId>：查看指定会话的消息历史（v0.6.84）
+  // flare messages <sessionId>：查看指定会话的消息历史（v0.6.84；v0.6.107 支持 --json 结构化输出）
   program
     .command('messages <sessionId>')
-    .description('查看指定会话的消息历史（v0.6.84）')
+    .description('查看指定会话的消息历史（v0.6.84；--json 结构化输出，v0.6.107）')
     .option('-n, --limit <n>', '显示 N 条消息（默认 50）')
     .option('-r, --recent', '从最新一条开始往回显示（长会话下默认取最早 N 条，加此参数可看最新内容，v0.6.84）')
-    .action((sessionId: string, options: { limit?: string; recent?: boolean }) => {
+    .option('-j, --json', 'JSON 结构化输出（v0.6.107，与 server get_messages 回包同构：{ sessionId, messages, ...(recent?{recent:true}:{}) }；宿主/脚本程序化消费）')
+    .action((sessionId: string, options: { limit?: string; recent?: boolean; json?: boolean }) => {
       const store = getMemoryStore()
       let limit = options.limit !== undefined ? Number(options.limit) : 50
       if (!Number.isInteger(limit) || limit < 1 || limit > 500) {
@@ -2317,6 +2318,12 @@ program
       const messages = options.recent
         ? store.getRecentMessages(sessionId, limit)
         : store.getMessages(sessionId, limit)
+      // v0.6.107 --json：与 server get_messages 回包同构（不带 type 包装）；空会话也输出 { sessionId, messages: [] }；
+      // 只打印 JSON 不混文本/彩色；文本模式一字不改
+      if (options.json) {
+        console.log(JSON.stringify({ sessionId, messages, ...(options.recent ? { recent: true } : {}) }))
+        return
+      }
       if (messages.length === 0) {
         console.log(chalk.yellow(`会话 ${sessionId} 暂无消息`))
         return

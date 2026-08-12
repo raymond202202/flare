@@ -106,4 +106,50 @@ describe('flare messages（v0.6.84）', () => {
     expect(stdout).not.toContain('u'.repeat(300))
     expect(stdout).not.toContain('a'.repeat(300))
   }, 20000)
+
+  it('--json 默认：输出 { sessionId, messages } 结构化回包（v0.6.107）', async () => {
+    seedMessages('s1', 5)
+    const { code, stdout } = await runCli(['messages', 's1', '--json'])
+    expect(code).toBe(0)
+    const parsed = JSON.parse(stdout)
+    expect(parsed.sessionId).toBe('s1')
+    expect(parsed.messages.length).toBe(5)
+    expect(parsed.messages[0].content).toContain('msg-001')
+  }, 20000)
+
+  it('--json --limit 3：只返回 3 条消息', async () => {
+    seedMessages('s2', 5)
+    const { code, stdout } = await runCli(['messages', 's2', '--limit', '3', '--json'])
+    expect(code).toBe(0)
+    const parsed = JSON.parse(stdout)
+    expect(parsed.messages.length).toBe(3)
+  }, 20000)
+
+  it('--json --recent：取最近 limit 条，时间正序返回', async () => {
+    seedMessages('s3', 60)
+    const { code, stdout } = await runCli(['messages', 's3', '--recent', '--json'])
+    expect(code).toBe(0)
+    const parsed = JSON.parse(stdout)
+    expect(parsed.recent).toBe(true)
+    expect(parsed.messages.length).toBe(50)
+    expect(parsed.messages[parsed.messages.length - 1].content).toContain('msg-060')
+    expect(parsed.messages[0].content).not.toContain('msg-001')
+  }, 20000)
+
+  it('--json 空会话：输出 { sessionId, messages: [] }', async () => {
+    const { code, stdout } = await runCli(['messages', 'ghost', '--json'])
+    expect(code).toBe(0)
+    const parsed = JSON.parse(stdout)
+    expect(parsed.messages.length).toBe(0)
+    expect(parsed.sessionId).toBe('ghost')
+  }, 20000)
+
+  it('--json 多模态 content：store 层图片折叠为占位符（hi[图片]，图像只读回原始部分，保证输出有效 JSON）', async () => {
+    store.saveMessage('m1', { role: 'assistant', content: [{ type: 'text', text: 'hi' }, { type: 'image', image_url: 'http://example.com/img.png' }] })
+    const { code, stdout } = await runCli(['messages', 'm1', '--json'])
+    expect(code).toBe(0)
+    const parsed = JSON.parse(stdout)
+    expect(parsed.messages[0].content).toBe('hi[图片]')
+    expect(typeof parsed.messages[0].content).toBe('string')
+  }, 20000)
 })
