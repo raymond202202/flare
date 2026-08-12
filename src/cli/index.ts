@@ -2131,6 +2131,35 @@ program
       }
     })
 
+  // flare search-messages <关键词>：消息级全文搜索历史消息内容（v0.6.86，与 server search_messages 对称）
+  program
+    .command('search-messages <keyword>')
+    .description('全文搜索历史消息内容（v0.6.86）')
+    .option('-n, --limit <n>', '最多显示 N 条消息（默认 10，1~100）')
+    .action((keyword: string, options: { limit?: string }) => {
+      const store = getMemoryStore()
+      let limit = options.limit !== undefined ? Number(options.limit) : 10
+      if (!Number.isInteger(limit) || limit < 1 || limit > 100) {
+        console.error(chalk.red('❌ --limit 需为 1~100 的整数'))
+        process.exit(1)
+      }
+      const hits = store.searchMessages(keyword, limit)
+      if (hits.length === 0) {
+        console.log(chalk.gray(`未找到包含「${keyword}」的消息`))
+        return
+      }
+      console.log(chalk.cyan(`\n🔍 搜索消息「${keyword}」（${hits.length} 条，按相关度/时间倒序）:`))
+      for (const hit of hits) {
+        const text = Array.isArray(hit.content)
+          ? hit.content.map(p => 'text' in p ? p.text : '[图片]').join('')
+          : String(hit.content)
+        const head = text.replace(/\s+/g, ' ').trim()
+        const icon = hit.role === 'user' ? '🧑' : hit.role === 'assistant' ? '🤖' : hit.role
+        const truncated = head ? head.slice(0, 200) : `[${hit.role} 空内容]`
+        console.log(` ${chalk.gray(`[${formatSessionTime(hit.createdAt)}]`)} ${icon} ${chalk.gray(`[${hit.sessionId}]`)} ${truncated}`)
+      }
+    })
+
   // flare messages <sessionId>：查看指定会话的消息历史（v0.6.84）
   program
     .command('messages <sessionId>')
