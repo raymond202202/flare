@@ -159,6 +159,7 @@ cp .env.example ~/.flare/.env
 | `flare sessions` | 查看最近会话列表（--limit N 1~50 默认 10；v0.6.87） |
 | `flare archived-sessions` | 查看归档会话列表（--limit N 1~50 默认 10；v0.6.88） |
 | `flare usage` | 查看 token 用量统计（全局汇总 + perModel 分解；--session <会话ID> 只看单会话；含缓存命中/节省；v0.6.89） |
+| `flare context-status [<会话ID>]` | 查看会话上下文占用（消息数 + 估算 tokens；--budget N 正整数附裁剪建议；v0.6.90） |
 | `flare mcp status` | 查看配置的 MCP 服务器（名称 + 传输类型 + 端点/命令 + [auth] 鉴权标记；--json 结构化输出 v0.6.80；v0.6.6/v0.6.70） |
 | `flare mcp resources <服务器> [--read <uri>]` | 查看/读取 MCP 服务器暴露的资源（v0.6.10） |
 | `flare mcp prompts <服务器> [--get <名称>]` | 查看/渲染 MCP 服务器暴露的提示词（v0.6.10） |
@@ -347,6 +348,8 @@ Interactive mode commands:
 ### Changelog / Release Notes
 
 > 中文条目 / Chinese entries · English summary for each version
+## v0.6.90（2026-08-12）
+- ✨ **新增 `flare context-status` 单次命令**：查看会话上下文占用（消息数 + 估算 tokens；--budget N 附裁剪建议），与 server context_status 对称（只读）
 ## v0.6.89（2026-08-12）
 - ✨ **新增 `flare usage` 单次命令**：token 用量统计（全局汇总 + perModel 分解；--session <会话ID> 只看单会话；含缓存命中/节省），与 server get_usage/session_usage 对称（只读）
 
