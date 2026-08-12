@@ -1,11 +1,13 @@
 # Flare 引擎迭代进度（夜间调研 agent）
 
-> **【已发布】v0.6.95 装机完成（P125 flare ping，引导模式本机安装版，自循环）**
-> 上一版 v0.6.94 装机完成（P124 flare confirm-status）
+> **【已发布】v0.6.96 装机完成（P126 flare restore，引导模式本机安装版，自循环）**
+> 上一版 v0.6.95 装机完成（P125 flare ping）
 
 > 目标：flare 是 Pulse/StorySpire 依赖的 AI Agent 引擎（TS）。任何改动必须安全（tsc 0 错 + 测试全绿才 commit）。
 > 铁律：禁止 push；禁止修改 src/core/agent.ts 的 Agent.run 核心循环。
 
+> **【✅ 第九十九轮完成】P126 (v0.6.96) flare restore 恢复归档会话单次命令已装机**：commit `28d2f53`，
+> 962/962 全绿、tsc 0 错误、零 agent.ts 改动（详情见下方第九十九轮条目）。
 > **【✅ 第九十八轮完成】P125 (v0.6.95) flare ping 健康检查单次命令已装机**：commit `90dd0ad`，
 > 956/956 全绿、tsc 0 错误、零 agent.ts 改动（详情见下方第九十八轮条目）。
 > **【✅ 第九十六轮完成】P122 (v0.6.93) flare config 单次命令已装机**：commit `0fe2ecd`，
@@ -218,6 +220,51 @@
   测试口径），纯测试层 1 行，零 src 风险；② flare 自主诊断根因 + 迭代超时值的过程
   正确（试 20000 失败后按指令调整），本轮 flare 汇报与实况完全一致；③ 纯测试改动
   无版本变化 → 无需自安装（dist 未变）
+
+---
+
+### 2026-08-13 第九十九轮实施（v0.6.96）——P126 flare restore 恢复归档会话单次命令（装机完成，自循环）
+
+> **P126 完成**（commit `28d2f53`，本轮自循环第二小步）：新增 CLI 单次命令
+> `flare restore <会话ID>`——与 server restore_session（v0.6.31 归档恢复）对称的恢复
+> 归档会话入口，与 P117 archived-sessions（归档列表查看）配对：查看 → 恢复闭环；也是
+> P113-125 系列（server 接口补 CLI 单次命令）中**首个写操作接口**（低风险写操作评估落地：
+> 仅修改 sessions 表 archived 标记，数据保留，不触发生成，server 协议本身无确认门）。
+> - **实现**（src/cli/index.ts 纯新增 15 行，插在 archived-sessions 命令与 messages 命令
+>   之间）：store.restoreSession(sessionId) 同步 boolean；成功 →「已恢复会话 + id +
+>   （已从归档移回最近会话）」exit 0；不存在/未归档 →「不存在或未归档（幂等返回 false）」
+>   exit 1（与 server restore_session 幂等语义一致）；零新 import（chalk/getMemoryStore
+>   顶部已有）；未加 --json（写操作命令保持简单）
+> - **测试**（新建 tests/cli-restore.test.ts，6 用例 spawn dist CLI + FLARE_HOME 隔离，
+>   seed 用 saveMessage 字符串 id 直写自动建会话 + archiveSession 归档，P119/120 模板）：
+>   恢复归档 → exit 0 + 归档列表不再含 / 恢复后 getAllSessions archived=false /
+>   不存在会话 → exit 1 / 未归档会话 restore → exit 1（幂等 false）/ 恢复后再次 restore
+>   → exit 1 / 端到端 archived-sessions 列出 → restore → 不再列出
+> - README 命令表补 restore 行 + Changelog v0.6.96 条目（## 版本标题在顶部，日期 2026-08-13）
+> - **962/962 全绿**（新增 6 用例，63 文件），tsc 0 错误，**零 agent.ts 改动**，零 push、
+>   零敏感信息；自安装完成：installed 0.6.96 = repo 0.6.96（安装版冒烟 restore 不存在
+>   exit 1 / ping pong 已验证）；真实 ~/.flare 零污染（冒烟均用 FLARE_HOME 临时目录）
+> - **下一步候选**：① 【P1】分层上下文（Layer 1 异步滚动摘要——需评估 run 循环外异步）；
+>   ② 其他安全的外围增强——写操作接口单次命令形态已验证可行（restore 收官），剩余
+>   confirm_allow/confirm_revoke（确认门写操作，单次命令形态可参考 restore 先例评估）、
+>   rename_session/delete_session/clear_session、MCP 工具集完善、测试稳定性等
+
+**引导过程记录（引导 agent 视角，1 次调用 + 引导 agent 直接收尾）**：
+- 第 1 次调用（P125 同款：完整代码 + 硬声明无关领域 + 白名单/禁止清单 + 不要求 commit）
+  → **一次完整交付**：命令 +15 行位置正确、测试 6 用例落盘、tsc 0、新测试 6/6、全量
+  962/962（63 文件）、隔离冒烟全过（seed 归档 → restore 不存在 exit 1 → restore 归档
+  exit 0 → archived-sessions 空），汇报与实况完全一致（本轮首次实现+测试+验证全量交付）
+- 收尾由**引导 agent 直接完成**：修正代码风格小瑕疵（program 换行缩进对齐 4 空格 +
+  注释版本号 v0.6.88 → v0.6.96）→ 独立 tsc 0 + 新测试 6/6 + 全量 962/962 复核 →
+  独立冒烟（restore 不存在 exit 1 / 恢复后列表空）→ 敏感扫描 0 → 补 README 命令表 +
+  Changelog + package.json 0.6.96 → 重编译 dist → git add 指定 4 文件 → commit
+  `28d2f53` → flare 自安装（installed 0.6.96 = repo 0.6.96，安装版冒烟通过）
+- **教训**：① 「完整代码 + 硬声明 + 白名单 + 禁止清单」模式下 flare 首次实现+测试+
+  验证一次全量交付（P125 卡在最后自我复核，P126 未卡）——写操作接口（restore）同样
+  一轮成功，说明该模式已成熟，写操作接口单次命令形态可行；② 写操作接口的测试 seed
+  模板（saveMessage 直写 + archiveSession）与只读命令完全同构，无新增测试基建；
+  ③ 引导 agent 修正风格后仍按 diff + tsc + 全量 vitest + 冒烟 + 敏感扫描独立复核，
+  与 flare 自述 962/962 完全一致
 
 ---
 
