@@ -166,6 +166,8 @@ cp .env.example ~/.flare/.env
 | `flare tools` | 查看可用工具清单（内置；含 [确认] 门标注；--json 结构化输出；v0.6.92） |
 | `flare config` | 查看运行配置（只读；数据目录/主模型/视觉模型/确认门/MCP 服务器清单；--json 结构化输出；不含任何密钥；v0.6.93） |
 | `flare confirm-status` | 查看确认门放行状态（只读；确认名单/跨会话持久化放行/本会话放行；--json 结构化输出；v0.6.94） |
+| `flare confirm-allow <工具> [--session]` | 放行确认工具（写操作：无需等 confirm 事件；默认 always 跨会话持久化，--session 仅本进程内；与 server confirm_allow 对称；v0.6.98） |
+| `flare confirm-revoke <工具>` | 撤销工具放行（写操作：会话级 + 持久化同步清除，恢复每次确认；未放行幂等 exit 0；与 server confirm_revoke 对称；v0.6.98） |
 | `flare ping` | 健康检查（进程存活即 pong；--json 结构化输出；不依赖任何初始化，只读；与 server ping 对称；v0.6.95） |
 | `flare mcp status` | 查看配置的 MCP 服务器（名称 + 传输类型 + 端点/命令 + [auth] 鉴权标记；--json 结构化输出 v0.6.80；v0.6.6/v0.6.70） |
 | `flare mcp resources <服务器> [--read <uri>]` | 查看/读取 MCP 服务器暴露的资源（v0.6.10） |
@@ -354,6 +356,11 @@ Interactive mode commands:
 
 ### Changelog / Release Notes
 
+## v0.6.98（2026-08-13）
+- ✨ **新增 `flare confirm-allow <工具> [--session]` 单次命令**：放行确认工具（写操作：无需等 confirm 事件；**默认 always 跨会话持久化**——单次命令进程内会话级放行恒为空（每次运行都是新 ConfirmationGate 实例，allowSession 仅进程内存、结束即失，与 v0.6.94 confirm-status 语义一致），`--session` 仅本进程内有效；空工具名 exit 1），与 server confirm_allow 对称
+- ✨ **新增 `flare confirm-revoke <工具>` 单次命令**：撤销工具放行（写操作：会话级 + always 持久化同步清除，恢复每次确认；未放行幂等 exit 0；空工具名 exit 1），与 server confirm_revoke 对称
+- 与 `flare confirm-status`（v0.6.94 只读查看）配对形成闭环：查看 → 放行 → 撤销；写操作接口单次命令系列第三例（restore v0.6.96 / rename v0.6.97）
+> 中文条目 / Chinese entries · English summary for each version
 ## v0.6.97（2026-08-13）
 - ✨ **新增 `flare rename <会话ID> <标题>` 单次命令**：重命名会话（写操作：仅修改标题；title 非空必填，空标题 exit 1；UPSERT 语义与 server 一致），与 server rename_session 对称
 > 中文条目 / Chinese entries · English summary for each version
