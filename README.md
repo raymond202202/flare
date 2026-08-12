@@ -165,6 +165,7 @@ cp .env.example ~/.flare/.env
 | `flare end-session <会话ID>` | 归档会话（写操作：仅修改 archived 标记，消息与用量保留，从最近会话隐藏；空 id exit 1、不存在或已归档幂等 exit 1；与 server end_session 对称；v0.6.101） |
 | `flare usage` | 查看 token 用量统计（全局汇总 + perModel 分解；--session <会话ID> 只看单会话；含缓存命中/节省；v0.6.89） |
 | `flare context-status [<会话ID>]` | 查看会话上下文占用（消息数 + 估算 tokens；--budget N 正整数附裁剪建议；v0.6.90） |
+| `flare trim <会话ID> [--budget <tokens>]` | 执行上下文裁剪（写操作：保留开头 system 块 + 最近消息，store 同步删除被裁消息、重建会话后依然生效；--budget 正整数，缺省用会话 maxContextTokens 或 16000；空 id/会话不存在或无消息/非法 budget 各 exit 1、未超预算幂等 exit 0；与 server apply_trim、交互 /trim 对称；v0.6.103） |
 | `flare memories [<关键词>]` | 查看持久记忆（无关键词列出全部；带关键词全文搜索；--kind 按类型过滤；--limit 1~100 默认 50；v0.6.91） |
 | `flare remember <内容> [--kind <类型>]` | 保存持久记忆（写操作：默认类型 note；--kind 指定如 preference；空内容 exit 1；与 server remember、交互 /remember 对称；v0.6.100） |
 | `flare delete-memory <记忆ID>` / `--content <关键词>` | 删除持久记忆（写操作：按 id 删单条（不存在 exit 1）或 --content 按关键词批量删（幂等 exit 0）；非法 id exit 1；与 server delete_memory、交互 /forget 对称；v0.6.100） |
@@ -361,6 +362,10 @@ Interactive mode commands:
 | `/exit` | Exit |
 
 ### Changelog / Release Notes
+
+## v0.6.103（2026-08-13）
+- ✨ **新增 `flare trim <会话ID> [--budget <tokens>]` 单次命令**：执行上下文裁剪（写操作：保留开头 system 块 + 最近消息，store 同步删除被裁消息、重建会话后裁剪依然生效；--budget 正整数校验，缺省用会话级 maxContextTokens 或 16000；空 id / 会话不存在或无消息 / 非法 budget 各 exit 1，未超预算幂等 exit 0），与 server apply_trim、交互 /trim 对称
+- 与 `flare context-status`（v0.6.90 查看占用 + 裁剪建议）配对形成「查看建议 → 执行裁剪」闭环；上下文裁剪执行接口单次命令形态首例（宿主/脚本场景此前无裁剪执行的非交互入口）
 
 ## v0.6.102（2026-08-13）
 - ✨ **新增 `flare version [--json]` 单次命令**：输出引擎版本（只读：`flare v<版本>`；--json 输出 `{ engine }` 供宿主/脚本程序化消费；不依赖任何初始化，与 server version 引擎字段对称、与 ping 同类）
