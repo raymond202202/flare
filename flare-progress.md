@@ -1,15 +1,15 @@
 # Flare 引擎迭代进度（夜间调研 agent）
 
-> **【已发布】v0.6.85 装机完成，自 13:52 起引导模式使用本机安装版**
+> **【已发布】v0.6.86 装机完成，自 14:55 起引导模式使用本机安装版**
 
 > 目标：flare 是 Pulse/StorySpire 依赖的 AI Agent 引擎（TS）。任何改动必须安全（tsc 0 错 + 测试全绿才 commit）。
 > 铁律：禁止 push；禁止修改 src/core/agent.ts 的 Agent.run 核心循环。
 
-> **【✅ 第八十八轮完成】P114 (v0.6.85) flare search 单次命令已装机**：commit `cafa5a0`，
-> 896/896 全绿、tsc 0 错误、零 agent.ts 改动（详情见下方第八十八轮条目）。
+> **【✅ 第八十九轮完成】P115 (v0.6.86) flare search-messages 单次命令已装机**：commit `2a4ebd3`，
+> 902/902 全绿、tsc 0 错误、零 agent.ts 改动（详情见下方第八十九轮条目）。
 
-> **v0.6.84 此前状态**：**P113 flare messages 命令 + 测试收尾已装机**（commit `c2042fb`，
-> 890/890 全绿、tsc 0 错误、零 agent.ts 改动，详情见下方第八十七轮条目）。
+> **v0.6.85 此前状态**：**P114 flare search 单次命令已装机**（commit `cafa5a0`，
+> 896/896 全绿、tsc 0 错误、零 agent.ts 改动，详情见下方第八十八轮条目）。
 
 > **v0.6.83 此前状态**：**P112 MCP logging/setLevel 桥接已收尾**（commit `9555cb7`，
 > 884/884 全绿、tsc 0 错误、零 agent.ts 改动，详情见下方第八十三轮条目）。
@@ -83,6 +83,42 @@
 >    confirm 描述（v0.6.27）✓
 
 > ---
+
+### 2026-08-12 第八十九轮实施（v0.6.86）——P115 flare search-messages 单次命令（装机完成）
+
+> **P115 完成**（commit `2a4ebd3`）：新增 CLI 单次命令 `flare search-messages <关键词>`——与
+> server search_messages（v0.6.24，FTS5 trigram 全文搜索历史消息，bm25 相关度 + 短查询 LIKE 回退）
+> 对称的消息级全文搜索入口，与 P114 search（会话级）互补：找回「哪条消息说过什么」。
+> - **实现**（src/cli/index.ts 纯新增 29 行，插在 search 与 messages 命令之间）：searchMessages
+>   按相关度/时间倒序；--limit 1~100 默认 10（非法退出码 1）；无匹配友好提示；每条显示
+>   时间/角色图标（🧑/🤖/其他 role 原文）/会话 ID/内容 200 字符截断；复用
+>   getMemoryStore/searchMessages/formatSessionTime
+> - **测试**（新建 tests/cli-search-messages.test.ts，6 用例 spawn dist CLI + FLARE_HOME 隔离）：
+>   内容命中+会话ID+🧑 / assistant 命中 🤖 / 无匹配 / --limit 1 只显示 1 条 / 非法 limit 退出码 1 /
+>   短关键词 LIKE 回退
+> - README 命令表补 search-messages 行 + Changelog v0.6.86 条目
+> - **902/902 全绿**（新增 6 用例，53 文件），tsc 0 错误，**零 agent.ts 改动**，零 push、
+>   零敏感信息；自安装完成：installed 0.6.86 = repo 0.6.86（dist 含 search-messages 命令已验证）
+> - **下一步候选**：① 【P1】分层上下文（Layer 1 异步滚动摘要——需评估 run 循环外异步）；
+>   ② 其他安全的外围增强（server 协议其他管理接口、MCP 工具集完善、测试稳定性等）
+
+**引导过程记录（引导 agent 视角，2 次调用）**：
+- 第 1 次调用（完整代码 + 禁止调研，同第八十八轮模式）→ **实现成功但未收尾**：src/cli/index.ts
+  纯新增 29 行正确落地且 tsc 通过，但**未建测试文件、未改版本号/README、未 commit**；且冒烟
+  测试**再次误用真实 FLARE_HOME** 向 ~/.flare/flare.db 写入「测试会话」（t-m31-*、美式咖啡测试
+  消息）——引导 agent 已用 sqlite3 精确删除（仅删本轮 flare 写入的测试会话及其消息，保留 flare
+  自身会话与 gui 会话）
+- 第 2 次调用（收尾指令：明确「不要动 src/cli/index.ts」，只做测试/版本/README/验证/commit，
+  重申禁止触碰真实 ~/.flare）→ **一次成功**：测试文件落盘、版本 0.6.86、README 两处、tsc +
+  全量 vitest 902/902、commit `2a4ebd3`；但仍写入 2 个测试会话（t-m31-*、json-parse-test）到
+  真实库，引导 agent 已再次清理
+- **教训**：① 上一轮「完整代码 + 禁止调研 = 一轮成功」的结论需修正——实现可一轮成功，但
+  **测试/README/commit 收尾仍会漏**，引导 agent 必须独立 git log/status 验收，缺什么补什么；
+  ② **flare 的「禁止触碰真实 ~/.flare」铁律需在每轮指令中重复且放在最显眼处**，连续两轮冒烟
+  都误用真实库；③ 冒烟写库的会话模式固定（t-m31-* 前缀 + 「测试会话」标题），清理可用
+  sqlite3 按 created_at 时间窗 + 标题/内容特征精确删除
+
+---
 
 ### 2026-08-12 第八十八轮实施（v0.6.85）——P114 flare search 单次命令（装机完成）
 
