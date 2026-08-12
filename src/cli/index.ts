@@ -2433,6 +2433,45 @@ program
         console.log(' ' + chalk.gray('可裁剪:') + ' ' + trim.droppedCount + ' 条（估算 ' + trim.estimatedDroppedTokens + ' tokens）')
       }
     })
+  // flare trim <sessionId>：按 token 预算裁剪会话上下文（v0.6.103，与 server apply_trim / 交互 /trim 对称；
+  // 与 context-status 配对：查看建议 → 执行裁剪；store 同步删除被裁消息，重建会话后裁剪依然生效）
+  program
+    .command('trim <sessionId>')
+    .description('执行上下文裁剪（保留开头 system 块 + 最近消息；store 同步删除被裁消息，v0.6.103）')
+    .option('-b, --budget <n>', '上下文 token 预算（正整数；缺省用会话 maxContextTokens 或 16000）')
+    .action((sessionId: string, options: { budget?: string }) => {
+      const sid = sessionId.trim()
+      if (!sid) {
+        console.error(chalk.red('❌ 会话ID不能为空'))
+        process.exit(1)
+      }
+      const store = getMemoryStore()
+      if (store.getMessages(sid, 1).length === 0) {
+        console.error(chalk.red('❌ 会话 ' + sid + ' 不存在或无消息'))
+        process.exit(1)
+      }
+      const agent = new Agent({ sessionId: sid })
+      const msgs = agent.getMessages()
+      const before = estimateMessagesTokens(msgs)
+      let budget = options.budget !== undefined ? Number(options.budget) : undefined
+      if (budget !== undefined && (!Number.isInteger(budget) || budget <= 0)) {
+        console.error(chalk.red('❌ --budget 必须是正整数（上下文 token 预算）'))
+        process.exit(1)
+      }
+      if (budget === undefined) budget = (agent as any).config?.maxContextTokens || 16000
+      const trim = suggestTrim(msgs, budget as number, { reserveForOutput: 1024 })
+      if (trim.droppedCount === 0) {
+        console.log('  会话 ' + sid + ' 上下文未超预算（' + before + ' tokens），无需裁剪')
+        return
+      }
+      const res = agent.applyTrim(trim.keep.map((m) => msgs.indexOf(m)))
+      const after = estimateMessagesTokens(agent.getMessages())
+      console.log(chalk.cyan('✅ 已裁剪会话 ' + sid + ':'))
+      console.log(' ' + chalk.gray('保留:') + ' ' + res.keptCount + ' 条（估算 ' + after + ' tokens）')
+      console.log(' ' + chalk.gray('删除:') + ' ' + res.droppedCount + ' 条（估算 ' + Math.max(0, before - after) + ' tokens）')
+      console.log(' ' + chalk.gray('store 已同步：重建会话后裁剪依然生效（开头 system 块与最近消息已保底保留）'))
+    })
+
   // flare memories [关键词]：查看持久记忆（v0.6.91，与 server get_memories 对称）
   program
     .command('memories [keyword]')
