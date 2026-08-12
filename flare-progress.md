@@ -1,12 +1,15 @@
 # Flare 引擎迭代进度（夜间调研 agent）
 
-> **【已发布】v0.6.82 装机完成，8:30 起引导模式使用本机安装版**
+> **【已发布】v0.6.84 装机完成，自 13:42 起引导模式使用本机安装版**
 
 > 目标：flare 是 Pulse/StorySpire 依赖的 AI Agent 引擎（TS）。任何改动必须安全（tsc 0 错 + 测试全绿才 commit）。
 > 铁律：禁止 push；禁止修改 src/core/agent.ts 的 Agent.run 核心循环。
 
-> **【✅ 第八十三轮完成】P112 (v0.6.83) MCP logging/setLevel 桥接已收尾**：commit `9555cb7`，
-> 884/884 全绿、tsc 0 错误、零 agent.ts 改动（详情见下方第八十三轮条目）。
+> **【✅ 第八十七轮完成】P113 (v0.6.84) flare messages 命令 + 测试收尾已装机**：commit `c2042fb`，
+> 890/890 全绿、tsc 0 错误、零 agent.ts 改动（详情见下方第八十七轮条目）。
+
+> **v0.6.83 此前状态**：**P112 MCP logging/setLevel 桥接已收尾**（commit `9555cb7`，
+> 884/884 全绿、tsc 0 错误、零 agent.ts 改动，详情见下方第八十三轮条目）。
 
 > **v0.6.82 此前状态**：**README 命令表补齐 cache-check v0.6.78/79 能力**（文档对称，纯
 > 文档）：基准轮残留缓存诊断与每轮命中率百分比在命令行摘要表未同步——README cache-check 行补齐
@@ -77,6 +80,40 @@
 >    confirm 描述（v0.6.27）✓
 
 > ---
+
+### 2026-08-12 第八十七轮实施（v0.6.84）——P113 flare messages 命令 + 测试收尾（装机完成）
+
+> **P113 收尾完成**（commit `c2042fb`）：第八十五/八十六轮遗留的 `flare messages` 命令
+> 本轮补测试/README/commit 全部落地并装机 0.6.84。
+> - **实现（前轮已落地未提交，本轮未再动 src）**：`flare messages <会话ID>` 单次命令
+>   （src/cli/index.ts 纯新增 33 行）——与 server get_messages 对称的只读查看入口：
+>   --limit 1~500 默认 50（非法退出码 1）、--recent 取最近 limit 条（默认取最早 limit 条，
+>   保证输出始终时间正序）、空会话友好提示、content 数组/字符串处理、200 字符截断 + 角色图标
+> - **测试**（新建 tests/cli-messages.test.ts，6 用例 spawn dist CLI 真实子进程，FLARE_HOME
+>   隔离）：默认取最早 50 条（含第 1 条不含第 60 条）/ --recent 取最近 50 条（含最新）/ 
+>   --limit 3 只显示 3 条 / 非法 --limit（0/501/abc）退出码 1 + 提示 / 空会话「暂无消息」
+>   退出码 0 / 超长内容 200 字符截断 + 🧑🤖 角色图标
+> - **seed 方案**：`new MemoryStore(join(dir, 'flare.db'))`（与子进程 FLARE_HOME=dir 时
+>   getMemoryStore() 同一路径）+ saveMessage 自动建会话；**messages 表 created_at 默认
+>   秒级 datetime('now')，同秒插入顺序不确定 → 用 better-sqlite3 直接 UPDATE created_at
+>   打毫秒递增时间戳保证顺序稳定**
+> - README 命令表补 messages 行 + Changelog v0.6.84 条目
+> - **890/890 全绿**（新增 6 用例，51 文件），tsc 0 错误，**零 agent.ts 改动**，零 push、
+>   零敏感信息；自安装完成：installed 0.6.84 = repo 0.6.84（dist 含 messages 命令已验证）
+> - **下一步候选**：① 【P1】分层上下文（Layer 1 异步滚动摘要——摘要内容升级为 LLM 生成语义级
+>   压缩，需评估 run 循环外异步）；② 其他安全的外围增强
+
+**引导过程记录（引导 agent 视角，2 次调用）**：
+- 第 1 次调用（给了测试骨架 + README 指引，但未禁止调研）→ **调研阶段耗尽 30 迭代零产出**
+  （读 src/memory/store.ts、探索 tsx/vitest 可用性，与第八十四/八十五轮第 1 次调用同模式）
+- 第 2 次调用（重试，**直接附完整可落盘测试文件 + 硬性禁止调研/read_file 探索**）→
+  **一次成功**：write_file 落盘测试 → README 精准插入 → npx tsc → 全量 vitest（890/890）→
+  git commit c2042fb → 汇报，全程未触碰 src/ 其他文件
+- **教训**：① 给骨架仍不够——flare 会先花迭代「理解命令/探索基建」，**直接给完整代码 +
+  禁止调研**才能一次收尾；② created_at 秒级默认值是消息顺序测试的隐藏坑，需毫秒打点 helper；
+  ③ 完整测试代码 + 精确 README 模板 + 明确 commit 命令 = flare 零自由度，全部照做
+
+---
 
 ### 2026-08-12 第八十六轮引导（v0.6.84，未完成→失败停止，未安装）——P113 flare messages 收尾（--recent 实现落地未提交，下轮收尾）
 
