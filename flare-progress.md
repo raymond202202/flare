@@ -96,6 +96,20 @@
 > - **下一步候选**：① 【P1】分层上下文（Layer 1 异步滚动摘要——摘要内容升级为 LLM 生成语义级
 >   压缩，需评估 run 循环外异步）；② 其他安全的外围增强（server 协议其他管理接口、MCP 工具集
 >   完善、测试稳定性等）
+>
+> **引导过程记录（引导 agent 视角，3 次调用）**：
+> - 第 1 次调用（任务过宽：调研+补测试+版本号+README+commit 一锅端）→ flare 再次用 write_file
+>   整文件覆盖 mock server（258→20 行）后自行 git restore 恢复，又误用不存在的 edit_file 工具，
+>   耗尽 30 迭代——但产出 manager 测试 +22 行增量、新建 CLI 测试文件 5 用例（质量可用）
+> - 第 2 次调用（聚焦收尾：只核对 imports/VALID 8 级/版本号/README）→ 正常退出，但漏了全量测试
+>   与 commit（只跑了单文件 33/33）——引导 agent 独立验收：tsc 0、全量 884/884、敏感扫描 0 命中
+> - 第 3 次调用（只做全量测试确认 + git add/commit）→ 完成 commit `9555cb7`（7 文件 +210/-3，
+>   含 docs/mcp.md 对称补齐）+ 自行更新 flare-progress.md（commit `ea31cdb`）
+> - **教训**：① flare 的 write_file 整文件覆盖倾向是反复性行为，指令必须每次强调「先 wc -l 记录
+>   行数、只增量不覆盖、禁动 mock server」；② 收尾类任务应拆成「补内容」与「验证+commit」两轮
+>   小指令，避免一锅端耗尽迭代；③ flare 可能自行扩大范围（改 docs/mcp.md、更新 progress）——
+>   内容合理可接受，但引导 agent 须独立验收全部产物；④ commit message 由 flare 自拟（内容准确
+>   即可，不必强求逐字一致）
 
 ---
 
