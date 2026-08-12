@@ -164,7 +164,7 @@ cp .env.example ~/.flare/.env
 | `flare restore <会话ID>` | 恢复归档会话（写操作：仅修改 archived 标记，数据保留；与 server restore_session 对称；v0.6.96） |
 | `flare end-session <会话ID>` | 归档会话（写操作：仅修改 archived 标记，消息与用量保留，从最近会话隐藏；空 id exit 1、不存在或已归档幂等 exit 1；与 server end_session 对称；v0.6.101） |
 | `flare usage` | 查看 token 用量统计（全局汇总 + perModel 分解；--session <会话ID> 只看单会话；含缓存命中/节省；v0.6.89） |
-| `flare context-status [<会话ID>]` | 查看会话上下文占用（消息数 + 估算 tokens；--budget N 正整数附裁剪建议；v0.6.90） |
+| `flare context-status [<会话ID>]` | 查看会话上下文占用（消息数 + 估算 tokens；--budget N 正整数附裁剪建议；--json 结构化输出（与 server context_status 同构，含 suggestion.keepIndexes 供 trim 程序化消费）v0.6.104；v0.6.90） |
 | `flare trim <会话ID> [--budget <tokens>]` | 执行上下文裁剪（写操作：保留开头 system 块 + 最近消息，store 同步删除被裁消息、重建会话后依然生效；--budget 正整数，缺省用会话 maxContextTokens 或 16000；空 id/会话不存在或无消息/非法 budget 各 exit 1、未超预算幂等 exit 0；与 server apply_trim、交互 /trim 对称；v0.6.103） |
 | `flare memories [<关键词>]` | 查看持久记忆（无关键词列出全部；带关键词全文搜索；--kind 按类型过滤；--limit 1~100 默认 50；v0.6.91） |
 | `flare remember <内容> [--kind <类型>]` | 保存持久记忆（写操作：默认类型 note；--kind 指定如 preference；空内容 exit 1；与 server remember、交互 /remember 对称；v0.6.100） |
@@ -362,6 +362,10 @@ Interactive mode commands:
 | `/exit` | Exit |
 
 ### Changelog / Release Notes
+
+## v0.6.104（2026-08-13）
+- ✨ **`flare context-status [<会话ID>]` 增加 `--json` 结构化输出**：与 server context_status 回复结构完全同构（sessionId / messageCount / estimatedTokens / 可选 suggestion{keepIndexes, droppedCount, estimatedKeptTokens, estimatedDroppedTokens}）；--json 模式用 Agent 数据源（含开头 system 前缀，与 server 同一索引空间），--budget 建议的 keepIndexes 可直接供 `flare trim`（v0.6.103）程序化消费；无 --budget 时不输出 suggestion；文本模式与退出码语义完全不变
+- 上下文管理「查看建议 → 执行裁剪」闭环的自动化基础（context-status --json 输出建议 → trim 执行）
 
 ## v0.6.103（2026-08-13）
 - ✨ **新增 `flare trim <会话ID> [--budget <tokens>]` 单次命令**：执行上下文裁剪（写操作：保留开头 system 块 + 最近消息，store 同步删除被裁消息、重建会话后裁剪依然生效；--budget 正整数校验，缺省用会话级 maxContextTokens 或 16000；空 id / 会话不存在或无消息 / 非法 budget 各 exit 1，未超预算幂等 exit 0），与 server apply_trim、交互 /trim 对称
