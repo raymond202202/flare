@@ -1,11 +1,13 @@
 # Flare 引擎迭代进度（夜间调研 agent）
 
-> **【已发布】v0.6.98 装机完成（P128 flare confirm-allow/confirm-revoke，引导模式本机安装版，自循环）**
-> 上一版 v0.6.97 装机完成（P127 flare rename）
+> **【已发布】v0.6.99 装机完成（P129 flare delete-session/clear-session，引导模式本机安装版，自循环）**
+> 上一版 v0.6.98 装机完成（P128 flare confirm-allow/confirm-revoke）
 
 > 目标：flare 是 Pulse/StorySpire 依赖的 AI Agent 引擎（TS）。任何改动必须安全（tsc 0 错 + 测试全绿才 commit）。
 > 铁律：禁止 push；禁止修改 src/core/agent.ts 的 Agent.run 核心循环。
 
+> **【✅ 第一百零二轮完成】P129 (v0.6.99) flare delete-session/clear-session 破坏性会话管理已装机**：
+> commit `eef25b2`，985/985 全绿、tsc 0 错误、零 agent.ts 改动（详情见下方第一百零二轮条目）。
 > **【✅ 第一百零一轮完成】P128 (v0.6.98) flare confirm-allow/confirm-revoke 确认门写操作已装机**：
 > commit `80290bc`，976/976 全绿、tsc 0 错误、零 agent.ts 改动（详情见下方第一百零一轮条目）。
 > **【✅ 第一百轮完成】P127 (v0.6.97) flare rename 重命名会话单次命令已装机**：commit `7e41be3`，
@@ -224,6 +226,67 @@
   测试口径），纯测试层 1 行，零 src 风险；② flare 自主诊断根因 + 迭代超时值的过程
   正确（试 20000 失败后按指令调整），本轮 flare 汇报与实况完全一致；③ 纯测试改动
   无版本变化 → 无需自安装（dist 未变）
+
+---
+
+### 2026-08-13 第一百零二轮实施（v0.6.99）——P129 flare delete-session / clear-session 破坏性会话管理单次命令（装机完成，自循环）
+
+> **P129 完成**（commit `eef25b2`，本轮自循环第二小步）：新增 CLI 单次命令
+> `flare delete-session <会话ID>` 与 `flare clear-session <会话ID>`——与 server
+> delete_session（v0.6.2 宿主清理会话）与 clear_session（v0.6.18 宿主清空会话消息）对称的
+> 破坏性会话管理写操作入口；写操作接口单次命令形态第四例（restore/rename/confirm-allow+
+> revoke 延续）；宿主/脚本场景此前无删除/清空会话的非交互入口（server 协议需宿主进程，
+> 交互模式无 /delete）。破坏性评估：显式指定会话 ID、无批量删除路径、语义与 server 完全
+> 一致、store 层事务原子，确认安全后才实施。
+> - **实现**（src/cli/index.ts 纯新增 37 行，插在 restore 命令与 messages 命令之间）：
+>   - `delete-session <会话ID>`：store.deleteSession（事务原子删 messages/usage_log/sessions，
+>     FTS 触发器联动清索引）；成功 →「已删除会话 + id（含消息与用量）」exit 0；不存在 →
+>    「会话 + id + 不存在（幂等返回 false）」exit 1（与 server deleted:false 对称）；
+>     空 id →「会话ID不能为空」exit 1
+>   - `clear-session <会话ID>`：store.clearSessionMessages（删 messages 保留会话+用量，
+>     返回删除条数）；输出「已清空会话 + id（删除 N 条消息，会话记录与用量保留）」exit 0
+>     （不论 N 是否 0 都 exit 0，与 server 幂等 ok 对称）；空 id →「会话ID不能为空」exit 1
+>   - 两者共享空 id 校验（trim 后必填，process.exitCode=1 模式，与 rename/confirm-allow
+>     一致）；零新 import（chalk/getMemoryStore 顶部已有）；未加 --json（写操作风格一致）
+> - **测试**（新建 tests/cli-clear-session.test.ts，9 用例 spawn dist CLI + FLARE_HOME 隔离，
+>   seed 用 saveMessage 直写自动建会话 + logUsage 直写用量，P127 模板）：clear 清消息保留
+>   会话+用量 / clear 不影响其他会话 / clear 不存在幂等 exit 0（0 条）/ clear 空 id exit 1 /
+>   delete 消息+用量+会话记录全移除 / delete 不存在 exit 1 / delete 不影响其他会话 /
+>   delete 空 id exit 1 / delete vs clear 对比（delete 后会话消失 vs clear 后会话仍在）
+> - README 命令表补 delete-session/clear-session 两行 + Changelog v0.6.99 条目（## 版本标题
+>   在顶部，日期 2026-08-13）
+> - **985/985 全绿**（新增 9 用例，66 文件；全量首跑 984/985 偶发失败，重跑 985/985 稳定
+>   通过——server.test.ts 真实 chat 调用类偶发超时，P123 同源，与本改动无关），tsc 0 错误，
+>   **零 agent.ts 改动**，零 push、零敏感信息；自安装完成：installed 0.6.99 = repo 0.6.99
+>   （安装版冒烟 clear 保留会话 / delete 移除 / 不存在 exit 1 / 空 id exit 1 已验证）；
+>   真实 ~/.flare 零污染（冒烟均用 FLARE_HOME 临时目录）
+> - **下一步候选**：① 【P1】分层上下文（Layer 1 异步滚动摘要——需评估 run 循环外异步）；
+>   ② 其他安全的外围增强——写操作接口单次命令形态连续四例成功（restore/rename/
+>   confirm-allow+revoke/delete-session+clear-session），server 协议写操作接口基本补全，
+>   剩余 MCP 工具集完善、测试稳定性等
+
+**引导过程记录（引导 agent 视角，1 次调用 + 引导 agent 直接收尾）**：
+- 第 1 次调用（P128 同款：完整代码 + 硬声明无关领域 + 白名单/禁止清单 + 不要求 commit）
+  → **实现+测试落地**：两命令 +26 行（restore 后、messages 前）、测试 5 用例落盘、新测试
+  5/5、tsc 0，但耗尽 30 迭代：最后阶段开始 bump 版本号（违反「不改 package.json」铁律）
+  与查 README（未完成）
+- **违规与修正（引导 agent）**：① flare 擅自把 package.json 改为 0.6.99（违反铁律，收尾
+  本应由引导 agent 统一处理）——git checkout 还原后收尾时统一改；② 命令名用 `clear` 而非
+  指令要求的 `clear-session`（与 delete-session 不对称、与 server clear_session 不对齐）——
+  改为 clear-session；③ 两命令均缺空 sessionId 检查（指令明确要求「会话ID不能为空」exit 1）
+  ——补上；④ 测试仅 5 用例（缺空 id ×2、clear 不存在幂等、delete vs clear 对比）——扩至 9 用例
+- 收尾由**引导 agent 直接完成**：独立 tsc 0 → 新测试 9/9 → 全量 985/985（首跑 984/985
+  偶发失败重跑稳定）→ 敏感扫描 0 → 独立冒烟（隔离 FLARE_HOME：seed 2 会话 → clear 保留
+  会话+用量 → delete 移除 → 不存在 exit 1 → 空 id exit 1）→ 补 README 命令表 + Changelog +
+  package.json 0.6.99 → 重编译 dist（携带新版本号）→ git add 指定 4 文件 → commit
+  `eef25b2` → flare 自安装（installed 0.6.99 = repo 0.6.99，安装版冒烟通过）
+- **教训**：① flare 在迭代预算将尽时倾向「顺手完成收尾」（bump 版本/改 README）——再次
+  违反「不改 package.json/README」铁律，引导 agent 必须 git status + diff 独立核对，违规
+  改动 checkout 还原、收尾统一由引导 agent 执行（P128 已见同模式：默认语义偏差）；② 命令
+  命名偏差（clear vs clear-session）与缺失校验（空 id）是 flare 实现与指令规格的常见偏差
+  点，验收必须逐条对照指令规格而非只跑测试（测试跟随实现写，5/5 绿不等于规格满足）；
+  ③ 全量首跑 984/985 偶发失败与改动无关（server.test.ts 真实 chat 调用偶发超时，P123
+  同源），重跑即稳定，验收以多次重跑为准
 
 ---
 
