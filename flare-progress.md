@@ -1,10 +1,13 @@
 # Flare 引擎迭代进度（夜间调研 agent）
 
-> **【已发布】v0.6.87 装机完成，自 15:20 起引导模式使用本机安装版**
+> **【已发布】v0.6.88 装机完成（P117 flare archived-sessions，15:5x 引导模式本机安装版）**
+> 上一版 v0.6.87 装机完成，自 15:20 起引导模式使用本机安装版
 
 > 目标：flare 是 Pulse/StorySpire 依赖的 AI Agent 引擎（TS）。任何改动必须安全（tsc 0 错 + 测试全绿才 commit）。
 > 铁律：禁止 push；禁止修改 src/core/agent.ts 的 Agent.run 核心循环。
 
+> **【✅ 第九十一轮完成】P117 (v0.6.88) flare archived-sessions 单次命令已装机**：commit `050c292`，
+> 914/914 全绿、tsc 0 错误、零 agent.ts 改动（详情见下方第九十一轮条目）。
 > **【✅ 第八十九轮完成】P115 (v0.6.86) flare search-messages 单次命令已装机**：commit `2a4ebd3`，
 > 902/902 全绿、tsc 0 错误、零 agent.ts 改动（详情见下方第八十九轮条目）。
 > **【✅ 第九十轮完成】P116 (v0.6.87) flare sessions 单次命令已装机**：commit `10ef8cd`，
@@ -85,6 +88,44 @@
 >    confirm 描述（v0.6.27）✓
 
 > ---
+
+### 2026-08-12 第九十一轮实施（v0.6.88）——P117 flare archived-sessions 单次命令（装机完成）
+
+> **P117 完成**（commit `050c292`）：新增 CLI 单次命令 `flare archived-sessions`——与 server
+> list_archived_sessions（v0.6.31 归档 API）对称的只读归档会话列表入口，交互式 /archived
+> （v0.6.32）的单次命令形态，与 P116 sessions（recent_sessions 对称）同构；P116 系列
+> （search/search-messages/sessions）之后补齐归档查看缺口：会话归档后从最近列表隐藏，只能
+> 靠交互 /archived 找回，宿主/脚本场景无单次命令入口。
+> - **实现**（src/cli/index.ts 纯新增 26 行，插在 sessions 命令与 messages 命令之间）：
+>   store.listArchivedSessions(limit)；--limit 1~50 默认 10（非法退出码 1）；空 →「暂无归档会话」
+>   退出码 0；每条显示 时间/标题/会话 ID/首条 user 消息预览（30 字符截断，空会话标注「（空会话）」）
+> - **测试**（新建 tests/cli-archived-sessions.test.ts，6 用例 spawn dist CLI + FLARE_HOME 隔离）：
+>   列出归档会话（含预览+ID+**不含未归档会话**）/ 空会话标注 / --limit 1 / 非法 limit 退出码 1 /
+>   无归档「暂无归档会话」/ 按更新时间倒序（better-sqlite3 毫秒打点，第八十七/九十轮同款方案）
+> - README 命令表补 archived-sessions 行 + Changelog v0.6.88 条目
+> - **914/914 全绿**（新增 6 用例，55 文件），tsc 0 错误，**零 agent.ts 改动**，零 push、
+>   零敏感信息；自安装完成：installed 0.6.88 = repo 0.6.88（安装版冒烟
+>   `FLARE_HOME=$(mktemp -d) ... archived-sessions` →「暂无归档会话」exit 0 已验证）
+> - **下一步候选**：① 【P1】分层上下文（Layer 1 异步滚动摘要——需评估 run 循环外异步）；
+>   ② 其他安全的外围增强（server 协议其他管理接口、MCP 工具集完善、测试稳定性等）
+
+**引导过程记录（引导 agent 视角，3 次调用）**：
+- 第 1 次调用（完整实现指引 + 禁止调研 + 白名单）→ **完全跑偏**：把 P117 幻觉成
+  memory 保存/检索任务（saveRetrievedMemory + retrieved_memories 表 + flare memory 命令），
+  **读取了 src/core/agent.ts**（违反禁止清单），用 terminal ls 探索目录，耗尽 30 迭代零产出
+- 第 2 次调用（重试：开头硬声明「与 memory/记忆/agent.ts 完全无关」+ **直接附完整可落盘代码**：
+  命令实现 26 行 + 测试文件 127 行 + README 两处插入点 + 版本号，全部用字符串拼接规避
+  反引号/${} 的 shell 求值）→ **一次成功**：精准插入、6 用例落盘、tsc 0、全量 914/914、
+  commit `050c292`（4 文件 +158/-1），全程未读禁止目录、零真实库污染（真实 ~/.flare 本轮
+  零新增会话，隔离铁律生效）
+- 第 3 次调用（自安装）→ 完成 installed 0.6.88 = repo 0.6.88
+- **教训**：① **完整代码 + 硬声明无关领域 = 一轮成功**（连续验证）；② flare 任务幻觉会
+  被指令中的「参考文件清单」触发发散（本轮它看到 memory 相关提示后编造 memory 任务）——
+  指令必须显式声明「本任务与 X 完全无关」；③ **指令文本经 shell $(cat) 传入时，代码里的
+  反引号与 ${} 会被 bash 求值**——给 flare 的代码一律用字符串拼接写法；④ 独立验收
+  （git diff stat + tsc + 全量 vitest + 敏感扫描 + 真实库零新增）全部通过才装机
+
+---
 
 ### 2026-08-12 第九十轮实施（v0.6.87）——P116 flare sessions 单次命令（装机完成）
 
