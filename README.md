@@ -153,6 +153,7 @@ cp .env.example ~/.flare/.env
 | `flare mcp-server [-t 工具名,...] [--http [--port <端口>] [--http-auth-token-env <VAR>]] [--bridge-resources] [--bridge-prompts] [--bridge-tools]` | MCP stdio 服务器：把 flare 工具集暴露给其他 AI 客户端（v0.5.8；v0.6.3 起 --http 起 HTTP transport；v0.6.28/0.6.37/0.6.47 起可透传外部 MCP 服务器资源/提示词/工具；v0.6.69 起 --http-auth-token-env 从环境变量读 Bearer 鉴权 token） |
 | `flare mcp call <服务器> <工具> [JSON参数]` | 调用 MCP 服务器工具（stdio 或 HTTP transport；服务器名查 `~/.flare/mcp.json`，`--url` 直连 HTTP 端点，v0.6.6；`--header <k:v>` 可重复附加鉴权请求头，v0.6.68） |
 | `flare log-level <服务器> <级别>` | 设置 MCP 服务器日志级别阈值（logging/setLevel，v0.6.83；级别 debug/info/notice/warning/error/critical/alert/emergency 按严重程度升序；stdio/HTTP transport 通用；`--url` 直连 HTTP 端点，`--header <k:v>` 附加鉴权请求头 v0.6.68） |
+| `flare messages <会话ID>` | 查看指定会话的消息历史（--limit N 1~500 默认 50；--recent 从最新开始；v0.6.84） |
 | `flare mcp status` | 查看配置的 MCP 服务器（名称 + 传输类型 + 端点/命令 + [auth] 鉴权标记；--json 结构化输出 v0.6.80；v0.6.6/v0.6.70） |
 | `flare mcp resources <服务器> [--read <uri>]` | 查看/读取 MCP 服务器暴露的资源（v0.6.10） |
 | `flare mcp prompts <服务器> [--get <名称>]` | 查看/渲染 MCP 服务器暴露的提示词（v0.6.10） |
@@ -342,6 +343,10 @@ Interactive mode commands:
 
 > 中文条目 / Chinese entries · English summary for each version
 
+#### v0.6.84 (2026-08-12) — `flare messages` 命令（查看指定会话消息历史）
+- ✨ **新增 `flare messages <会话ID>` 命令**：与 server get_messages 对称的只读查看入口——默认取最早 limit 条（长会话看开头），`--recent` 从最新一条往回显示（看最近内容）。
+- `--limit N`（1~500 默认 50，非法退出码 1）；空会话友好提示；内容 200 字符截断 + 角色图标。
+- 🧪 **全绿**（新增 6 用例：默认最早 / --recent / --limit / 非法 limit / 空会话 / 截断+图标），tsc 0 错误，**零 agent.ts 改动**
 #### v0.6.83 (2026-08-12) — `flare log-level` 命令（MCP logging/setLevel 桥接，stdio/HTTP 通用）
 
 - ✨ **新增 `flare log-level <服务器> <级别>` 命令**：把库层 MCP 客户端的 logging 能力

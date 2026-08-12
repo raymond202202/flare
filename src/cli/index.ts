@@ -2107,6 +2107,39 @@ program
       }
     })
 
+  // flare messages <sessionId>：查看指定会话的消息历史（v0.6.84）
+  program
+    .command('messages <sessionId>')
+    .description('查看指定会话的消息历史（v0.6.84）')
+    .option('-n, --limit <n>', '显示 N 条消息（默认 50）')
+    .option('-r, --recent', '从最新一条开始往回显示（长会话下默认取最早 N 条，加此参数可看最新内容，v0.6.84）')
+    .action((sessionId: string, options: { limit?: string; recent?: boolean }) => {
+      const store = getMemoryStore()
+      let limit = options.limit !== undefined ? Number(options.limit) : 50
+      if (!Number.isInteger(limit) || limit < 1 || limit > 500) {
+        console.error(chalk.red('❌ --limit 需为 1~500 的整数'))
+        process.exit(1)
+      }
+      // --recent：取最近 limit 条（时间正序返回）；默认取最早 limit 条，保证输出顺序始终时间正序
+      const messages = options.recent
+        ? store.getRecentMessages(sessionId, limit)
+        : store.getMessages(sessionId, limit)
+      if (messages.length === 0) {
+        console.log(chalk.yellow(`会话 ${sessionId} 暂无消息`))
+        return
+      }
+      console.log(chalk.cyan(`\n💬 会话 ${sessionId} ${options.recent ? '最近' : '前'} ${Math.min(limit, messages.length)} 条消息:`))
+      for (const m of messages) {
+        const text = Array.isArray(m.content)
+          ? m.content.map(p => 'text' in p ? p.text : '[图片]').join('')
+          : String(m.content)
+        const head = text.replace(/\s+/g, ' ').trim()
+        const icon = m.role === 'user' ? '🧑' : m.role === 'assistant' ? '🤖' : m.role === 'system' ? '⚙️' : '🔧'
+        const line = head ? head.slice(0, 200) : `[${m.role} 空内容]`
+        console.log(`  ${chalk.gray(icon)} ${m.role}: ${line}`)
+      }
+    })
+
   // 默认命令（无参数时进入交互模式）
   program.action(() => {
     startInteractive()
