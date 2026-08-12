@@ -2451,6 +2451,58 @@ program
         console.log(' ' + chalk.gray('[' + formatSessionTime(m.created_at) + ']') + ' #' + m.id + ' ' + chalk.gray('(' + m.type + ')') + ' ' + line)
       }
     })
+  // flare remember：保存持久记忆（宿主/脚本单次命令写入口，v0.6.100；与 server remember、交互 /remember 对称）
+  program
+    .command('remember [content]')
+    .description('保存一条持久记忆（默认类型 note；--kind 指定类型如 preference）')
+    .option('-k, --kind <type>', '记忆类型（如 note/preference，默认 note）')
+    .allowUnknownOption(false)
+    .action((content: string, options: { kind?: string }) => {
+      const c = (content || '').trim()
+      if (!c) {
+        console.error(chalk.red('❌ 记忆内容不能为空'))
+        process.exit(1)
+      }
+      const kind = ((options.kind || '').trim() || 'note')
+      const store = getMemoryStore()
+      store.saveMemory(c, kind)
+      console.log(chalk.green('✅ 已记住（类型「' + kind + '」）: ' + c.slice(0, 80)))
+      process.exit(0)
+    })
+
+  // flare delete-memory：删除持久记忆（宿主/脚本单次命令写入口，v0.6.100；与 server delete_memory、交互 /forget 对称）
+  program
+    .command('delete-memory [id]')
+    .description('删除持久记忆：按 id 删单条，或 --content <关键词> 批量删')
+    .option('-c, --content <keyword>', '按关键词批量删除包含该关键词的记忆')
+    .action((idArg: string | undefined, options: { content?: string }) => {
+      const store = getMemoryStore()
+      const idStr = (idArg || '').trim()
+      const kw = (options.content || '').trim()
+      // id 与 --content 同时提供 → 以 id 为准
+      if (idStr) {
+        if (!/^[1-9]\d*$/.test(idStr)) {
+          console.error(chalk.red('❌ 记忆ID必须是正整数'))
+          process.exit(1)
+        }
+        const id = Number(idStr)
+        const ok = store.deleteMemory(id)
+        if (!ok) {
+          console.error(chalk.red('❌ 记忆 #' + id + ' 不存在'))
+          process.exit(1)
+        }
+        console.log(chalk.green('✅ 已删除记忆 #' + id))
+        process.exit(0)
+      }
+      if (kw) {
+        const n = store.deleteMemoriesByContent(kw)
+        console.log(chalk.green('✅ 已删除 ' + n + ' 条记忆（关键词: ' + kw.slice(0, 40) + '）'))
+        process.exit(0)
+      }
+      console.error(chalk.red('❌ 用法: flare delete-memory <记忆ID> 或 flare delete-memory --content <关键词>'))
+      process.exit(1)
+    })
+
   // flare tools：查看可用工具清单（v0.6.92，与 server tools 对称；内置工具，含确认门标注）
   program
     .command('tools')

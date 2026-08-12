@@ -165,6 +165,8 @@ cp .env.example ~/.flare/.env
 | `flare usage` | 查看 token 用量统计（全局汇总 + perModel 分解；--session <会话ID> 只看单会话；含缓存命中/节省；v0.6.89） |
 | `flare context-status [<会话ID>]` | 查看会话上下文占用（消息数 + 估算 tokens；--budget N 正整数附裁剪建议；v0.6.90） |
 | `flare memories [<关键词>]` | 查看持久记忆（无关键词列出全部；带关键词全文搜索；--kind 按类型过滤；--limit 1~100 默认 50；v0.6.91） |
+| `flare remember <内容> [--kind <类型>]` | 保存持久记忆（写操作：默认类型 note；--kind 指定如 preference；空内容 exit 1；与 server remember、交互 /remember 对称；v0.6.100） |
+| `flare delete-memory <记忆ID>` / `--content <关键词>` | 删除持久记忆（写操作：按 id 删单条（不存在 exit 1）或 --content 按关键词批量删（幂等 exit 0）；非法 id exit 1；与 server delete_memory、交互 /forget 对称；v0.6.100） |
 | `flare tools` | 查看可用工具清单（内置；含 [确认] 门标注；--json 结构化输出；v0.6.92） |
 | `flare config` | 查看运行配置（只读；数据目录/主模型/视觉模型/确认门/MCP 服务器清单；--json 结构化输出；不含任何密钥；v0.6.93） |
 | `flare confirm-status` | 查看确认门放行状态（只读；确认名单/跨会话持久化放行/本会话放行；--json 结构化输出；v0.6.94） |
@@ -357,6 +359,11 @@ Interactive mode commands:
 | `/exit` | Exit |
 
 ### Changelog / Release Notes
+
+## v0.6.100（2026-08-13）
+- ✨ **新增 `flare remember <内容> [--kind <类型>]` 单次命令**：保存持久记忆（写操作：默认类型 note，--kind 指定如 preference；内容 trim 后为空 exit 1；成功「已记住」exit 0），与 server remember、交互 /remember 对称
+- ✨ **新增 `flare delete-memory <记忆ID>` / `flare delete-memory --content <关键词>` 单次命令**：删除持久记忆（写操作：按 id 删单条——非法 id（非正整数）exit 1、不存在 exit 1、成功 exit 0；--content 按关键词批量删——输出删除条数、无匹配幂等 exit 0；id 与 --content 同时提供以 id 为准），与 server delete_memory、交互 /forget 对称
+- 记忆管理闭环单次命令（查看 v0.6.91 memories → 保存 remember → 删除 delete-memory）；记忆写操作接口单次命令形态首例（memories 表无外键、FTS 由 DELETE 触发器联动清理，低风险不触发生成）
 
 ## v0.6.99（2026-08-13）
 - ✨ **新增 `flare delete-session <会话ID>` 单次命令**：整体删除会话（写操作：删除会话及其全部消息与用量统计，事务原子、不可恢复；空 id exit 1、不存在幂等 exit 1），与 server delete_session 对称
