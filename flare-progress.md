@@ -1,11 +1,15 @@
 # Flare 引擎迭代进度（夜间调研 agent）
 
-> **【已发布】v0.6.100 装机完成（P130 flare remember/delete-memory 记忆写操作，引导模式本机安装版，自循环）**
-> 上一版 v0.6.99 装机完成（P129 flare delete-session/clear-session，引导模式本机安装版，自循环）
+> **【已发布】v0.6.102 装机完成（P132 flare version 版本查询，引导模式本机安装版，自循环）**
+> 上一版 v0.6.101 装机完成（P131 flare end-session 归档会话，引导模式本机安装版，自循环）
 
 > 目标：flare 是 Pulse/StorySpire 依赖的 AI Agent 引擎（TS）。任何改动必须安全（tsc 0 错 + 测试全绿才 commit）。
 > 铁律：禁止 push；禁止修改 src/core/agent.ts 的 Agent.run 核心循环。
 
+> **【✅ 第一百零五轮完成】P132 (v0.6.102) flare version 版本查询已装机**：
+> commit `250c883`，1009/1009 全绿、tsc 0 错误、零 agent.ts 改动（详情见下方第一百零五轮条目）。
+> **【✅ 第一百零四轮完成】P131 (v0.6.101) flare end-session 归档会话已装机**：
+> commit `3bc1288`，1006/1006 全绿、tsc 0 错误、零 agent.ts 改动（详情见下方第一百零四轮条目）。
 > **【✅ 第一百零三轮完成】P130 (v0.6.100) flare remember/delete-memory 记忆写操作已装机**：
 > commit `0526ed9`，998/998 全绿、tsc 0 错误、零 agent.ts 改动（详情见下方第一百零三轮条目）。
 > **【✅ 第一百零二轮完成】P129 (v0.6.99) flare delete-session/clear-session 破坏性会话管理已装机**：
@@ -283,6 +287,93 @@
   ——顺手 bump 版本/改 README——本轮零发生），「收尾由引导 agent 统一处理」的声明是关键；② 注释内版本号
   占位（v0.6.9x）是 flare 常见小瑕疵，收尾统一修正即可；③ 独立验收流程（diff 规格对照 + tsc + 全量 +
   冒烟 + 敏感扫描 + 提交内容核对）继续全过才装机
+
+---
+
+### 2026-08-13 第一百零四轮实施（v0.6.101）——P131 flare end-session 归档会话单次命令（装机完成，自循环第二小步）
+
+> **P131 完成**（commit `3bc1288`）：新增 CLI 单次命令 `flare end-session <会话ID>`——与 server
+> end_session（v0.6.31 归档会话）对称的归档写操作入口，与 archived-sessions（v0.6.87 查看归档）、
+> restore（v0.6.96 恢复归档）配对形成会话归档管理闭环（查看 → 归档 → 恢复）；宿主/脚本场景此前无归档
+> 会话的非交互入口（交互模式无 /end 命令、server 协议需宿主进程）。低风险评估：仅 UPDATE sessions 表
+> archived 标记、消息与用量全部保留、不触发生成，确认安全后实施。
+> - **实现**（src/cli/index.ts 纯新增 21 行，插在 restore 命令与 clear-session 命令之间）：
+>   sessionId trim 后非空必填，空 →「会话ID不能为空」exit 1（与 clear-session/delete-session 一致）；
+>   store.archiveSession(sid)：成功（true）→「已归档会话 + id（消息与用量保留，已从最近会话隐藏）」exit 0；
+>   不存在或已归档（false）→「会话 + id + 不存在或已归档（幂等返回 false）」exit 1（与 restore「不存在
+>   或未归档」exit 1 对称，server end_session 幂等 ok archived:false 的 CLI 表达）；零新 import（chalk/
+>   getMemoryStore 顶部已有）；未加 --json（与 restore 写操作风格一致）
+> - **测试**（新建 tests/cli-end-session.test.ts，8 用例 spawn dist CLI + FLARE_HOME 隔离，seed 用
+>   saveMessage 直写自动建会话，cli-restore 模板）：归档成功 + archived-sessions 可见 / 消息与用量保留 +
+>   从最近会话隐藏 / 不存在 exit 1 / 已归档再 end exit 1（幂等 false）/ 端到端 sessions→end-session→
+>   archived-sessions / 空 id exit 1 / 归档后 restore 恢复 sessions 重新可见（归档闭环端到端）/ 不影响
+>   其他会话
+> - README 命令表补 end-session 行 + Changelog v0.6.101 条目（## 版本标题在顶部，日期 2026-08-13）
+> - **1006/1006 全绿**（新增 8 用例，68 文件；flare 交付 5 用例 1003/1003，引导 agent 按规格补 3 用例
+>   ——空 id/restore 恢复闭环/不影响其他会话——后全量 1006/1006 首跑即绿），tsc 0 错误，**零 agent.ts
+>   改动**，零 push、零敏感信息；自安装完成：installed 0.6.101 = repo 0.6.101（安装版冒烟 end-session +
+>   archived-sessions 已验证）；真实 ~/.flare 零污染（冒烟均用 FLARE_HOME 临时目录）
+> - **下一步候选**：① 【P1】分层上下文（Layer 1 异步滚动摘要——需评估 run 循环外异步）；② 其他安全的
+>   外围增强——归档管理闭环已完成（archived-sessions → end-session → restore）；server 协议接口补 CLI
+>   单次命令系列（只读+写操作）基本收官，剩余 create_session（与 rename UPSERT 重叠，价值低）、
+>   recent_sessions（与 sessions 同源带预览，冗余）、apply_trim（会话上下文裁剪，风险中）、mcp disconnect、
+>   version（宿主协商类）
+
+**引导过程记录（引导 agent 视角，1 次调用 + 引导 agent 直接收尾）**：
+- 第 1 次调用（P130 同款：完整代码规格 + 硬声明无关领域 + 白名单/禁止清单 + 明确「不 commit、不改
+  package.json/README，收尾由引导 agent 统一处理」）→ **实现+测试落地**：命令 +21 行位置正确（restore
+  后、clear-session 前）、行为与规格完全一致、tsc 0、全量 1003/1003（68 文件）
+- **测试覆盖缺口（引导 agent 补足）**：flare 交付 5 用例（归档成功/数据保留/不存在/已归档幂等/端到端），
+  但规格要求至少 6 项中的空 id、归档后 restore 恢复闭环、不影响其他会话 3 项未覆盖（P129 教训再现：
+  测试跟随实现写，5/5 绿不等于规格满足）——引导 agent 直接补 3 用例至 8 个
+- 收尾由**引导 agent 直接完成**：diff 逐条对照规格（全过）→ 独立 tsc 0 → 新测试 8/8 → 全量 1006/1006
+  复核 → 敏感扫描 0 → 独立冒烟（隔离 FLARE_HOME：空 id/不存在/归档/archived-sessions 可见/restore 恢复/
+  再归档/已归档再归档幂等）→ 补 README 命令表 + Changelog + package.json 0.6.101 + 注释版本号修正 → 重编译
+  dist → git add 指定 4 文件 → commit `3bc1288` → flare 自安装（installed 0.6.101 = repo 0.6.101，
+  安装版冒烟通过）
+- **教训**：① flare 实现质量稳定（行为零偏差），但**测试用例数与规格要求的偏差仍是盲区**（5 vs 6+，
+  且覆盖点不同）——验收必须逐项对照规格清单核对测试覆盖，缺口由引导 agent 直接补齐；② 归档写操作与
+  restore 完全对称（标记翻转类），exit code 语义沿用 restore 先例（不存在/目标状态已达成 → exit 1）；
+  ③ 连续多轮「完整代码规格 + 明确收尾归属」模式稳定一次交付实现，收尾仍由引导 agent 统一执行
+
+---
+
+### 2026-08-13 第一百零五轮实施（v0.6.102）——P132 flare version 版本查询单次命令（装机完成，自循环第三小步）
+
+> **P132 完成**（commit `250c883`）：新增 CLI 单次命令 `flare version [--json]`——与 server version
+> （宿主版本协商，返回 protocol + engine）对称的极简只读版本查询入口；宿主/脚本场景此前无 CLI 版本查询
+> 命令（commander 未设置 .version()，--version 不可用）；与 ping（v0.6.95 健康检查）配对构成「健康探测 +
+> 版本协商」只读探测面。低风险评估：纯只读、不依赖任何初始化、与 run 循环无关。
+> - **实现**（src/cli/index.ts 纯新增 13 行，插在 ping 命令与默认命令之间）：复用 CLI 顶部已有
+>   `const pkg = require('../../package.json')`（第 29-30 行，零新 import、不硬编码版本）；默认输出
+>   `flare v<版本>`（chalk.cyan）exit 0；--json → `{ "engine": "<版本>" }` 结构化输出（与 server version
+>   引擎字段同源）；不读取任何环境变量/配置文件/数据库；未加其他选项
+> - **测试**（新建 tests/cli-version.test.ts，3 用例 spawn dist CLI，cli-ping 模板）：默认输出 flare v<版本>
+>   与 package.json 一致（动态读版本断言非硬编码）/ --json 输出合法 JSON 且 engine = pkg.version /
+>   删除 FLARE_HOME 环境变量仍成功（证明不依赖存储初始化）
+> - README 命令表补 version 行（ping 之后）+ Changelog v0.6.102 条目（## 版本标题在顶部，日期 2026-08-13）
+> - **1009/1009 全绿**（新增 3 用例，69 文件；首跑即绿无偶发），tsc 0 错误，**零 agent.ts 改动**，零 push、
+>   零敏感信息；自安装完成：installed 0.6.102 = repo 0.6.102（安装版冒烟 version + --json 已验证）；
+>   真实 ~/.flare 零污染（version 命令不触库，无需 FLARE_HOME）
+> - **下一步候选**：① 【P1】分层上下文（Layer 1 异步滚动摘要——需评估 run 循环外异步）；② 其他安全的
+>   外围增强——server 协议接口补 CLI 单次命令系列已收官（只读 get_config 收官 v0.6.93、写操作系列
+>   restore/rename/confirm-allow+revoke/delete-session+clear-session/remember+delete-memory/end-session
+>   收官 v0.6.101、探测面 ping+version 收官 v0.6.102）；剩余 create_session（与 rename UPSERT 重叠）、
+>   recent_sessions（与 sessions 冗余）、apply_trim（上下文裁剪）、mcp disconnect（进程级意义有限）、
+>   测试稳定性等
+
+**引导过程记录（引导 agent 视角，1 次调用 + 引导 agent 直接收尾）**：
+- 第 1 次调用（P130/P131 同款指令模式）→ **一次完整交付**：命令 +13 行位置正确（ping 后、默认命令前）、
+  复用顶部 pkg 零新 import、3 测试落盘、tsc 0、新测试 3/3、全量 1009/1009（69 文件）首跑即绿，汇报与
+  实况完全一致（flare 还注意到顶层 program .version() 的 --version flag 与子命令 version 互不冲突并实测）
+- 收尾由**引导 agent 直接完成**：diff 逐条对照规格（全过）→ 独立 tsc 0 → 新测试 3/3 → 全量 1009/1009
+  复核 → 敏感扫描 0 → 独立冒烟（version 输出 + --json 结构）→ 补 README 命令表 + Changelog + package.json
+  0.6.102 + 注释版本号 → 重编译 dist → git add 指定 4 文件 → commit `250c883` → flare 自安装
+  （installed 0.6.102 = repo 0.6.102，安装版冒烟通过）
+- **教训**：① 极简只读命令（ping 同类）是快节奏小步的最佳形态——flare 一次调用全量交付、无规格偏差、
+  无测试缺口；② 版本号管理注意：P131 已占 0.6.101、P132 须 bump 0.6.102（每小步独立版本、装机后
+  installed = repo 核对）；③ 本轮三小步（P130/P131/P132）自循环均在 25 分钟窗口内完成，时间预算耗尽
+  前停止第四小步，先收尾进度记录
 
 ---
 
