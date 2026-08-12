@@ -164,6 +164,7 @@ cp .env.example ~/.flare/.env
 | `flare tools` | 查看可用工具清单（内置；含 [确认] 门标注；--json 结构化输出；v0.6.92） |
 | `flare config` | 查看运行配置（只读；数据目录/主模型/视觉模型/确认门/MCP 服务器清单；--json 结构化输出；不含任何密钥；v0.6.93） |
 | `flare confirm-status` | 查看确认门放行状态（只读；确认名单/跨会话持久化放行/本会话放行；--json 结构化输出；v0.6.94） |
+| `flare ping` | 健康检查（进程存活即 pong；--json 结构化输出；不依赖任何初始化，只读；与 server ping 对称；v0.6.95） |
 | `flare mcp status` | 查看配置的 MCP 服务器（名称 + 传输类型 + 端点/命令 + [auth] 鉴权标记；--json 结构化输出 v0.6.80；v0.6.6/v0.6.70） |
 | `flare mcp resources <服务器> [--read <uri>]` | 查看/读取 MCP 服务器暴露的资源（v0.6.10） |
 | `flare mcp prompts <服务器> [--get <名称>]` | 查看/渲染 MCP 服务器暴露的提示词（v0.6.10） |
@@ -351,6 +352,9 @@ Interactive mode commands:
 
 ### Changelog / Release Notes
 
+## v0.6.95（2026-08-12）
+- ✨ **新增 `flare ping` 单次命令**：健康检查（进程存活即 pong；--json 结构化输出；不依赖任何初始化，只读），与 server ping 对称
+> 中文条目 / Chinese entries · English summary for each version
 ## v0.6.94（2026-08-12）
 - ✨ **新增 `flare confirm-status` 单次命令**：查看确认门放行状态（确认名单 + 跨会话持久化放行 + 本会话放行；--json 结构化输出；只显示工具名不含任何密钥），与 server confirm_status 对称（只读）
 > 中文条目 / Chinese entries · English summary for each version
