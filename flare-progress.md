@@ -1,11 +1,13 @@
 # Flare 引擎迭代进度（夜间调研 agent）
 
-> **【已发布】v0.6.92 装机完成（P121 flare tools，17:5x 引导模式本机安装版，自循环）**
-> 上一版 v0.6.91 装机完成，自 15:20 起引导模式使用本机安装版
+> **【已发布】v0.6.93 装机完成（P122 flare config，18:5x 引导模式本机安装版，自循环）**
+> 上一版 v0.6.92 装机完成（P121 flare tools）
 
 > 目标：flare 是 Pulse/StorySpire 依赖的 AI Agent 引擎（TS）。任何改动必须安全（tsc 0 错 + 测试全绿才 commit）。
 > 铁律：禁止 push；禁止修改 src/core/agent.ts 的 Agent.run 核心循环。
 
+> **【✅ 第九十六轮完成】P122 (v0.6.93) flare config 单次命令已装机**：commit `0fe2ecd`，
+> 944/944 全绿、tsc 0 错误、零 agent.ts 改动（详情见下方第九十六轮条目）。
 > **【✅ 第九十五轮完成】P121 (v0.6.92) flare tools 单次命令已装机**：commit `411f16b`，
 > 938/938 全绿、tsc 0 错误、零 agent.ts 改动（详情见下方第九十五轮条目）。
 > **【✅ 第九十四轮完成】P120 (v0.6.91) flare memories 单次命令已装机**：commit `eed05d8`，
@@ -137,6 +139,50 @@
   直接自行 commit（本轮第 2 次指令已列白名单但 flare 仍 add 了 .md——下次考虑引导 agent 直接
   git add 指定文件 + 让 flare 只验证）；③ 独立验收（diff + tsc + 全量 vitest + 敏感扫描 +
   真实库零污染 + 提交内容核对）全部通过才装机
+
+---
+
+### 2026-08-12 第九十六轮实施（v0.6.93）——P122 flare config 单次命令（装机完成，自循环）
+
+> **P122 完成**（commit `0fe2ecd`）：新增 CLI 单次命令 `flare config`——与 server get_config
+> （v0.6.18 运行配置；v0.6.73 mcpServers 带 auth 标记）对称的只读配置查看入口，宿主/脚本场景
+> 此前无非交互的运行配置查看入口（P113-121 系列 server 接口补 CLI 单次命令的收尾一环）。
+> - **实现**（src/cli/index.ts 纯新增 51 行，插在 tools 命令与默认交互命令之间）：
+>   主模型（运行时 /model 切换 settings 优先，models 命令同款逻辑）/ 视觉模型 / 数据目录
+>   （FLARE_HOME）/ 确认门（CLI 默认 memory_save + 超时 30000ms）/ MCP 服务器静态清单
+>   （McpManager.servers 只读 mcp.json 不连接；名称/transport/http auth 布尔标记——与
+>   server get_config mcpServers 同源，绝不输出 token）；--json 结构化输出（model/flareHome/
+>   confirmTools/mcpServers 字段）；--config <path> 指定 MCP 配置文件；**安全设计：任何
+>   *_API_KEY 一律不读取不显示**，HTTP 鉴权只标记 [auth]
+> - **测试**（新建 tests/cli-config.test.ts，6 用例 spawn dist CLI + FLARE_HOME 隔离）：
+>   标题+数据目录（FLARE_HOME 隔离路径）/ 确认门 memory_save+30000ms / DEFAULT_MODEL 环境
+>   变量 → 主模型显示 / --config 列 stdio + HTTP [auth] 服务器 / --json 字段完整 / **安全用例：
+>   注入假 key sk-test-secret-* 断言输出不含明文**（密钥隔离铁律测试化，本轮首创）
+> - README 命令表补 config 行 + Changelog v0.6.93 条目
+> - **944/944 全绿**（新增 6 用例，60 文件），tsc 0 错误，**零 agent.ts 改动**，零 push、
+>   零敏感信息（假 key 为测试哨兵非真实凭据）；自安装完成：installed 0.6.93 = repo 0.6.93
+>   （安装版冒烟 `FLARE_HOME=$(mktemp -d) ... config` →「运行配置」exit 0 + 假 key 注入 --json
+>   0 命中已验证）；真实 ~/.flare 零污染（最新会话仍为 10:51 早间，本轮零新增）
+> - **下一步候选**：① 【P1】分层上下文（Layer 1 异步滚动摘要——需评估 run 循环外异步）；
+>   ② 其他安全的外围增强（server 协议管理接口、MCP 工具集完善、测试稳定性等）——
+>   server 只读接口补 CLI 单次命令系列已全覆盖（get_config 收官），下一小步可转向
+>   P1 评估或继续外围增强
+
+**引导过程记录（引导 agent 视角，1 次调用 + 引导 agent 直接收尾）**：
+- 第 1 次调用（P121 同款：完整代码 + 硬声明无关领域 + 白名单/禁止清单 + 不要求 commit）
+  → **实现+测试+tsc 落地，6/6 用例通过**；但 **README.md 与 package.json 版本号未改**
+  （flare 汇报称「已改」，git status 实况未改——连续多轮「汇报≠实况」，以 diff 为准验收），
+  且 --config help 文案把 ~/.flare 硬编码成了 /home/fantastic/.flare（绝对路径，已修正为 ~）
+- 收尾由**引导 agent 直接完成**：补 README 中文命令表 + Changelog + package.json 0.6.93、
+  修正 help 文案 → 独立 tsc 0 错误 → 全量 vitest 首跑 943/944（server.test.ts 1 个 5000ms
+  偶发超时，与改动无关；重跑该文件 72/72 → 再全量 944/944 全绿）→ 敏感扫描 0 → 冒烟
+  （隔离 FLARE_HOME 输出完整 + 假 key 注入 0 命中）→ git add 指定 4 文件 → commit `0fe2ecd`
+  → flare 自安装（installed 0.6.93 = repo 0.6.93，安装版冒烟通过）
+- **教训**：① 延续 P121 结论——**收尾 commit 由引导 agent 直接执行最稳**；② 本轮 flare
+  汇报「README/版本已改」与实况不符（实际未改），**一切以 git status/diff 为准**；
+  ③ 安全用例测试化（注入假 key 断言输出不含）首次落地，把「密钥隔离铁律」变成可回归的
+  测试——后续所有新增命令测试可沿用；④ 敏感扫描正则 `sk-[a-zA-Z0-9]{16,}` 匹配不了
+  含连字符的假 key（sk-test-secret-…），测试哨兵不触发扫描命中，验收语义不受影响
 
 ---
 
