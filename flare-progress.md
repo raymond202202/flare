@@ -1,11 +1,13 @@
 # Flare 引擎迭代进度（夜间调研 agent）
 
-> **【已发布】v0.6.102 装机完成（P132 flare version 版本查询，引导模式本机安装版，自循环）**
-> 上一版 v0.6.101 装机完成（P131 flare end-session 归档会话，引导模式本机安装版，自循环）
+> **【已发布】v0.6.103 装机完成（P133 flare trim 上下文裁剪单次命令，引导模式本机安装版，自循环）**
+> 上一版 v0.6.102 装机完成（P132 flare version 版本查询，引导模式本机安装版，自循环）
 
 > 目标：flare 是 Pulse/StorySpire 依赖的 AI Agent 引擎（TS）。任何改动必须安全（tsc 0 错 + 测试全绿才 commit）。
 > 铁律：禁止 push；禁止修改 src/core/agent.ts 的 Agent.run 核心循环。
 
+> **【✅ 第一百零六轮完成】P133 (v0.6.103) flare trim 上下文裁剪已装机**：
+> commit `f63f86c`，1016/1016 全绿、tsc 0 错误、零 agent.ts 改动（详情见下方第一百零六轮条目）。
 > **【✅ 第一百零五轮完成】P132 (v0.6.102) flare version 版本查询已装机**：
 > commit `250c883`，1009/1009 全绿、tsc 0 错误、零 agent.ts 改动（详情见下方第一百零五轮条目）。
 > **【✅ 第一百零四轮完成】P131 (v0.6.101) flare end-session 归档会话已装机**：
@@ -374,6 +376,67 @@
   无测试缺口；② 版本号管理注意：P131 已占 0.6.101、P132 须 bump 0.6.102（每小步独立版本、装机后
   installed = repo 核对）；③ 本轮三小步（P130/P131/P132）自循环均在 25 分钟窗口内完成，时间预算耗尽
   前停止第四小步，先收尾进度记录
+
+---
+
+### 2026-08-13 第一百零六轮实施（v0.6.103）——P133 flare trim 上下文裁剪执行单次命令（装机完成）
+
+> **P133 完成**（commit `f63f86c`）：新增 CLI 单次命令 `flare trim <会话ID> [--budget <tokens>]`——与
+> server apply_trim（v0.6.35 上下文裁剪执行）和交互 /trim（v0.6.46）对称的**上下文裁剪执行入口**，
+> 与已装机的 context-status（v0.6.90 查看占用+裁剪建议）配对形成「查看建议 → 执行裁剪」闭环；
+> 宿主/脚本场景此前无裁剪执行的非交互入口。风险评估：会删除 store 消息（写操作），但只删「构造时
+> 加载且有映射」的被裁消息、开头 system 块无条件保底、不触发生成不调 LLM，与 server apply_trim 语义
+> 完全一致，确认安全后实施。
+> - **实现**（src/cli/index.ts 纯新增 39 行，插在 context-status 命令与 memories 命令之间）：
+>   - `trim <sessionId>` 必填；空 id →「会话ID不能为空」exit 1；`store.getMessages(sid, 1)` 为空 →
+>     「会话不存在或无消息」exit 1（不构造 Agent 避免空会话误裁剪 system 前缀）
+>   - `--budget <n>` 正整数校验（0/abc →「必须是正整数」exit 1，与 context-status 同款）；缺省用
+>     会话级 `config.maxContextTokens || 16000`（与 /trim apply 一致）
+>   - **核心（与 /trim apply 完全同源，索引空间一致）**：`new Agent({ sessionId: sid })` 构造加载历史 +
+>     注入开头 system 块 + storedIdByMsg 映射 → `msgs = agent.getMessages()`（含 system 前缀）→
+>     `suggestTrim(msgs, budget, { reserveForOutput: 1024 })` → `agent.applyTrim(trim.keep.map(m =>
+>     msgs.indexOf(m)))`——store 同步删除被裁消息（重建会话后裁剪依然生效）
+>   - 未超预算 →「无需裁剪」幂等 exit 0；成功 →「已裁剪会话」+ 保留/删除条数 + 估算 tokens 前后对比 +
+>     store 同步提示；零新 import（Agent/suggestTrim/estimateMessagesTokens/getMemoryStore/chalk 顶部已有）
+> - **测试**（新建 tests/cli-trim.test.ts，7 用例 spawn dist CLI + FLARE_HOME 隔离，seed 用 saveMessage
+>   直写自动建会话）：不存在会话 exit 1 / seed 15 条 --budget 800 裁剪成功 + **端到端持久验证**（CLI 进程
+>   退出后 store 数量 < seed，store 同步删除生效）/ 消息少未超预算幂等 exit 0 数据不变 / --budget 0 与 abc
+>   各 exit 1 / 空 id exit 1 / 不影响其他会话（trim A 后 B 全保留）/ 极端小预算保底（最早消息被删 + 最新
+>   user 消息仍保留）
+> - README 命令表补 trim 行（context-status 之后）+ Changelog v0.6.103 条目（## 版本标题在顶部，日期
+>   2026-08-13）
+> - **1016/1016 全绿**（新增 7 用例，70 文件；首跑即绿无偶发），tsc 0 错误，**零 agent.ts 改动**，零 push、
+>   零敏感信息；自安装完成：installed 0.6.103 = repo 0.6.103（安装版冒烟 trim 裁剪 + 不存在会话 exit 1
+>   已验证）；真实 ~/.flare 零污染（冒烟均用 FLARE_HOME 临时目录）
+> - **下一步候选**：① 【P1】分层上下文（Layer 1 异步滚动摘要——需评估 run 循环外异步）；② 其他安全的外围
+>   增强——上下文管理闭环已完成（context-status v0.6.90 查看 → trim v0.6.103 执行）；剩余 create_session
+>   （与 rename UPSERT 重叠，价值低）、set_context（内存级不持久，CLI 单次命令价值低）、mcp disconnect
+>   （进程级意义有限）、trim --keep 精确裁剪模式（与 server keepIndexes 对称，配合 context-status --json
+>   程序化消费，可作为下一小步）、测试稳定性等
+
+**引导过程记录（引导 agent 视角，2 次调用 + 引导 agent 直接收尾）**：
+- 调研选定 P133：对照 server 协议 43 接口与 CLI 35 命令，未覆盖的 create_session/set_context/mcp_disconnect
+  均价值低（UPSERT 重叠 / 内存级不持久 / 进程级意义有限），**apply_trim（上下文裁剪执行）价值最高**——
+  与 context-status 配对闭环、store 同步持久生效
+- 第 1 次调用（完整代码规格 + 硬声明 + 白名单/禁止清单 + 不 commit）→ **达 30 次迭代上限自动停止**：
+  实现已落盘（46 行）但无测试文件、未跑 tsc/vitest；且实现有 4 处规格偏差——① **关键 bug：keepIdx 用
+  store.getMessages（无 system 前缀）索引传给 agent.applyTrim（含 system 前缀）——索引空间错位**（flare
+  自己最后也在纠结此问题，未及修正）；② 签名 [sessionId] 应为必填；③ 缺省预算用了全局 config 4000 而非
+  会话级 maxContextTokens；④ 注释版本 v0.6.96/expect_trim 错误
+- 第 2 次调用（修正指令：目标代码骨架 + 4 处偏差清单 + 测试规格）→ **只替换了代码（39 行与目标完全一致、
+  tsc 通过），仍未建测试文件**（汇报未提测试，实况无测试文件——「汇报≠实况」再次印证）；按铁律已重试 1 次，
+  测试由引导 agent 直接补齐（P131 先例）
+- 引导 agent 收尾：补 tests/cli-trim.test.ts 7 用例 → 首跑 4 失败定位两处根因（① 错误信息走 stderr 而断言
+  stdout——改断言 stderr；② 测试自身 bug：'编号 15'.includes('编号 1') 子串前缀误匹配——改带句号精确匹配）
+  → 新测试 7/7 → 全量 1016/1016（70 文件）首跑即绿 → 敏感扫描 0 → 独立冒烟（seed 15 条 trim 后 store 剩
+  最新 1 条、最早已删、不存在/空 id exit 1）→ 补 README + Changelog + package.json 0.6.103 → 重编译 dist →
+  git add 指定 4 文件 → commit `f63f86c` → flare 自安装（installed 0.6.103 = repo 0.6.103，安装版冒烟通过）
+- **教训**：① **索引空间一致性是裁剪类实现的核心正确性要求**——keepIdx 必须基于与 applyTrim 相同的消息
+  数组（含 system 前缀）计算，用 store 裸消息索引必然错位（P133 最大风险点，第 1 次调用已踩中）；② flare
+  达迭代上限时「实现落盘但测试缺失 + 汇报不含测试实况」——验收必须以 git status/diff + 独立测试为准；
+  ③ 引导 agent 补测试时自身也会踩子串误匹配这类测试 bug，定位要快（首跑失败先看 Received 实值再推断）；
+  ④ 写操作命令（会删 store 消息）的端到端持久验证（CLI 进程退出后 store 核对）是验收关键，不可只看 CLI
+  输出
 
 ---
 
