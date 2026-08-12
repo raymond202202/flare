@@ -158,6 +158,8 @@ cp .env.example ~/.flare/.env
 | `flare search-messages <关键词>` | 全文搜索历史消息内容（--limit N 1~100 默认 10；v0.6.86） |
 | `flare sessions` | 查看最近会话列表（--limit N 1~50 默认 10；v0.6.87） |
 | `flare rename <会话ID> <标题>` | 重命名会话（写操作：仅修改标题；title 非空必填；与 server rename_session 对称；v0.6.97） |
+| `flare delete-session <会话ID>` | 整体删除会话（写操作：删除会话及其全部消息与用量统计，不可恢复；不存在幂等 exit 1；与 server delete_session 对称；v0.6.99） |
+| `flare clear-session <会话ID>` | 清空会话全部消息（写操作：仅删除该会话消息，保留会话记录与用量；不存在幂等 exit 0；与 server clear_session 对称；v0.6.99） |
 | `flare archived-sessions` | 查看归档会话列表（--limit N 1~50 默认 10；v0.6.88） |
 | `flare restore <会话ID>` | 恢复归档会话（写操作：仅修改 archived 标记，数据保留；与 server restore_session 对称；v0.6.96） |
 | `flare usage` | 查看 token 用量统计（全局汇总 + perModel 分解；--session <会话ID> 只看单会话；含缓存命中/节省；v0.6.89） |
@@ -356,6 +358,11 @@ Interactive mode commands:
 
 ### Changelog / Release Notes
 
+## v0.6.99（2026-08-13）
+- ✨ **新增 `flare delete-session <会话ID>` 单次命令**：整体删除会话（写操作：删除会话及其全部消息与用量统计，事务原子、不可恢复；空 id exit 1、不存在幂等 exit 1），与 server delete_session 对称
+- ✨ **新增 `flare clear-session <会话ID>` 单次命令**：清空会话全部消息（写操作：仅删除该会话消息，保留会话记录与用量，FTS 触发器联动清索引；空 id exit 1、不存在幂等 exit 0），与 server clear_session 对称
+- 破坏性会话管理写操作单次命令系列（restore v0.6.96 / rename v0.6.97 / confirm-allow+revoke v0.6.98 延续）；delete 与 clear 语义对比：delete 移除会话记录，clear 保留会话仅清消息
+> 中文条目 / Chinese entries · English summary for each version
 ## v0.6.98（2026-08-13）
 - ✨ **新增 `flare confirm-allow <工具> [--session]` 单次命令**：放行确认工具（写操作：无需等 confirm 事件；**默认 always 跨会话持久化**——单次命令进程内会话级放行恒为空（每次运行都是新 ConfirmationGate 实例，allowSession 仅进程内存、结束即失，与 v0.6.94 confirm-status 语义一致），`--session` 仅本进程内有效；空工具名 exit 1），与 server confirm_allow 对称
 - ✨ **新增 `flare confirm-revoke <工具>` 单次命令**：撤销工具放行（写操作：会话级 + always 持久化同步清除，恢复每次确认；未放行幂等 exit 0；空工具名 exit 1），与 server confirm_revoke 对称

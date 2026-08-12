@@ -2242,6 +2242,43 @@ program
     }
   })
 
+  // flare clear-session <sessionId>：清空会话全部消息（保留会话记录与用量；与 server clear_session 对称，v0.6.99）
+  program
+    .command('clear-session <sessionId>')
+    .description('清空会话全部消息（写操作：仅删除该会话消息，保留会话记录与用量；与 server clear_session 对称）')
+    .action((sessionId: string) => {
+      const sid = (sessionId || '').trim()
+      if (!sid) {
+        console.log(chalk.yellow('会话ID不能为空'))
+        process.exitCode = 1
+        return
+      }
+      const store = getMemoryStore()
+      const cleared = store.clearSessionMessages(sid)
+      console.log(chalk.green('已清空会话 ') + chalk.cyan(sid) + chalk.gray(`（删除 ${cleared} 条消息，会话记录与用量保留）`))
+    })
+
+  // flare delete-session <sessionId>：整体删除会话（含消息/用量/会话记录；与 server delete_session 对称，v0.6.99）
+  program
+    .command('delete-session <sessionId>')
+    .description('整体删除会话（写操作：删除会话及其全部消息与用量统计，不可恢复；与 server delete_session 对称）')
+    .action((sessionId: string) => {
+      const sid = (sessionId || '').trim()
+      if (!sid) {
+        console.log(chalk.yellow('会话ID不能为空'))
+        process.exitCode = 1
+        return
+      }
+      const store = getMemoryStore()
+      const deleted = store.deleteSession(sid)
+      if (deleted) {
+        console.log(chalk.green('已删除会话 ') + chalk.cyan(sid) + chalk.gray('（含消息与用量）'))
+      } else {
+        console.log(chalk.yellow('会话 ') + chalk.cyan(sid) + chalk.yellow(' 不存在（幂等返回 false）'))
+        process.exitCode = 1
+      }
+    })
+
   // flare messages <sessionId>：查看指定会话的消息历史（v0.6.84）
   program
     .command('messages <sessionId>')
