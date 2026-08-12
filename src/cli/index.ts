@@ -2705,6 +2705,19 @@ program
       console.log(chalk.gray(' 引擎 v' + pkg.version + ' 正常运行；与 server ping 对称（进程存活即回 pong，不依赖任何初始化）'))
     })
 
+  // 版本单次命令（v0.6.102）：与 server version 对称（只读，不依赖任何初始化，供宿主/脚本查询引擎版本）
+  program
+    .command('version')
+    .description('输出引擎版本（与 server version 引擎字段对称；只读，不依赖任何初始化）')
+    .option('--json', '以 JSON 输出')
+    .action((options: { json?: boolean }) => {
+      if (options.json) {
+        console.log(JSON.stringify({ engine: pkg.version }, null, 2))
+        return
+      }
+      console.log(chalk.cyan('flare v' + pkg.version))
+    })
+
   // 默认命令（无参数时进入交互模式）
   program.action(() => {
     startInteractive()
