@@ -1,11 +1,13 @@
 # Flare 引擎迭代进度（夜间调研 agent）
 
-> **【已发布】v0.6.93 装机完成（P122 flare config，18:5x 引导模式本机安装版，自循环）**
-> 上一版 v0.6.92 装机完成（P121 flare tools）
+> **【已发布】v0.6.94 装机完成（P124 flare confirm-status，19:4x 引导模式本机安装版，自循环）**
+> 上一版 v0.6.93 装机完成（P122 flare config；P123 测试稳定性同轮小步）
 
 > 目标：flare 是 Pulse/StorySpire 依赖的 AI Agent 引擎（TS）。任何改动必须安全（tsc 0 错 + 测试全绿才 commit）。
 > 铁律：禁止 push；禁止修改 src/core/agent.ts 的 Agent.run 核心循环。
 
+> **【✅ 第九十七轮完成】P124 (v0.6.94) flare confirm-status 单次命令已装机**：commit `74554c6`，
+> 950/950 全绿、tsc 0 错误、零 agent.ts 改动（详情见下方第九十七轮条目）。
 > **【✅ 第九十六轮完成】P122 (v0.6.93) flare config 单次命令已装机**：commit `0fe2ecd`，
 > 944/944 全绿、tsc 0 错误、零 agent.ts 改动（详情见下方第九十六轮条目）。
 > **【✅ 同轮小步】P123 测试稳定性修复**：commit `7c54985`（server.test.ts tools/chat
@@ -216,6 +218,60 @@
   测试口径），纯测试层 1 行，零 src 风险；② flare 自主诊断根因 + 迭代超时值的过程
   正确（试 20000 失败后按指令调整），本轮 flare 汇报与实况完全一致；③ 纯测试改动
   无版本变化 → 无需自安装（dist 未变）
+
+---
+
+### 2026-08-12 第九十七轮实施（v0.6.94）——P124 flare confirm-status 单次命令（装机完成，自循环）
+
+> **P124 完成**（commit `74554c6`）：新增 CLI 单次命令 `flare confirm-status`——与 server
+> confirm_status（v0.6.8 确认门放行状态）对称的只读确认门状态查看入口，交互式 /allow
+> （v0.6.7/0.6.10）的单次命令形态，与 P113-122 系列（server 接口补 CLI 单次命令）同构；
+> 宿主/脚本场景此前无非交互的确认门状态查看入口（config 命令只显示确认名单配置，不显示
+> 实际放行状态）。
+> - **实现**（src/cli/index.ts 纯新增 46 行，插在 config 命令与默认交互命令之间）：
+>   确认名单（CLI_CONFIRM_TOOLS）/ 已放行合并（listAllAllowed = 会话级 + always 持久化
+>   去重）/ 本会话放行（listAllowed）/ 跨会话持久化放行（listAlwaysAllowed，settings 表
+>   confirm.always.<工具> 键）；--json 结构化输出（confirmTools/allowedTools/
+>   sessionAllowed/alwaysAllowed 四字段）；**单次命令进程内会话级放行恒为空**（新
+>   ConfirmationGate 实例），核心价值是 always 持久化放行查看（跨会话记住，/allow add
+>   <工具> always 写入）；confirmer 为必填故用 'deny' 占位（只读查询永不触发确认）；
+>   零新 import（ConfirmationGate/memoryStoreKv/CLI_CONFIRM_TOOLS 顶部已 import）
+> - **测试**（新建 tests/cli-confirm-status.test.ts，6 用例 spawn dist CLI + FLARE_HOME
+>   隔离，seed 用 MemoryStore.setSetting 直写 settings 表）：默认状态（确认名单
+>   memory_save + 持久化/本会话无）/ seed always 后跨会话名单含 memory_save 且本会话仍
+>   无 / --json 四字段数组 / --json + seed alwaysAllowed 精确 ['memory_save'] /
+>   非候选键 confirm.always.other_tool 被过滤不出现在任何名单 / 本会话放行恒空
+> - README 命令表补 confirm-status 行 + Changelog v0.6.94 条目（## 版本标题在顶部，
+>   flare 本轮未漏）
+> - **950/950 全绿**（新增 6 用例，61 文件），tsc 0 错误，**零 agent.ts 改动**，零 push、
+>   零敏感信息；自安装完成：installed 0.6.94 = repo 0.6.94（安装版冒烟
+>   `FLARE_HOME=$(mktemp -d) ... confirm-status --json` → 四字段 JSON 已验证）；
+>   真实 ~/.flare 仅自安装 chat 调用固有会话（无额外污染）
+> - **下一步候选**：① 【P1】分层上下文（Layer 1 异步滚动摘要——需评估 run 循环外异步）；
+>   ② 其他安全的外围增强（server 协议管理接口如 confirm_allow/confirm_revoke 单次命令、
+>   MCP 工具集完善、测试稳定性等）——server 只读接口补 CLI 单次命令系列中 confirm_status
+>   收官后，剩 confirm_allow/confirm_revoke 为写操作（有确认门语义，单次命令形态需评估）
+
+**引导过程记录（引导 agent 视角，2 次调用 + 引导 agent 直接收尾）**：
+- 第 1 次调用（P122 同款：完整代码 + 硬声明无关领域 + 白名单/禁止清单 + 不要求 commit）
+  → **命令实现落地且插入位置正确**（git diff 确认在 config 之后、默认命令之前），但
+  耗尽 30 迭代：卡在 ConfirmationGate 构造的 confirmer 必填类型（先写对象返回
+  TS2322，改成 'deny' as const 后 tsc 通过）；**测试/README/版本未做**（迭代预算耗尽）
+- 第 2 次调用（极简聚焦收尾：命令代码已就位禁止改动 + 完整测试代码直接落盘 + README
+  两处精确插入点 + 版本号）→ **一次成功**：测试 6 用例落盘、README 命令表+Changelog
+  正确（## 版本标题未漏）、package.json 0.6.94、tsc 0、新测试 6/6、全量 950/950、
+  冒烟通过
+- 收尾由**引导 agent 直接完成**：git diff 独立验收（4 文件：src/cli/index.ts +46 /
+  tests 新建 97 行 / README +3 / package.json 版本）→ 独立 tsc 0 → 全量 vitest
+  950/950 复核（与 flare 自述一致）→ 敏感扫描 0 → 独立冒烟（--json 四字段 + seed
+  always 后跨会话名单含 memory_save）→ git add 指定 4 文件 → commit `74554c6`
+  → flare 自安装（installed 0.6.94 = repo 0.6.94，安装版冒烟通过）
+- **教训**：① 实现类任务 flare 一轮可落地代码，但**构造签名类细节（confirmer 必填）
+  会消耗迭代预算**——指令应直接给出 ConfirmationGate 完整构造参数（含占位 confirmer
+  写法），避免 flare 试错；② 「分两轮引导」（第一轮实现、第二轮收尾测试/文档/版本）
+  对复杂命令更稳：第二轮聚焦指令 + 完整测试代码 = 一次成功；③ 连续多轮验证
+  「flare 自述全绿 = 引导 agent 独立复核一致」（本轮 950/950 完全一致），但 commit
+  收尾仍由引导 agent 执行最稳（杜绝临时文件误入）
 
 ---
 
