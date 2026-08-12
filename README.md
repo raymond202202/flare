@@ -157,6 +157,7 @@ cp .env.example ~/.flare/.env
 | `flare search <关键词>` | 跨会话搜索标题/消息内容（--limit N 1~100 默认 20；v0.6.85） |
 | `flare search-messages <关键词>` | 全文搜索历史消息内容（--limit N 1~100 默认 10；v0.6.86） |
 | `flare sessions` | 查看最近会话列表（--limit N 1~50 默认 10；v0.6.87） |
+| `flare rename <会话ID> <标题>` | 重命名会话（写操作：仅修改标题；title 非空必填；与 server rename_session 对称；v0.6.97） |
 | `flare archived-sessions` | 查看归档会话列表（--limit N 1~50 默认 10；v0.6.88） |
 | `flare restore <会话ID>` | 恢复归档会话（写操作：仅修改 archived 标记，数据保留；与 server restore_session 对称；v0.6.96） |
 | `flare usage` | 查看 token 用量统计（全局汇总 + perModel 分解；--session <会话ID> 只看单会话；含缓存命中/节省；v0.6.89） |
@@ -353,6 +354,9 @@ Interactive mode commands:
 
 ### Changelog / Release Notes
 
+## v0.6.97（2026-08-13）
+- ✨ **新增 `flare rename <会话ID> <标题>` 单次命令**：重命名会话（写操作：仅修改标题；title 非空必填，空标题 exit 1；UPSERT 语义与 server 一致），与 server rename_session 对称
+> 中文条目 / Chinese entries · English summary for each version
 ## v0.6.96（2026-08-13）
 - ✨ **新增 `flare restore <会话ID>` 单次命令**：恢复归档会话（写操作：仅修改 archived 标记，数据保留，不触发生成；不存在/未归档幂等 exit 1），与 server restore_session 对称
 > 中文条目 / Chinese entries · English summary for each version
