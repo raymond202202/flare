@@ -2319,6 +2319,32 @@ program
         }
       }
     })
+  // flare context-status [<sessionId>]：查看会话上下文占用（v0.6.90，与 server context_status 对称）
+  program
+    .command('context-status [sessionId]')
+    .description('查看会话上下文占用（消息数 + 估算 tokens；--budget 附裁剪建议，v0.6.90）')
+    .option('-b, --budget <n>', '上下文 token 预算（正整数；附裁剪建议）')
+    .action((sessionId: string | undefined, options: { budget?: string }) => {
+      const store = getMemoryStore()
+      const sid = sessionId || 'default'
+      // 全量消息（context_status 语义是整段上下文，不受 getMessages 默认 50 条限制）
+      const messages = store.getMessages(sid, 100000)
+      const estimatedTokens = estimateMessagesTokens(messages)
+      console.log(chalk.cyan('\n📐 会话 ' + sid + ' 上下文占用:'))
+      console.log(' ' + chalk.gray('消息数:') + ' ' + messages.length)
+      console.log(' ' + chalk.gray('估算 tokens:') + ' ' + estimatedTokens)
+      if (options.budget !== undefined) {
+        const budget = Number(options.budget)
+        if (!Number.isInteger(budget) || budget <= 0) {
+          console.error(chalk.red('❌ --budget 必须是正整数（上下文 token 预算）'))
+          process.exit(1)
+        }
+        const trim = suggestTrim(messages, budget)
+        console.log(chalk.gray(' 裁剪建议（预算 ' + budget + ' tokens）:'))
+        console.log(' ' + chalk.gray('保留:') + ' ' + trim.keep.length + ' 条（估算 ' + trim.estimatedKeptTokens + ' tokens）')
+        console.log(' ' + chalk.gray('可裁剪:') + ' ' + trim.droppedCount + ' 条（估算 ' + trim.estimatedDroppedTokens + ' tokens）')
+      }
+    })
   // 默认命令（无参数时进入交互模式）
   program.action(() => {
     startInteractive()
