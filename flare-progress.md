@@ -78,6 +78,21 @@
 
 > ---
 
+### 2026-08-12 第八十六轮引导（v0.6.84，未完成→失败停止，未安装）——P113 flare messages 收尾（--recent 实现落地未提交，下轮收尾）
+
+> **本轮 flare 自主迭代重试 1 次后仍未完整交付（第 1 次完成 --recent 实现、第 2 次卡在测试 seed 方案），按铁律停止，未安装，版本仍 v0.6.83。工作区保留 flare 已实现的正确增量（src/cli/index.ts +33 行含 --recent + package.json 版本 0.6.84），下轮直接收尾。**
+
+- **本轮目标**：P113 收尾（第八十五轮遗留）——补 --recent 选项、新建 tests/cli-messages.test.ts、README 命令表 + Changelog、tsc + 全量 vitest、git commit、flare 自安装
+- **本轮过程**：
+  - 第 1 次调用（收尾一锅端，预置全部关键信息）→ **--recent 实现落地**：src/cli/index.ts 恢复后重新插入完整 messages 命令 +33 行（--limit 1~500 默认 50 校验前置、--recent → store.getRecentMessages 取最近 limit 条、默认 → getMessages 取最早 limit 条与 server get_messages 缺省一致、标题区分「前/最近 N 条消息」、空会话提示、200 字符截断、角色图标）——但测试/README/验证/commit 未做，耗尽 30 迭代
+  - 第 2 次调用（聚焦：禁止再动 src/cli/index.ts，只做测试/README/commit）→ **卡在测试数据构造**：尝试 node require dist（ESM 失败）、tsx 跑 src（seed 失败无报错输出），未建成任何测试文件，耗尽 30 迭代；未动其他文件
+- **引导 agent 独立验收**：git diff 确认 src/cli/index.ts 纯新增 33 行（无覆盖）、package.json 仅版本号；npx tsc 0 错误；敏感扫描 0 命中；零 agent.ts 改动；工作区无残留半成品（无未跟踪文件）
+- **安装目录完好**：~/.flare/install 仍 v0.6.83（未编译未装）
+- **教训**：① 测试数据构造方案必须给可复用代码片段——flare 对「测试内如何造真实会话消息」反复探索失败（require dist ESM 不行、tsx import 不行），下轮预置：vitest 内 `import { MemoryStore } from '../src/memory/store.js'` + `new MemoryStore(dbPath)`（dbPath=$FLARE_HOME/flare.db）+ `saveMessage(sessionId, message)`，spawn 子进程用 `node dist/cli/index.js`（先 tsc）；② 实现类任务 flare 能高质量完成（--recent 分支/语义对称正确），收尾卡点集中在测试基建，指令应直接给测试骨架
+- **下轮收尾清单**：① 新建 tests/cli-messages.test.ts（seed 用 MemoryStore 实例 saveMessage，spawn node dist/cli/index.js，FLARE_HOME 隔离，≥5 用例）；② README Changelog + 命令表补 messages 行；③ npx tsc + 全量 vitest 全绿；④ git commit；⑤ flare 自安装 + 版本验证
+
+---
+
 ### 2026-08-12 第八十五轮引导（v0.6.84，未完成→失败停止，未安装）——P113 flare messages 单次命令（核心实现落地未提交，下轮收尾）
 
 > **本轮 flare 自主迭代重试 1 次后仍未完整交付（第 1 次跑偏写设计文档、第 2 次实现核心但缺收尾），按铁律停止，未安装，版本仍 v0.6.83。工作区保留 flare 已实现的正确增量（src/cli/index.ts +29 行 + package.json 版本 0.6.84），与第八十二轮 P112 先例一致，下轮直接收尾。**
