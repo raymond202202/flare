@@ -1,11 +1,13 @@
 # Flare 引擎迭代进度（夜间调研 agent）
 
-> **【已发布】v0.6.89 装机完成（P118 flare usage，16:5x 引导模式本机安装版）**
-> 上一版 v0.6.88 装机完成，自 15:20 起引导模式使用本机安装版
+> **【已发布】v0.6.90 装机完成（P119 flare context-status，17:1x 引导模式本机安装版）**
+> 上一版 v0.6.89 装机完成，自 15:20 起引导模式使用本机安装版
 
 > 目标：flare 是 Pulse/StorySpire 依赖的 AI Agent 引擎（TS）。任何改动必须安全（tsc 0 错 + 测试全绿才 commit）。
 > 铁律：禁止 push；禁止修改 src/core/agent.ts 的 Agent.run 核心循环。
 
+> **【✅ 第九十三轮完成】P119 (v0.6.90) flare context-status 单次命令已装机**：commit `18c3556`，
+> 926/926 全绿、tsc 0 错误、零 agent.ts 改动（详情见下方第九十三轮条目）。
 > **【✅ 第九十二轮完成】P118 (v0.6.89) flare usage 单次命令已装机**：commit `6768bd6`，
 > 920/920 全绿、tsc 0 错误、零 agent.ts 改动（详情见下方第九十二轮条目）。
 > **【✅ 第九十一轮完成】P117 (v0.6.88) flare archived-sessions 单次命令已装机**：commit `050c292`，
@@ -90,6 +92,46 @@
 >    confirm 描述（v0.6.27）✓
 
 > ---
+
+### 2026-08-12 第九十三轮实施（v0.6.90）——P119 flare context-status 单次命令（装机完成）
+
+> **P119 完成**（commit `18c3556`）：新增 CLI 单次命令 `flare context-status [<会话ID>]`——
+> 与 server context_status（v0.5.6 消息数 + 估算 tokens；v0.6.4 budgetTokens 裁剪建议）对称的
+> 只读上下文占用查看入口，宿主/脚本可非交互查询会话上下文占用与裁剪建议（P113-118 系列
+> server 接口补 CLI 单次命令的延续）。
+> - **实现**（src/cli/index.ts 纯新增 26 行，插在 usage 命令与默认交互命令之间）：
+>   无参数默认 default；store.getMessages(sid, 100000) 取全量（context_status 语义是整段
+>   上下文，不受 getMessages 默认 50 限制）；estimateMessagesTokens 估算；--budget N
+>   正整数 → suggestTrim 裁剪建议（保留/可裁剪条数 + 估算 tokens），非法 budget 退出码 1；
+>   复用 CLI 顶部已 import 的 estimateMessagesTokens/suggestTrim（零新 import）
+> - **测试**（新建 tests/cli-context-status.test.ts，6 用例 spawn dist CLI + FLARE_HOME 隔离）：
+>   空会话 0/0 / 指定会话 3 条消息（估算 tokens > 0）/ 无参数默认 default / --budget 5
+>   裁剪建议（10 条消息可裁剪）/ 非法 budget（0/-5/abc）退出码 1 / 空会话 + budget 保留 0
+>   可裁剪 0
+> - README 命令表补 context-status 行 + Changelog v0.6.90 条目
+> - **926/926 全绿**（新增 6 用例，57 文件），tsc 0 错误，**零 agent.ts 改动**，零 push、
+>   零敏感信息；自安装完成：installed 0.6.90 = repo 0.6.90（安装版冒烟
+>   `FLARE_HOME=$(mktemp -d) ... context-status` → 消息数 0/估算 tokens 0 exit 0 已验证）；
+>   真实 ~/.flare 零污染（最新会话仍为 09:12 早间 flare 自身会话）
+> - **下一步候选**：① 【P1】分层上下文（Layer 1 异步滚动摘要——需评估 run 循环外异步）；
+>   ② 其他安全的外围增强（server 协议其他管理接口、MCP 工具集完善、测试稳定性等）
+
+**引导过程记录（引导 agent 视角，3 次调用）**：
+- 第 1 次调用（P118 同款：完整代码 + 硬声明无关领域）→ **实现+README+版本落地但测试卡住**：
+  命令 26 行精准插入、README/package.json 正确，但测试用例 2/4 失败——flare 用
+  `store.createSession('sess-x')` 的**返回随机 id** 存消息、CLI 却查字符串 'sess-x'，永远
+  查不到；flare 卡在排查（读了 store.ts 确认 saveMessage 行为）耗尽 30 迭代
+- 第 2 次调用（收尾：明确「不要动 src/cli/index.ts」，只修测试 seed——saveMessage 用字符串
+  id 直写自动建会话 + 验证 + commit）→ **一次成功**：python3 精准改 3 处、tsc 0、
+  926/926（期间 session-archive 偶发网络超时重跑通过）、commit `18c3556`（4 文件 +117/-1）
+- 第 3 次调用（自安装）→ 完成 installed 0.6.90 = repo 0.6.90，安装版冒烟通过
+- **教训**：① 测试 seed 必须用「saveMessage 字符串 id 直写」（自动建会话）而非
+  createSession 返回 id（随机 id 与查询字符串不匹配）——P113 系列测试模板的固定坑；
+  ② 实现可一轮落地，测试 seed 语义错误导致卡住——指令里测试 seed 部分应直接给可运行
+  写法（本轮第 1 次指令已给 saveMessage 直写但 flare 改写成了 createSession）；
+  ③ 独立验收（diff + tsc + 全量 vitest + 敏感扫描 + 真实库零污染）全部通过才装机
+
+---
 
 ### 2026-08-12 第九十二轮实施（v0.6.89）——P118 flare usage 单次命令（装机完成）
 
