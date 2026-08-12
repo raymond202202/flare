@@ -2212,6 +2212,21 @@ program
       }
     })
 
+  // flare restore <sessionId>：恢复归档会话（写操作：仅修改 archived 标记，数据保留；与 server restore_session 对称，v0.6.96）
+  program
+    .command('restore <sessionId>')
+    .description('恢复归档会话（写操作：仅修改 archived 标记，数据保留；与 server restore_session 对称）')
+    .action((sessionId: string) => {
+    const store = getMemoryStore()
+    const restored = store.restoreSession(sessionId)
+    if (restored) {
+      console.log(chalk.green('已恢复会话 ') + chalk.cyan(sessionId) + chalk.gray('（已从归档移回最近会话）'))
+    } else {
+      console.log(chalk.yellow('会话 ') + chalk.cyan(sessionId) + chalk.yellow(' 不存在或未归档（幂等返回 false）'))
+      process.exitCode = 1
+    }
+  })
+
   // flare messages <sessionId>：查看指定会话的消息历史（v0.6.84）
   program
     .command('messages <sessionId>')
