@@ -2245,6 +2245,80 @@ program
       }
     })
 
+  // flare usage：查看 token 用量统计（v0.6.89，与 server get_usage/session_usage 对称）
+  program
+    .command('usage')
+    .description('查看 token 用量统计（含缓存命中/节省；--session 只看单会话，v0.6.89）')
+    .option('-s, --session <sessionId>', '只显示指定会话的用量（缺省显示全局汇总）')
+    .action((options: { session?: string }) => {
+      const store = getMemoryStore()
+      if (options.session) {
+        const u = store.getSessionUsage(options.session)
+        if (!u || u.totalTokens === 0) {
+          console.log(chalk.yellow('会话 ' + options.session + ' 暂无用量记录'))
+          return
+        }
+        console.log(chalk.cyan('\n📊 会话 ' + options.session + ' Token 用量:'))
+        console.log(' ' + chalk.gray('Prompt:') + ' ' + u.promptTokens.toLocaleString())
+        console.log(' ' + chalk.gray('Completion:') + ' ' + u.completionTokens.toLocaleString())
+        console.log(' ' + chalk.gray('总计:') + ' ' + u.totalTokens.toLocaleString() + ' tokens（' + u.callCount + ' 次调用）')
+        const cacheRead = u.cacheReadTokens || 0
+        if (cacheRead > 0) {
+          const hitRate = u.promptTokens > 0 ? Math.round((cacheRead / u.promptTokens) * 100) : 0
+          console.log(' ' + chalk.gray('缓存命中:') + ' ' + cacheRead.toLocaleString() + ' tokens（' + hitRate + '%）')
+          const saved = typeof u.cacheSavedUsd === 'number' ? u.cacheSavedUsd : 0
+          if (saved > 0) console.log(' ' + chalk.gray('缓存节省:') + ' $' + saved.toFixed(4))
+        }
+        if (typeof u.estimatedCostUsd === 'number' && u.estimatedCostUsd > 0) {
+          console.log(' ' + chalk.gray('估算成本:') + ' $' + u.estimatedCostUsd.toFixed(4))
+        }
+        if (Array.isArray(u.perModel) && u.perModel.length > 0) {
+          for (const m of u.perModel) {
+            console.log(' ' + chalk.gray('模型 ' + m.model + ':') + ' ' + m.totalTokens.toLocaleString() + ' tokens（' + m.calls + ' 次调用）')
+            const mCache = m.cacheReadTokens || 0
+            if (mCache > 0) {
+              const mRate = m.promptTokens > 0 ? Math.round((mCache / m.promptTokens) * 100) : 0
+              const mSaved = typeof m.cacheSavedUsd === 'number' ? m.cacheSavedUsd : 0
+              const savedSuffix = mSaved > 0 ? '（节省 $' + mSaved.toFixed(4) + '）' : ''
+              console.log(' ' + chalk.gray('缓存命中:') + ' ' + mCache.toLocaleString() + ' tokens（' + mRate + '%）' + savedSuffix)
+            }
+          }
+        }
+        return
+      }
+      const usage = store.getUsageStats()
+      if (!usage || usage.totalTokens === 0) {
+        console.log(chalk.yellow('暂无用量记录'))
+        return
+      }
+      console.log(chalk.cyan('\n📊 Token 用量:'))
+      console.log(' ' + chalk.gray('Prompt:') + ' ' + usage.promptTokens.toLocaleString())
+      console.log(' ' + chalk.gray('Completion:') + ' ' + usage.completionTokens.toLocaleString())
+      console.log(' ' + chalk.gray('总计:') + ' ' + usage.totalTokens.toLocaleString() + ' tokens')
+      console.log(' ' + chalk.gray('会话数:') + ' ' + usage.sessionCount)
+      const cacheRead = usage.cacheReadTokens || 0
+      if (cacheRead > 0) {
+        const hitRate = usage.promptTokens > 0 ? Math.round((cacheRead / usage.promptTokens) * 100) : 0
+        console.log(' ' + chalk.gray('缓存命中:') + ' ' + cacheRead.toLocaleString() + ' tokens（' + hitRate + '%）')
+        const saved = typeof usage.cacheSavedUsd === 'number' ? usage.cacheSavedUsd : 0
+        if (saved > 0) console.log(' ' + chalk.gray('缓存节省:') + ' $' + saved.toFixed(4))
+      }
+      if (typeof usage.estimatedCostUsd === 'number' && usage.estimatedCostUsd > 0) {
+        console.log(' ' + chalk.gray('估算成本:') + ' $' + usage.estimatedCostUsd.toFixed(4))
+      }
+      if (Array.isArray(usage.perModel) && usage.perModel.length > 0) {
+        for (const m of usage.perModel) {
+          console.log(' ' + chalk.gray('模型 ' + m.model + ':') + ' ' + m.totalTokens.toLocaleString() + ' tokens（' + m.calls + ' 次调用）')
+          const mCache = m.cacheReadTokens || 0
+          if (mCache > 0) {
+            const mRate = m.promptTokens > 0 ? Math.round((mCache / m.promptTokens) * 100) : 0
+            const mSaved = typeof m.cacheSavedUsd === 'number' ? m.cacheSavedUsd : 0
+            const savedSuffix = mSaved > 0 ? '（节省 $' + mSaved.toFixed(4) + '）' : ''
+            console.log(' ' + chalk.gray('缓存命中:') + ' ' + mCache.toLocaleString() + ' tokens（' + mRate + '%）' + savedSuffix)
+          }
+        }
+      }
+    })
   // 默认命令（无参数时进入交互模式）
   program.action(() => {
     startInteractive()
