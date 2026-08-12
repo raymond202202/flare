@@ -152,6 +152,7 @@ cp .env.example ~/.flare/.env
 | `flare server [--profile --storage --mcp --confirm-tools --confirm-timeout --max-tokens --temperature --max-context-messages --max-context-tokens --context-summarize --tool-output-policy]` | 宿主协议服务（stdin/stdout JSON Lines，供 Qt 等宿主调用；v0.6.1 起写回类工具经确认门；v0.6.5 起 --max-tokens/--temperature 设 chat 默认采样参数；v0.6.17 起 --max-context-messages/--max-context-tokens 设默认上下文自动裁剪；v0.6.19 起 --context-summarize 默认开启上下文压缩摘要；v0.6.34 起 --tool-output-policy 设默认工具输出治理策略） |
 | `flare mcp-server [-t 工具名,...] [--http [--port <端口>] [--http-auth-token-env <VAR>]] [--bridge-resources] [--bridge-prompts] [--bridge-tools]` | MCP stdio 服务器：把 flare 工具集暴露给其他 AI 客户端（v0.5.8；v0.6.3 起 --http 起 HTTP transport；v0.6.28/0.6.37/0.6.47 起可透传外部 MCP 服务器资源/提示词/工具；v0.6.69 起 --http-auth-token-env 从环境变量读 Bearer 鉴权 token） |
 | `flare mcp call <服务器> <工具> [JSON参数]` | 调用 MCP 服务器工具（stdio 或 HTTP transport；服务器名查 `~/.flare/mcp.json`，`--url` 直连 HTTP 端点，v0.6.6；`--header <k:v>` 可重复附加鉴权请求头，v0.6.68） |
+| `flare log-level <服务器> <级别>` | 设置 MCP 服务器日志级别阈值（logging/setLevel，v0.6.83；级别 debug/info/notice/warning/error/critical/alert/emergency 按严重程度升序；stdio/HTTP transport 通用；`--url` 直连 HTTP 端点，`--header <k:v>` 附加鉴权请求头 v0.6.68） |
 | `flare mcp status` | 查看配置的 MCP 服务器（名称 + 传输类型 + 端点/命令 + [auth] 鉴权标记；--json 结构化输出 v0.6.80；v0.6.6/v0.6.70） |
 | `flare mcp resources <服务器> [--read <uri>]` | 查看/读取 MCP 服务器暴露的资源（v0.6.10） |
 | `flare mcp prompts <服务器> [--get <名称>]` | 查看/渲染 MCP 服务器暴露的提示词（v0.6.10） |
@@ -340,6 +341,21 @@ Interactive mode commands:
 ### Changelog / Release Notes
 
 > 中文条目 / Chinese entries · English summary for each version
+
+#### v0.6.83 (2026-08-12) — `flare log-level` 命令（MCP logging/setLevel 桥接，stdio/HTTP 通用）
+
+- ✨ **新增 `flare log-level <服务器> <级别>` 命令**：把库层 MCP 客户端的 logging 能力
+-  （v0.6.13 起 client.ts/http-client.ts 已有 setLogLevel）暴露给 CLI——连接 stdio/HTTP
+-  transport 服务器后用 logging/setLevel 设置日志级别阈值（8 级：
+-  debug/info/notice/warning/error/critical/alert/emergency，按严重程度升序）。
+-  低于该级别的 notifications/message 日志不再推送。
+- - **CLI 侧先校验合法级别**：与 MCP_LOG_LEVELS 一致 8 级；不合法直接报错（退出码 1）而非千里发请求。
+- - 支持 `--url` 直连 HTTP 端点（跳过配置查找）、`--config` 自定义配置文件、`--header` 附加鉴权头。
+- - `McpManager.setLogLevel(server, level)`：未连接服务器 → 清晰 reject（/未连接/），不崩进程。
+- - server.ts `logging/setLevel` 已有实现（628 行）——CLI 只是桥接，零 MCP 协议改动。
+- - README Changelog + 版本号 0.6.83
+- - 🧪 **884/884 全绿**（新增 7 用例：manager stdio/HTTP setLogLevel 送达 + 未连接 reject；CLI
+-   合法 8 级全过 / 非法级别退出码 1 / 未配置退出码 1），tsc 0 错误，**零 agent.ts 改动**
 
 #### v0.6.82 (2026-08-12) — README 命令表补齐 cache-check v0.6.78/79 能力（文档对称）
 
