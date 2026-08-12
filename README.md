@@ -174,6 +174,7 @@ cp .env.example ~/.flare/.env
 | `flare confirm-allow <工具> [--session]` | 放行确认工具（写操作：无需等 confirm 事件；默认 always 跨会话持久化，--session 仅本进程内；与 server confirm_allow 对称；v0.6.98） |
 | `flare confirm-revoke <工具>` | 撤销工具放行（写操作：会话级 + 持久化同步清除，恢复每次确认；未放行幂等 exit 0；与 server confirm_revoke 对称；v0.6.98） |
 | `flare ping` | 健康检查（进程存活即 pong；--json 结构化输出；不依赖任何初始化，只读；与 server ping 对称；v0.6.95） |
+| `flare version` | 输出引擎版本（只读：flare v<版本>；--json 输出 { engine }；不依赖任何初始化；与 server version 引擎字段对称；v0.6.102） |
 | `flare mcp status` | 查看配置的 MCP 服务器（名称 + 传输类型 + 端点/命令 + [auth] 鉴权标记；--json 结构化输出 v0.6.80；v0.6.6/v0.6.70） |
 | `flare mcp resources <服务器> [--read <uri>]` | 查看/读取 MCP 服务器暴露的资源（v0.6.10） |
 | `flare mcp prompts <服务器> [--get <名称>]` | 查看/渲染 MCP 服务器暴露的提示词（v0.6.10） |
@@ -360,6 +361,10 @@ Interactive mode commands:
 | `/exit` | Exit |
 
 ### Changelog / Release Notes
+
+## v0.6.102（2026-08-13）
+- ✨ **新增 `flare version [--json]` 单次命令**：输出引擎版本（只读：`flare v<版本>`；--json 输出 `{ engine }` 供宿主/脚本程序化消费；不依赖任何初始化，与 server version 引擎字段对称、与 ping 同类）
+- 宿主/脚本版本查询入口（此前 CLI 无版本查询命令）；与 ping 配对构成「健康探测 + 版本协商」只读探测面
 
 ## v0.6.101（2026-08-13）
 - ✨ **新增 `flare end-session <会话ID>` 单次命令**：归档会话（写操作：仅修改 archived 标记，消息与用量全部保留，从「最近会话」隐藏、archived-sessions 可见；空 id exit 1；不存在或已归档幂等 exit 1），与 server end_session 对称
