@@ -1,11 +1,13 @@
 # Flare 引擎迭代进度（夜间调研 agent）
 
-> **【已发布】v0.6.103 装机完成（P133 flare trim 上下文裁剪单次命令，引导模式本机安装版，自循环）**
-> 上一版 v0.6.102 装机完成（P132 flare version 版本查询，引导模式本机安装版，自循环）
+> **【已发布】v0.6.104 装机完成（P134 context-status --json 结构化输出，引导模式本机安装版，自循环）**
+> 上一版 v0.6.103 装机完成（P133 flare trim 上下文裁剪单次命令，引导模式本机安装版，自循环）
 
 > 目标：flare 是 Pulse/StorySpire 依赖的 AI Agent 引擎（TS）。任何改动必须安全（tsc 0 错 + 测试全绿才 commit）。
 > 铁律：禁止 push；禁止修改 src/core/agent.ts 的 Agent.run 核心循环。
 
+> **【✅ 第一百零七轮完成】P134 (v0.6.104) context-status --json 已装机**：
+> commit `cd79a0f`，1020/1020 全绿、tsc 0 错误、零 agent.ts 改动（详情见下方第一百零七轮条目）。
 > **【✅ 第一百零六轮完成】P133 (v0.6.103) flare trim 上下文裁剪已装机**：
 > commit `f63f86c`，1016/1016 全绿、tsc 0 错误、零 agent.ts 改动（详情见下方第一百零六轮条目）。
 > **【✅ 第一百零五轮完成】P132 (v0.6.102) flare version 版本查询已装机**：
@@ -437,6 +439,53 @@
   ③ 引导 agent 补测试时自身也会踩子串误匹配这类测试 bug，定位要快（首跑失败先看 Received 实值再推断）；
   ④ 写操作命令（会删 store 消息）的端到端持久验证（CLI 进程退出后 store 核对）是验收关键，不可只看 CLI
   输出
+
+---
+
+### 2026-08-13 第一百零七轮实施（v0.6.104）——P134 flare context-status 增加 --json 结构化输出（装机完成，自循环第二小步）
+
+> **P134 完成**（commit `cd79a0f`）：`flare context-status [<会话ID>]` 增加 **--json 结构化输出**——与
+> server context_status（v0.6.4/0.6.90 查看上下文占用 + 裁剪建议）回复结构**完全同构**，供宿主/脚本程序化
+> 消费；是 P133 trim 的「建议 → 执行」自动化闭环基础（context-status --json 输出 keepIndexes → trim 执行）。
+> 纯只读增强，风险极低。
+> - **实现**（src/cli/index.ts context-status 命令内 +38/-4，--json 分支插在文本输出之前）：
+>   - `--json` 模式数据源用 **Agent**（`new Agent({ sessionId: sid })` → `getMessages()` **含开头 system 前缀**，
+>     与 server 同一索引空间、与 trim 内部一致）；文本模式保持 store 数据源一字不改（向后兼容）
+>   - 输出 `{ sessionId, messageCount, estimatedTokens, ...(suggestion) }`；`--budget` 时 suggestion =
+>     `{ keepIndexes, droppedCount, estimatedKeptTokens, estimatedDroppedTokens }`（与 server 字段同名同构；
+>     keepIndexes 含 system 索引，注释「system 在前」同一语义）；无 --budget 不输出 suggestion（与 server 一致）
+>   - `suggestTrim(messages, budget, { reserveForOutput: 1024 })`（与 trim 执行口径一致，保证建议可执行）；
+>     --budget 校验正整数（0/abc → stderr「必须是正整数」exit 1，与文本模式同款）；零新 import
+> - **测试**（tests/cli-context-status.test.ts 追加 4 用例至 10 个，spawn dist CLI + FLARE_HOME 隔离）：
+>   --json 合法 JSON + sessionId + messageCount >= seed 数（agent 含 system 前缀）+ 无 budget 无 suggestion /
+>   --json --budget 200：suggestion.droppedCount > 0 + keepIndexes 数字数组且长度 === messageCount - droppedCount、
+>   索引 0 <= i < messageCount / --json --budget 0 与 abc 各 exit 1 / 文本模式回归（无 --json 输出仍含
+>   「上下文占用」且非 JSON）
+> - README 命令表 context-status 行补 --json + Changelog v0.6.104 条目（## 版本标题在顶部，日期 2026-08-13）
+> - **1020/1020 全绿**（新增 4 用例，70 文件；首跑即绿无偶发），tsc 0 错误，**零 agent.ts 改动**，零 push、
+>   零敏感信息；自安装完成：installed 0.6.104 = repo 0.6.104（安装版冒烟 context-status --json 输出
+>   keepIndexes [0, 最新] 已验证）；真实 ~/.flare 零污染（冒烟均用 FLARE_HOME 临时目录）
+> - **下一步候选**：① 【P1】分层上下文（Layer 1 异步滚动摘要——需评估 run 循环外异步）；② 其他安全的外围
+>   增强——上下文管理闭环已自动化（context-status --json 建议 → trim 执行）；剩余 trim --keep 精确裁剪模式
+>   （与 server keepIndexes 对称，keepIndexes 索引空间已对齐——context-status --json 的 keepIndexes 可直接
+>   消费，**最自然的下一小步**）、create_session（与 rename 重叠，价值低）、set_context（内存级不持久）、
+>   mcp disconnect（进程级意义有限）、测试稳定性等
+
+**引导过程记录（引导 agent 视角，1 次调用 + 引导 agent 直接收尾）**：
+- 第 1 次调用（完整代码规格 + 硬声明 + 白名单 + 明确「测试文件必须创建」）→ **再次达 30 次迭代上限自动停止**：
+  实现已落盘（--json 分支 42 行，与规格基本一致：agent 数据源 / suggestion 同构 / 文本模式保留），但
+  **测试文件未创建**（spec 里明说「测试文件必须创建并跑通——只改代码不建测试不算完成」，flare 仍只做代码）；
+  另发现 1 处规格偏差：`suggestTrim` 未传 `reserveForOutput: 1024`（建议口径与 trim 执行不一致）
+- 引导 agent 收尾：修正 reserveForOutput → 补 4 测试用例 → tsc 0 → context-status 10/10 → 全量 1020/1020
+  （70 文件）首跑即绿 → 敏感扫描 0 → 独立冒烟（--json 输出 sessionId/messageCount/keepIndexes 结构正确、
+  无 budget 无 suggestion、非法 budget exit 1）→ 补 README + Changelog + package.json 0.6.104 → 重编译 dist →
+  git add 指定 4 文件 → commit `cd79a0f` → flare 自安装（installed 0.6.104 = repo 0.6.104，安装版冒烟通过）
+- **教训**：① **flare「只改代码不建测试」在连续两小步（P133/P134）都是达迭代上限后的落盘形态**——即使
+  指令明确「测试必须创建」也拦不住（30 次迭代预算花在实现与自检上），引导 agent 必须把「补测试」作为
+  固定收尾步骤；② keepIndexes 索引空间一致性是「建议 → 执行」闭环的关键：P134 刻意让 CLI --json 与 server
+  同用 agent 数据源（含 system 前缀），为 P135 trim --keep 直接消费 keepIndexes 铺平；③ 极简只读增强
+  （--json）比写操作小步更稳（无数据风险、冒烟即全量验证）；④ 时间预算：本轮两小步（P133 花时较多因 flare
+  两次达上限 + 测试补齐，P134 一次调用 + 收尾）在 25 分钟窗口内完成，第三小步时间不足，先收尾进度记录
 
 ---
 
