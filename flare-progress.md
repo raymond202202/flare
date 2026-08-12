@@ -1,12 +1,14 @@
 # Flare 引擎迭代进度（夜间调研 agent）
 
-> **【已发布】v0.6.105 装机完成（P135 trim --keep 精确裁剪，引导模式本机安装版，自循环）**
-> 上一版 v0.6.104 装机完成（P134 context-status --json 结构化输出，引导模式本机安装版，自循环）
-> 再上一版 v0.6.103 装机完成（P133 flare trim 上下文裁剪单次命令，引导模式本机安装版，自循环）
+> **【已发布】v0.6.108 装机完成（P138 sessions --json 结构化输出，引导模式本机安装版，自循环三小步）**
+> 上一版 v0.6.107 装机完成（P137 messages --json 结构化输出，引导模式本机安装版，自循环）
+> 再上一版 v0.6.106 装机完成（P136 usage --json 结构化输出，引导模式本机安装版，自循环）
 
 > 目标：flare 是 Pulse/StorySpire 依赖的 AI Agent 引擎（TS）。任何改动必须安全（tsc 0 错 + 测试全绿才 commit）。
 > 铁律：禁止 push；禁止修改 src/core/agent.ts 的 Agent.run 核心循环。
 
+> **【✅ 第一百零九轮完成】P136/P137/P138 (v0.6.106/107/108) usage/messages/sessions --json 已装机**：
+> commits `21695d0`/`30ca1be`/`fed4160`，1047/1047 全绿、tsc 0 错误、零 agent.ts 改动（详情见下方第一百零九轮条目）。
 > **【✅ 第一百零八轮完成】P135 (v0.6.105) trim --keep 精确裁剪已装机**：
 > commit `76c507e`，1029/1029 全绿、tsc 0 错误、零 agent.ts 改动（详情见下方第一百零八轮条目）。
 > **【✅ 第一百零七轮完成】P134 (v0.6.104) context-status --json 已装机**：
@@ -442,6 +444,26 @@
   ③ 引导 agent 补测试时自身也会踩子串误匹配这类测试 bug，定位要快（首跑失败先看 Received 实值再推断）；
   ④ 写操作命令（会删 store 消息）的端到端持久验证（CLI 进程退出后 store 核对）是验收关键，不可只看 CLI
   输出
+
+---
+
+### 2026-08-13 第一百零九轮实施（v0.6.106/107/108）——P136/P137/P138 CLI 只读命令 --json 结构化输出三连（装机完成，自循环三小步）
+
+> **P136/P137/P138 完成**（commits `21695d0`/`30ca1be`/`fed4160`）：`flare usage`、`flare messages`、`flare sessions` 三个只读命令各增加 **--json 结构化输出**——分别与 server get_usage/session_usage、get_messages、list_sessions 回包**字段完全同构**（不带 type 包装），宿主/脚本可程序化消费 token 用量（含缓存命中/节省）、会话消息内容、最近会话列表；空库/空会话/无记录统一输出零值结构（`{ sessions: [] }` / `{ sessionId, messages: [] }` / 零值 stats），结构稳定可解析；只打印 JSON 不混彩色；**文本模式与退出码语义一字不改**（含「暂无会话」「暂无消息」「暂无用量记录」exit 0、200 字符截断、角色图标等）。延续 P134 context-status --json 模式，prompt caching P0 观测面与只读会话面程序化收官。
+> - **P136 usage --json**（src/cli/index.ts usage 命令块 +13 行）：`.option('-j, --json')` 插在文本分支之前——有 --session 输出 `store.getSessionUsage(sid)`（含 sessionId/callCount），否则 `store.getUsageStats()`（含 perModel）；空库/无记录不特判直接输出全零 stats（store 本就返回零值对象）；零新 import
+> - **P137 messages --json**（messages 命令块 +12 行）：输出 `JSON.stringify({ sessionId, messages, ...(recent ? { recent: true } : {}) })`——与 server get_messages 回包同构；空会话输出 `{ sessionId, messages: [] }`；content 为 store 反序列化实际形态（多模态图片已折叠为 [图片] 占位，serializeContent 语义）
+> - **P138 sessions --json**（sessions 命令块 +11 行）：输出 `JSON.stringify({ sessions })`——与 server list_sessions 回包同构；每项为 getRecentSessions 原始行（id/title/updated_at/first_user_msg，不截断 30 字符预览）；空库输出 `{ sessions: [] }`
+> - **测试**：cli-usage.test.ts 追加 5 用例（全局 stats 可解析 totalTokens=430/sessionCount=2/perModel=2；--session 单会话 sessionId/totalTokens=150/callCount=1；缓存字段 cacheReadTokens=100 + cacheSavedUsd/estimatedCostUsd 为 number；空库零值；不存在 --session 零值）；cli-messages.test.ts 追加 5 用例（默认 5 条；--limit 3；--recent 50 条时间正序末条 msg-060；空会话 []；多模态 content 折叠为 'hi[图片]' 字符串）；cli-sessions.test.ts 追加 8 用例（空库 []；含会话字段 id/title/first_user_msg；不含 color 字段；无「💬 最近会话:」label；--limit 8 输出 3 个；**引导 agent 补 3 用例**：--limit 3 截断 15→3、按更新时间倒序（毫秒时间戳打点 id 断言）、文本模式回归）
+> - README 命令表三行补 --json + Changelog v0.6.106/107/108 条目 + package.json 逐小步 bump
+> - **1047/1047 全绿**（71 文件；1034→1039→1047 逐小步递增），tsc 0 错误，**零 agent.ts 改动**，零 push、零敏感信息；自安装完成：installed 0.6.108 = repo 0.6.108（安装版冒烟 usage --json / messages --json / sessions --json 均 PASS）；真实 ~/.flare 零污染（冒烟均用 FLARE_HOME 临时目录 + MemoryStore 直写 seed）
+> - **下一步候选**：① 【P1】分层上下文（Layer 1 异步滚动摘要——需评估 run 循环外异步）；② 其他安全的外围增强——CLI 只读命令 --json 系列已覆盖 usage/messages/sessions/context-status/tools/config/version/ping/mcp status/cache-check，剩余 search/search-messages/memories/archived-sessions/confirm-status 等只读命令可继续补 --json（同模式），或 MCP 工具集完善、测试稳定性等
+
+**引导过程记录（引导 agent 视角，P136 1 次调用 + P137/P138 各 1 次调用达上限 + 引导 agent 直接收尾）**：
+- **P136**（1 次调用完整交付）：实现 +13 行位置正确、5 测试落盘、tsc 0、cli-usage 11/11、全量 1034/1034，汇报与实况完全一致；但 **flare 删除了原有的「缓存命中显示」文本模式用例**（违反「只追加不删改现有用例」铁律，文本模式缓存命中显示 v0.6.49/65 功能失去回归覆盖）——引导 agent 恢复该用例后 cli-usage 仍 11 用例（原 6 + 新 5；被删 1 个已恢复）、全量 1034/1034 复核一致
+- **P137**（1 次调用达 30 次上限）：指令含 `data:image/png;base64,...` 示例被 flare 误当附件解析导致首次调用 400 错误（**教训：任务指令内禁止出现 data: URL 形式的多模态示例**，改用 http:// 占位 URL 规避）；重试后实现+测试落盘（5 用例），flare 自主发现 store 的 serializeContent 把多模态 content 折叠为 [图片] 占位字符串（与规格 e「content 数组保留」不符）并**按 store 实际行为修正测试断言**（'hi[图片]' 字符串）——修正正确（deserializeContent 拼回逻辑核实过）；达上限停止时未跑全量
+- **P138**（1 次调用达 30 次上限）：实现+5 测试落盘（cli-sessions 11/11 自测），但**规格关键覆盖缺失**：--limit 生效截断（15→3）、按更新时间倒序、文本模式正向回归 3 项未覆盖（P131 教训再现：测试跟随实现写，5/5 绿≠规格满足）——引导 agent 补 3 用例至 8 个，全量 1047/1047
+- 收尾每小步由**引导 agent 直接完成**：diff 对照规格（P136 恢复被删用例；P137/P138 补缺用例）→ 独立 tsc 0 → 新测试逐文件全绿 → 全量 vitest 复核（1034→1039→1047）→ 敏感扫描 0 → 独立冒烟（P136 空库/不存在会话零值 stats；P137 messages --json 5 条/limit/recent/空会话/文本回归；P138 sessions --json 排序（毫秒时间戳）→ 补 README 命令表 + Changelog + package.json 逐小步 bump + 注释版本号 → 重编译 dist（携带新版本号）→ git add 指定 4 文件 → commit 逐小步 → flare 自安装逐小步（installed 0.6.106→107→108 = repo 一致，安装版冒烟通过）
+- **教训**：① CLI 只读命令 --json 是快节奏小步的最佳形态（纯只读零数据风险、空值结构稳定、冒烟即全量验证、无 LLM 依赖）——本轮 3 小步 21 分钟完成，与 P132/P134 结论一致；② **flare 改测试文件时会顺手删/改现有用例**（P136 删缓存命中用例）——验收必须 git diff 全量核对「只追加不删改」，被删用例恢复；③ **flare 测试覆盖缺口模式延续**（P131/P133/P134/P135/P138 连续多轮：达上限后测试跟随实现写、规格要求项缺失）——引导 agent 必须把「diff 对照规格逐项核对测试覆盖 + 补缺」当固定收尾步骤；④ 任务指令内**禁止 data: URL 多模态示例**（flare 附件检测触发 400）；⑤ 同秒 updated_at 排序不稳定（createSession 秒级时间戳），--json 排序类冒烟/测试必须打毫秒时间戳（第八十七轮同款方案）
 
 ---
 
