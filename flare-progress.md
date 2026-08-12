@@ -1,11 +1,15 @@
 # Flare 引擎迭代进度（夜间调研 agent）
 
-> **【已发布】v0.6.90 装机完成（P119 flare context-status，17:1x 引导模式本机安装版）**
-> 上一版 v0.6.89 装机完成，自 15:20 起引导模式使用本机安装版
+> **【已发布】v0.6.92 装机完成（P121 flare tools，17:5x 引导模式本机安装版，自循环）**
+> 上一版 v0.6.91 装机完成，自 15:20 起引导模式使用本机安装版
 
 > 目标：flare 是 Pulse/StorySpire 依赖的 AI Agent 引擎（TS）。任何改动必须安全（tsc 0 错 + 测试全绿才 commit）。
 > 铁律：禁止 push；禁止修改 src/core/agent.ts 的 Agent.run 核心循环。
 
+> **【✅ 第九十五轮完成】P121 (v0.6.92) flare tools 单次命令已装机**：commit `411f16b`，
+> 938/938 全绿、tsc 0 错误、零 agent.ts 改动（详情见下方第九十五轮条目）。
+> **【✅ 第九十四轮完成】P120 (v0.6.91) flare memories 单次命令已装机**：commit `eed05d8`，
+> 932/932 全绿、tsc 0 错误、零 agent.ts 改动（详情见下方第九十四轮条目）。
 > **【✅ 第九十三轮完成】P119 (v0.6.90) flare context-status 单次命令已装机**：commit `18c3556`，
 > 926/926 全绿、tsc 0 错误、零 agent.ts 改动（详情见下方第九十三轮条目）。
 > **【✅ 第九十二轮完成】P118 (v0.6.89) flare usage 单次命令已装机**：commit `6768bd6`，
@@ -92,6 +96,84 @@
 >    confirm 描述（v0.6.27）✓
 
 > ---
+
+### 2026-08-12 第九十四轮实施（v0.6.91）——P120 flare memories 单次命令（装机完成）
+
+> **P120 完成**（commit `eed05d8`）：新增 CLI 单次命令 `flare memories [<关键词>]`——
+> 与 server get_memories（v0.5.4 记忆接口；v0.6.25 kind 过滤）对称的只读记忆查看入口，交互式
+> /memory（v0.6.25）的单次命令形态，与 P113-119 系列（server 接口补 CLI 单次命令）同构；
+> 宿主/脚本场景此前无非交互的记忆查看入口。
+> - **实现**（src/cli/index.ts 纯新增 39 行，插在 context-status 命令与默认交互命令之间）：
+>   无关键词 → getAllMemories() 全部（limit 默认 50）；带关键词 → searchMemories 全文搜索
+>   （≥3 字 FTS trigram / 短查询 LIKE 回退，复用 store 现成方法）；--kind <type> → 按类型过滤
+>   （搜索+kind 组合先搜后滤 / 无关键词 getMemoriesByType）；--limit 1~100 默认 50 非法退出码 1；
+>   每条显示 时间/#id/类型/内容 200 字符截断；空 →「暂无记忆/没有与X相关的记忆/暂无X类型记忆」
+>   退出码 0；复用 CLI 已 import 的 chalk/getMemoryStore/formatSessionTime（零新 import）
+> - **测试**（新建 tests/cli-memories.test.ts，6 用例 spawn dist CLI + FLARE_HOME 隔离，
+>   seed 用 MemoryStore 实例 saveMemory 直插——memories 表无外键无需建会话）：
+>   列出全部（2 条含类型标记）/ 2 字短关键词 LIKE 回退命中 / --kind preference 只显示该类型 /
+>   --limit 1 只显示 1 条 / 非法 limit（0/101/abc）退出码 1 / 空库「暂无记忆」退出码 0
+> - README 命令表补 memories 行 + Changelog v0.6.91 条目
+> - **932/932 全绿**（新增 6 用例，58 文件），tsc 0 错误，**零 agent.ts 改动**，零 push、
+>   零敏感信息；自安装完成：installed 0.6.91 = repo 0.6.91（安装版冒烟
+>   `FLARE_HOME=$(mktemp -d) ... memories` →「暂无记忆」exit 0 已验证）；真实 ~/.flare 零污染
+>   （本轮 17:38-17:42 无新增会话，flare 冒烟正确使用 FLARE_HOME 临时目录）
+> - **下一步候选**：① 【P1】分层上下文（Layer 1 异步滚动摘要——需评估 run 循环外异步）；
+>   ② 其他安全的外围增强（server 协议其他管理接口、MCP 工具集完善、测试稳定性等）
+
+**引导过程记录（引导 agent 视角，2 次调用）**：
+- 第 1 次调用（P119 同款：完整代码 + 硬声明「与记忆保存/检索机制无关」+ 白名单/禁止清单）
+  → **实现+测试+README+版本全部落地，tsc 0、932/932 全绿，但未 commit**（flare 汇报明确说
+  「尚未 commit，等你决定」，符合 P114 教训：flare 汇报≠已 commit）；另注意到 flare 把
+  .flare-task-p120.md 指令文件自行删除了（好事，工作区无残留）
+- 第 2 次调用（收尾 commit 指令）→ **commit 成功但误把 .flare-task-commit.md 一起 git add 进
+  提交**（5 文件）——引导 agent 独立 git log -1 --stat 验收发现，git rm --cached + amend 修正为
+  4 文件 commit `eed05d8`，随后删除引导文件，工作区归零
+- 第 3 次调用（自安装）→ 完成 installed 0.6.91 = repo 0.6.91，安装版冒烟通过
+- **教训**：① 「完整代码 + 硬声明无关领域 + 白名单/禁止清单」连续三轮一次成功实现，但
+  **commit 收尾仍是 flare 盲区**（第 1 次不 commit、第 2 次把临时文件一起 add）——引导 agent
+  必须独立 git log --stat 验收提交内容，引导文件被误提交要 amend 修正；② 临时指令文件命名
+  用 .flare-task-*.md 会被 flare 误 add，收尾指令应明确「只 add 指定 4 个文件」或引导 agent
+  直接自行 commit（本轮第 2 次指令已列白名单但 flare 仍 add 了 .md——下次考虑引导 agent 直接
+  git add 指定文件 + 让 flare 只验证）；③ 独立验收（diff + tsc + 全量 vitest + 敏感扫描 +
+  真实库零污染 + 提交内容核对）全部通过才装机
+
+---
+
+### 2026-08-12 第九十五轮实施（v0.6.92）——P121 flare tools 单次命令（装机完成，自循环）
+
+> **P121 完成**（commit `411f16b`，本轮自循环第二小步）：新增 CLI 单次命令 `flare tools`——
+> 与 server tools（v0.6.11 工具元数据）对称的只读工具清单入口，交互式 /tools 的单次命令形态，
+> 与 P113-120 系列（server 接口补 CLI 单次命令）同构；宿主/脚本场景此前无非交互的工具清单入口。
+> - **实现**（src/cli/index.ts 纯新增 22 行，插在 memories 命令与默认交互命令之间）：
+>   describeTools(tools, CLI_CONFIRM_TOOLS) 纯函数（内置工具集 + 确认门标注，零新依赖）；
+>   输出「🔧 可用工具（N 个）」每行 工具名 [确认] (来源) - 描述；--json 结构化输出
+>   （ToolMeta[] 原样 JSON）；空 →「暂无可用工具」退出码 0；不含 MCP 工具
+>   （MCP 工具已有 flare mcp tools；server tools 未连 MCP 也是 builtin 回退）
+> - **测试**（新建 tests/cli-tools.test.ts，6 用例 spawn dist CLI + FLARE_HOME 隔离，无需 seed）：
+>   列出含 read_file/write_file / memory_save 带 [确认] / 每行含「 - 」描述分隔 /
+>   --json JSON.parse 非空数组 / 元素含 name/description/confirmed/source 字段 / 退出码 0
+> - README 命令表补 tools 行 + Changelog v0.6.92 条目（flare 漏了 ## 版本标题，引导 agent 已补）
+> - **938/938 全绿**（新增 6 用例，59 文件），tsc 0 错误，**零 agent.ts 改动**，零 push、
+>   零敏感信息；自安装完成：installed 0.6.92 = repo 0.6.92（安装版冒烟
+>   `FLARE_HOME=$(mktemp -d) ... tools` →「可用工具（N 个）」exit 0 已验证）
+> - **下一步候选**：① 【P1】分层上下文（Layer 1 异步滚动摘要——需评估 run 循环外异步）；
+>   ② 其他安全的外围增强（server 协议其他管理接口、MCP 工具集完善、测试稳定性等）
+
+**引导过程记录（引导 agent 视角，1 次调用 + 引导 agent 直接收尾）**：
+- 第 1 次调用（P120 同款：完整代码 + 硬声明无关领域 + 白名单/禁止清单 + 明确 git add 只加 4 文件）
+  → **实现+测试+README+版本全部落地，tsc 0、938/938，但仍未 commit**（连续第四轮「实现一轮
+  成功、commit 缺席」）——且 flare 汇报的 938/938 与引导 agent 第一次独立运行 937/938（1 偶发
+  失败）不符，重跑后 938/938 全绿（偶发网络类测试，指令已允许重跑）
+- 收尾由**引导 agent 直接完成**（吸取 P120 教训，不再让 flare commit）：检查 diff 纯新增 →
+  补 README Changelog 版本标题 → git add 指定 4 文件 → commit `411f16b` → 敏感扫描 0 → 删除
+  引导文件 → flare 自安装（installed 0.6.92 = repo 0.6.92）
+- **教训**：① **实现类任务 flare 连续四轮一轮成功，commit 收尾轮轮缺席/出错——收尾 commit
+  由引导 agent 直接执行更稳**（指定文件 add + 独立 diff 验收，杜绝临时文件误入提交）；
+  ② flare 自述「全绿」需独立 vitest 复核（本轮首次独立运行 1 偶发失败，重跑通过）；
+  ③ 新增命令的 Changelog 条目格式（## 版本标题）flare 偶会遗漏，引导 agent 按既有格式补齐
+
+---
 
 ### 2026-08-12 第九十三轮实施（v0.6.90）——P119 flare context-status 单次命令（装机完成）
 
