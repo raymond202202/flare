@@ -2107,6 +2107,30 @@ program
       }
     })
 
+  // flare search <关键词>：跨会话搜索标题/消息内容（v0.6.85，与 server search_sessions 对称）
+  program
+    .command('search <keyword>')
+    .description('跨会话搜索标题/消息内容（v0.6.85）')
+    .option('-n, --limit <n>', '最多显示 N 个匹配会话（默认 20，1~100）')
+    .action((keyword: string, options: { limit?: string }) => {
+      const store = getMemoryStore()
+      let limit = options.limit !== undefined ? Number(options.limit) : 20
+      if (!Number.isInteger(limit) || limit < 1 || limit > 100) {
+        console.error(chalk.red('❌ --limit 需为 1~100 的整数'))
+        process.exit(1)
+      }
+      const hits = store.searchSessions(keyword, limit)
+      if (hits.length === 0) {
+        console.log(chalk.gray(`未找到包含「${keyword}」的会话（标题或消息内容）`))
+        return
+      }
+      console.log(chalk.cyan(`\n💬 搜索会话「${keyword}」（${hits.length} 个，按更新时间倒序）:`))
+      for (const s of hits) {
+        const arch = s.archived ? chalk.gray('（已归档）') : ''
+        console.log(` ${chalk.gray(`[${formatSessionTime(s.updatedAt)}]`)} ${s.title}${arch} ${chalk.gray(`(${s.messageCount} 条消息)`)}`)
+      }
+    })
+
   // flare messages <sessionId>：查看指定会话的消息历史（v0.6.84）
   program
     .command('messages <sessionId>')
