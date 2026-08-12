@@ -165,7 +165,7 @@ cp .env.example ~/.flare/.env
 | `flare end-session <会话ID>` | 归档会话（写操作：仅修改 archived 标记，消息与用量保留，从最近会话隐藏；空 id exit 1、不存在或已归档幂等 exit 1；与 server end_session 对称；v0.6.101） |
 | `flare usage` | 查看 token 用量统计（全局汇总 + perModel 分解；--session <会话ID> 只看单会话；含缓存命中/节省；v0.6.89） |
 | `flare context-status [<会话ID>]` | 查看会话上下文占用（消息数 + 估算 tokens；--budget N 正整数附裁剪建议；--json 结构化输出（与 server context_status 同构，含 suggestion.keepIndexes 供 trim 程序化消费）v0.6.104；v0.6.90） |
-| `flare trim <会话ID> [--budget <tokens>]` | 执行上下文裁剪（写操作：保留开头 system 块 + 最近消息，store 同步删除被裁消息、重建会话后依然生效；--budget 正整数，缺省用会话 maxContextTokens 或 16000；空 id/会话不存在或无消息/非法 budget 各 exit 1、未超预算幂等 exit 0；与 server apply_trim、交互 /trim 对称；v0.6.103） |
+| `flare trim <会话ID> [--budget <tokens>]` \| `[--keep <索引列表>]` | 执行上下文裁剪（写操作：保留开头 system 块 + 最近消息，store 同步删除被裁消息、重建会话后依然生效；--budget 正整数，缺省用会话 maxContextTokens 或 16000；--keep 精确裁剪：逗号分隔整数或 JSON 数组索引列表（与 context-status --json 的 suggestion.keepIndexes 同一索引空间），与 --budget 互斥；空 id/会话不存在或无消息/非法 budget/非法或越界 keep 各 exit 1、未超预算或全索引保留幂等 exit 0；与 server apply_trim、交互 /trim 对称；v0.6.105 增 --keep；v0.6.103） |
 | `flare memories [<关键词>]` | 查看持久记忆（无关键词列出全部；带关键词全文搜索；--kind 按类型过滤；--limit 1~100 默认 50；v0.6.91） |
 | `flare remember <内容> [--kind <类型>]` | 保存持久记忆（写操作：默认类型 note；--kind 指定如 preference；空内容 exit 1；与 server remember、交互 /remember 对称；v0.6.100） |
 | `flare delete-memory <记忆ID>` / `--content <关键词>` | 删除持久记忆（写操作：按 id 删单条（不存在 exit 1）或 --content 按关键词批量删（幂等 exit 0）；非法 id exit 1；与 server delete_memory、交互 /forget 对称；v0.6.100） |
@@ -362,6 +362,10 @@ Interactive mode commands:
 | `/exit` | Exit |
 
 ### Changelog / Release Notes
+
+## v0.6.105（2026-08-13）
+- ✨ **`flare trim <会话ID>` 增加 `--keep <索引列表>` 精确裁剪模式**：直接按调用方给定的消息索引保留集执行裁剪，与 `context-status --json` 的 suggestion.keepIndexes 配对形成「建议 → 精确执行」闭环（脚本可把 keepIndexes 直接喂给 `trim --keep`）；`--keep` 接受逗号分隔整数（`--keep "0,1,5,6"`）或 JSON 数组字面量（`--keep "[0,1,5,6]"`），与 `--budget` 互斥（同时提供 exit 1）；索引校验 0 ≤ i < 消息总数（含开头 system 前缀，与 context-status --json 同一索引空间），空列表/非整数/越界各 exit 1；沿用 applyTrim 的 system 块保底与 store 同步删除语义（重建会话后裁剪依然生效）；全索引保留时幂等 exit 0
+- 上下文管理「查看建议 → 精确执行」闭环完成（context-status --json 输出 keepIndexes → trim --keep 原样消费）
 
 ## v0.6.104（2026-08-13）
 - ✨ **`flare context-status [<会话ID>]` 增加 `--json` 结构化输出**：与 server context_status 回复结构完全同构（sessionId / messageCount / estimatedTokens / 可选 suggestion{keepIndexes, droppedCount, estimatedKeptTokens, estimatedDroppedTokens}）；--json 模式用 Agent 数据源（含开头 system 前缀，与 server 同一索引空间），--budget 建议的 keepIndexes 可直接供 `flare trim`（v0.6.103）程序化消费；无 --budget 时不输出 suggestion；文本模式与退出码语义完全不变

@@ -2467,17 +2467,53 @@ program
         console.log(' ' + chalk.gray('可裁剪:') + ' ' + trim.droppedCount + ' 条（估算 ' + trim.estimatedDroppedTokens + ' tokens）')
       }
     })
-  // flare trim <sessionId>：按 token 预算裁剪会话上下文（v0.6.103，与 server apply_trim / 交互 /trim 对称；
-  // 与 context-status 配对：查看建议 → 执行裁剪；store 同步删除被裁消息，重建会话后裁剪依然生效）
+  // flare trim <sessionId>：按 token 预算（--budget）或索引保留集（--keep）裁剪会话上下文（v0.6.105，与 server
+  // apply_trim / 交互 /trim 对称；与 context-status 配对：查看建议 → 精确执行；store 同步删除被裁消息，
+  // 重建会话后裁剪依然生效）
   program
     .command('trim <sessionId>')
-    .description('执行上下文裁剪（保留开头 system 块 + 最近消息；store 同步删除被裁消息，v0.6.103）')
+    .description('执行上下文裁剪（--budget 按 token 预算自动 / --keep 按索引精确；store 同步删除被裁消息，v0.6.105）')
     .option('-b, --budget <n>', '上下文 token 预算（正整数；缺省用会话 maxContextTokens 或 16000）')
-    .action((sessionId: string, options: { budget?: string }) => {
+    .option('-k, --keep <indexes>', '精确保留的消息索引列表（逗号分隔整数或 JSON 数组，与 --budget 互斥）')
+    .action((sessionId: string, options: { budget?: string; keep?: string }) => {
       const sid = sessionId.trim()
       if (!sid) {
         console.error(chalk.red('❌ 会话ID不能为空'))
         process.exit(1)
+      }
+      // --keep 与 --budget 互斥
+      if (options.keep !== undefined && options.budget !== undefined) {
+        console.error(chalk.red('❌ --keep 与 --budget 互斥，只能二选一'))
+        process.exit(1)
+      }
+      let keepIndexes: number[] | undefined
+      if (options.keep !== undefined) {
+        const s = options.keep.trim()
+        let arr: unknown
+        if (s.startsWith('[')) {
+          try {
+            arr = JSON.parse(s)
+          } catch {
+            arr = null
+          }
+          arr = Array.isArray(arr) ? (arr as unknown[]) : undefined
+          if (arr === undefined) {
+            console.error(chalk.red('❌ --keep 必须是消息索引列表（逗号分隔整数或 JSON 数组）'))
+            process.exit(1)
+          }
+        } else {
+          const parts = s.split(/[,，\s]+/).filter((part) => part.length > 0)
+          arr = parts
+        }
+        const nums = (arr as unknown[]).map((v) => {
+          const n = typeof v === 'number' ? v : Number(String(v).trim())
+          return n
+        })
+        if (nums.length === 0 || nums.some((n) => !Number.isInteger(n))) {
+          console.error(chalk.red('❌ --keep 必须是消息索引列表（逗号分隔整数或 JSON 数组）'))
+          process.exit(1)
+        }
+        keepIndexes = nums.map((n) => Number(n))
       }
       const store = getMemoryStore()
       if (store.getMessages(sid, 1).length === 0) {
@@ -2486,6 +2522,23 @@ program
       }
       const agent = new Agent({ sessionId: sid })
       const msgs = agent.getMessages()
+      // --keep 精确裁剪模式
+      if (keepIndexes !== undefined) {
+        const N = msgs.length
+        const outOfRange = keepIndexes.some((idx) => idx < 0 || idx >= N)
+        if (outOfRange) {
+          console.error(chalk.red('❌ --keep 索引越界（共 ' + N + ' 条消息，索引范围 0~' + (N - 1) + '）'))
+          process.exit(1)
+        }
+        const res = agent.applyTrim(keepIndexes)
+        if (res.droppedCount === 0) {
+          console.log('  会话 ' + sid + ' 无需裁剪（保留集已包含全部消息）')
+          return
+        }
+        console.log(chalk.cyan('✅ 已精确裁剪会话 ' + sid + ':'))
+        console.log(' ' + chalk.gray('保留:') + ' ' + res.keptCount + ' 条 / ' + chalk.gray('删除:') + ' ' + res.droppedCount + ' 条（store 已同步：重建会话后裁剪依然生效）')
+        return
+      }
       const before = estimateMessagesTokens(msgs)
       let budget = options.budget !== undefined ? Number(options.budget) : undefined
       if (budget !== undefined && (!Number.isInteger(budget) || budget <= 0)) {
