@@ -153,7 +153,7 @@ cp .env.example ~/.flare/.env
 | `flare mcp-server [-t 工具名,...] [--http [--port <端口>] [--http-auth-token-env <VAR>]] [--bridge-resources] [--bridge-prompts] [--bridge-tools]` | MCP stdio 服务器：把 flare 工具集暴露给其他 AI 客户端（v0.5.8；v0.6.3 起 --http 起 HTTP transport；v0.6.28/0.6.37/0.6.47 起可透传外部 MCP 服务器资源/提示词/工具；v0.6.69 起 --http-auth-token-env 从环境变量读 Bearer 鉴权 token） |
 | `flare mcp call <服务器> <工具> [JSON参数]` | 调用 MCP 服务器工具（stdio 或 HTTP transport；服务器名查 `~/.flare/mcp.json`，`--url` 直连 HTTP 端点，v0.6.6；`--header <k:v>` 可重复附加鉴权请求头，v0.6.68） |
 | `flare log-level <服务器> <级别>` | 设置 MCP 服务器日志级别阈值（logging/setLevel，v0.6.83；级别 debug/info/notice/warning/error/critical/alert/emergency 按严重程度升序；stdio/HTTP transport 通用；`--url` 直连 HTTP 端点，`--header <k:v>` 附加鉴权请求头 v0.6.68） |
-| `flare messages <会话ID>` | 查看指定会话的消息历史（--limit N 1~500 默认 50；--recent 从最新开始；v0.6.84） |
+| `flare messages <会话ID>` | 查看指定会话的消息历史（--limit N 1~500 默认 50；--recent 从最新开始；--json 结构化输出（与 server get_messages 回包同构 { sessionId, messages, ...(recent?{recent:true}:{}) }，宿主/脚本程序化消费，空会话输出 messages:[]）v0.6.107；v0.6.84） |
 | `flare search <关键词>` | 跨会话搜索标题/消息内容（--limit N 1~100 默认 20；v0.6.85） |
 | `flare search-messages <关键词>` | 全文搜索历史消息内容（--limit N 1~100 默认 10；v0.6.86） |
 | `flare sessions` | 查看最近会话列表（--limit N 1~50 默认 10；v0.6.87） |
@@ -362,6 +362,10 @@ Interactive mode commands:
 | `/exit` | Exit |
 
 ### Changelog / Release Notes
+
+## v0.6.107（2026-08-13）
+- ✨ **`flare messages <会话ID>` 增加 `--json` 结构化输出**：与 server get_messages 回包完全同构（`{ sessionId, messages, ...(recent ? { recent: true } : {}) }`，不带 type 包装）；宿主/脚本可直接程序化消费会话消息内容（--limit/--recent 语义与文本模式一致）；空会话输出 `{ sessionId, messages: [] }`（结构稳定可解析）；content 为 store 反序列化后的实际形态（字符串；多模态图片已折叠为 [图片] 占位）；只打印 JSON 不混彩色；文本模式与退出码语义完全不变
+- 会话只读面程序化收官（文本 messages、server get_messages 结构化 → CLI messages --json 结构化）
 
 ## v0.6.106（2026-08-13）
 - ✨ **`flare usage` 增加 `--json` 结构化输出**：与 server get_usage/session_usage 回包 stats 完全同构（全局：promptTokens/completionTokens/cacheReadTokens/cacheWriteTokens/estimatedCostUsd/cacheSavedUsd/totalTokens/sessionCount/perModel；--session 追加 sessionId/callCount）；宿主/脚本可直接程序化消费 token 用量与缓存命中/节省数据；空库/无记录也输出零值 stats（结构稳定可解析）；只打印 JSON 不混彩色；文本模式与退出码语义完全不变
