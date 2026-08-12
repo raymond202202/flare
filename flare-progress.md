@@ -78,6 +78,21 @@
 
 > ---
 
+### 2026-08-12 第八十四轮引导（v0.6.84，未完成→失败停止，未安装）——P113 flare messages 单次命令（半途跑偏）
+
+> **本轮 flare 自主迭代连续 2 次失败（跑偏 + write_file 覆盖），按铁律「失败最多重试 1 次，仍失败记录停止本轮」停止，未安装，版本仍 v0.6.83。**
+
+- **本轮目标**（方向② 外围增强）：P113 新增 CLI 单次命令 `flare messages <会话ID>`（只读查看指定会话消息，与 server get_messages 对称——server 协议 v0.6.21 已有 get_messages（limit 1~500/recent），store 已有 getMessages/getRecentMessages，CLI 交互只有 /search 全文搜索无直接查看入口）
+- **失败过程**：
+  - 第 1 次调用（任务过宽含调研）→ flare 调研阶段（读 progress/README/docs）耗尽 30 迭代，无产出
+  - 第 2 次调用（聚焦指令 + 预置全部关键信息）→ **flare 完全跑偏**：未做 P113，反而幻觉出无关的「cache-check 语义前缀 + contextCards 上下文卡片」任务，**用 write_file 整文件覆盖 src/core/cache-check.ts（206→274 行，+151/-83）**，随后误用不存在的 edit_file 工具，耗尽 30 迭代
+  - 引导 agent 独立验收时发现工作区脏（cache-check.ts 被覆盖），`git restore` 恢复原样，仓库回到 commit `ff20804`，零残留
+- **安装目录完好**：~/.flare/install 版本仍 0.6.83，dist 时间戳 10:20 未变（flare 只碰了 src/，未编译未装）
+- **教训**：① flare 的 write_file 整文件覆盖 + 任务幻觉是反复性高风险行为，聚焦指令里仍不能完全杜绝——**任务范围必须更小、更硬**（如只准新建文件 + 只准在指定函数内做精确 patch）；② 本轮 flare 幻觉出的「cache-check 加 contextCards」疑似受 flare-progress.md 中 P1 分层上下文方向描述启发——**指令中应明确列出「禁止触碰的文件清单」并声明其余文件一律只读**；③ 铁律执行：失败重试 1 次后停止，不安装，下轮重新引导
+- **下一步候选**：重试 P113（flare messages 单次命令，指令更小更硬）；或 P1 分层上下文评估；或其他外围增强
+
+---
+
 ### 2026-08-12 第八十三轮实施（v0.6.83）——P112 MCP logging/setLevel 桥接收尾（方向③ MCP 增强）
 
 > - **P112 收尾完成**（commit `9555cb7`）：第八十二轮遗留的 src 实现（McpManager.setLogLevel +
