@@ -2345,6 +2345,45 @@ program
         console.log(' ' + chalk.gray('可裁剪:') + ' ' + trim.droppedCount + ' 条（估算 ' + trim.estimatedDroppedTokens + ' tokens）')
       }
     })
+  // flare memories [关键词]：查看持久记忆（v0.6.91，与 server get_memories 对称）
+  program
+    .command('memories [keyword]')
+    .description('查看持久记忆（无关键词列出全部；带关键词全文搜索；--kind 按类型过滤，v0.6.91）')
+    .option('-k, --kind <type>', '只显示指定类型的记忆（如 note/preference）')
+    .option('-l, --limit <n>', '最多显示条数（1~100，默认 50）')
+    .action((keyword: string | undefined, options: { kind?: string; limit?: string }) => {
+      const store = getMemoryStore()
+      const q = (keyword || '').trim()
+      const kind = (options.kind || '').trim()
+      let limit = 50
+      if (options.limit !== undefined) {
+        const n = Number(options.limit)
+        if (!Number.isInteger(n) || n < 1 || n > 100) {
+          console.error(chalk.red('❌ --limit 必须是 1~100 的整数（最多显示的记忆条数）'))
+          process.exit(1)
+        }
+        limit = n
+      }
+      let memories: { id: number; content: string; type: string; created_at: string }[] = []
+      if (q && typeof store.searchMemories === 'function') {
+        memories = store.searchMemories(q, limit)
+        if (kind) memories = memories.filter((m: any) => m.type === kind)
+      } else if (kind && typeof store.getMemoriesByType === 'function') {
+        memories = store.getMemoriesByType(kind, limit)
+      } else if (typeof store.getAllMemories === 'function') {
+        memories = store.getAllMemories().slice(0, limit)
+      }
+      if (memories.length === 0) {
+        console.log(chalk.yellow(q ? '没有与「' + q + '」相关的记忆' : kind ? '暂无「' + kind + '」类型的记忆' : '暂无记忆'))
+        return
+      }
+      console.log(chalk.cyan('\n🧠 记忆（' + memories.length + ' 条' + (q ? '，关键词「' + q + '」' : '') + (kind ? '，类型「' + kind + '」' : '') + '）:'))
+      for (const m of memories) {
+        const text = String(m.content).replace(/\s+/g, ' ').trim()
+        const line = text ? text.slice(0, 200) : '[空内容]'
+        console.log(' ' + chalk.gray('[' + formatSessionTime(m.created_at) + ']') + ' #' + m.id + ' ' + chalk.gray('(' + m.type + ')') + ' ' + line)
+      }
+    })
   // 默认命令（无参数时进入交互模式）
   program.action(() => {
     startInteractive()
