@@ -2160,12 +2160,13 @@ program
       }
     })
 
-  // flare sessions：查看最近会话列表（v0.6.87，与 server recent_sessions 对称）
+  // flare sessions：查看最近会话列表（v0.6.108，与 server recent_sessions 对称；--json 结构化输出与 server list_sessions 回包同构）
   program
     .command('sessions')
-    .description('查看最近会话列表（v0.6.87）')
+    .description('查看最近会话列表（v0.6.108；--json 输出 JSON 结构化 { sessions } 供宿主/脚本程序化消费）')
     .option('-n, --limit <n>', '最多显示 N 个会话（默认 10，1~50）')
-    .action((options: { limit?: string }) => {
+    .option('-j, --json', 'JSON 结构化输出（v0.6.108，与 server list_sessions 回包同构：{ sessions }；宿主/脚本程序化消费）')
+    .action((options: { limit?: string; json?: boolean }) => {
       const store = getMemoryStore()
       let limit = options.limit !== undefined ? Number(options.limit) : 10
       if (!Number.isInteger(limit) || limit < 1 || limit > 50) {
@@ -2173,6 +2174,11 @@ program
         process.exit(1)
       }
       const sessions = store.getRecentSessions(limit)
+      // --json 结构化输出：仅打印 JSON，与 server list_sessions 回包同构 { sessions }（空库也输出 { sessions: [] }）
+      if (options.json) {
+        console.log(JSON.stringify({ sessions }))
+        return
+      }
       if (sessions.length === 0) {
         console.log(chalk.yellow('暂无会话'))
         return

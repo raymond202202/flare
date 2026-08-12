@@ -156,7 +156,7 @@ cp .env.example ~/.flare/.env
 | `flare messages <会话ID>` | 查看指定会话的消息历史（--limit N 1~500 默认 50；--recent 从最新开始；--json 结构化输出（与 server get_messages 回包同构 { sessionId, messages, ...(recent?{recent:true}:{}) }，宿主/脚本程序化消费，空会话输出 messages:[]）v0.6.107；v0.6.84） |
 | `flare search <关键词>` | 跨会话搜索标题/消息内容（--limit N 1~100 默认 20；v0.6.85） |
 | `flare search-messages <关键词>` | 全文搜索历史消息内容（--limit N 1~100 默认 10；v0.6.86） |
-| `flare sessions` | 查看最近会话列表（--limit N 1~50 默认 10；v0.6.87） |
+| `flare sessions` | 查看最近会话列表（--limit N 1~50 默认 10；--json 结构化输出（与 server list_sessions 回包同构 { sessions }，宿主/脚本程序化消费，空库输出 sessions:[]）v0.6.108；v0.6.87） |
 | `flare rename <会话ID> <标题>` | 重命名会话（写操作：仅修改标题；title 非空必填；与 server rename_session 对称；v0.6.97） |
 | `flare delete-session <会话ID>` | 整体删除会话（写操作：删除会话及其全部消息与用量统计，不可恢复；不存在幂等 exit 1；与 server delete_session 对称；v0.6.99） |
 | `flare clear-session <会话ID>` | 清空会话全部消息（写操作：仅删除该会话消息，保留会话记录与用量；不存在幂等 exit 0；与 server clear_session 对称；v0.6.99） |
@@ -362,6 +362,10 @@ Interactive mode commands:
 | `/exit` | Exit |
 
 ### Changelog / Release Notes
+
+## v0.6.108（2026-08-13）
+- ✨ **`flare sessions` 增加 `--json` 结构化输出**：与 server list_sessions 回包同构（`{ sessions }`，不带 type 包装）；宿主/脚本可直接程序化消费最近会话列表（--limit 语义与文本模式一致，按更新时间倒序）；空库输出 `{ sessions: [] }`（结构稳定可解析）；每项为 store 原始行（id/title/updated_at/first_user_msg，不截断预览）；只打印 JSON 不混彩色；文本模式与退出码语义完全不变
+- 会话列表只读面程序化收官（文本 sessions、server list_sessions 结构化 → CLI sessions --json 结构化）
 
 ## v0.6.107（2026-08-13）
 - ✨ **`flare messages <会话ID>` 增加 `--json` 结构化输出**：与 server get_messages 回包完全同构（`{ sessionId, messages, ...(recent ? { recent: true } : {}) }`，不带 type 包装）；宿主/脚本可直接程序化消费会话消息内容（--limit/--recent 语义与文本模式一致）；空会话输出 `{ sessionId, messages: [] }`（结构稳定可解析）；content 为 store 反序列化后的实际形态（字符串；多模态图片已折叠为 [图片] 占位）；只打印 JSON 不混彩色；文本模式与退出码语义完全不变
