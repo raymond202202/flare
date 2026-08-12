@@ -162,6 +162,7 @@ cp .env.example ~/.flare/.env
 | `flare clear-session <会话ID>` | 清空会话全部消息（写操作：仅删除该会话消息，保留会话记录与用量；不存在幂等 exit 0；与 server clear_session 对称；v0.6.99） |
 | `flare archived-sessions` | 查看归档会话列表（--limit N 1~50 默认 10；v0.6.88） |
 | `flare restore <会话ID>` | 恢复归档会话（写操作：仅修改 archived 标记，数据保留；与 server restore_session 对称；v0.6.96） |
+| `flare end-session <会话ID>` | 归档会话（写操作：仅修改 archived 标记，消息与用量保留，从最近会话隐藏；空 id exit 1、不存在或已归档幂等 exit 1；与 server end_session 对称；v0.6.101） |
 | `flare usage` | 查看 token 用量统计（全局汇总 + perModel 分解；--session <会话ID> 只看单会话；含缓存命中/节省；v0.6.89） |
 | `flare context-status [<会话ID>]` | 查看会话上下文占用（消息数 + 估算 tokens；--budget N 正整数附裁剪建议；v0.6.90） |
 | `flare memories [<关键词>]` | 查看持久记忆（无关键词列出全部；带关键词全文搜索；--kind 按类型过滤；--limit 1~100 默认 50；v0.6.91） |
@@ -359,6 +360,10 @@ Interactive mode commands:
 | `/exit` | Exit |
 
 ### Changelog / Release Notes
+
+## v0.6.101（2026-08-13）
+- ✨ **新增 `flare end-session <会话ID>` 单次命令**：归档会话（写操作：仅修改 archived 标记，消息与用量全部保留，从「最近会话」隐藏、archived-sessions 可见；空 id exit 1；不存在或已归档幂等 exit 1），与 server end_session 对称
+- 会话归档管理闭环单次命令（查看 archived-sessions v0.6.87 → 归档 end-session → 恢复 restore v0.6.96）；归档写操作接口单次命令形态首例
 
 ## v0.6.100（2026-08-13）
 - ✨ **新增 `flare remember <内容> [--kind <类型>]` 单次命令**：保存持久记忆（写操作：默认类型 note，--kind 指定如 preference；内容 trim 后为空 exit 1；成功「已记住」exit 0），与 server remember、交互 /remember 对称

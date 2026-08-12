@@ -2242,6 +2242,27 @@ program
     }
   })
 
+  // flare end-session <sessionId>：归档会话（写操作：仅修改 archived 标记，数据保留；与 server end_session 对称，v0.6.101）
+  program
+    .command('end-session <sessionId>')
+    .description('归档会话（写操作：仅修改 archived 标记，数据保留；与 server end_session 对称）')
+    .action((sessionId: string) => {
+      const sid = (sessionId || '').trim()
+      if (!sid) {
+        console.log(chalk.yellow('会话ID不能为空'))
+        process.exitCode = 1
+        return
+      }
+      const store = getMemoryStore()
+      const archived = store.archiveSession(sid)
+      if (archived) {
+        console.log(chalk.green('已归档会话 ') + chalk.cyan(sid) + chalk.gray('（消息与用量保留，已从最近会话隐藏）'))
+      } else {
+        console.log(chalk.yellow('会话 ') + chalk.cyan(sid) + chalk.yellow(' 不存在或已归档（幂等返回 false）'))
+        process.exitCode = 1
+      }
+    })
+
   // flare clear-session <sessionId>：清空会话全部消息（保留会话记录与用量；与 server clear_session 对称，v0.6.99）
   program
     .command('clear-session <sessionId>')
