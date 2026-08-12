@@ -2457,6 +2457,52 @@ program
       }
       console.log(chalk.gray(' 提示: flare mcp status 查看 MCP 连接状态；flare models 查看可用模型'))
     })
+
+  // 确认门放行状态单次命令（v0.6.94）：与 server confirm_status 对称（只读）
+  program
+    .command('confirm-status')
+    .description('查看确认门放行状态（确认名单/会话级与持久化放行，只读；与 server confirm_status 对称）')
+    .option('--json', '以 JSON 输出')
+    .action(async (options: { json?: boolean }) => {
+      const store = getMemoryStore()
+      // 与 server confirm_status 同构：候选名单取确认门配置，放行名单分会话级/持久化/合并
+      const confirmTools: string[] = CLI_CONFIRM_TOOLS
+      // confirmer 为占位实现：confirm-status 为只读查询，仅调用 listAllowed/listAllAllowed/listAlwaysAllowed，永不触发确认
+      const confirmGate = new ConfirmationGate({
+        sessionId: 'default',
+        store: memoryStoreKv(store),
+        confirmer: async (): Promise<'deny'> => 'deny' as const,
+      })
+      const data = {
+        sessionId: 'default',
+        confirmTools,
+        allowedTools: confirmGate.listAllAllowed(confirmTools),
+        sessionAllowed: confirmGate.listAllowed(),
+        alwaysAllowed: confirmGate.listAlwaysAllowed(confirmTools),
+      }
+      if (options.json) {
+        console.log(JSON.stringify(data, null, 2))
+        return
+      }
+      console.log(chalk.cyan(' 确认门：') + chalk.gray('放行名单（确认名单内的工具默认需确认；命中放行名单则不弹窗直接执行）'))
+      if (confirmTools.length === 0) {
+        console.log(chalk.gray(' 确认工具: 无（所有工具直接执行）'))
+      } else {
+        console.log(' 确认工具: ' + chalk.yellow(confirmTools.join(', ')))
+      }
+      if (data.alwaysAllowed.length === 0) {
+        console.log(chalk.gray(' 已放行（跨会话持久化）: 无——每次调用都需确认'))
+      } else {
+        console.log(' 已放行（跨会话持久化）: ' + chalk.green(data.alwaysAllowed.join(', ')))
+      }
+      if (data.sessionAllowed.length === 0) {
+        console.log(chalk.gray(' 已放行（本会话）: 无'))
+      } else {
+        console.log(' 已放行（本会话）: ' + chalk.green(data.sessionAllowed.join(', ')))
+      }
+      console.log(chalk.gray(' 提示: 交互模式 /allow 查看/放行确认工具； flare config 查看确认门配置'))
+    })
+
   // 默认命令（无参数时进入交互模式）
   program.action(() => {
     startInteractive()
