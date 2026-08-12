@@ -1,11 +1,13 @@
 # Flare 引擎迭代进度（夜间调研 agent）
 
-> **【已发布】v0.6.99 装机完成（P129 flare delete-session/clear-session，引导模式本机安装版，自循环）**
-> 上一版 v0.6.98 装机完成（P128 flare confirm-allow/confirm-revoke）
+> **【已发布】v0.6.100 装机完成（P130 flare remember/delete-memory 记忆写操作，引导模式本机安装版，自循环）**
+> 上一版 v0.6.99 装机完成（P129 flare delete-session/clear-session，引导模式本机安装版，自循环）
 
 > 目标：flare 是 Pulse/StorySpire 依赖的 AI Agent 引擎（TS）。任何改动必须安全（tsc 0 错 + 测试全绿才 commit）。
 > 铁律：禁止 push；禁止修改 src/core/agent.ts 的 Agent.run 核心循环。
 
+> **【✅ 第一百零三轮完成】P130 (v0.6.100) flare remember/delete-memory 记忆写操作已装机**：
+> commit `0526ed9`，998/998 全绿、tsc 0 错误、零 agent.ts 改动（详情见下方第一百零三轮条目）。
 > **【✅ 第一百零二轮完成】P129 (v0.6.99) flare delete-session/clear-session 破坏性会话管理已装机**：
 > commit `eef25b2`，985/985 全绿、tsc 0 错误、零 agent.ts 改动（详情见下方第一百零二轮条目）。
 > **【✅ 第一百零一轮完成】P128 (v0.6.98) flare confirm-allow/confirm-revoke 确认门写操作已装机**：
@@ -226,6 +228,61 @@
   测试口径），纯测试层 1 行，零 src 风险；② flare 自主诊断根因 + 迭代超时值的过程
   正确（试 20000 失败后按指令调整），本轮 flare 汇报与实况完全一致；③ 纯测试改动
   无版本变化 → 无需自安装（dist 未变）
+
+---
+
+### 2026-08-13 第一百零三轮实施（v0.6.100）——P130 flare remember / delete-memory 记忆写操作单次命令（装机完成，自循环第一小步）
+
+> **P130 完成**（commit `0526ed9`）：新增 CLI 单次命令 `flare remember <内容> [--kind <类型>]` 与
+> `flare delete-memory <记忆ID> / --content <关键词>`——与 server remember（保存）/ delete_memory（删除）
+> 对称的记忆写操作入口，与 P120 memories（v0.6.91 只读查看）配对形成记忆管理闭环（查看 → 保存 → 删除）；
+> 记忆写操作接口单次命令形态首例（宿主/脚本场景此前无记忆写操作的非交互入口，交互模式 /remember /forget
+> 需终端、server 协议需宿主进程）。低风险评估：memories 表无外键、FTS 由 DELETE 触发器联动清理、不触发
+> 生成、与 run 循环无关，确认安全后实施。
+> - **实现**（src/cli/index.ts 纯新增 52 行，插在 memories 命令与 tools 命令之间）：
+>   - `remember <内容>`：内容 trim 后非空必填，空 →「❌ 记忆内容不能为空」exit 1；--kind <type> 默认 note
+>     （与 server remember kind 参数、store.saveMemory 第二参数同语义，如 preference）；store.saveMemory
+>     (content, kind)；成功 →「✅ 已记住（类型「X」）: 内容截断 80 字符」exit 0；零新 import（chalk/
+>     getMemoryStore 顶部已有）；未加 --json（写操作风格一致）
+>   - `delete-memory <记忆ID>`：正整数校验（/^[1-9]\d*$/，abc/0/负数 →「❌ 记忆ID必须是正整数」exit 1，
+>     负号开头被 commander 当未知选项拦截同样 exit 1）；store.deleteMemory(id) 删单条，不存在（返回 false）
+>     →「❌ 记忆 #id 不存在」exit 1（与 delete-session 不存在 exit 1 对称），成功 →「✅ 已删除记忆 #id」exit 0
+>   - `delete-memory --content <关键词>`：store.deleteMemoriesByContent 按 LIKE 批量删，输出「✅ 已删除 N 条
+>     记忆（关键词: ...）」，N=0 幂等 exit 0（与 /forget 一致）；无参数 →「❌ 用法: ...」exit 1；id 与
+>     --content 同时提供以 id 为准
+> - **测试**（新建 tests/cli-remember-delete-memory.test.ts，13 用例 spawn dist CLI + FLARE_HOME 隔离，
+>   seed 用 MemoryStore.saveMemory 直插——memories 表无外键无需建会话，cli-memories 模板）：remember 默认
+>   note + memories 端到端列出 / --kind preference 可见 / 空内容 exit 1；delete-memory 按 id 删单条保留
+>   其他 / 不存在 exit 1 / --content 批量删 2 条 / --content 无匹配幂等 exit 0 / 无参数 exit 1 / id 非法
+>   abc、0、负数（commander 拦截）各 exit 1 / 删除后 memories 搜索不再命中（FTS 联动）/ id 与 --content
+>   同时提供以 id 为准
+> - README 命令表补 remember/delete-memory 两行 + Changelog v0.6.100 条目（## 版本标题在顶部，日期
+>   2026-08-13）
+> - **998/998 全绿**（新增 13 用例，67 文件；**首跑即绿无偶发**），tsc 0 错误，**零 agent.ts 改动**，
+>   零 push、零敏感信息；自安装完成：installed 0.6.100 = repo 0.6.100（安装版冒烟 remember + memories
+>   已验证）；真实 ~/.flare 零污染（冒烟均用 FLARE_HOME 临时目录）
+> - **下一步候选**：① 【P1】分层上下文（Layer 1 异步滚动摘要——需评估 run 循环外异步）；② 其他安全的
+>   外围增强——记忆管理闭环已完成（memories v0.6.91 → remember/delete-memory v0.6.100），剩余
+>   end_session（归档写操作，与 archived-sessions v0.6.87 查看/restore v0.6.96 恢复配对）、create_session、
+>   recent_sessions、mcp disconnect 等
+
+**引导过程记录（引导 agent 视角，1 次调用 + 引导 agent 直接收尾）**：
+- 第 1 次调用（P129 同款：完整代码规格 + 硬声明无关领域 + 白名单/禁止清单 + 明确「不 commit、不改
+  package.json/README，收尾由引导 agent 统一处理」）→ **一次完整交付**：两命令 +52 行位置正确（memories
+  后、tools 前）、测试 13 用例落盘、tsc 0、新测试 13/13、全量 998/998（67 文件）首跑即绿，汇报与实况
+  完全一致（改动文件/测试数/全量结果全对得上）
+- **本轮 flare 完全遵守「不 commit/不改 package.json/README」铁律**（相比 P129 的进步——明确声明
+  「收尾由引导 agent 统一处理」后 flare 不再顺手 bump 版本）；唯一瑕疵：注释版本号用占位 v0.6.9x 未填，
+  收尾时引导 agent 修正为 v0.6.100
+- 收尾由**引导 agent 直接完成**：diff 逐条对照规格（全过）→ 独立 tsc 0 → 新测试 13/13 → 全量 998/998
+  复核 → 敏感扫描 0 → 独立冒烟（隔离 FLARE_HOME：remember note/preference → memories 列出 → 按 id 删 →
+  FTS 搜索不再命中 → 空内容/非法 id/不存在 id/无参数各 exit 1 → --content 批量删 exit 0）→ 补 README
+  命令表 + Changelog + package.json 0.6.100 → 重编译 dist（携带新版本号）→ git add 指定 4 文件 → commit
+  `0526ed9` → flare 自安装（installed 0.6.100 = repo 0.6.100，安装版冒烟通过）
+- **教训**：① 「完整代码规格 + 明确收尾归属」模式下 flare 一次完整交付且遵守全部铁律（P129 的违规点
+  ——顺手 bump 版本/改 README——本轮零发生），「收尾由引导 agent 统一处理」的声明是关键；② 注释内版本号
+  占位（v0.6.9x）是 flare 常见小瑕疵，收尾统一修正即可；③ 独立验收流程（diff 规格对照 + tsc + 全量 +
+  冒烟 + 敏感扫描 + 提交内容核对）继续全过才装机
 
 ---
 
