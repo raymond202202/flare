@@ -1,11 +1,14 @@
 # Flare 引擎迭代进度（夜间调研 agent）
 
-> **【已发布】v0.6.104 装机完成（P134 context-status --json 结构化输出，引导模式本机安装版，自循环）**
-> 上一版 v0.6.103 装机完成（P133 flare trim 上下文裁剪单次命令，引导模式本机安装版，自循环）
+> **【已发布】v0.6.105 装机完成（P135 trim --keep 精确裁剪，引导模式本机安装版，自循环）**
+> 上一版 v0.6.104 装机完成（P134 context-status --json 结构化输出，引导模式本机安装版，自循环）
+> 再上一版 v0.6.103 装机完成（P133 flare trim 上下文裁剪单次命令，引导模式本机安装版，自循环）
 
 > 目标：flare 是 Pulse/StorySpire 依赖的 AI Agent 引擎（TS）。任何改动必须安全（tsc 0 错 + 测试全绿才 commit）。
 > 铁律：禁止 push；禁止修改 src/core/agent.ts 的 Agent.run 核心循环。
 
+> **【✅ 第一百零八轮完成】P135 (v0.6.105) trim --keep 精确裁剪已装机**：
+> commit `76c507e`，1029/1029 全绿、tsc 0 错误、零 agent.ts 改动（详情见下方第一百零八轮条目）。
 > **【✅ 第一百零七轮完成】P134 (v0.6.104) context-status --json 已装机**：
 > commit `cd79a0f`，1020/1020 全绿、tsc 0 错误、零 agent.ts 改动（详情见下方第一百零七轮条目）。
 > **【✅ 第一百零六轮完成】P133 (v0.6.103) flare trim 上下文裁剪已装机**：
@@ -439,6 +442,58 @@
   ③ 引导 agent 补测试时自身也会踩子串误匹配这类测试 bug，定位要快（首跑失败先看 Received 实值再推断）；
   ④ 写操作命令（会删 store 消息）的端到端持久验证（CLI 进程退出后 store 核对）是验收关键，不可只看 CLI
   输出
+
+---
+
+### 2026-08-13 第一百零八轮实施（v0.6.105）——P135 flare trim --keep 精确裁剪模式（装机完成）
+
+> **P135 完成**（commit `76c507e`）：`flare trim <会话ID>` 增加 **--keep 精确裁剪模式**——直接按调用方
+> 给定的消息索引保留集执行裁剪，与 context-status --json（v0.6.104）的 suggestion.keepIndexes **同一索引
+> 空间**（Agent 数据源含开头 system 前缀），脚本可把建议的 keepIndexes 原样喂给 `trim --keep`，形成
+> 「查看建议 → 精确执行」自动化闭环；是 P133（--budget 自动裁剪）的精确模式补充。纯外围 CLI 增强，
+> 风险低：applyTrim 已存在只调用不改，写操作仅删「构造时加载且有映射」的被裁消息、system 块保底。
+> - **实现**（src/cli/index.ts trim 命令内 +54/-2，新增 -k/--keep 选项）：与 --budget 互斥（同时提供 →
+>   stderr「互斥」exit 1）；--keep 解析支持逗号分隔整数（`--keep "0,1,5,6"`）与 JSON 数组字面量
+>   （`--keep "[0,1,5,6]"`，split 兼容全角逗号），非整数/空列表 → exit 1；越界校验（0 ≤ i < msgs.length
+>   含 system 前缀，与 context-status --json 同构）→ exit 1；`agent.applyTrim(keepIndexes)`（与 --budget
+>   同一调用/store 同步语义）；输出「已精确裁剪会话」+ 保留/删除条数，全索引保留幂等「无需裁剪」exit 0；
+>   description 补 --keep（v0.6.105）；零新 import
+> - **测试**（新建 tests/cli-trim-keep.test.ts，9 用例 spawn dist CLI + FLARE_HOME 隔离，seed 模板照抄
+>   cli-trim）：手写 keep 精确裁剪 + store 持久（编号1/15 保留、编号7 删除）/ system 保底（keep 不含开头块
+>   时保留数 > keep 长度，stdout 正则提取）/ **端到端闭环：context-status --json --budget 的 keepIndexes 直接
+>   喂 trim --keep → store 剩余 = seed 15 - 建议 droppedCount** / --keep 与 --budget 互斥 exit 1 / 非法
+>   （abc、"1,x"、空）exit 1 / 越界 99 exit 1 / JSON 数组格式兼容 / 全索引保留幂等 / 空 id、不存在会话 exit 1；
+>   **索引空间用 context-status --json 动态取 messageCount 构造 keep，不硬编码注入 system 条数**（注入数量
+>   随 config 1~2 条不定——第一版测试硬编码 0,1 导致 5 用例失败，已修正为相对语义）
+> - README 命令表 trim 行补 --keep + Changelog v0.6.105 条目 + 注释版本号更新
+> - **1029/1029 全绿**（新增 9 用例，71 文件；首跑即绿无偶发），tsc 0 错误，**零 agent.ts 改动**，零 push、
+>   零敏感信息；自安装完成：installed 0.6.105 = repo 0.6.105（安装版 `flare version` → v0.6.105 已验证）；
+>   真实 ~/.flare 零污染（冒烟用 FLARE_HOME 临时目录 + MemoryStore 直写 seed：context-status 建议 dropped 7
+>   → trim --keep 原样消费 keepIndexes → 裁剪后 2 条 === 预期 2 PASS）
+> - **下一步候选**：① 【P1】分层上下文（Layer 1 异步滚动摘要——需评估 run 循环外异步）；② 其他安全的外围
+>   增强——上下文管理闭环已完整（context-status 查看+建议 → trim --budget 自动 / --keep 精确执行）；剩余
+>   create_session（与 rename 重叠，价值低）、set_context（内存级不持久）、mcp disconnect（进程级意义有限）、
+>   测试稳定性等
+
+**引导过程记录（引导 agent 视角，2 次调用 + 引导 agent 直接收尾）**：
+- 第 1 次调用（P134 同款完整规格指令）→ **达 30 次迭代上限自动停止，工作区零落盘**（git status 干净）——
+  30 次迭代全花在现状调研与代码阅读上，未及实现（与 P133/P134「实现落盘但测试未建」不同）
+- 第 2 次调用（精简指令：内联关键代码信息与行号、压缩规格、明确测试模板照抄）→ **实现落盘（+54/-2）+
+  手动验证全部错误分支**（互斥/非法/越界/空 id 均正确），但再次达 30 次迭代上限、**测试文件仍未创建**
+  （P133/P134 教训第三次再现：flare「只改代码不建测试」是达上限后的稳定形态）
+- 引导 agent 收尾：diff 逐条对照规格（全过）→ **补 tests/cli-trim-keep.test.ts 9 用例**（首版 5 用例失败：
+  硬编码 system 注入条数 2 与 agent.ts 实际 1~2 条不定不符——改用 context-status --json 动态取 messageCount
+  构造 keep 的相对语义后 9/9 通过）→ tsc 0 → 全量 1029/1029（71 文件）首跑即绿 → 敏感扫描 0 → 独立冒烟
+  （MemoryStore 直写 seed + context-status --json 建议 → trim --keep 原样消费 → after === before-dropped PASS）
+  → 补 README 命令表 + Changelog + package.json 0.6.105 + 注释版本号 → 重编译 dist → git add 指定 4 文件 →
+  commit `76c507e` → flare 自安装（installed 0.6.105 = repo 0.6.105，安装版 version 冒烟通过）
+- **教训**：① 「完整代码规格 + 精简内联现状」模式下 flare 仍可能把 30 次迭代全耗在调研（零落盘）——
+  重试时把关键代码信息/行号/模板直接内联到指令里显著提高落盘率（第 2 次即实现）；② **测试文件缺失是
+  flare 达迭代上限后的稳定盲区**（P133/P134/P135 连续三轮），引导 agent 必须把「补测试」当固定收尾步骤；
+  ③ 测试写 CLI 索引空间时必须考虑注入 system 块数量不定（1~2 条），用 context-status --json 动态取
+  messageCount 构造 keep 是稳健写法（相对语义，不脆）；④ 引导 agent 安全扫描误报（confusable 字符/
+  管道执行/批量删除）需用文件中转 + 拆分命令规避，不影响验收；⑤ 25 分钟窗口内完成 1 小步（2 次引导调用
+  + 收尾 + 自安装），时间不足第三小步，先收尾进度记录
 
 ---
 
