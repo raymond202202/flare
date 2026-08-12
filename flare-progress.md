@@ -78,6 +78,21 @@
 
 > ---
 
+### 2026-08-12 第八十五轮引导（v0.6.84，未完成→失败停止，未安装）——P113 flare messages 单次命令（核心实现落地未提交，下轮收尾）
+
+> **本轮 flare 自主迭代重试 1 次后仍未完整交付（第 1 次跑偏写设计文档、第 2 次实现核心但缺收尾），按铁律停止，未安装，版本仍 v0.6.83。工作区保留 flare 已实现的正确增量（src/cli/index.ts +29 行 + package.json 版本 0.6.84），与第八十二轮 P112 先例一致，下轮直接收尾。**
+
+- **本轮目标**（方向② 外围增强）：P113 新增 CLI 单次命令 `flare messages <会话ID>`（只读查看指定会话消息，与 server get_messages 对称，重试第八十四轮失败项）
+- **本轮过程**：
+  - 第 1 次调用（指令已含预置关键信息 + 白名单 + 禁止清单）→ **flare 再次跑偏**：把实现任务幻觉成「写 P113 工程设计文档」，write_file 新建 docs/p113-flare-messages.md（违反禁止清单 docs/ 只读），耗尽 30 迭代；引导 agent 已删除该文件，工作区归零
+  - 第 2 次调用（重试，指令开头硬声明「直接实现代码！禁止写任何 .md 文档、禁止新建 docs/ 文件、禁止分析意图」）→ **核心实现落地**：src/cli/index.ts 在 program.parse(process.argv) 前**纯增量 +29 行**插入 messages 命令（`flare messages <会话ID>`，--limit 1~500 默认 50 非法退出码 1，空会话友好提示，content 数组/字符串处理，200 字符截断，角色图标）；package.json 版本 0.6.83→0.6.84；**未覆盖任何已有文件**（write_file 未滥用，教训生效）——但**缺 --recent 选项**、tests/cli-messages.test.ts 未建、README 未更新、未跑全量测试、未 commit，耗尽 30 迭代
+- **引导 agent 独立验收**：git diff 确认 src/cli/index.ts 纯新增 29 行（无覆盖）、package.json 仅版本号；npx tsc 0 错误；冒烟 `node dist/cli/index.js messages default --limit 3` → 「会话 default 暂无消息」exit 0（空会话友好提示生效）；敏感扫描 0 命中；零 agent.ts 改动
+- **安装目录完好**：~/.flare/install 仍 v0.6.83（未编译未装）
+- **教训**：① flare 反复把「实现任务」幻觉成「文档设计任务」——指令开头必须硬声明「直接改代码、禁止写任何 .md、禁止新建 docs/ 文件」；② 本轮 write_file 未再整文件覆盖，说明「python3 精准编辑 + 白名单 + 禁止清单」约束有效，继续沿用；③ 核心实现已落地但收尾（补 --recent/测试/README/commit）留待下轮——下轮指令应明确「工作区已有 flare 实现的 messages 命令（未提交），你只需收尾」，避免 flare 重写或跑偏
+- **下轮收尾清单**：① 补 --recent 选项（取最近 limit 条，与 server get_messages 对称）；② 新建 tests/cli-messages.test.ts（spawn dist CLI 模式，至少 5 用例）；③ README Changelog + 命令表补 messages 行；④ npx tsc + 全量 vitest 全绿；⑤ git commit；⑥ flare 自安装 + 版本验证
+
+---
+
 ### 2026-08-12 第八十四轮引导（v0.6.84，未完成→失败停止，未安装）——P113 flare messages 单次命令（半途跑偏）
 
 > **本轮 flare 自主迭代连续 2 次失败（跑偏 + write_file 覆盖），按铁律「失败最多重试 1 次，仍失败记录停止本轮」停止，未安装，版本仍 v0.6.83。**
