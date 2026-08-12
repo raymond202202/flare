@@ -163,7 +163,7 @@ cp .env.example ~/.flare/.env
 | `flare archived-sessions` | 查看归档会话列表（--limit N 1~50 默认 10；v0.6.88） |
 | `flare restore <会话ID>` | 恢复归档会话（写操作：仅修改 archived 标记，数据保留；与 server restore_session 对称；v0.6.96） |
 | `flare end-session <会话ID>` | 归档会话（写操作：仅修改 archived 标记，消息与用量保留，从最近会话隐藏；空 id exit 1、不存在或已归档幂等 exit 1；与 server end_session 对称；v0.6.101） |
-| `flare usage` | 查看 token 用量统计（全局汇总 + perModel 分解；--session <会话ID> 只看单会话；含缓存命中/节省；v0.6.89） |
+| `flare usage` | 查看 token 用量统计（全局汇总 + perModel 分解；--session <会话ID> 只看单会话；含缓存命中/节省；--json 结构化输出（与 server get_usage/session_usage stats 同构，宿主/脚本程序化消费，空库/无记录输出零值 stats）v0.6.106；v0.6.89） |
 | `flare context-status [<会话ID>]` | 查看会话上下文占用（消息数 + 估算 tokens；--budget N 正整数附裁剪建议；--json 结构化输出（与 server context_status 同构，含 suggestion.keepIndexes 供 trim 程序化消费）v0.6.104；v0.6.90） |
 | `flare trim <会话ID> [--budget <tokens>]` \| `[--keep <索引列表>]` | 执行上下文裁剪（写操作：保留开头 system 块 + 最近消息，store 同步删除被裁消息、重建会话后依然生效；--budget 正整数，缺省用会话 maxContextTokens 或 16000；--keep 精确裁剪：逗号分隔整数或 JSON 数组索引列表（与 context-status --json 的 suggestion.keepIndexes 同一索引空间），与 --budget 互斥；空 id/会话不存在或无消息/非法 budget/非法或越界 keep 各 exit 1、未超预算或全索引保留幂等 exit 0；与 server apply_trim、交互 /trim 对称；v0.6.105 增 --keep；v0.6.103） |
 | `flare memories [<关键词>]` | 查看持久记忆（无关键词列出全部；带关键词全文搜索；--kind 按类型过滤；--limit 1~100 默认 50；v0.6.91） |
@@ -362,6 +362,10 @@ Interactive mode commands:
 | `/exit` | Exit |
 
 ### Changelog / Release Notes
+
+## v0.6.106（2026-08-13）
+- ✨ **`flare usage` 增加 `--json` 结构化输出**：与 server get_usage/session_usage 回包 stats 完全同构（全局：promptTokens/completionTokens/cacheReadTokens/cacheWriteTokens/estimatedCostUsd/cacheSavedUsd/totalTokens/sessionCount/perModel；--session 追加 sessionId/callCount）；宿主/脚本可直接程序化消费 token 用量与缓存命中/节省数据；空库/无记录也输出零值 stats（结构稳定可解析）；只打印 JSON 不混彩色；文本模式与退出码语义完全不变
+- token 用量观测面程序化收官（文本 /usage、CLI usage 文本、server get_usage/session_usage 结构化 → CLI usage --json 结构化，prompt caching P0 观测面闭环）
 
 ## v0.6.105（2026-08-13）
 - ✨ **`flare trim <会话ID>` 增加 `--keep <索引列表>` 精确裁剪模式**：直接按调用方给定的消息索引保留集执行裁剪，与 `context-status --json` 的 suggestion.keepIndexes 配对形成「建议 → 精确执行」闭环（脚本可把 keepIndexes 直接喂给 `trim --keep`）；`--keep` 接受逗号分隔整数（`--keep "0,1,5,6"`）或 JSON 数组字面量（`--keep "[0,1,5,6]"`），与 `--budget` 互斥（同时提供 exit 1）；索引校验 0 ≤ i < 消息总数（含开头 system 前缀，与 context-status --json 同一索引空间），空列表/非整数/越界各 exit 1；沿用 applyTrim 的 system 块保底与 store 同步删除语义（重建会话后裁剪依然生效）；全索引保留时幂等 exit 0

@@ -2333,13 +2333,24 @@ program
       }
     })
 
-  // flare usage：查看 token 用量统计（v0.6.89，与 server get_usage/session_usage 对称）
+  // flare usage：查看 token 用量统计（v0.6.89，与 server get_usage/session_usage 对称；v0.6.106 支持 --json 结构化输出）
   program
     .command('usage')
-    .description('查看 token 用量统计（含缓存命中/节省；--session 只看单会话，v0.6.89）')
+    .description('查看 token 用量统计（含缓存命中/节省；--session 只看单会话；--json 结构化输出，v0.6.89/106）')
     .option('-s, --session <sessionId>', '只显示指定会话的用量（缺省显示全局汇总）')
-    .action((options: { session?: string }) => {
+    .option('-j, --json', 'JSON 结构化输出（v0.6.106，与 server get_usage/session_usage stats 同构；宿主/脚本程序化消费）')
+    .action((options: { session?: string; json?: boolean }) => {
       const store = getMemoryStore()
+      // v0.6.106 --json：与 server get_usage/session_usage stats 同构（stats 对象本身，不带 type 包装）；
+      // 空库/无记录也输出全零 stats 对象；只打印 JSON 不混文本/彩色
+      if (options.json) {
+        if (options.session) {
+          console.log(JSON.stringify(store.getSessionUsage(options.session)))
+        } else {
+          console.log(JSON.stringify(store.getUsageStats()))
+        }
+        return
+      }
       if (options.session) {
         const u = store.getSessionUsage(options.session)
         if (!u || u.totalTokens === 0) {
