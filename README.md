@@ -157,6 +157,7 @@ cp .env.example ~/.flare/.env
 | `flare search <关键词>` | 跨会话搜索标题/消息内容（--limit N 1~100 默认 20；v0.6.85） |
 | `flare search-messages <关键词>` | 全文搜索历史消息内容（--limit N 1~100 默认 10；v0.6.86） |
 | `flare sessions` | 查看最近会话列表（--limit N 1~50 默认 10；v0.6.87） |
+| `flare archived-sessions` | 查看归档会话列表（--limit N 1~50 默认 10；v0.6.88） |
 | `flare mcp status` | 查看配置的 MCP 服务器（名称 + 传输类型 + 端点/命令 + [auth] 鉴权标记；--json 结构化输出 v0.6.80；v0.6.6/v0.6.70） |
 | `flare mcp resources <服务器> [--read <uri>]` | 查看/读取 MCP 服务器暴露的资源（v0.6.10） |
 | `flare mcp prompts <服务器> [--get <名称>]` | 查看/渲染 MCP 服务器暴露的提示词（v0.6.10） |
@@ -345,6 +346,9 @@ Interactive mode commands:
 ### Changelog / Release Notes
 
 > 中文条目 / Chinese entries · English summary for each version
+## v0.6.88（2026-08-12）
+- ✨ **新增 `flare archived-sessions` 单次命令**：归档会话列表（首条 user 消息预览，与 server list_archived_sessions 对称；只读）
+
 ## v0.6.87（2026-08-12）
 - ✨ **新增 `flare sessions` 单次命令**：最近会话列表（首条 user 消息预览，与 server recent_sessions 对称）
 - ✨ **新增 `flare search-messages` 单次命令**：消息级全文搜索历史消息（FTS5 trigram + 短查询 LIKE 回退），与 server search_messages 对称
