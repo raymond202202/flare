@@ -5,7 +5,14 @@
 > 目标：flare 是 Pulse/StorySpire 依赖的 AI Agent 引擎（TS）。任何改动必须安全（tsc 0 错 + 测试全绿才 commit）。
 > 铁律：禁止 push；禁止修改 src/core/agent.ts 的 Agent.run 核心循环。
 
-> **最新状态（v0.6.82）**：**README 命令表补齐 cache-check v0.6.78/79 能力**（文档对称，纯
+> **【⚠️ 第八十二轮引导未完成】P112 (v0.6.83) MCP logging/setLevel 桥接**：实现已落地（src/
+> 编译 0 错误、无敏感信息、零 agent.ts 改动），但 flare 连续 3 次耗尽 30 次迭代上限，测试/版本
+> 号/README/commit 未完成 → 本轮验收失败未安装，版本仍 v0.6.82。工作区保留 src 实现改动
+> （src/cli/index.ts + src/mcp/manager.ts，未提交），下轮继续收尾。**教训**：flare 的 write_file
+> 会整文件覆盖（曾把 tests/mcp-manager.test.ts 486→15 行、mock-server 260→17 行，已 git restore
+> 恢复），下轮指令须强调「只插入不覆盖」。
+
+> **v0.6.82 此前状态**：**README 命令表补齐 cache-check v0.6.78/79 能力**（文档对称，纯
 > 文档）：基准轮残留缓存诊断与每轮命中率百分比在命令行摘要表未同步——README cache-check 行补齐
 > （与 v0.6.74/0.6.77/0.6.81 纯文档先例一致）。**877/877 全绿**，tsc 0 错误，**零 agent.ts
 > 改动**。
@@ -75,7 +82,27 @@
 
 > ---
 
-> ### 2026-08-12 第八十一轮实施（v0.6.82）——README 命令表补齐 cache-check v0.6.78/79（文档对称，纯文档）
+> ### 2026-08-12 第八十二轮引导（v0.6.83，未完成）——P112 MCP logging/setLevel 桥接（半途）
+
+> **本轮 flare 自主迭代未完成（连续 3 次耗尽 30 次迭代上限），验收失败未安装，版本仍 v0.6.82。**
+
+- **P112 实现已落地（未提交）**：`McpManager.setLogLevel(name, level)`（src/mcp/manager.ts，
+  代理到 stdio/HTTP 客户端，未连接 → 清晰错误）+ CLI `flare log-level <server> <level>`
+  （src/cli/index.ts，校验 MCP 协议级别枚举 debug/info/notice/warning/error/critical，支持
+  --url/--config/--timeout/--header，与 mcp call 同构）。独立验证：npx tsc 0 错误；diff 无敏感
+  信息；零 agent.ts 改动。
+- **失败过程**：① 第 1 次调用调研耗尽 30 迭代（任务过宽）；② 第 2 次调用实现完成但未收尾；③ 第 3
+  次调用（重试）写测试时 **write_file 整文件覆盖破坏 tests/mcp-manager.test.ts（486→15 行）与
+  tests/fixtures/mcp-mock-server.mjs（260→17 行）**，已 git restore 恢复原样；测试/版本号/
+  README/commit 均未完成。
+- **下一步**：基于工作区已保留的 src 实现收尾（补测试时强调「只插入不覆盖」；manager 用例可参考
+  flare 已写的 setLogLevel mock 思路：mock 服务器把级别写入文件验证送达；CLI 用例校验非法级别退出
+  码 1）。
+- **铁律遵守**：全程零 push、零 agent.ts 改动、零敏感信息。
+
+---
+
+### 2026-08-12 第八十一轮实施（v0.6.82）——README 命令表补齐 cache-check v0.6.78/79（文档对称，纯文档）
 
 > - **P111 README 命令表 cache-check 行补 v0.6.78/79 能力**（commit `09d9402`，纯文档）：
 >   基准轮残留缓存诊断与每轮命中率百分比在命令行摘要表未同步——用户从 README 看不到；与
