@@ -2503,6 +2503,21 @@ program
       console.log(chalk.gray(' 提示: 交互模式 /allow 查看/放行确认工具； flare config 查看确认门配置'))
     })
 
+  // 健康检查单次命令（v0.6.95）：与 server ping 对称（只读，不依赖任何初始化）
+  program
+    .command('ping')
+    .description('健康检查（进程存活即 pong；与 server ping 对称，只读，不依赖任何初始化）')
+    .option('--json', '以 JSON 输出')
+    .action((options: { json?: boolean }) => {
+      const ts = Date.now()
+      if (options.json) {
+        console.log(JSON.stringify({ type: 'pong', ts }, null, 2))
+        return
+      }
+      console.log(chalk.green('pong') + chalk.gray('（' + new Date(ts).toISOString() + '）'))
+      console.log(chalk.gray(' 引擎 v' + pkg.version + ' 正常运行；与 server ping 对称（进程存活即回 pong，不依赖任何初始化）'))
+    })
+
   // 默认命令（无参数时进入交互模式）
   program.action(() => {
     startInteractive()
