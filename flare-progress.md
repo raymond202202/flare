@@ -5,12 +5,8 @@
 > 目标：flare 是 Pulse/StorySpire 依赖的 AI Agent 引擎（TS）。任何改动必须安全（tsc 0 错 + 测试全绿才 commit）。
 > 铁律：禁止 push；禁止修改 src/core/agent.ts 的 Agent.run 核心循环。
 
-> **【⚠️ 第八十二轮引导未完成】P112 (v0.6.83) MCP logging/setLevel 桥接**：实现已落地（src/
-> 编译 0 错误、无敏感信息、零 agent.ts 改动），但 flare 连续 3 次耗尽 30 次迭代上限，测试/版本
-> 号/README/commit 未完成 → 本轮验收失败未安装，版本仍 v0.6.82。工作区保留 src 实现改动
-> （src/cli/index.ts + src/mcp/manager.ts，未提交），下轮继续收尾。**教训**：flare 的 write_file
-> 会整文件覆盖（曾把 tests/mcp-manager.test.ts 486→15 行、mock-server 260→17 行，已 git restore
-> 恢复），下轮指令须强调「只插入不覆盖」。
+> **【✅ 第八十三轮完成】P112 (v0.6.83) MCP logging/setLevel 桥接已收尾**：commit `9555cb7`，
+> 884/884 全绿、tsc 0 错误、零 agent.ts 改动（详情见下方第八十三轮条目）。
 
 > **v0.6.82 此前状态**：**README 命令表补齐 cache-check v0.6.78/79 能力**（文档对称，纯
 > 文档）：基准轮残留缓存诊断与每轮命中率百分比在命令行摘要表未同步——README cache-check 行补齐
@@ -82,7 +78,28 @@
 
 > ---
 
-> ### 2026-08-12 第八十二轮引导（v0.6.83，未完成）——P112 MCP logging/setLevel 桥接（半途）
+### 2026-08-12 第八十三轮实施（v0.6.83）——P112 MCP logging/setLevel 桥接收尾（方向③ MCP 增强）
+
+> - **P112 收尾完成**（commit `9555cb7`）：第八十二轮遗留的 src 实现（McpManager.setLogLevel +
+>   CLI log-level）本轮补测试/版本号/文档/commit 全部落地
+> - **库层**：`McpManager.setLogLevel(name, level)` 代理到 stdio/HTTP 客户端（client.ts:343 /
+>   http-client.ts:244 自 v0.6.13 已有），未连接 → 清晰 reject（/未连接/）
+> - **CLI**：`flare log-level <server> <level>`（顶层命令，非 mcp 子命令——收尾时修正了 flare
+>   先前 README 里写错的 `mcp log-level` 命令名）：CLI 侧先校验 8 级协议枚举（debug/info/notice/
+>   warning/error/critical/alert/emergency，与 MCP_LOG_LEVELS 对齐——修正 flare 先前只收窄 6 级
+>   的白名单），不合法退出码 1；支持 --url/--config/--timeout/--header（与 mcp call 同构）
+> - **测试**（只插入不覆盖，规避第八十二轮 write_file 整文件覆盖教训）：manager 2 用例（stdio
+>   mock 送达 + 未连接 reject；HTTP transport 送达）+ 新建 tests/mcp-cli-loglevel.test.ts 5 用例
+>   （stdio 成功 / --url HTTP 成功 / 非法级别退出码 1 / 8 级全量合法 / 未配置退出码 1）
+> - docs/mcp.md CLI 章节补 log-level 标题+示例；README 命令表 + Changelog + 版本号 0.6.83
+> - **884/884 全绿**（新增 7 用例），tsc 0 错误，**零 agent.ts 改动**，零 push、零敏感信息
+> - **下一步候选**：① 【P1】分层上下文（Layer 1 异步滚动摘要——摘要内容升级为 LLM 生成语义级
+>   压缩，需评估 run 循环外异步）；② 其他安全的外围增强（server 协议其他管理接口、MCP 工具集
+>   完善、测试稳定性等）
+
+---
+
+> ### 2026-08-12 第八十二轮引导（v0.6.83，未完成→第八十三轮已收尾）——P112 MCP logging/setLevel 桥接（半途）
 
 > **本轮 flare 自主迭代未完成（连续 3 次耗尽 30 次迭代上限），验收失败未安装，版本仍 v0.6.82。**
 
