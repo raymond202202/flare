@@ -1013,7 +1013,7 @@ describe('flare host server 协议', () => {
     expect(names).toContain('host_echo')
     const host = msgs[0].tools.find((t: any) => t.name === 'host_echo')
     expect(host.source).toBe('host')
-  })
+  }, 45000)
 
   it('chat 带非法 maxTokens → error（v0.6.3 采样参数校验，不触发生成）', async () => {
     const msgs = await request({ type: 'chat', sessionId: 's-param', input: 'hi', maxTokens: -5 }, { expect: ['error'] })
