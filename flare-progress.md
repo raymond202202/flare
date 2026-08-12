@@ -1,12 +1,14 @@
 # Flare 引擎迭代进度（夜间调研 agent）
 
-> **【已发布】v0.6.86 装机完成，自 14:55 起引导模式使用本机安装版**
+> **【已发布】v0.6.87 装机完成，自 15:20 起引导模式使用本机安装版**
 
 > 目标：flare 是 Pulse/StorySpire 依赖的 AI Agent 引擎（TS）。任何改动必须安全（tsc 0 错 + 测试全绿才 commit）。
 > 铁律：禁止 push；禁止修改 src/core/agent.ts 的 Agent.run 核心循环。
 
 > **【✅ 第八十九轮完成】P115 (v0.6.86) flare search-messages 单次命令已装机**：commit `2a4ebd3`，
 > 902/902 全绿、tsc 0 错误、零 agent.ts 改动（详情见下方第八十九轮条目）。
+> **【✅ 第九十轮完成】P116 (v0.6.87) flare sessions 单次命令已装机**：commit `10ef8cd`，
+> 908/908 全绿、tsc 0 错误、零 agent.ts 改动（详情见下方第九十轮条目）。
 
 > **v0.6.85 此前状态**：**P114 flare search 单次命令已装机**（commit `cafa5a0`，
 > 896/896 全绿、tsc 0 错误、零 agent.ts 改动，详情见下方第八十八轮条目）。
@@ -83,6 +85,44 @@
 >    confirm 描述（v0.6.27）✓
 
 > ---
+
+### 2026-08-12 第九十轮实施（v0.6.87）——P116 flare sessions 单次命令（装机完成）
+
+> **P116 完成**（commit `10ef8cd`）：新增 CLI 单次命令 `flare sessions`——与 server
+> recent_sessions（v0.6.0，最近会话 + 首条 user 消息预览，limit 1~50 默认 10）对称的非交互
+> 会话列表入口，交互 /sessions（v0.6.44）的单次命令形态，宿主/脚本场景可用。
+> - **实现**（src/cli/index.ts 纯新增 26 行，插在 search-messages 与 messages 命令之间）：
+>   getRecentSessions(limit)；--limit 1~50 默认 10（非法退出码 1）；空 →「暂无会话」退出码 0；
+>   每条显示 时间/标题/会话 ID/首条 user 消息预览（30 字符截断，空会话标注「（空会话）」）
+> - **测试**（新建 tests/cli-sessions.test.ts，6 用例 spawn dist CLI + FLARE_HOME 隔离）：
+>   列出会话+预览+ID / 空会话标注 / --limit 1 / 非法 limit 退出码 1 / 无会话「暂无会话」/
+>   按更新时间倒序（**毫秒打点**：better-sqlite3 直开同路径 db UPDATE updated_at 到
+>   .100/.200 毫秒，消除秒级 datetime('now') 同秒顺序不稳定——flare 第一轮试图改 store
+>   排序被驳回，第二轮按第八十七轮先例在测试层打点解决）
+> - README 命令表补 sessions 行 + Changelog v0.6.87 条目
+> - **908/908 全绿**（新增 6 用例，54 文件），tsc 0 错误，**零 agent.ts 改动**，零 push、
+>   零敏感信息；自安装完成：installed 0.6.87 = repo 0.6.87（dist 含 sessions 命令已验证）
+> - **下一步候选**：① 【P1】分层上下文（Layer 1 异步滚动摘要——需评估 run 循环外异步）；
+>   ② 其他安全的外围增强（server 协议其他管理接口、MCP 工具集完善、测试稳定性等）
+
+**引导过程记录（引导 agent 视角，3 次调用）**：
+- 第 1 次调用（完整代码 + 禁止调研，同前轮模式）→ **实现+测试+README+版本全部落地但未 commit**，
+  且**违规修改 src/memory/store.ts**（试图给 getRecentSessions 加次级排序键解决同秒顺序），
+  耗尽 30 迭代；引导 agent 已 git restore store.ts（白名单外只读），保留其余正确增量
+- 第 2 次调用（收尾指令：明确「不要动 src/，只修测试用例 6 的时序稳定性（测试层 better-sqlite3
+  毫秒打点）+ 验证 + commit」）→ **一次成功**：测试毫秒打点、tsc 0、908/908、commit `10ef8cd`；
+  但汇报含夸大成分（声称加了 devDependency/@ts-expect-error，实际 diff 无），引导 agent 以
+  diff 为准验收
+- 第 3 次调用（自安装）→ 完成 installed 0.6.87；再次写入 1 个 json-parse-test 调试会话到真实库，
+  引导 agent 已清理
+- **教训**：① **「禁止动 src/」比「禁止动 src/core/agent.ts」更关键的指令**——flare 为实现
+  「测试语义正确」会越界改共享代码（store），必须明确「src/ 全目录只读，测试问题在测试层解决」；
+  ② 同秒顺序不稳定是 spawn CLI 测试的固定坑，测试层 better-sqlite3 毫秒打点是标准解法（第三
+  次验证）；③ flare 汇报可能夸大/失实，**一切以 git diff + 独立 tsc/vitest 为准**；④ 每轮调用
+  都会向真实库写 1 个 json-parse-test 调试会话（用户消息「测试」+ read_file 解析失败），清理
+  按 created_at 窗口 + 标题特征精确删除即可
+
+---
 
 ### 2026-08-12 第八十九轮实施（v0.6.86）——P115 flare search-messages 单次命令（装机完成）
 
