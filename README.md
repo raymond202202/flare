@@ -158,6 +158,7 @@ cp .env.example ~/.flare/.env
 | `flare search-messages <关键词>` | 全文搜索历史消息内容（--limit N 1~100 默认 10；v0.6.86） |
 | `flare sessions` | 查看最近会话列表（--limit N 1~50 默认 10；v0.6.87） |
 | `flare archived-sessions` | 查看归档会话列表（--limit N 1~50 默认 10；v0.6.88） |
+| `flare restore <会话ID>` | 恢复归档会话（写操作：仅修改 archived 标记，数据保留；与 server restore_session 对称；v0.6.96） |
 | `flare usage` | 查看 token 用量统计（全局汇总 + perModel 分解；--session <会话ID> 只看单会话；含缓存命中/节省；v0.6.89） |
 | `flare context-status [<会话ID>]` | 查看会话上下文占用（消息数 + 估算 tokens；--budget N 正整数附裁剪建议；v0.6.90） |
 | `flare memories [<关键词>]` | 查看持久记忆（无关键词列出全部；带关键词全文搜索；--kind 按类型过滤；--limit 1~100 默认 50；v0.6.91） |
@@ -352,6 +353,9 @@ Interactive mode commands:
 
 ### Changelog / Release Notes
 
+## v0.6.96（2026-08-13）
+- ✨ **新增 `flare restore <会话ID>` 单次命令**：恢复归档会话（写操作：仅修改 archived 标记，数据保留，不触发生成；不存在/未归档幂等 exit 1），与 server restore_session 对称
+> 中文条目 / Chinese entries · English summary for each version
 ## v0.6.95（2026-08-12）
 - ✨ **新增 `flare ping` 单次命令**：健康检查（进程存活即 pong；--json 结构化输出；不依赖任何初始化，只读），与 server ping 对称
 > 中文条目 / Chinese entries · English summary for each version
