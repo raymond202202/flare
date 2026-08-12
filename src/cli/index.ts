@@ -2533,6 +2533,53 @@ program
       console.log(chalk.gray(' 提示: 交互模式 /allow 查看/放行确认工具； flare config 查看确认门配置'))
     })
 
+  // 确认门显式放行单次命令（v0.6.98）：与 server confirm_allow 对称（写操作）
+  // 默认 always 跨会话持久化：单次命令进程内会话级放行恒为空（每次运行都是新 ConfirmationGate 实例，
+  // allowSession 仅进程内存、结束即失——与 v0.6.94 confirm-status 语义一致），持久化才有实际效果
+  program
+    .command('confirm-allow <tool>')
+    .description('放行确认工具（写操作：无需等 confirm 事件；与 server confirm_allow 对称；默认跨会话持久化，--session 仅本进程内）')
+    .option('-s, --session', '仅本进程会话内放行（进程结束即失；默认 always 跨会话持久化）')
+    .action((tool: string, options: { session?: boolean }) => {
+      const name = (tool || '').trim()
+      if (!name) {
+        console.log(chalk.yellow('工具名不能为空（confirm_allow 需要 tool 参数）'))
+        process.exitCode = 1
+        return
+      }
+      const store = getMemoryStore()
+      // confirmer 为占位实现：放行为写操作，仅调用 allowAlways/allowSession，永不触发确认
+      const confirmGate = new ConfirmationGate({
+        sessionId: 'default',
+        store: memoryStoreKv(store),
+        confirmer: async (): Promise<'deny'> => 'deny' as const,
+      })
+      if (options.session) confirmGate.allowSession(name)
+      else confirmGate.allowAlways(name)
+      console.log(chalk.green('已放行 ') + chalk.cyan(name) + chalk.gray(options.session ? '（本进程会话内，进程结束即失）' : '（跨会话持久化）') + chalk.gray('；flare confirm-status 查看放行状态'))
+    })
+
+  // 确认门撤销放行单次命令（v0.6.98）：与 server confirm_revoke 对称（写操作）
+  program
+    .command('confirm-revoke <tool>')
+    .description('撤销工具放行（写操作：会话级 + 持久化同步清除；与 server confirm_revoke 对称，恢复每次确认）')
+    .action((tool: string) => {
+      const name = (tool || '').trim()
+      if (!name) {
+        console.log(chalk.yellow('工具名不能为空（confirm_revoke 需要 tool 参数）'))
+        process.exitCode = 1
+        return
+      }
+      const store = getMemoryStore()
+      const confirmGate = new ConfirmationGate({
+        sessionId: 'default',
+        store: memoryStoreKv(store),
+        confirmer: async (): Promise<'deny'> => 'deny' as const,
+      })
+      confirmGate.revoke(name)
+      console.log(chalk.green('已撤销 ') + chalk.cyan(name) + chalk.gray(' 的放行（已恢复每次确认）；flare confirm-status 查看放行状态'))
+    })
+
   // 健康检查单次命令（v0.6.95）：与 server ping 对称（只读，不依赖任何初始化）
   program
     .command('ping')
