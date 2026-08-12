@@ -1,11 +1,13 @@
 # Flare 引擎迭代进度（夜间调研 agent）
 
-> **【已发布】v0.6.97 装机完成（P127 flare rename，引导模式本机安装版，自循环）**
-> 上一版 v0.6.96 装机完成（P126 flare restore）
+> **【已发布】v0.6.98 装机完成（P128 flare confirm-allow/confirm-revoke，引导模式本机安装版，自循环）**
+> 上一版 v0.6.97 装机完成（P127 flare rename）
 
 > 目标：flare 是 Pulse/StorySpire 依赖的 AI Agent 引擎（TS）。任何改动必须安全（tsc 0 错 + 测试全绿才 commit）。
 > 铁律：禁止 push；禁止修改 src/core/agent.ts 的 Agent.run 核心循环。
 
+> **【✅ 第一百零一轮完成】P128 (v0.6.98) flare confirm-allow/confirm-revoke 确认门写操作已装机**：
+> commit `80290bc`，976/976 全绿、tsc 0 错误、零 agent.ts 改动（详情见下方第一百零一轮条目）。
 > **【✅ 第一百轮完成】P127 (v0.6.97) flare rename 重命名会话单次命令已装机**：commit `7e41be3`，
 > 968/968 全绿、tsc 0 错误、零 agent.ts 改动（详情见下方第一百轮条目）。
 > **【✅ 第九十九轮完成】P126 (v0.6.96) flare restore 恢复归档会话单次命令已装机**：commit `28d2f53`，
@@ -222,6 +224,64 @@
   测试口径），纯测试层 1 行，零 src 风险；② flare 自主诊断根因 + 迭代超时值的过程
   正确（试 20000 失败后按指令调整），本轮 flare 汇报与实况完全一致；③ 纯测试改动
   无版本变化 → 无需自安装（dist 未变）
+
+---
+
+### 2026-08-13 第一百零一轮实施（v0.6.98）——P128 flare confirm-allow / confirm-revoke 确认门写操作单次命令（装机完成，自循环）
+
+> **P128 完成**（commit `80290bc`）：新增 CLI 单次命令 `flare confirm-allow <工具>
+> [--session]` 与 `flare confirm-revoke <工具>`——与 server confirm_allow（v0.6.10 显式
+> 放行）与 confirm_revoke（v0.6.8 撤销放行）对称的确认门写操作入口，与 P124 confirm-status
+> （v0.6.94 只读查看）配对形成闭环：查看 → 放行 → 撤销；写操作接口单次命令形态第三例
+> （restore v0.6.96 / rename v0.6.97 延续）；宿主/脚本场景此前无非交互的确认门写操作入口
+> （交互模式 /allow 需终端，server 协议需宿主进程）。
+> - **实现**（src/cli/index.ts 纯新增 47 行，插在 confirm-status 命令与 ping 命令之间）：
+>   - `confirm-allow <tool> [--session]`：**默认 always 跨会话持久化**（confirmGate.allowAlways
+>     写入 settings 表 confirm.always.<工具> 键，跨会话记住——单次命令进程内会话级放行恒为空
+>     （每次运行都是新 ConfirmationGate 实例，allowSession 仅进程内存、结束即失，与 v0.6.94
+>     confirm-status 语义一致），持久化才有实际效果）；`--session` 显式会话级（进程内有效，
+>     输出提示进程结束即失）；空 tool →「工具名不能为空」exit 1；confirmer 为占位 deny
+>     （写操作仅调用 allowAlways/allowSession 永不触发确认）；零新 import（ConfirmationGate/
+>     memoryStoreKv/chalk/getMemoryStore 顶部已有）；未加 --json（与 restore/rename 写操作一致）
+>   - `confirm-revoke <tool>`：confirmGate.revoke（会话级 + always 持久化同步清除，恢复每次
+>     确认）；无 gate/未放行幂等 exit 0（与 server confirm_revoke 无 gate 回 ok 对称）；空 tool
+>     →「工具名不能为空」exit 1；不支持 resetSession（单次命令进程内会话级恒空，无意义）
+> - **测试**（新建 tests/cli-confirm-allow-revoke.test.ts，8 用例 spawn dist CLI + FLARE_HOME
+>   隔离，seed 用 MemoryStore.setSetting 直写 settings 表 confirm.always.<工具> 键，参考
+>   cli-confirm-status.test.ts 模板）：默认 always 持久化写 settings 键 / --session 仅进程内
+>   磁盘不写键 / 空 tool exit 1 / 默认 always 后 confirm-status --json alwaysAllowed 含
+>   memory_save（端到端）/ revoke 会话级幂等磁盘无变化 / revoke 清 always 持久化键 / revoke
+>   空 tool exit 1 / revoke 后 confirm-status 不再显示（端到端）
+> - README 命令表补 confirm-allow/confirm-revoke 两行 + Changelog v0.6.98 条目（## 版本标题
+>   在顶部，日期 2026-08-13）
+> - **976/976 全绿**（新增 8 用例，65 文件），tsc 0 错误，**零 agent.ts 改动**，零 push、
+>   零敏感信息；自安装完成：installed 0.6.98 = repo 0.6.98（安装版冒烟 allow → confirm-status
+>   可见 → revoke 清除已验证）；真实 ~/.flare 零污染（冒烟均用 FLARE_HOME 临时目录）
+> - **下一步候选**：① 【P1】分层上下文（Layer 1 异步滚动摘要——需评估 run 循环外异步）；
+>   ② 其他安全的外围增强——写操作接口单次命令形态连续三例成功（restore/rename/confirm-allow+
+>   revoke），剩余 delete_session/clear_session（破坏性，需谨慎评估）、MCP 工具集完善、
+>   测试稳定性等
+
+**引导过程记录（引导 agent 视角，1 次调用 + 引导 agent 直接收尾）**：
+- 第 1 次调用（P126/P127 同款：完整代码 + 硬声明无关领域 + 白名单/禁止清单 + 不要求 commit）
+  → **实现+测试落地**：两个命令共 +45 行（confirm-status 后、ping 前）、测试 7 用例落盘、
+  tsc 0、新测试全绿、全量 975/975（flare 自述），汇报与实况基本一致
+- **语义偏差修正（引导 agent）**：flare 实现用 `-a/--always` 标志且**默认会话级**——但单次
+  命令进程内会话级放行恒为空（每次运行都是新 ConfirmationGate 实例，allowSession 仅进程内存、
+  结束即失），用户跑 `confirm-allow memory_save` 会误以为放行了。引导 agent 按设计改为**默认
+  always 跨会话持久化** + `--session` 显式会话级（--always 标志移除），并相应改写测试
+  （默认写 settings 键 / --session 不写键），测试扩至 8 用例
+- 收尾由**引导 agent 直接完成**：独立 tsc 0 → 新测试 8/8 → 全量 976/976 复核 → 敏感扫描 0 →
+  独立冒烟（隔离 FLARE_HOME：allow 默认持久化 → confirm-status --json alwaysAllowed 含 →
+  revoke 清除 → 空 tool exit 1）→ 补 README 命令表 + Changelog + package.json 0.6.98 →
+  重编译 dist（携带新版本号）→ git add 指定 4 文件 → commit `80290bc` → flare 自安装
+  （installed 0.6.98 = repo 0.6.98，安装版冒烟通过）
+- **教训**：① 「完整代码 + 硬声明 + 白名单 + 禁止清单」模式连续三轮实现+测试一次全量交付，
+  但本轮 flare 在**默认语义**上偏离设计（默认会话级 vs 设计默认 always 持久化）——默认值类
+  偏差不影响测试绿与否（测试跟随实现写），引导 agent 必须核对"单次命令进程内会话级放行恒为
+  空"的引擎语义与命令默认值是否匹配，不匹配要修正实现+测试；② 修正默认值后测试随之改写
+  （默认写 settings 键断言 from 空 to '1'），全量复核 976/976 与 flare 自述 975/975 的差异
+  即修正后新增用例数（8 vs 7）；③ 收尾 commit 由引导 agent 直接执行最稳的结论延续成立
 
 ---
 
