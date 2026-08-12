@@ -2410,12 +2410,46 @@ program
   // flare context-status [<sessionId>]：查看会话上下文占用（v0.6.90，与 server context_status 对称）
   program
     .command('context-status [sessionId]')
-    .description('查看会话上下文占用（消息数 + 估算 tokens；--budget 附裁剪建议，v0.6.90）')
+    .description('查看会话上下文占用（消息数 + 估算 tokens；--budget 附裁剪建议，v0.6.90；--json 结构化输出 v0.6.104）')
     .option('-b, --budget <n>', '上下文 token 预算（正整数；附裁剪建议）')
-    .action((sessionId: string | undefined, options: { budget?: string }) => {
-      const store = getMemoryStore()
+    .option('-j, --json', 'JSON 结构化输出（v0.6.104，与 server context_status 同源字段：sessionId/messageCount/estimatedTokens/可选 suggestion；退出码语义不变）')
+    .action((sessionId: string | undefined, options: { budget?: string; json?: boolean }) => {
       const sid = sessionId || 'default'
-      // 全量消息（context_status 语义是整段上下文，不受 getMessages 默认 50 条限制）
+      // v0.6.104 --json：与 server context_status 同源（agent.getMessages() 含 system 前缀块 + 估算 tokens；
+      // --budget 裁剪建议基于同一 Agent 消息数组的严格数值快照 keepIndexes；只打印 JSON 不混彩色）
+      if (options.json) {
+        if (options.budget !== undefined) {
+          const bad = Number(options.budget)
+          if (!Number.isInteger(bad) || bad <= 0) {
+            console.error(chalk.red('❌ --budget 必须是正整数（上下文 token 预算）'))
+            process.exit(1)
+          }
+        }
+        const agent = new Agent({ sessionId: sid })
+        const messages = agent.getMessages()
+        const estimatedTokens = estimateMessagesTokens(messages)
+        let suggestion: Record<string, unknown> | undefined
+        if (options.budget !== undefined) {
+          const budget = Number(options.budget)
+          const trim = suggestTrim(messages, budget, { reserveForOutput: 1024 })
+          suggestion = {
+            keepIndexes: trim.keep.map((m) => messages.indexOf(m)),
+            droppedCount: trim.droppedCount,
+            estimatedKeptTokens: trim.estimatedKeptTokens,
+            estimatedDroppedTokens: trim.estimatedDroppedTokens,
+          }
+        }
+        const payload: Record<string, unknown> = {
+          sessionId: sid,
+          messageCount: messages.length,
+          estimatedTokens,
+        }
+        if (suggestion) payload.suggestion = suggestion
+        console.log(JSON.stringify(payload, null, 2))
+        return
+      }
+      // 文本模式（无 --json，保持现状一字不改）：store 数据源
+      const store = getMemoryStore()
       const messages = store.getMessages(sid, 100000)
       const estimatedTokens = estimateMessagesTokens(messages)
       console.log(chalk.cyan('\n📐 会话 ' + sid + ' 上下文占用:'))

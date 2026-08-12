@@ -84,4 +84,57 @@ describe('flare context-status', () => {
     expect(stdout).toContain('保留: 0 条')
     expect(stdout).toContain('可裁剪: 0 条')
   }, 20000)
+  it('--json：合法 JSON + sessionId + messageCount（agent 数据源含 system 前缀，>= seed 数）+ 无 suggestion', async () => {
+    store.saveMessage('sess-j1', { role: 'user', content: '第一条用户消息' })
+    store.saveMessage('sess-j1', { role: 'assistant', content: '回复内容甲' })
+    store.saveMessage('sess-j1', { role: 'user', content: '第二条用户消息' })
+    const { code, stdout } = await runCli(['context-status', 'sess-j1', '--json'])
+    expect(code).toBe(0)
+    const parsed = JSON.parse(stdout)
+    expect(parsed.sessionId).toBe('sess-j1')
+    expect(parsed.messageCount).toBeGreaterThanOrEqual(3)
+    expect(typeof parsed.estimatedTokens).toBe('number')
+    expect(parsed.suggestion).toBeUndefined()
+  }, 20000)
+  it('--json --budget：suggestion 含 keepIndexes（数字数组、与 droppedCount/messageCount 自洽）', async () => {
+    for (let i = 1; i <= 15; i++) {
+      store.saveMessage('sess-j2', {
+        role: i % 2 === 1 ? 'user' : 'assistant',
+        content: '这是一条用于测试上下文裁剪建议的会话消息，内容足够长以占用较多 token，编号 ' + i + '。',
+      })
+    }
+    const { code, stdout } = await runCli(['context-status', 'sess-j2', '--json', '--budget', '200'])
+    expect(code).toBe(0)
+    const parsed = JSON.parse(stdout)
+    expect(parsed.suggestion).toBeDefined()
+    const s = parsed.suggestion
+    expect(s.droppedCount).toBeGreaterThan(0)
+    expect(Array.isArray(s.keepIndexes)).toBe(true)
+    expect(s.keepIndexes.length).toBe(parsed.messageCount - s.droppedCount)
+    for (const idx of s.keepIndexes) {
+      expect(Number.isInteger(idx)).toBe(true)
+      expect(idx).toBeGreaterThanOrEqual(0)
+      expect(idx).toBeLessThan(parsed.messageCount)
+    }
+    expect(typeof s.estimatedKeptTokens).toBe('number')
+    expect(typeof s.estimatedDroppedTokens).toBe('number')
+  }, 20000)
+  it('--json --budget 0 / abc → exit 1 + 必须是正整数', async () => {
+    store.saveMessage('sess-j3', { role: 'user', content: '任意消息' })
+    const r0 = await runCli(['context-status', 'sess-j3', '--json', '--budget', '0'])
+    expect(r0.code).toBe(1)
+    expect(r0.stderr).toContain('必须是正整数')
+    const ra = await runCli(['context-status', 'sess-j3', '--json', '--budget', 'abc'])
+    expect(ra.code).toBe(1)
+    expect(ra.stderr).toContain('必须是正整数')
+  }, 20000)
+  it('--json 输出与文本模式互斥：无 --json 时文本格式不变', async () => {
+    store.saveMessage('sess-j4', { role: 'user', content: '文本模式消息' })
+    const { code, stdout } = await runCli(['context-status', 'sess-j4'])
+    expect(code).toBe(0)
+    expect(stdout).toContain('上下文占用')
+    expect(stdout).toContain('消息数: 1')
+    // 文本模式输出不应是 JSON 对象
+    expect(() => JSON.parse(stdout)).toThrow()
+  }, 20000)
 })
