@@ -1,11 +1,13 @@
 # Flare 引擎迭代进度（夜间调研 agent）
 
-> **【已发布】v0.6.88 装机完成（P117 flare archived-sessions，15:5x 引导模式本机安装版）**
-> 上一版 v0.6.87 装机完成，自 15:20 起引导模式使用本机安装版
+> **【已发布】v0.6.89 装机完成（P118 flare usage，16:5x 引导模式本机安装版）**
+> 上一版 v0.6.88 装机完成，自 15:20 起引导模式使用本机安装版
 
 > 目标：flare 是 Pulse/StorySpire 依赖的 AI Agent 引擎（TS）。任何改动必须安全（tsc 0 错 + 测试全绿才 commit）。
 > 铁律：禁止 push；禁止修改 src/core/agent.ts 的 Agent.run 核心循环。
 
+> **【✅ 第九十二轮完成】P118 (v0.6.89) flare usage 单次命令已装机**：commit `6768bd6`，
+> 920/920 全绿、tsc 0 错误、零 agent.ts 改动（详情见下方第九十二轮条目）。
 > **【✅ 第九十一轮完成】P117 (v0.6.88) flare archived-sessions 单次命令已装机**：commit `050c292`，
 > 914/914 全绿、tsc 0 错误、零 agent.ts 改动（详情见下方第九十一轮条目）。
 > **【✅ 第八十九轮完成】P115 (v0.6.86) flare search-messages 单次命令已装机**：commit `2a4ebd3`，
@@ -88,6 +90,40 @@
 >    confirm 描述（v0.6.27）✓
 
 > ---
+
+### 2026-08-12 第九十二轮实施（v0.6.89）——P118 flare usage 单次命令（装机完成）
+
+> **P118 完成**（commit `6768bd6`）：新增 CLI 单次命令 `flare usage`——与 server
+> get_usage/session_usage（v0.6.16/0.6.17）对称的只读 token 用量统计入口，交互式 /usage
+> （v0.6.65）的单次命令形态，与 P113-117 系列（server 接口补 CLI 单次命令）同构；宿主/脚本
+> 场景此前无非交互的用量查看入口。
+> - **实现**（src/cli/index.ts 纯新增 74 行，插在 messages 命令与默认交互命令之间）：
+>   无参数 → store.getUsageStats() 全局汇总（Prompt/Completion/总计/会话数/缓存命中含%+节省/
+>   估算成本/perModel 按模型分解含每模型命中）；--session <id> → store.getSessionUsage(id)
+>   单会话（含 callCount + perModel）；空数据 →「暂无用量记录」/「会话 X 暂无用量记录」退出码 0
+> - **测试**（新建 tests/cli-usage.test.ts，6 用例 spawn dist CLI + FLARE_HOME 隔离，seed 用
+>   store.logUsage 直插 usage_log）：全局汇总总计 430 tokens + perModel 两行 / 缓存命中 100
+>   tokens（50%）/ --session 过滤不含他会话模型 / 空库提示 / 不存在会话提示 / 估算成本
+>   $0.0012 + 缓存节省（deepseek-chat 可定价）
+> - README 命令表补 usage 行 + Changelog v0.6.89 条目
+> - **920/920 全绿**（新增 6 用例，56 文件），tsc 0 错误，**零 agent.ts 改动**，零 push、
+>   零敏感信息；自安装完成：installed 0.6.89 = repo 0.6.89（安装版冒烟
+>   `FLARE_HOME=$(mktemp -d) ... usage` →「暂无用量记录」exit 0 已验证）；真实 ~/.flare 零污染
+> - **下一步候选**：① 【P1】分层上下文（Layer 1 异步滚动摘要——需评估 run 循环外异步）；
+>   ② 其他安全的外围增强（server 协议其他管理接口、MCP 工具集完善、测试稳定性等）
+
+**引导过程记录（引导 agent 视角，2 次调用）**：
+- 第 1 次调用（P117 同款模式：硬声明无关领域 + 直接附完整可落盘代码：命令实现 74 行 + 测试
+  文件 84 行 + README 两处插入点 + 版本号）→ **一次成功**：python3 锚点精准插入（2264→2338
+  仅插入未覆盖）、6 用例落盘、tsc 0、全量 920/920、commit `6768bd6`（4 文件 +163/-1）、
+  隔离冒烟、真实 ~/.flare 零污染（真实库最新会话仍为 08:57 发布任务自身会话）
+- 第 2 次调用（自安装）→ 完成 installed 0.6.89 = repo 0.6.89，安装版冒烟通过
+- **教训**：① 「完整代码 + 硬声明无关领域 + 白名单/禁止清单」模式连续第二轮一次成功；
+  ② 本轮 flare 汇报与实际完全一致（commit 号/文件数/测试数均属实）——但引导 agent 仍按
+  diff + 独立 tsc/vitest 验收，不依赖自述；③ usage 命令与交互 /usage 显示逻辑同构，复用
+  getUsageStats/getSessionUsage 零新库逻辑，是最小安全增量
+
+---
 
 ### 2026-08-12 第九十一轮实施（v0.6.88）——P117 flare archived-sessions 单次命令（装机完成）
 
