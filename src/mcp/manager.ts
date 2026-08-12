@@ -39,6 +39,7 @@ import type {
   McpPromptRef,
   McpPromptResult,
   McpCompletionResult,
+  McpLogLevel,
   McpCallResult,
   McpToolRef,
 } from './types.js'
@@ -193,6 +194,18 @@ export class McpManager {
       throw new Error(`MCP 服务器未连接: ${name}`)
     }
     return client.completePrompt(promptName, argumentName, value)
+  }
+
+  /**
+   * 代理设置某服务器日志级别阈值（logging/setLevel，v0.6.83 桥接）：此后服务器低于该级别的
+   * notifications/message 日志不再推送（stdio 与 HTTP transport 均支持）。服务器未连接 → reject 清晰错误。
+   */
+  async setLogLevel(name: string, level: McpLogLevel): Promise<void> {
+    const client = this.clients.get(name) as (McpToolClient & { setLogLevel(l: McpLogLevel): Promise<void> }) | undefined
+    if (!client) {
+      throw new Error(`MCP 服务器未连接: ${name}`)
+    }
+    return client.setLogLevel(level)
   }
 
   /** 连接状态列表（CLI /mcp、server mcp_status 用） */

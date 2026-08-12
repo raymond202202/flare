@@ -482,4 +482,26 @@ describe('McpManager', () => {
     expect(res.output).toBe('url wins')
     mgr.closeAll()
   })
+
+  it('setLogLevel（v0.6.83）：stdio mock 服务器设置日志级别送达（resolve）；未连接 → 清晰错误 reject', async () => {
+    writeFileSync(configPath, JSON.stringify({ servers: [{ name: 'mock', command: process.execPath, args: [MOCK_SERVER] }] }))
+    const mgr = new McpManager({ configPath })
+    await mgr.connect('mock')
+    // 正常模式：logging/setLevel 响应 {} → resolve（mock 服务器 218 行处理该请求）
+    await expect(mgr.setLogLevel('mock', 'warning')).resolves.toBeUndefined()
+    await expect(mgr.setLogLevel('mock', 'debug')).resolves.toBeUndefined()
+    // 未连接服务器 → 清晰错误
+    await expect(mgr.setLogLevel('not-connected', 'info')).rejects.toThrow(/未连接/)
+    mgr.closeAll()
+  })
+
+  it('setLogLevel（v0.6.83）：HTTP transport 服务器设置日志级别送达（resolve）', async () => {
+    const h = await startMcpHttpServer({ tools: [echoTool] }) // server.ts 已实现 logging/setLevel（628 行）
+    httpHandles.push(h)
+    writeFileSync(configPath, JSON.stringify({ servers: [{ name: 'remote', url: h.url }] }))
+    const mgr = new McpManager({ configPath })
+    await mgr.connect('remote')
+    await expect(mgr.setLogLevel('remote', 'error')).resolves.toBeUndefined()
+    mgr.closeAll()
+  })
 })

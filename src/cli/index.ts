@@ -1966,7 +1966,55 @@ export function main() {
       }
     })
 
-  program
+    program
+    .command('log-level <server> <level>')
+    .description('设置 MCP 服务器日志级别阈值（logging/setLevel；v0.6.83 桥接库层 logging 能力，stdio/HTTP 通用）')
+    .option('--url <url>', '直接连 HTTP transport 端点（如 http://127.0.0.1:8931/mcp），跳过配置查找')
+    .option('--config <path>', 'MCP 配置文件路径（默认 ~/.flare/mcp.json）')
+    .option('--timeout <ms>', '单请求超时毫秒（默认 15000）')
+    .option('--header <kv>', '附加请求头 key:value（可重复；HTTP transport 鉴权，v0.6.68）', collectHeader, [])
+    .action(async (server: string, level: string, options: { url?: string; config?: string; timeout?: string; header?: string[] }) => {
+      // v0.6.83：CLI 侧先校验合法级别（MCP 协议 logging 级别枚举，与 MCP_LOG_LEVELS 一致 8 级），不合法直接报错而非千里发请求
+      const VALID = ['debug', 'info', 'notice', 'warning', 'error', 'critical', 'alert', 'emergency']
+      try {
+        if (!VALID.includes(level)) {
+          throw new Error(`无效日志级别: ${level}（可选: ${VALID.join('/')}，按严重程度升序）`)
+        }
+        const { MCPClient, MCPHttpClient, McpManager } = await import('../index.js')
+        const timeoutMs = options.timeout ? Number(options.timeout) : 15000
+        const mLevel = level as 'debug' | 'info' | 'notice' | 'warning' | 'error' | 'critical' | 'alert' | 'emergency'
+        // 连接客户端：--url 直连 HTTP；否则查配置——与 mcp call/resources/prompts/tools/complete 同构
+        let client: InstanceType<typeof MCPClient> | InstanceType<typeof MCPHttpClient>
+        let label = server
+        if (options.url) {
+          client = new MCPHttpClient({ url: options.url, timeoutMs, headers: httpClientHeaders(undefined, options.header) })
+          label = `${server}（${options.url}）`
+        } else {
+          const mgr = new McpManager({ configPath: options.config })
+          const cfg = mgr.servers.find((s) => s.name === server)
+          if (!cfg) {
+            throw new Error(`未配置 MCP 服务器: ${server}（~/.flare/mcp.json 的 servers 列表，或 --url 直连 HTTP 端点）`)
+          }
+          if (!cfg.url && !cfg.command) {
+            throw new Error(`MCP 服务器 ${server} 配置无效：需提供 command（stdio）或 url（HTTP transport）`)
+          }
+          client = cfg.url
+            ? new MCPHttpClient({ url: cfg.url, timeoutMs: cfg.timeoutMs || timeoutMs, headers: httpClientHeaders(cfg.headers, options.header) })
+            : new MCPClient({ command: cfg.command as string, args: cfg.args, env: cfg.env, timeoutMs })
+          if (cfg.url) label = `${server}（${cfg.url}）`
+        }
+        await client.initialize()
+        await client.setLogLevel(mLevel)
+        client.close()
+        console.log(chalk.green(`✓ 已设置 ${label} 日志级别为 ${mLevel}`))
+        console.log(chalk.gray('  低于该级别的 notifications/message 日志将不再推送'))
+      } catch (e: any) {
+        console.error(chalk.red(`❌ ${e?.message || e}`))
+        process.exit(1)
+      }
+    })
+
+program
     .command('models')
     .description('查看可用模型：配置的主/视觉模型 + 本地 Ollama 已拉取模型（v0.6.0）')
     .action(async () => {
