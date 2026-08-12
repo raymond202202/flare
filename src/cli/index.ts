@@ -2160,6 +2160,32 @@ program
       }
     })
 
+  // flare sessions：查看最近会话列表（v0.6.87，与 server recent_sessions 对称）
+  program
+    .command('sessions')
+    .description('查看最近会话列表（v0.6.87）')
+    .option('-n, --limit <n>', '最多显示 N 个会话（默认 10，1~50）')
+    .action((options: { limit?: string }) => {
+      const store = getMemoryStore()
+      let limit = options.limit !== undefined ? Number(options.limit) : 10
+      if (!Number.isInteger(limit) || limit < 1 || limit > 50) {
+        console.error(chalk.red('❌ --limit 需为 1~50 的整数'))
+        process.exit(1)
+      }
+      const sessions = store.getRecentSessions(limit)
+      if (sessions.length === 0) {
+        console.log(chalk.yellow('暂无会话'))
+        return
+      }
+      console.log(chalk.cyan('\n💬 最近会话:'))
+      for (const s of sessions) {
+        const preview = ((s as any).first_user_msg || '（空会话）').replace(/\s+/g, ' ').trim().slice(0, 30)
+        const title = s.title ? String(s.title) : ''
+        console.log(` ${chalk.gray(`[${formatSessionTime(s.updated_at)}]`)} ${title}${title ? ' ' : ''}${chalk.gray(`[${s.id}]`)} ${preview}`)
+      }
+    })
+
+
   // flare messages <sessionId>：查看指定会话的消息历史（v0.6.84）
   program
     .command('messages <sessionId>')
