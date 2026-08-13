@@ -846,6 +846,59 @@ describe('flare host server 协议', () => {
     }
   }, 30000)
 
+  it('mcp_log_level 缺 server / 缺 level / 非法 level → error（v0.6.124 参数校验）', async () => {
+    const noServer = await request({ type: 'mcp_log_level' }, { expect: ['error'] })
+    expect(noServer[0].message).toContain('mcp_log_level')
+    expect(noServer[0].message).toContain('server')
+    const noLevel = await request({ type: 'mcp_log_level', server: 'mock' }, { expect: ['error'] })
+    expect(noLevel[0].message).toContain('level')
+    const badLevel = await request({ type: 'mcp_log_level', server: 'mock', level: 'verbose' }, { expect: ['error'] })
+    expect(badLevel[0].message).toContain('level')
+    expect(badLevel[0].message).toContain('debug/info/notice/warning/error/critical/alert/emergency')
+  }, 30000)
+
+  it('mcp_log_level（--mcp mock 配置）→ 设置日志级别成功（logging/setLevel 代理，v0.6.124 与 CLI log-level 对称）', async () => {
+    // 独立子进程：--mcp mock 配置（本地子进程，无网络）
+    const dir = mkdtempSync(path.join(os.tmpdir(), 'flare-mcp-loglevel-test-'))
+    const mcpCfg = path.join(dir, 'mcp.json')
+    const mockServer = path.join(__dirname, 'fixtures', 'mcp-mock-server.mjs')
+    writeFileSync(mcpCfg, JSON.stringify({ servers: [{ name: 'mock', command: process.execPath, args: [mockServer, 'log-notify'] }] }))
+    const env: Record<string, string> = { ...process.env } as Record<string, string>
+    delete env.DEEPSEEK_API_KEY
+    const c = spawn(process.execPath, [CLI, 'server', '--storage', path.join(dir, 'test.db'), '--mcp', mcpCfg], { env, stdio: ['pipe', 'pipe', 'pipe'] })
+    const rl2 = createInterface({ input: c.stdout! })
+    const ask = (msg: any, expectTypes: string[]): Promise<any> => new Promise((resolve, reject) => {
+      const timer = setTimeout(() => { cleanup(); reject(new Error(`超时（mcp_log_level ${JSON.stringify(msg).slice(0, 80)}）`)) }, 15000)
+      const handler = (line: string) => {
+        try {
+          const parsed = JSON.parse(line)
+          if (expectTypes.includes(parsed.type)) {
+            cleanup()
+            resolve(parsed)
+          }
+        } catch { /* 非 JSON 行忽略 */ }
+      }
+      const cleanup = () => { clearTimeout(timer); rl2.removeListener('line', handler) }
+      rl2.on('line', handler)
+      c.stdin!.write(JSON.stringify(msg) + '\n')
+    })
+    try {
+      // 启动时后台已连接 → 设置日志级别（mock log-notify 模式收到设置后回推日志通知，不阻塞协议响应）
+      const ok = await ask({ type: 'mcp_log_level', server: 'mock', level: 'warning' }, ['mcp_log_level', 'error'])
+      expect(ok.type).toBe('mcp_log_level')
+      expect(ok.server).toBe('mock')
+      expect(ok.level).toBe('warning')
+      // 未连接的服务器 → error 透传（服务不崩）
+      const ghost = await ask({ type: 'mcp_log_level', server: 'ghost', level: 'info' }, ['mcp_log_level', 'error'])
+      expect(ghost.type).toBe('error')
+      expect(ghost.message).toContain('未连接')
+    } finally {
+      c.kill()
+      rl2.close()
+      rmSync(dir, { recursive: true, force: true })
+    }
+  }, 30000)
+
   it('mcp_tools（--mcp mock 配置）→ 返回工具清单（名称/描述，v0.6.58 与 mcp_resources/mcp_prompts 对称）', async () => {
     // 独立子进程：--mcp mock 配置（本地子进程，无网络）
     const dir = mkdtempSync(path.join(os.tmpdir(), 'flare-mcp-tools-test-'))

@@ -104,7 +104,12 @@
   未知工具/未连接错误输出不崩溃；**非 text 内容项（image/audio/resource）显示占位描述、
   `structuredContent` 无文本时 JSON 兜底**——与 `createMcpTools`/CLI `mcp call`/server `mcp_call`
   四层同口径（同一纯函数 `mcpContentToText`），base64 明文绝不输出（v0.6.119）
-- `/help` 已注册 read/render/call 三行用法（v0.6.39/v0.6.41）
+- `/mcp log-level <server> <level>`（v0.6.124）：**设置已连接服务器的日志级别阈值**
+  （`logging/setLevel` 代理，与 CLI `flare log-level` v0.6.83、server `mcp_log_level` 协议同源）——
+  交互会话内直接调日志级别，无需退出到 shell；8 级枚举与 CLI 同款校验（非法级别提示
+  `debug/info/notice/warning/error/critical/alert/emergency` 可选值，不调用）；stdio/HTTP
+  transport 通用；未连接/未配置服务器错误输出不崩溃
+- `/help` 已注册 read/render/call/log-level 行用法（v0.6.39/v0.6.41/v0.6.124）
 
 ### 3. 单次查询
 

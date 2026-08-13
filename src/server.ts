@@ -1298,6 +1298,27 @@ export function startHostServer(opts: HostServerOptions) {
           reply({ type: 'mcp_disconnect', server, disconnected })
           break
         }
+        case 'mcp_log_level': {
+          // 宿主设置 MCP 服务器日志级别阈值（v0.6.124；与 CLI log-level v0.6.83、交互 /mcp log-level 对称）——
+          // 宿主协议面补齐：此前日志级别只能 CLI 单次命令或库层设置，宿主面板无法程序化控制
+          // 服务器日志推送级别（logging/setLevel；stdio 与 HTTP transport 通用）。
+          await Promise.allSettled(mcpConnects)
+          const server = req.server === undefined || req.server === null ? '' : String(req.server).trim()
+          if (!server) {
+            reply({ type: 'error', message: 'mcp_log_level 需要 server 参数（MCP 服务器名，见 mcp_status 列表）' })
+            break
+          }
+          const level = req.level === undefined || req.level === null ? '' : String(req.level).trim()
+          // 与 CLI log-level 同款 8 级枚举校验（MCP 协议 logging 级别，按严重程度升序）
+          const VALID = ['debug', 'info', 'notice', 'warning', 'error', 'critical', 'alert', 'emergency']
+          if (!VALID.includes(level)) {
+            reply({ type: 'error', message: `mcp_log_level 的 level 必须是有效日志级别（可选: ${VALID.join('/')}，按严重程度升序）` })
+            break
+          }
+          await mcpManager.setLogLevel(server, level as 'debug' | 'info' | 'notice' | 'warning' | 'error' | 'critical' | 'alert' | 'emergency')
+          reply({ type: 'mcp_log_level', server, level })
+          break
+        }
         default:
           reply({ type: 'error', message: `未知请求类型: ${req.type}` })
       }

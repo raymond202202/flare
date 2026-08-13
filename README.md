@@ -205,6 +205,7 @@ cp .env.example ~/.flare/.env
 | `/mcp render <server> <prompt> [k=v ...]` | 渲染外部 MCP 提示词（v0.6.39，prompts/get 代理） |
 | `/mcp complete <server> <prompt> <argument> [value]` | 提示词参数补全候选（v0.6.57，completion/complete 代理） |
 | `/mcp call <server> <tool> [JSON参数]` | 调用外部 MCP 工具（v0.6.41，tools/call 代理） |
+| `/mcp log-level <server> <level>` | 设置服务器日志级别阈值（v0.6.124，logging/setLevel 代理；级别 debug/info/notice/warning/error/critical/alert/emergency 按严重程度升序） |
 | `/allow` | 查看已放行的确认工具（标注范围：本会话/跨会话持久化，v0.6.7/v0.6.10） |
 | `/allow add <工具名> [session\|always]` | 显式放行（默认本会话；always 跨会话持久化，v0.6.10） |
 | `/allow revoke <工具名>` | 撤销放行（恢复每次确认，v0.6.7） |
@@ -378,6 +379,9 @@ Interactive mode commands:
 | `/exit` | Exit |
 
 ### Changelog / Release Notes
+
+## v0.6.124（2026-08-14）
+- ✨ **交互命令 `/mcp log-level <server> <level>` + server 协议 `mcp_log_level`（log-level 三层对称收官）**：库层 `McpManager.setLogLevel`（v0.6.83）+ CLI 单次命令 `flare log-level`（v0.6.83）已有，唯独交互模式与宿主协议面缺失——本版补齐：交互会话内直接设日志级别（无需退出到 shell；8 级枚举与 CLI 同款校验，非法级别提示可选值；stdio/HTTP transport 通用）；宿主经协议 `{ type: "mcp_log_level", server, level }` 程序化控制日志推送级别（响应 `{ type: "mcp_log_level", server, level }`，缺 server/缺 level/非法 level 回 error 含提示；未连接/未配置服务器回 error 不崩）；`/help` 与命令表同步
 
 ## v0.6.123（2026-08-14）
 - ✨ **交互命令 `/memory similar`（记忆去重检测面交互入口）**：交互模式可检测重复/近似记忆对——与单次命令 `flare memories --similar`（v0.6.121）同源（`MemoryStore.findSimilarMemories`，默认阈值 0.4）；显示 `#idA ↔ #idB 相似度 X.XX` + 内容截断 + `/forget` 删除提示；`/memory --similar` 等价别名；`/help` 同步
