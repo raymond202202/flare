@@ -2420,6 +2420,23 @@ program
 
 
 
+  // flare create-session <sessionId> [title]：显式创建会话（写操作：UPSERT 幂等——已存在则更新标题；
+  // 与 server create_session 对称；title 缺省「新会话」；会话管理单次命令面由此闭合：create/rename/end/restore/clear/delete 全齐）
+  program
+    .command('create-session <sessionId> [title]')
+    .description('显式创建会话（写操作：UPSERT 幂等——已存在则更新标题；title 缺省「新会话」；与 server create_session 对称）')
+    .action((sessionId: string, title?: string) => {
+      const sid = (sessionId || '').trim()
+      if (!sid) {
+        console.log(chalk.yellow('会话 ID 不能为空（create_session 需要 sessionId 参数）'))
+        process.exitCode = 1
+        return
+      }
+      const t = (title || '').trim() || '新会话'
+      const store = getMemoryStore()
+      store.updateSessionTitle(sid, t)
+      console.log(chalk.green('已创建会话 ') + chalk.cyan(sid) + chalk.gray('（标题: ') + chalk.white(t) + chalk.gray('）'))
+    })
   // flare rename <sessionId> <title>：重命名会话（写操作：仅修改标题；与 server rename_session 对称，v0.6.97）
   program
     .command('rename <sessionId> <title>')

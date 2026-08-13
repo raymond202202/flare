@@ -159,6 +159,7 @@ cp .env.example ~/.flare/.env
 | `flare search-messages <关键词>` | 全文搜索历史消息内容（--limit N 1~100 默认 10；--json 结构化输出（与 server search_messages 回包同构 `{ query, results }`，含 sessionId/role/content/createdAt，content 不截断不折叠；空结果 `{ query, results: [] }`）v0.6.110；v0.6.86） |
 | `flare sessions` | 查看最近会话列表（--limit N 1~50 默认 10；--json 结构化输出（与 server list_sessions 回包同构 { sessions }，宿主/脚本程序化消费，空库输出 sessions:[]）v0.6.108；v0.6.87） |
 | `flare rename <会话ID> <标题>` | 重命名会话（写操作：仅修改标题；title 非空必填；与 server rename_session 对称；v0.6.97） |
+| `flare create-session <会话ID> [标题]` | 显式创建会话（写操作：UPSERT 幂等——已存在则更新标题；title 缺省「新会话」；与 server create_session 对称；v0.6.127） |
 | `flare delete-session <会话ID>` | 整体删除会话（写操作：删除会话及其全部消息与用量统计，不可恢复；不存在幂等 exit 1；与 server delete_session 对称；v0.6.99） |
 | `flare clear-session <会话ID>` | 清空会话全部消息（写操作：仅删除该会话消息，保留会话记录与用量；不存在幂等 exit 0；与 server clear_session 对称；v0.6.99） |
 | `flare archived-sessions` | 查看归档会话列表（--limit N 1~50 默认 10；--json 结构化输出（与 server archived_sessions 回包同构 `{ sessions }`，含 id/title/updatedAt/preview，preview 截断 120 字符；空库 `{ sessions: [] }`）v0.6.111；v0.6.88） |
@@ -379,6 +380,11 @@ Interactive mode commands:
 | `/exit` | Exit |
 
 ### Changelog / Release Notes
+
+## v0.6.127（2026-08-14）
+- ✨ **CLI 单次命令 `flare create-session <会话ID> [标题]`（会话管理单次命令面闭合）**：server 协议 `create_session`（宿主显式建会话）是会话管理接口中唯一缺 CLI 对称的——delete-session/clear-session（v0.6.99）、restore（v0.6.96）、rename（v0.6.97）、end-session（v0.6.101）均有，唯独「创建」语义缺失。本版补齐：`flare create-session <会话ID> [标题]` 显式创建会话（写操作：UPSERT 幂等——已存在则更新标题，与 server create_session 同语义；title 缺省「新会话」，首尾空格 trim；空会话 ID exit 1）；`set_context` 为进程内存操作（单次命令进程退出即失、无持久意义）不入此列
+- 测试（新建 tests/cli-create-session.test.ts，6 用例）：带标题创建（exit 0 + 输出 + store 落库）/ 缺省标题「新会话」/ 标题空格 trim / UPSERT 幂等（已存在更新标题不报错）/ 空 ID exit 1 不写库 / 数据往返（create 后 getRecentSessions 可见）
+- 文档：README 命令表补 create-session 行 + Changelog 条目
 
 ## v0.6.126（2026-08-14）
 - ✨ **`/help` 的 `/memory` 行同步 `/memory similar [阈值]`**：v0.6.125 交互命令支持可选阈值但 `/help` 说明行仍停留在 v0.6.123 旧文案（P168 只更新了用法提示分支）——本版补齐：`/help` 显示 `/memory similar [阈值] 检测相似记忆对（默认 0.4，v0.6.123/125）`；`/help` 测试断言同步（`/memory similar [阈值]` + 版本标注）
