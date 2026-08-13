@@ -1,5 +1,7 @@
 # Flare 引擎迭代进度（夜间调研 agent）
 
+> **【✅ 第一百三十轮小步】P176 (v0.6.130) flare messages 已归档会话文本模式标题带（已归档）标记已装机**：
+> commit `888c5db`，1168/1168 全绿、tsc 0 错误、零 agent.ts 改动（详情见下方 P176 条目）。
 > **【✅ 第一百三十轮完成】P175 (v0.6.129) chat --session 续聊已归档会话给黄色提示（不拦截）已装机**：
 > commit `c49bb48`，1165/1165 全绿、tsc 0 错误、零 agent.ts 改动（详情见下方 P175 条目）。
 > **【✅ 第一百二十九轮小步】P174 (纯文档) USAGE.md 单次查询章节补 chat --session 续聊 + create-session**：
@@ -206,6 +208,31 @@
 >    terminal 退出码（v0.6.33）✓ / CLI 归档命令（v0.6.32）✓ / 归档 API（v0.6.31）✓ /
 >    工具输出治理（v0.6.30）✓ / prompt caching P0（v0.6.29）✓ / MCP 动态资源提供器（v0.6.28）✓ /
 >    confirm 描述（v0.6.27）✓
+
+---
+
+### 2026-08-14 第一百三十轮小步（P176，v0.6.130）——flare messages 已归档会话文本模式标题带（已归档）标记
+
+> **P176 完成**（commit `888c5db`）：`flare messages <会话ID>` 文本模式标题行为**已归档**会话补 `（已归档）`
+> 标记——P175 归档可见性主题的延伸：search/sessions 命令展示会话时已带 arch 标记（search line 2362 口径），
+> 唯独 messages 命令查看指定会话消息时无归档提示，宿主/脚本直接查归档会话消息时无从知晓该会话已从最近列表隐藏。
+> - **实现**（src/cli/index.ts messages 命令 +5 行）：文本模式标题行 `💬 会话 <id>（已归档）` ——
+>   `store.getAllSessions().find((s) => s.id === sessionId)?.archived` 取归档布尔，为 true 时 `chalk.gray('（已归档）')`
+>   拼接，与 search/sessions 命令 arch 标记同口径；**--json 不加字段**（保持与 server get_messages 回包
+>   `{ sessionId, messages }` 同构，程序化消费结构不变）；`?.archived` 短路——空会话/未归档会话/会话不存在
+>   均标记为空串行为不变
+> - **测试**（tests/cli-messages.test.ts 追加 3 用例）：已归档会话文本模式标题带（已归档）标记（含消息内容
+>   正常显示）/ 已归档会话 --json 不加 archived 字段（与 server 回包同构）/ 未归档会话不出现（已归档）标记（回归）
+> - README 命令表 messages 行补归档标记说明 + Changelog v0.6.130 条目 + package.json 0.6.130
+> - **1168/1168 全绿**（76 文件；**首跑即绿无偶发**），tsc 0 错误，**零 agent.ts 改动**（Agent.run 核心循环零触碰），
+>   零 push、零敏感信息
+> - **flare 验收通过**：独立运行 tsc 0 错误 + 全量 1168/1168 全绿 + cli-messages.test.ts 14/14；逐项核对
+>   git show 仅 4 文件零 agent.ts + 版本 0.6.130；边界核验（?.archived 短路、--json 分支零触碰保持同构、
+>   空会话/未归档/会话不存在均行为不变）；安全审查新增行零敏感信息命中（README 历史行 --http-auth-token-env/
+>   hasApiKey 为功能机制名非真实密钥）；结论「✅ 验收通过」
+> - **下一步候选**：① 【P1】分层上下文（Layer 1 异步滚动摘要——需改 Agent.run 核心循环，违反铁律跳过并记录理由）；
+>   ② 其他安全的外围增强（MCP 工具集完善、测试稳定性等）——归档可见性小步收官（chat 续聊提示 P175 +
+>   messages 归档标记 P176），CLI 面归档提示缺口已清零（sessions/search/search-messages/messages/chat 全覆盖）
 
 ---
 
