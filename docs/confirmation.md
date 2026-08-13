@@ -113,3 +113,31 @@ gate.resetSession()              // 清空会话级放行（不影响 always）
   （确认 UI 文案）/ `terminalConfirmer({ toolName, args, ask, onPause?, onResume?, onFeedback? })`
   （可注入读行实现与暂停/恢复/反馈回调的终端确认流程）——其他宿主可复用同样的终端确认体验。
 
+## CLI 单次命令确认门管理（v0.6.94 confirm-status / v0.6.98 confirm-allow / confirm-revoke）
+
+宿主/脚本场景（非交互终端）也有确认门管理入口——与 server 协议 `confirm_status`/`confirm_allow`/
+`confirm_revoke` 对称的 CLI 单次命令形态，无需等 confirm 事件、无需宿主进程：
+
+- **`flare confirm-status [--json]`（v0.6.94，只读）**：查看确认门放行状态——`confirmTools`（当前确认
+  名单，CLI 默认 `memory_save`）/ `allowedTools`（完整放行：会话级 + 持久化合并去重）/ `sessionAllowed`
+  （本会话）/ `alwaysAllowed`（跨会话持久化）；`--json` 输出 `{ sessionId, confirmTools, allowedTools,
+  sessionAllowed, alwaysAllowed }` 与 server confirm_status 回包同构；实现为只读查询（占位 confirmer
+  永不触发确认），无放行记录输出「无」exit 0
+- **`flare confirm-allow <工具> [--session]`（v0.6.98，写操作）**：显式放行确认工具（无需等 AI 触发
+  确认弹窗）——默认 `always` 跨会话持久化到全局库 settings 表（单次命令进程内会话级放行恒为空：
+  每次运行都是新 ConfirmationGate 实例，`allowSession` 仅进程内存、结束即失，故持久化才有实际效果）；
+  `--session` 仅本进程内放行（进程结束即失）；与 server `confirm_allow` 对称
+- **`flare confirm-revoke <工具>`（v0.6.98，写操作）**：撤销工具放行（会话级 + 持久化同步清除，恢复
+  每次确认）；未放行幂等 exit 0；与 server `confirm_revoke` 对称
+- **配套**：`flare config`（v0.6.93）查看确认门配置（CLI 默认 memory_save + 超时 30000ms）；交互模式
+  `/allow` 查看/放行/撤销（本会话或跨会话持久化）——单次命令与交互命令共用同一持久化 settings 表
+  （跨会话记住 always 放行）
+
+```bash
+flare confirm-status                        # 查看放行状态（确认名单/持久化/本会话）
+flare confirm-status --json                 # 结构化输出（脚本消费）
+flare confirm-allow memory_save             # 跨会话持久化放行 memory_save（不再弹窗）
+flare confirm-allow terminal --session      # 仅本进程内放行 terminal
+flare confirm-revoke memory_save            # 撤销放行，恢复每次确认（幂等 exit 0）
+```
+
