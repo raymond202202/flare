@@ -151,7 +151,7 @@ cp .env.example ~/.flare/.env
 | `flare chat -q "问题" -i 图片.png` | 单次查询附带图片 |
 | `flare server [--profile --storage --mcp --confirm-tools --confirm-timeout --max-tokens --temperature --max-context-messages --max-context-tokens --context-summarize --tool-output-policy]` | 宿主协议服务（stdin/stdout JSON Lines，供 Qt 等宿主调用；v0.6.1 起写回类工具经确认门；v0.6.5 起 --max-tokens/--temperature 设 chat 默认采样参数；v0.6.17 起 --max-context-messages/--max-context-tokens 设默认上下文自动裁剪；v0.6.19 起 --context-summarize 默认开启上下文压缩摘要；v0.6.34 起 --tool-output-policy 设默认工具输出治理策略） |
 | `flare mcp-server [-t 工具名,...] [--http [--port <端口>] [--http-auth-token-env <VAR>]] [--bridge-resources] [--bridge-prompts] [--bridge-tools]` | MCP stdio 服务器：把 flare 工具集暴露给其他 AI 客户端（v0.5.8；v0.6.3 起 --http 起 HTTP transport；v0.6.28/0.6.37/0.6.47 起可透传外部 MCP 服务器资源/提示词/工具；v0.6.69 起 --http-auth-token-env 从环境变量读 Bearer 鉴权 token） |
-| `flare mcp call <服务器> <工具> [JSON参数]` | 调用 MCP 服务器工具（stdio 或 HTTP transport；服务器名查 `~/.flare/mcp.json`，`--url` 直连 HTTP 端点，v0.6.6；`--header <k:v>` 可重复附加鉴权请求头，v0.6.68；--json 结构化输出（`{ server, tool, success, error?, output }` 与 server mcp_call 回包同构，工具级失败输出 `{ success:false, error }` 且 exit 1）v0.6.115） |
+| `flare mcp call <服务器> <工具> [JSON参数]` | 调用 MCP 服务器工具（stdio 或 HTTP transport；服务器名查 `~/.flare/mcp.json`，`--url` 直连 HTTP 端点，v0.6.6；`--header <k:v>` 可重复附加鉴权请求头，v0.6.68；--json 结构化输出（`{ server, tool, success, error?, output }` 与 server mcp_call 回包同构，工具级失败输出 `{ success:false, error }` 且 exit 1）v0.6.115；非 text 内容项（image/audio/resource）输出占位描述、structuredContent 无文本时 JSON 兜底（v0.6.117）） |
 | `flare log-level <服务器> <级别>` | 设置 MCP 服务器日志级别阈值（logging/setLevel，v0.6.83；级别 debug/info/notice/warning/error/critical/alert/emergency 按严重程度升序；stdio/HTTP transport 通用；`--url` 直连 HTTP 端点，`--header <k:v>` 附加鉴权请求头 v0.6.68） |
 | `flare messages <会话ID>` | 查看指定会话的消息历史（--limit N 1~500 默认 50；--recent 从最新开始；--json 结构化输出（与 server get_messages 回包同构 { sessionId, messages, ...(recent?{recent:true}:{}) }，宿主/脚本程序化消费，空会话输出 messages:[]）v0.6.107；v0.6.84） |
 | `flare models` | 查看可用模型：配置的主/视觉模型（settings 优先，含解析端点）+ 本地 Ollama 已拉取模型（--json 结构化输出（与 server models 回包同构 `{ configured, ollama }`，configured.main/vision 为 ModelEndpointInfo 同款 model/baseURL/hasApiKey/provider，vision 未配置 → null，ollama 不可达 ok:false 不崩）v0.6.112；v0.6.0） |
@@ -365,6 +365,10 @@ Interactive mode commands:
 | `/exit` | Exit |
 
 ### Changelog / Release Notes
+
+## v0.6.117（2026-08-14）
+- ✨ **MCP 工具桥非 text 内容项处理（`mcpContentToText` 纯函数）**：`createMcpTools` 与 CLI `flare mcp call` 此前只提取 `content` 中 `type === 'text'` 项——MCP 工具返回 `image`/`audio`/`resource` 等非 text 内容时被**静默丢弃**（AI 只看到「无文本输出」），`structuredContent`（2025-06-18 协议结构化返回）也完全未处理；本版补齐——新库导出纯函数 `mcpContentToText(content, structuredContent?)`：text 项原文提取（多项按序拼接，与旧行为逐字一致）、image/audio 输出占位描述 `[图片/音频 mimeType: X, 数据 N 字符]`（**绝不含 base64 明文**，避免大体积/敏感二进制灌进上下文）、resource 输出 `[资源 uri: X mimeType: Y]` 占位（短 text 附内容、blob 绝不输出）、未知类型 `[内容类型: X]` 占位（不再静默丢弃）；content 全空且 structuredContent 存在 → JSON 序列化兜底（超 4000 字符截断 + 省略标记，循环引用安全）；`createMcpTools` 桥接输出与 CLI `mcp call` 文本模式/`--json` 的 `output` 字段统一复用该函数（同口径）
+- 安全设计：非 text 二进制（image/audio 的 data、resource 的 blob）只输出占位描述不含明文——既防上下文 token 膨胀，也避免把敏感二进制数据回显给模型/宿主
 
 ## v0.6.116（2026-08-13）
 - ✨ **`flare cache-check --json` 增加命中率字段（hitRatio / runHitRatios）**：prompt caching 验收结构化输出补齐命中率观测——`hitRatio`（末轮 cache_read_tokens / prompt_tokens × 100，四舍五入，promptTokens=0 或失败 → null）+ `runHitRatios`（每轮命中率数组，与 runs 对齐）；与 CLI 文本模式（v0.6.79 每轮命中率百分比）及 /usage 命中率观测面完全同口径，宿主/CI 消费 `--json` 时可程序化判定缓存效率（此前文本模式有百分比、--json 没有，是不对称缺口）；文本模式与退出码语义完全不变

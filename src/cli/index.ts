@@ -8,7 +8,7 @@
  */
 
 import { Command } from 'commander'
-import { Agent, createProvider, getMemoryStore, config, tools, McpManager, estimateMessagesTokens, suggestTrim, ConfirmationGate, memoryStoreKv, wrapConfirmTools, describeTools, validateToolOutputPolicy, type AgentConfig, type McpServerStatus, type ConfirmDecision, type McpResourceRef, type McpResourceTemplateRef, type McpPromptRef, type McpResourceContents, type McpPromptResult, type McpCompletionResult, type McpCallResult, type McpToolRef, type ToolOutputPolicy } from '../index.js'
+import { Agent, createProvider, getMemoryStore, config, tools, McpManager, estimateMessagesTokens, suggestTrim, ConfirmationGate, memoryStoreKv, wrapConfirmTools, describeTools, validateToolOutputPolicy, mcpContentToText, type AgentConfig, type McpServerStatus, type ConfirmDecision, type McpResourceRef, type McpResourceTemplateRef, type McpPromptRef, type McpResourceContents, type McpPromptResult, type McpCompletionResult, type McpCallResult, type McpToolRef, type ToolOutputPolicy } from '../index.js'
 import chalk from 'chalk'
 import { execSync } from 'child_process'
 import { createRequire } from 'module'
@@ -1716,9 +1716,9 @@ export function main() {
         }
         await client.initialize()
         const res = await client.callTool(tool, args)
-        const text = Array.isArray(res.content)
-          ? res.content.filter((c) => c.type === 'text' && typeof c.text === 'string').map((c) => c.text).join('\n')
-          : ''
+        // v0.6.117：非 text 内容（image/audio/resource）占位描述 + structuredContent 兜底——与
+        // createMcpTools 同口径（mcpContentToText 纯函数），不再静默丢弃图片/结构化返回
+        const text = mcpContentToText(res.content, res.structuredContent)
         client.close()
         // --json：与 server mcp_call 回包同构（不带 type 包装）——工具级失败输出 JSON 且 exit 1
         if (options.json) {

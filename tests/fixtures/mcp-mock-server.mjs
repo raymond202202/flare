@@ -201,8 +201,29 @@ rl.on('line', (line) => {
         )
       }
       if (name === 'echo_text') {
+        // v0.6.117：rich 模式返回混合内容（text + image + audio + resource + structuredContent），
+        // 测非 text 内容占位处理——工具数量不变（仍 3 个），不影响现有工具数断言
+        if (mode === 'rich') {
+          respond({
+            content: [
+              { type: 'text', text: `echo: ${args?.text || ''}` },
+              { type: 'image', data: 'aGVsbG8taW1hZ2U=', mimeType: 'image/png' },
+              { type: 'audio', data: 'YXVkaW8tZGF0YQ==', mimeType: 'audio/wav' },
+              { type: 'resource', resource: { uri: 'file:///tmp/a.txt', mimeType: 'text/plain', text: 'hello resource' } },
+            ],
+            structuredContent: { ok: true, source: 'mock' },
+          })
+          break
+        }
         respond({ content: [{ type: 'text', text: `echo: ${args?.text || ''}` }] })
       } else if (name === 'add_numbers') {
+        // v0.6.117：struct-only 模式 content 为空 + structuredContent 兜底（测 CLI --json 输出）
+        if (mode === 'struct-only') {
+          const a = Number(args?.a) || 0
+          const b = Number(args?.b) || 0
+          respond({ content: [], structuredContent: { sum: a + b, source: 'mock' } })
+          break
+        }
         const a = Number(args?.a) || 0
         const b = Number(args?.b) || 0
         respond({ content: [{ type: 'text', text: String(a + b) }] })
