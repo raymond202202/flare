@@ -1,5 +1,7 @@
 # Flare 引擎迭代进度（夜间调研 agent）
 
+> **【✅ 第一百二十六轮小步】P166 (v0.6.124) log-level 三层对称收官（交互 /mcp log-level + server 协议 mcp_log_level）已装机**：
+> commit `5f0ac9f`，1150/1150 全绿、tsc 0 错误、零 agent.ts 改动（详情见下方 P166 条目）。
 > **【✅ 第一百二十六轮小步】P165 (纯文档) README 交互命令表补齐 /mcp 子命令与 /search//archived//archive//restore 行**：
 > commit `00889b0`，纯文档零 src 改动、tsc 0 错误、无版本变化（详情见下方 P165 条目）。
 > **【✅ 第一百二十六轮小步】P164 (纯文档) README 交互命令表同步 /memory similar 与 /usage 缓存能力**：
@@ -4726,6 +4728,71 @@
   ② 中文表缺 /search 但英文表有，中英两表也要互相对照；③ flare 深度核对后可能不输出
   最终 PASS（P162 同款），补「只汇总不收尾」聚焦指令即可；④ 纯文档小步跑 tsc +
   git diff 验收即可，无需全量测试（零 src 改动无回归风险）
+
+---
+
+### 2026-08-14 第一百二十六轮小步（P166 v0.6.124）——log-level 三层对称收官（交互 /mcp log-level + server 协议 mcp_log_level）（装机完成，自循环）
+
+> **P166 完成**（commit `5f0ac9f`）：MCP logging 控制面**三层对称收官**——库层
+> `McpManager.setLogLevel`（v0.6.83）+ CLI 单次命令 `flare log-level`（v0.6.83）已有，
+> 唯独**交互模式**（`/mcp` 无 log-level 子命令）与**宿主协议面**（无 mcp_log_level 请求）
+> 缺失：交互用户想调日志级别必须退出到 shell 用单次命令，宿主面板无法程序化控制服务器
+> 日志推送级别（logging/setLevel）。本步补齐两块拼图，四端（库/CLI/交互/协议）对称。
+> - **实现**：
+>   - src/cli/index.ts：`McpCommandHooks` 接口新增**可选** `setLogLevel?(server, level)`
+>     （向后兼容旧宿主——未提供回退「未提供日志级别设置」提示）；交互模式 hooks 构造处
+>     转发 `mcpManager.setLogLevel`（8 级枚举 cast，与 CLI log-level 同款）；handleSlash
+>     Command `/mcp` 分支新增 `log-level <server> <level>` 子命令——8 级枚举校验（非法
+>     级别提示 `debug/info/notice/warning/error/critical/alert/emergency` 可选值不调用）、
+>     成功输出「已设置 X 日志级别为 Y（低于该级别的 notifications/message 日志不再推送）」、
+>     try/catch 错误输出不崩溃、缺参回落用法提示；/help 同步补行
+>   - src/server.ts：新增 `mcp_log_level` case——等待后台连接落定（与 mcp_status 一致）、
+>     缺 server/缺 level/非法 level 各回 error 含提示（非法含合法枚举）、代理转发
+>     McpManager.setLogLevel、响应 `{ type: "mcp_log_level", server, level }`；未连接/
+>     未配置服务器 error 透传（服务不崩）
+> - **测试**（tests/mcp-command.test.ts +5、tests/server.test.ts +2，共 +7）：
+>   - 交互命令：成功调用 setLogLevel 并输出成功（含 notifications/message 说明）/ 非法级别
+>     提示合法枚举不调用 / 缺 level 回落用法提示 / hooks 未提供 setLogLevel 向后兼容提示 /
+>     未连接服务器错误输出不崩溃
+>   - server 协议：缺 server/缺 level/非法 level 各回 error 含提示 / --mcp mock 配置真实
+>     端到端设置成功（log-notify 模式收到设置不阻塞协议响应）+ ghost 未连接服务器 error
+>     透传
+> - 文档：README 命令表 `/mcp log-level` 行 + Changelog v0.6.124 + docs/mcp.md 交互章节
+>   + docs/host-protocol.md 四处（请求类型列表 + 16.10 章节 + 响应汇总表 mcp_log_level 行）
+>   + package.json 0.6.123 → 0.6.124
+> - **1150/1150 全绿**（基线 1143 + 7；74 文件；mcp-command 58/58 + server 78/78 专项通过；
+>   全量首跑 1149/1150 有 1 个偶发（server.test.ts chat 超时，P123 先例），重跑 server
+>   78/78 + 全量 1150/1150 全绿），tsc 0 错误（含 dist 编译），**零 agent.ts 改动**，零 push、
+>   零敏感信息（diff 敏感扫描仅测试惯例 `delete env.DEEPSEEK_API_KEY` 删除 env 非输出）；
+>   自安装完成：installed 0.6.124 = repo 0.6.124（安装版冒烟协议层非法 level 回 error
+>   已验证）；真实 ~/.flare 零污染（冒烟均用 FLARE_HOME 临时目录）
+> - **下一步候选**：① 【P1】分层上下文（Layer 1 异步滚动摘要——需评估 run 循环外异步，
+>   涉及 agent.ts trimContext 异步化，铁律暂缓）；② 其他安全的外围增强（MCP logging 控制
+>   面三层收官（CLI v0.6.83、交互+协议 v0.6.124 本步），剩余候选 RAG 注入（Agent 构造时
+>   按会话主题自动注入相关记忆——需改 agent.ts 构造逻辑 + searchMemories 查询语义，复杂度
+>   超外围定位暂缓）、记忆自动合并/摘要（写操作 + LLM，风险中）、测试稳定性继续清扫、
+>   确认门接入完整化等）
+> - **flare 验收结论：✅ 通过**——flare 独立运行 git log -1（5f0ac9f）/git show 审查完整
+>   diff（8 文件 +190/-6）、npx tsc 0 错误、PATH=/usr/bin:$PATH npx vitest run 全量 74 文件
+>   1150/1150 全绿、git 提交完整工作区干净（dist 为已提交产物且与源码一致）；逐项核对
+>   McpCommandHooks 可选方法向后兼容守卫（typeof 检查）、8 级枚举统一校验三处同口径、
+>   server 层缺参/非法各回 error、未连接服务器错误透传不崩溃、与 CLI log-level v0.6.83
+>   对称性、零 agent.ts 改动（最小侵入）、无任何密钥明文（DEEPSEEK_API_KEY 删除为测试
+>   惯例）；全程零修改零 commit；结论与实况完全一致（验收指令经文件读入规避 confusable
+>   误报，P148 先例）
+
+**引导过程记录（引导 agent 视角，实现+验收直接完成）**：
+- 本轮实现由引导 agent 直接完成（「调研→执行→flare 验收」新范式，验收环节交给 flare）
+- 调研选定 P166：MCP 方向从「文档对称清扫」转回「功能缺口补齐」——log-level 是 CLI 已
+  装机但交互/协议面缺失的典型三层不对称（P156 mcp connect/disconnect 控制面收官同构），
+  纯外围零 agent.ts 风险
+- **教训**：① 三层对称检查（库/CLI/交互/协议四端）是发现功能缺口的高效方法——CLI
+  log-level v0.6.83 装机后交互与协议面缺了 40 轮没人发现，直到本轮系统性对照；② 测试
+  断言先跑实测再定稿——ghost 服务器实际错误是「MCP 服务器未连接」而非「未配置」
+  （McpManager.setLogLevel 先查 clients map），首版断言「未配置」失败后按实测修正；
+  ③ 交互命令 hooks 新增能力一律做成**可选方法 + typeof 守卫**（向后兼容旧宿主，测试
+  显式覆盖删除方法场景）；④ 全量偶发（server chat 超时）重跑专项 + 全量即可确认，
+  非本轮引入（P123 先例）
 
 ---
 
