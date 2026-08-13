@@ -1141,16 +1141,27 @@ export async function handleSlashCommand(
 
   // /memory 列出全部记忆；/memory <关键词> 全文搜索记忆（v0.6.25：与 /search 对称，FTS5 中文友好）
   // /memory similar 检测相似记忆对（v0.6.123：交互面对称补齐单次命令 memories --similar）
+  // /memory similar [阈值]（v0.6.125：可选相似度阈值 0~1，与单次命令 --threshold 对称；缺省 0.4）
   if (lower === '/memory' || lower.startsWith('/memory ')) {
     const kw = cmd.replace(/^\/memory(?:\s+|$)/, '').trim()
-    if (kw === 'similar' || kw === '--similar') {
+    if (kw === 'similar' || kw === '--similar' || kw.startsWith('similar ') || kw.startsWith('--similar ')) {
+      let threshold = 0.4
+      const rest = kw.replace(/^(?:similar|--similar)(?:\s+|$)/, '').trim()
+      if (rest) {
+        const t = Number(rest)
+        if (!Number.isFinite(t) || t < 0 || t > 1) {
+          output(chalk.yellow('\n  用法: /memory similar [阈值]（0~1 相似度阈值，默认 0.4；如 /memory similar 0.6 检测更相似的记忆对）'))
+          return 'continue'
+        }
+        threshold = t
+      }
       const pairs = (typeof (store as any).findSimilarMemories === 'function')
-        ? (store as any).findSimilarMemories({})
+        ? (store as any).findSimilarMemories({ threshold })
         : []
       if (pairs.length === 0) {
-        output(chalk.gray('\n未发现相似记忆（阈值 0.4；/memory similar 可检测重复/近似记忆，v0.6.123）'))
+        output(chalk.gray(`\n未发现相似记忆（阈值 ${threshold}；/memory similar 可检测重复/近似记忆，v0.6.123）`))
       } else {
-        output(chalk.cyan(`\n🔍 相似记忆（${pairs.length} 对，阈值 0.4）:`))
+        output(chalk.cyan(`\n🔍 相似记忆（${pairs.length} 对，阈值 ${threshold}）:`))
         for (const p of pairs) {
           const a = String(p.contentA).replace(/\s+/g, ' ').trim().slice(0, 60)
           const b = String(p.contentB).replace(/\s+/g, ' ').trim().slice(0, 60)

@@ -210,7 +210,7 @@ cp .env.example ~/.flare/.env
 | `/allow add <工具名> [session\|always]` | 显式放行（默认本会话；always 跨会话持久化，v0.6.10） |
 | `/allow revoke <工具名>` | 撤销放行（恢复每次确认，v0.6.7） |
 | `/tools` | 查看当前 Agent 可用工具清单（含确认门标注 ⚠需确认 与来源，v0.6.11） |
-| `/memory` | 查看持久记忆；带关键词全文搜索（v0.6.25）；`/memory similar` 检测相似记忆对（默认阈值 0.4，只读不删除，v0.6.123） |
+| `/memory` | 查看持久记忆；带关键词全文搜索（v0.6.25）；`/memory similar [阈值]` 检测相似记忆对（默认阈值 0.4，可传 0~1 阈值如 `/memory similar 0.6`，只读不删除，v0.6.123/125） |
 | `/remember` | 保存一条记忆（如: /remember 用户喜欢浅色主题） |
 | `/forget` | 删除记忆（如: /forget 浅色主题，删除包含该关键词的记忆） |
 | `/usage` | 查看 token 用量（v0.6.17 起含本会话用量行；v0.6.49 起含缓存命中；v0.6.65 起含缓存节省金额） |
@@ -369,7 +369,7 @@ Interactive mode commands:
 | Command | Function |
 |---------|----------|
 | `/help` | Show help |
-| `/memory` | View persistent memories (`/memory <keyword>` searches memories, v0.6.25; `/memory similar` detects similar/duplicate memory pairs, default threshold 0.4, read-only, v0.6.123) |
+| `/memory` | View persistent memories (`/memory <keyword>` searches memories, v0.6.25; `/memory similar [threshold]` detects similar/duplicate memory pairs, default threshold 0.4, optional 0~1 value like `/memory similar 0.6`, read-only, v0.6.123/125) |
 | `/search <关键词>` | Search chat history across sessions (v0.6.24) |
 | `/remember` | Save a memory (e.g. /remember user likes light theme) |
 | `/forget` | Delete memories by keyword (e.g. /forget light theme) |
@@ -379,6 +379,9 @@ Interactive mode commands:
 | `/exit` | Exit |
 
 ### Changelog / Release Notes
+
+## v0.6.125（2026-08-14）
+- ✨ **交互命令 `/memory similar [阈值]`（可选相似度阈值，与单次命令 `memories --similar --threshold` 对称）**：v0.6.123 交互入口只支持默认阈值 0.4，无法调高/调低检出灵敏度（单次命令 v0.6.121 已有 `--threshold`）——本版补齐：`/memory similar <0~1>` 或 `/memory --similar <0~1>` 传阈值（如 `/memory similar 0.6` 只检更相似的记忆对）；阈值非法（非数字/越界 0~1）输出用法提示不崩溃；输出行显示当前阈值（`相似记忆（N 对，阈值 X）` / `未发现相似记忆（阈值 X）`）；缺省行为与 v0.6.123 逐字一致（默认 0.4，回归由测试保证）；`/help` 与命令表同步
 
 ## v0.6.124（2026-08-14）
 - ✨ **交互命令 `/mcp log-level <server> <level>` + server 协议 `mcp_log_level`（log-level 三层对称收官）**：库层 `McpManager.setLogLevel`（v0.6.83）+ CLI 单次命令 `flare log-level`（v0.6.83）已有，唯独交互模式与宿主协议面缺失——本版补齐：交互会话内直接设日志级别（无需退出到 shell；8 级枚举与 CLI 同款校验，非法级别提示可选值；stdio/HTTP transport 通用）；宿主经协议 `{ type: "mcp_log_level", server, level }` 程序化控制日志推送级别（响应 `{ type: "mcp_log_level", server, level }`，缺 server/缺 level/非法 level 回 error 含提示；未连接/未配置服务器回 error 不崩）；`/help` 与命令表同步
