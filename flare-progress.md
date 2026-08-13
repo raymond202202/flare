@@ -1,5 +1,7 @@
 # Flare 引擎迭代进度（夜间调研 agent）
 
+> **【✅ 第一百三十一轮小步】P180 (纯文档) USAGE.md /usage 行同步缓存写入**：
+> commit `a7117a5`，纯文档零 src 改动、tsc 0 错误、1174/1174 全绿、无版本变化（详情见下方 P180 条目）。
 > **【✅ 第一百三十一轮小步】P179 (v0.6.132) flare cache-check 文本模式每轮补缓存写入观测已装机**：
 > commit `5bae532`，1174/1174 全绿、tsc 0 错误、零 agent.ts 改动（详情见下方 P179 条目）。
 > **【✅ 第一百三十一轮小步】P178 (纯文档) host-protocol.md 同步 usage perModel cacheWriteTokens 字段**：
@@ -214,6 +216,23 @@
 >    terminal 退出码（v0.6.33）✓ / CLI 归档命令（v0.6.32）✓ / 归档 API（v0.6.31）✓ /
 >    工具输出治理（v0.6.30）✓ / prompt caching P0（v0.6.29）✓ / MCP 动态资源提供器（v0.6.28）✓ /
 >    confirm 描述（v0.6.27）✓
+
+---
+
+### 2026-08-14 第一百三十一轮小步（P180，纯文档）——USAGE.md /usage 行同步缓存写入
+
+> **P180 完成**（commit `a7117a5`）：USAGE.md「交互模式命令」表的 `/usage` 行同步缓存写入说明——
+> P177（v0.6.131 usage 缓存写入）与 P179（v0.6.132 cache-check 缓存写入）装机后，README 命令表与
+> Changelog 均已同步，唯独 USAGE.md 的 /usage 行仍停留在旧文案「含缓存命中/节省」（P171 文档对称先例）。
+> - **改动**（USAGE.md 1 行）：`/usage` 行改为「查看 token 用量（含缓存命中/写入/节省，v0.6.131 起缓存写入）」
+> - **验证**：tsc 0 错误；全量 1174/1174 全绿（76 文件；首跑即绿）；纯文档零 src 改动、零 agent.ts 改动；
+>   零 push、零敏感信息；无版本变化（0.6.132 不变，dist 未动，无需自安装）
+> - **flare 验收通过**：独立运行 tsc 0 错误 + 全量 76 文件/1174 测试全绿；逐项核对（llm.ts cache_write_tokens
+>   定义、store.ts 落库、cli/index.ts 命中/写入/节省对称展示、package.json 0.6.132 ≥ 0.6.131 版本标注成立、
+>   src/cli/index.ts 多处「与命中行对称」注释）全部与文档一致；纯文档无安全风险；结论「✅ PASS」
+> - **下一步候选**：① 【P1】分层上下文（Layer 1 异步滚动摘要——需改 Agent.run 核心循环，违反铁律跳过并记录理由）；
+>   ② 其他安全的外围增强（MCP 工具集完善、测试稳定性等）——缓存观测面（命中/写入/节省）在
+>   usage/cache-check/--json/server 协议/README/USAGE/host-protocol 全口径闭环，prompt caching 基建观测面收官
 
 ---
 
