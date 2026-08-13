@@ -544,6 +544,77 @@ describe('flare host server 协议', () => {
     expect(Array.isArray(ok[0].memories)).toBe(true)
   }, 30000)
 
+  it('find_similar_memories → 检出重复/近似记忆对（similar_memories 响应，v0.6.122）', async () => {
+    // seed 两条近似记忆 + 一条无关记忆（内容带独特前缀，避免与库中其他测试记忆混淆）
+    const A = 'P161检测 用户偏好浅色主题'
+    const B = 'P161检测 用户偏好浅色主题，还喜欢极简风'
+    const C = 'P161检测 香蕉营养价值很高'
+    await request({ type: 'remember', content: A }, { expect: ['ok'] })
+    await request({ type: 'remember', content: B }, { expect: ['ok'] })
+    await request({ type: 'remember', content: C }, { expect: ['ok'] })
+
+    const msgs = await request({ type: 'find_similar_memories' }, { expect: ['similar_memories'] })
+    const resp = msgs[0]
+    expect(resp.type).toBe('similar_memories')
+    expect(resp.threshold).toBe(0.4)
+    expect(Array.isArray(resp.pairs)).toBe(true)
+    // 近似对（超集模式 ≥ 0.4）被检出
+    const pair = resp.pairs.find((p: any) => p.contentA === A && p.contentB === B)
+    expect(pair).toBeTruthy()
+    expect(pair.similarity).toBeGreaterThanOrEqual(0.4)
+    expect(pair.similarity).toBeLessThan(1)
+    // 无关记忆不参与相似对
+    expect(resp.pairs.some((p: any) => p.contentA === C || p.contentB === C)).toBe(false)
+    // idA < idB 且降序
+    for (const p of resp.pairs) {
+      expect(p.idA).toBeLessThan(p.idB)
+      expect(p).toHaveProperty('contentA')
+      expect(p).toHaveProperty('contentB')
+      expect(p).toHaveProperty('similarity')
+    }
+    for (let i = 1; i < resp.pairs.length; i++) {
+      expect(resp.pairs[i - 1].similarity).toBeGreaterThanOrEqual(resp.pairs[i].similarity)
+    }
+  }, 30000)
+
+  it('find_similar_memories threshold/limit 参数（调阈值过滤 + 限量）', async () => {
+    // 独特前缀内容：库中可能已有其他测试记忆（共享进程），断言只针对本次 seed
+    const A = 'P161阈值 用户偏好浅色主题'
+    const B = 'P161阈值 用户偏好浅色主题，还喜欢极简风'
+    await request({ type: 'remember', content: A }, { expect: ['ok'] })
+    await request({ type: 'remember', content: B }, { expect: ['ok'] })
+    // threshold 0.9：近似对 < 0.9 → 本次 seed 的对不出现（仅完全重复会命中）
+    const high = await request({ type: 'find_similar_memories', threshold: 0.9 }, { expect: ['similar_memories'] })
+    expect(high[0].threshold).toBe(0.9)
+    expect(high[0].pairs.some((p: any) => p.contentA === A || p.contentB === A)).toBe(false)
+    // limit 1：返回对数量上限 1
+    const limited = await request({ type: 'find_similar_memories', limit: 1 }, { expect: ['similar_memories'] })
+    expect(limited[0].pairs.length).toBeLessThanOrEqual(1)
+  }, 30000)
+
+  it('find_similar_memories 纯只读（不删除任何记忆）', async () => {
+    // 请求后记忆总数不变：检测面只读不清理（宿主自行决定 delete_memory）
+    const before = await request({ type: 'get_memories', limit: 100 }, { expect: ['memories'] })
+    const beforeCount = before[0].memories.length
+    const msgs = await request({ type: 'find_similar_memories' }, { expect: ['similar_memories'] })
+    expect(msgs[0].type).toBe('similar_memories')
+    const after = await request({ type: 'get_memories', limit: 100 }, { expect: ['memories'] })
+    expect(after[0].memories.length).toBe(beforeCount)
+  }, 30000)
+
+  it('find_similar_memories 参数校验：threshold 非法（-1/1.5/abc）与 limit 非法（0/101/abc）回 error', async () => {
+    for (const bad of [-1, 1.5, 'abc']) {
+      const msgs = await request({ type: 'find_similar_memories', threshold: bad }, { expect: ['error'] })
+      expect(msgs[0].type).toBe('error')
+      expect(msgs[0].message).toContain('threshold 必须是 0~1 的数字')
+    }
+    for (const bad of [0, 101, 'abc']) {
+      const msgs = await request({ type: 'find_similar_memories', limit: bad }, { expect: ['error'] })
+      expect(msgs[0].type).toBe('error')
+      expect(msgs[0].message).toContain('limit 必须是 1~100 的整数')
+    }
+  }, 30000)
+
   it('mcp_status（无 --mcp）→ 空列表（v0.5.5）', async () => {
     const msgs = await request({ type: 'mcp_status' }, { expect: ['mcp_status'] })
     expect(Array.isArray(msgs[0].servers)).toBe(true)

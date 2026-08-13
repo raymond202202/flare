@@ -929,6 +929,36 @@ export function startHostServer(opts: HostServerOptions) {
           reply({ type: 'memories', memories })
           break
         }
+        case 'find_similar_memories': {
+          // 宿主检测重复/近似记忆（v0.6.122，记忆去重检测面协议口；与 store.findSimilarMemories
+          // 同源，只读不生成不删除——宿主据此发现重复后自行决定是否 delete_memory 清理）
+          // threshold：可选 0~1 相似度阈值（默认 0.4，与 CLI memories --similar 同口径）
+          // limit：可选 1~100（默认 20，返回相似对数量上限）
+          if (req.threshold !== undefined && req.threshold !== null) {
+            const t = Number(req.threshold)
+            if (!Number.isFinite(t) || t < 0 || t > 1) {
+              reply({ type: 'error', message: 'find_similar_memories 的 threshold 必须是 0~1 的数字（相似度阈值）' })
+              break
+            }
+          }
+          if (req.limit !== undefined && req.limit !== null) {
+            const n = Number(req.limit)
+            if (!Number.isInteger(n) || n < 1 || n > 100) {
+              reply({ type: 'error', message: 'find_similar_memories 的 limit 必须是 1~100 的整数（返回相似对数量上限）' })
+              break
+            }
+          }
+          const agent = getAgent(String(req.sessionId || 'default'))
+          const store = (agent as any).store
+          const pairs = (typeof store?.findSimilarMemories === 'function')
+            ? store.findSimilarMemories({
+                threshold: req.threshold === undefined || req.threshold === null ? undefined : Number(req.threshold),
+                limit: req.limit === undefined || req.limit === null ? undefined : Number(req.limit),
+              })
+            : []
+          reply({ type: 'similar_memories', threshold: req.threshold === undefined || req.threshold === null ? 0.4 : Number(req.threshold), pairs })
+          break
+        }
         case 'delete_memory': {
           // 宿主删除记忆：id → 删单条；content → 按关键词批量删（隐私管理）
           const agent = getAgent(String(req.sessionId || 'default'))
