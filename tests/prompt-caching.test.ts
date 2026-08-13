@@ -148,6 +148,24 @@ describe('CLI /usage 缓存显示（v0.6.29 P0）', () => {
     expect(out).toContain('$0.0001')
   })
 
+  it('有缓存写入 → 显示缓存写入行（v0.6.131：文本模式补写入观测）', async () => {
+    store.logUsage('s1', 1000, 500, 'deepseek-chat', { cacheWriteTokens: 300 })
+    const lines: string[] = []
+    await handleSlashCommand('/usage', store, (s) => lines.push(s))
+    const out = lines.join('\n')
+    expect(out).toContain('缓存写入')
+    expect(out).toContain('300')
+  })
+
+  it('无缓存写入 → 不显示缓存写入行（v0.6.131：零写入不出现，向后兼容）', async () => {
+    store.logUsage('s1', 1000, 500, 'deepseek-chat')
+    const lines: string[] = []
+    await handleSlashCommand('/usage', store, (s) => lines.push(s))
+    const out = lines.join('\n')
+    expect(out).toContain('📊 Token 用量')
+    expect(out).not.toContain('缓存写入')
+  })
+
   it('无缓存命中 → 不显示缓存行（向后兼容，与旧版输出一致）', async () => {
     store.logUsage('s1', 100, 50, 'deepseek-chat')
     const lines: string[] = []
@@ -215,12 +233,12 @@ describe('CLI /usage 缓存显示（v0.6.29 P0）', () => {
     expect(out).not.toContain('估算成本')
   })
 
-  it('/help 同步 /usage 描述（v0.6.65：含缓存命中/节省说明）', async () => {
+  it('/help 同步 /usage 描述（v0.6.65/131：含缓存命中/写入/节省说明）', async () => {
     const lines: string[] = []
     await handleSlashCommand('/help', store, (s) => lines.push(s))
     const out = lines.join('\n')
     expect(out).toContain('/usage')
-    expect(out).toContain('缓存命中/节省')
+    expect(out).toContain('缓存命中/写入/节省')
   })
 
   it('无法定价模型命中 → 不显示缓存节省（本地模型不计入，向后兼容）', async () => {

@@ -651,7 +651,8 @@ export class MemoryStore {
               COUNT(*) as calls,
               COALESCE(SUM(prompt_tokens), 0) as promptTokens,
               COALESCE(SUM(completion_tokens), 0) as completionTokens,
-              COALESCE(SUM(cache_read_tokens), 0) as cacheReadTokens
+              COALESCE(SUM(cache_read_tokens), 0) as cacheReadTokens,
+              COALESCE(SUM(cache_write_tokens), 0) as cacheWriteTokens
        FROM usage_log
        GROUP BY model
        ORDER BY calls DESC`
@@ -662,6 +663,8 @@ export class MemoryStore {
       promptTokens: m.promptTokens,
       completionTokens: m.completionTokens,
       cacheReadTokens: m.cacheReadTokens,
+      // v0.6.131：perModel 分解补缓存写入（与汇总 cacheWriteTokens 对称——观测首轮写入成本）
+      cacheWriteTokens: m.cacheWriteTokens,
       totalTokens: m.promptTokens + m.completionTokens,
       // v0.6.65：本模型缓存节省（同口径单模型差值；无法定价 → 0）
       cacheSavedUsd: this.estimateCacheSavedUsd([m]),
@@ -699,7 +702,8 @@ export class MemoryStore {
               COUNT(*) as calls,
               COALESCE(SUM(prompt_tokens), 0) as promptTokens,
               COALESCE(SUM(completion_tokens), 0) as completionTokens,
-              COALESCE(SUM(cache_read_tokens), 0) as cacheReadTokens
+              COALESCE(SUM(cache_read_tokens), 0) as cacheReadTokens,
+              COALESCE(SUM(cache_write_tokens), 0) as cacheWriteTokens
        FROM usage_log
        WHERE session_id = ?
        GROUP BY model
@@ -711,6 +715,8 @@ export class MemoryStore {
       promptTokens: m.promptTokens,
       completionTokens: m.completionTokens,
       cacheReadTokens: m.cacheReadTokens,
+      // v0.6.131：本会话 perModel 分解补缓存写入（与 getUsageStats.perModel 对称）
+      cacheWriteTokens: m.cacheWriteTokens,
       totalTokens: m.promptTokens + m.completionTokens,
       // v0.6.65：本模型缓存节省（同口径单模型差值；无法定价 → 0）
       cacheSavedUsd: this.estimateCacheSavedUsd([m]),

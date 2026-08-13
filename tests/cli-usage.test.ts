@@ -53,6 +53,35 @@ describe('flare usage', () => {
     expect(stdout).toContain('100 tokens')
     expect(stdout).toContain('50%')
   }, 20000)
+  it('缓存写入显示（v0.6.131）：文本模式补缓存写入行', async () => {
+    store.logUsage('sess-a', 200, 50, 'deepseek-chat', { cacheWriteTokens: 150 })
+    const { code, stdout } = await runCli(['usage'])
+    expect(code).toBe(0)
+    expect(stdout).toContain('缓存写入')
+    expect(stdout).toContain('150 tokens')
+  }, 20000)
+  it('缓存写入不显示（v0.6.131）：无写入时不出缓存写入行', async () => {
+    store.logUsage('sess-a', 200, 50, 'deepseek-chat')
+    const { code, stdout } = await runCli(['usage'])
+    expect(code).toBe(0)
+    expect(stdout).not.toContain('缓存写入')
+  }, 20000)
+  it('缓存写入显示（v0.6.131）：--session 单会话分支同样补缓存写入行', async () => {
+    store.logUsage('sess-a', 200, 50, 'deepseek-chat', { cacheWriteTokens: 150 })
+    const { code, stdout } = await runCli(['usage', '--session', 'sess-a'])
+    expect(code).toBe(0)
+    expect(stdout).toContain('缓存写入')
+    expect(stdout).toContain('150 tokens')
+  }, 20000)
+  it('缓存写入显示（v0.6.131）：perModel 分解子行带缓存写入', async () => {
+    store.logUsage('sess-a', 200, 50, 'deepseek-chat', { cacheWriteTokens: 150 })
+    const { code, stdout } = await runCli(['usage'])
+    expect(code).toBe(0)
+    // 全局 perModel 子行：模型行下的缓存写入
+    expect(stdout).toContain('模型 deepseek-chat')
+    expect(stdout).toContain('缓存写入')
+    expect(stdout).toContain('150 tokens')
+  }, 20000)
   it('--session：只看单会话', async () => {
     store.logUsage('sess-a', 100, 50, 'deepseek-chat')
     store.logUsage('sess-b', 200, 80, 'deepseek-reasoner')
