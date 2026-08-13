@@ -1,6 +1,8 @@
 # Flare 引擎迭代进度（夜间调研 agent）
 
-> **【已发布】v0.6.116 装机完成（P148 cache-check --json 补命中率 hitRatio/runHitRatios，引导模式本机安装版，自循环）**
+> **【已发布】v0.6.117 装机完成（P150 MCP 工具桥非 text 内容项处理 mcpContentToText + structuredContent 兜底，引导模式本机安装版，自循环）**
+> **【✅ 第一百二十一轮完成】P150 (v0.6.117) MCP 工具桥非 text 内容项处理已装机**：
+> commit `5dac289`，1103/1103 全绿、tsc 0 错误、零 agent.ts 改动（详情见下方第一百二十一轮条目）。
 > **【✅ 第一百二十轮完成】P148 (v0.6.116) cache-check --json 命中率字段已装机**：
 > commit `f63d7a8`，1085/1085 全绿、tsc 0 错误、零 agent.ts 改动（详情见下方第一百二十轮条目）。
 > **【✅ 第一百二十轮小步】P149 (纯文档) docs/flare-token-architecture.md 同步 cache-check --json 字段**：
@@ -558,6 +560,70 @@
   典型滞后点——**功能落地后须检查三处（README 表 + Changelog + 对应 docs 专项）**，本小步补上
   第三处；② 纯文档小步节奏快、零风险，适合自循环窗口填充（本轮 P148 装机后 25 分钟内继续跑完）；
   ③ flare 验收对纯文档也保持逐条源码对照的高标准，文档编写时须先核对 src 注释的版本标注
+
+---
+
+### 2026-08-14 第一百二十一轮实施（v0.6.117）——P150 MCP 工具桥非 text 内容项处理（装机完成，自循环）
+
+> **P150 完成**（commit `5dac289`）：MCP 工具桥对 `tools/call` 响应**非 text 内容项的处理缺口补齐**——
+> `createMcpTools`（src/tools/mcp.ts）与 CLI `flare mcp call`（src/cli/index.ts）此前只提取
+> `content` 中 `type === 'text'` 项：MCP 工具返回 `image`/`audio`/`resource` 等非 text 内容时被
+> **静默丢弃**（AI 只看到「无文本输出」），`structuredContent`（MCP 2025-06-18 协议结构化返回，
+> 客户端/HTTP 客户端早已透传回 `McpCallResult`）也完全未处理——宿主/脚本经 MCP 工具拿图片
+> （如截图分析/图表生成工具）或结构化数据时信息丢失。纯外围增强（工具桥 + CLI + 库导出 +
+> 测试 + 文档），零 agent.ts 改动、零风险，落在「MCP 工具集完善」方向。
+> - **实现**（src/tools/mcp.ts +70/-10）：
+>   - 新增库导出纯函数 `mcpContentToText(content: McpContentItem[] | undefined, structuredContent?: unknown): string`：
+>     text 项 → 原文提取（多项按序 `\n` 拼接，与旧行为逐字一致）；image/audio 项 → 占位描述
+>     `[图片/音频 mimeType: X, 数据 N 字符]`（N = data 字符串长度，**绝不含 base64 明文**——防
+>     大体积/敏感二进制灌进上下文）；resource 项 → `[资源 uri: X mimeType: Y]` 占位（resource.text
+>     为字符串且长度 1~2000 时附上——embedded resource 的文本设计上给模型看；blob 绝不输出）；
+>     未知类型 → `[内容类型: X]` 占位（不再静默丢弃）；content 为空/全非文本且 structuredContent
+>     存在 → JSON.stringify 兜底（超 4000 字符截断 + 省略标记；循环引用 → 占位不抛）
+>   - `createMcpTools` execute 复用 `mcpContentToText(res.content, res.structuredContent)`（isError
+>     分支用提取文本作 error，与旧版一致）
+> - **CLI**（src/cli/index.ts -3 行）：`flare mcp call` 文本模式与 --json 的 `output` 字段统一复用
+>   `mcpContentToText`（替换内联 filter 提取）——与 createMcpTools **同口径**（同一纯函数），
+>   非 text 占位描述与 JSON 兜底对 CLI 同样生效
+> - **库导出**（src/index.ts +0/-0 改 1 行）：`export { createMcpTools, mcpContentToText }`
+> - **测试**：
+>   - 新建 tests/mcp-content-text.test.ts（15 用例）：纯函数 12——纯 text 逐字一致 / image 占位
+>     不含 base64 / audio 占位 / 缺 mimeType·data 非字符串容错 / resource 短 text 附上 + blob 不
+>     输出 / resource 超长 text 只占位 / 未知类型占位 / 混合顺序 / structuredContent JSON 兜底 /
+>     超长截断省略标记 / content 非数组空串 / 循环引用占位；createMcpTools 桥接 3——stub client
+>     混合内容 output 占位无明文 / 空 content + structuredContent JSON 兜底 / isError 用占位作 error
+>   - tests/mcp-cli-call.test.ts 追加 3 用例 + `runCliEnv` helper（MOCK_MODE 环境变量）：
+>     rich 模式（fixture 的 echo_text 返回 text+image+audio+resource+structuredContent）文本输出
+>     占位描述且**不含 base64 明文** / rich 模式 --json output 同口径 / struct-only 模式（add_numbers
+>     返回空 content + structuredContent）--json output JSON 兜底
+>   - tests/fixtures/mcp-mock-server.mjs 加 rich / struct-only 两种 MOCK_MODE（工具数不变仍 3 个，
+>     不影响现有工具数断言）
+> - README 命令表 mcp call 行补非 text 处理 + Changelog v0.6.117 条目 + docs/mcp.md 工具桥章节
+>   + package.json 0.6.116 → 0.6.117
+> - **1103/1103 全绿**（新增 18 用例，73 文件；基线 1085 + 15 纯函数 + 3 CLI e2e；全量首跑即绿
+>   无偶发），tsc 0 错误，**零 agent.ts 改动**，零 push、零敏感信息（diff 敏感扫描仅命中 README
+>   既有 `hasApiKey` 字段名非密钥）；已 commit `5dac289`（9 文件 +324/-13）
+> - **下一步候选**：① 【P1】分层上下文（Layer 1 异步滚动摘要——需评估 run 循环外异步，涉及
+>   agent.ts trimContext 异步化，铁律暂缓）；② 其他安全的外围增强（MCP 工具集完善——本版
+>   mcpContentToText 非 text 处理是 MCP 消费面的一环；测试稳定性继续清扫等）
+> - **flare 验收结论：✅ 通过**——flare 独立运行 git log -1/git show 审查完整 diff，逐项核对
+>   mcpContentToText 六类行为（text/image/audio/resource/未知/structuredContent 兜底）、
+>   createMcpTools 与 CLI 同口径复用、库导出、版本号/README/docs，独立跑 npx tsc 0 错误 +
+>   PATH=/usr/bin:$PATH npx vitest run 全量 73 文件 1103/1103 全绿（含 mcp-content-text 15 +
+>   mcp-cli-call 46），专项汇报 61/61、全量补充验证 73/1103 均通过；安全核对 base64 明文零泄漏、
+>   纯 text 与旧版逐字一致；全程零修改零 commit，输出无任何密钥明文；结论与实况完全一致
+>   （验收指令经文件读入规避 confusable 误报，P1353 先例）
+
+**引导过程记录（引导 agent 视角，实现+验收直接完成）**：
+- 本轮实现由引导 agent 直接完成（「调研→执行→flare 验收」新范式，验收环节交给 flare）
+- flare 验收延续高水准：第一轮审查 diff 逐项核对实现规格 + 专项测试，第二轮补充独立全量
+  vitest（73 文件 1103/1103）确认——汇报与实况完全一致
+- **教训**：① MCP 消费面的非 text 内容（image/audio/resource/structuredContent）是典型盲区——
+  客户端/HTTP 客户端早已把 structuredContent 透传进 McpCallResult，但桥接与 CLI 只提取 text，
+  结构化返回与图片类工具输出静默丢失；纯函数 mcpContentToText 让 createMcpTools 与 CLI 同口径；
+  ② 安全设计要点：二进制（image/audio 的 data、resource 的 blob）只输出占位描述不含 base64
+  明文——既防上下文 token 膨胀也防敏感数据回显；③ rich/struct-only 用 MOCK_MODE 环境变量控制
+  fixture 返回，不动工具列表（工具数断言零影响），是扩展 mock 服务器行为的安全模式
 
 ---
 
