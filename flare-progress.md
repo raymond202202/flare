@@ -1,5 +1,7 @@
 # Flare 引擎迭代进度（夜间调研 agent）
 
+> **【✅ 第一百二十三轮小步】P153 (纯文档) docs/mcp.md 非 text 内容处理章节同步四层同口径收官**：
+> commit `6856f27`，纯文档零 src 改动、tsc 0 错误、1108/1108 全绿、无版本变化（详情见下方 P153 条目）。
 > **【已发布】v0.6.119 装机完成（P152 交互式 /mcp call 统一复用 mcpContentToText 第四层收官，引导模式本机安装版，自循环）**
 > **【✅ 第一百二十三轮完成】P152 (v0.6.119) 交互式 /mcp call 统一复用 mcpContentToText 已装机**：
 > commit `8618c70`，1108/1108 全绿、tsc 0 错误、零 agent.ts 改动（详情见下方第一百二十三轮条目）。
@@ -630,6 +632,43 @@
   ② 安全设计要点：二进制（image/audio 的 data、resource 的 blob）只输出占位描述不含 base64
   明文——既防上下文 token 膨胀也防敏感数据回显；③ rich/struct-only 用 MOCK_MODE 环境变量控制
   fixture 返回，不动工具列表（工具数断言零影响），是扩展 mock 服务器行为的安全模式
+
+---
+
+### 2026-08-14 第一百二十三轮小步（P153 纯文档）——docs/mcp.md 非 text 内容处理章节同步四层同口径（装机完成，自循环）
+
+> **P153 完成**（commit `6856f27`）：docs/mcp.md「非 text 内容项处理」章节（位于 McpManager 接入
+> 章节内，原描述停在 v0.6.117 的「createMcpTools 桥接输出与 CLI mcp call 两层」）补齐 P151/P152
+> 两连新增的 **server 协议 mcp_call（v0.6.118）与交互命令 /mcp call（v0.6.119）**——四层消费面
+> 同口径收官，README Changelog/交互命令章节已同步、docs 专项未跟上（文档不对称，P146/P147/P149
+> 同源问题）。纯文档增强，零 src 改动、零风险（v0.6.74/0.6.77/0.6.82/0.6.116 纯文档先例）。
+> - **实现**（docs/mcp.md +8/-5）：「非 text 内容项处理」标题改「v0.6.117，四层同口径收官
+>   v0.6.119」，新增四消费面清单行（createMcpTools 工具桥 v0.6.117 / CLI 单次命令 flare mcp call
+>   v0.6.117 / server 协议 mcp_call v0.6.118 / 交互命令 /mcp call v0.6.119），行为描述逐项保留
+>   （text 原文拼接、image/audio 占位不含 base64、resource 短 text 附内容 blob 绝不输出、未知类型
+>   占位、structuredContent JSON 兜底 4000 字符截断），末尾补「McpManager.callTool 直接透传原始
+>   McpCallResult 无需提取」
+> - **验证**：tsc 0 错误；**零 src 改动**（git diff 仅 docs/mcp.md 1 文件）；1108/1108 全绿
+>   （73 文件）；纯文档无版本变化（0.6.119 不变，dist 未动，无需自安装）；零 push、零敏感信息
+>   （Bearer <token> 为既有示例占位符非密钥）
+> - **flare 验收结论：✅ 通过**——flare 独立运行 git show 审查 diff + npx tsc 0 错误 +
+>   PATH=/usr/bin:$PATH npx vitest run 全量 73 文件 1108/1108 全绿；**逐条对照源码**验证四个消费面
+>   版本标注（tools/mcp.ts:106 / cli/index.ts:1720 / server.ts:1192 / cli/index.ts:946）与
+>   mcpContentToText 行为描述（src/tools/mcp.ts:47-89 逐一吻合，STRUCTURED_MAX_CHARS=4000 截断），
+>   McpManager.callTool 透传核对（manager.ts:178-183）；未改 agent.ts、未 push、无密钥明文；
+>   结论与实况完全一致（验收指令经文件读入规避 confusable 误报）
+> - **下一步候选**：① 【P1】分层上下文（Layer 1 异步滚动摘要——需评估 run 循环外异步，涉及
+>   agent.ts trimContext 异步化，铁律暂缓）；② 其他安全的外围增强（MCP 消费面非 text 处理已
+>   四层闭环 + docs 专项同步收官；测试稳定性继续清扫、其他 docs 专项核对等）
+
+**引导过程记录（引导 agent 视角，实现+验收直接完成）**：
+- 本轮实现由引导 agent 直接完成（纯文档，写 docs/mcp.md 非 text 处理章节四层清单）
+- flare 验收延续高水准：四消费面版本标注逐项对照源码行号 + 行为描述与 mcpContentToText 实现
+  逐一吻合，一次通过
+- **教训**：① P151/P152 落地后 docs/mcp.md 专项是典型滞后点（README/交互章节已同步、专项未
+  跟上）——「功能落地后检查三处（README 表 + Changelog + 对应 docs 专项）」铁律延续；② 版本
+  标注（v0.6.117/118/119 三个版本分别落在四个消费面）是纯文档验收的核对重点，flare 逐项对照
+  源码行号验证；③ 纯文档小步连续多轮节奏快、零风险，适合自循环窗口填充
 
 ---
 
