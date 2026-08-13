@@ -1956,12 +1956,13 @@ export function main() {
 
   mcpCmd
     .command('complete <server> <prompt> <argument> [value]')
-    .description('请求 MCP 服务器提示词参数补全候选（completion/complete，v0.6.60 与 /mcp complete 交互命令/mcp_complete 协议对称）')
+    .description('请求 MCP 服务器提示词参数补全候选（completion/complete，v0.6.60 与 /mcp complete 交互命令/mcp_complete 协议对称；--json 结构化输出 v0.6.114）')
     .option('--url <url>', '直接连 HTTP transport 端点（如 http://127.0.0.1:8931/mcp），跳过配置查找')
     .option('--config <path>', 'MCP 配置文件路径（默认 ~/.flare/mcp.json）')
     .option('--timeout <ms>', '单请求超时毫秒（默认 15000）')
     .option('--header <kv>', '附加请求头 key:value（可重复；HTTP transport 鉴权，v0.6.68）', collectHeader, [])
-    .action(async (server: string, prompt: string, argument: string, value: string | undefined, options: { url?: string; config?: string; timeout?: string; header?: string[] }) => {
+    .option('-j, --json', '以 JSON 结构化输出（与 server mcp_complete 回包同构，v0.6.114）')
+    .action(async (server: string, prompt: string, argument: string, value: string | undefined, options: { url?: string; config?: string; timeout?: string; header?: string[]; json?: boolean }) => {
       try {
         const { MCPClient, MCPHttpClient, McpManager } = await import('../index.js')
         const timeoutMs = options.timeout ? Number(options.timeout) : 15000
@@ -1988,6 +1989,19 @@ export function main() {
         await client.initialize()
         const result = await client.completePrompt(prompt, argument, value || '')
         client.close()
+        // --json：与 server mcp_complete 回包同构（不带 type 包装）——空候选也输出合法 JSON exit 0
+        if (options.json) {
+          console.log(JSON.stringify({
+            server,
+            prompt,
+            argument,
+            ...(value ? { value } : {}),
+            values: result.values,
+            ...(result.total !== undefined ? { total: result.total } : {}),
+            ...(result.hasMore !== undefined ? { hasMore: result.hasMore } : {}),
+          }))
+          return
+        }
         if (!Array.isArray(result.values) || result.values.length === 0) {
           console.log(chalk.gray(`提示词 ${prompt} 参数 ${argument} 无补全候选（${label}）`))
           return
