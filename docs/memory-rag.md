@@ -151,8 +151,9 @@ const pairs = store.findSimilarMemories({ threshold: 0.4, limit: 20 })
 - **CLI**：`flare memories --similar [--threshold <0~1>] [--json]`——文本模式显示
   `#idA ↔ #idB 相似度 X.XX` + 内容截断；`--json` 输出 `{ threshold, pairs }` 供宿主/脚本
   程序化消费；非法阈值 exit 1、无相似/空库 exit 0
-- **交互命令**：`/memory similar`（v0.6.123，`/memory --similar` 等价）——交互模式检测近似
-  记忆对（同默认阈值 0.4），显示 id 对 + 相似度 + 内容截断 + `/forget` 删除提示
+- **交互命令**：`/memory similar [阈值]`（v0.6.123 默认阈值 0.4；v0.6.125 起可传 0~1 阈值如
+  `/memory similar 0.6`，`/memory --similar [阈值]` 等价）——交互模式检测近似记忆对，显示
+  id 对 + 相似度 + 内容截断 + `/forget` 删除提示；阈值非法（非数字/越界 0~1）输出用法提示不崩溃
 - **server 协议**：`find_similar_memories` 请求（threshold 0~1 默认 0.4 / limit 1~100 默认 20，
   非法回 error）→ `similar_memories` 响应（pairs 同上）——宿主面板可程序化发现重复记忆后
   自行决定是否 `delete_memory` 清理
