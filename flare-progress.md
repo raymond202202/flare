@@ -1,6 +1,8 @@
 # Flare 引擎迭代进度（夜间调研 agent）
 
-> **【已发布】v0.6.114 装机完成（P144 mcp complete --json 结构化输出，引导模式本机安装版，自循环）**
+> **【已发布】v0.6.115 装机完成（P145 mcp call --json 结构化输出，引导模式本机安装版，自循环）**
+> **【✅ 第一百一十七轮完成】P145 (v0.6.115) mcp call --json 已装机**：
+> commit `13998e8`，1082/1082 全绿、tsc 0 错误、零 agent.ts 改动（详情见下方第一百一十七轮条目）。
 > **【✅ 第一百一十六轮完成】P144 (v0.6.114) mcp complete --json 已装机**：
 > commit `93d52c8`，1078/1078 全绿、tsc 0 错误、零 agent.ts 改动（详情见下方第一百一十六轮条目）。
 > **【✅ 第一百一十五轮完成】P143 (v0.6.113) mcp resources/prompts/tools --json 已装机**：
@@ -462,6 +464,51 @@
   ③ 引导 agent 补测试时自身也会踩子串误匹配这类测试 bug，定位要快（首跑失败先看 Received 实值再推断）；
   ④ 写操作命令（会删 store 消息）的端到端持久验证（CLI 进程退出后 store 核对）是验收关键，不可只看 CLI
   输出
+
+---
+
+### 2026-08-13 第一百一十七轮实施（v0.6.115）——P145 flare mcp call --json 结构化输出（装机完成，自循环）
+
+> **P145 完成**（commit `13998e8`）：`flare mcp call <服务器> <工具> [JSON参数]` 增加 **--json 结构化
+> 输出**——与 server 协议 **mcp_call 回包完全同构**（`{ server, tool, success, error?, output }`，
+> 不带 type 包装），宿主/脚本可程序化消费外部 MCP 服务器**工具执行结果**；这是 P143/P144 之后外部 MCP
+> 面 --json 系列的**执行类收官**（resources/prompts/tools/complete 是查看/补全类，call 是唯一执行类，
+> 至此外部 MCP 面全量程序化可消费）。纯只读增强（执行语义不变），风险极低，零 agent.ts 改动。
+> - **实现**（src/cli/index.ts mcp call 命令块 +16/-1）：新增 `.option('-j, --json', ...)`；action
+>   签名 options 增加 `json?: boolean`；在 res 获取后、文本输出前插入 JSON 分支——输出结构逐字段与
+>   server mcp_call 回包同构（server/tool 原样、success 用 `!res.isError`、error 仅在工具级失败时携带
+>   `...(res.isError ? { error: text || \`MCP 工具 ${tool} 执行失败\` } : {})`、output 为 text 原文）；
+>   **失败语义**：工具级失败（isError）输出 `{ success:false, error }` 合法 JSON 且 **exit 1**（与文本
+>   模式 exit 1 一致，脚本可同时按 stdout JSON 与退出码判断）；无文本输出 → `{ output: "" }`
+>   success:true exit 0（不打印「无文本输出」兜底，脚本可解析）；只打印 JSON 不混彩色；文本模式与
+>   退出码语义一字不改；顺带把 --header help 示例 `Bearer <token>` 改为 `Bearer ***`（安全改进，flare
+>   验收特别指出）
+> - **测试**（tests/mcp-cli-call.test.ts call describe 追加 4 用例，spawn dist CLI + 真实 stdio mock
+>   fixture / in-process HTTP 服务器，现有用例零删改）：--json 输出合法 JSON + 与 server 回包同构
+>   （add_numbers success:true output:'5' 且无 error 字段，stderr 空无 ANSI）/ 无文本输出（echo 不传参）
+>   → `{ output: "" }` success:true exit 0 不打印「无文本输出」/ 工具级失败（fail_tool isError）→
+>   `{ success:false, error:'出错了' }` 合法 JSON + **exit 1** / -j 短选项等价 + 文本模式回归（裸输出
+>   '3' 且非 JSON 对象）
+> - README 命令表 mcp call 行补 --json 能力说明 + Changelog v0.6.115 条目 + package.json 0.6.114 →
+>   0.6.115 + flare-progress 摘要/下一步候选更新
+> - **1082/1082 全绿**（新增 4 用例，72 文件；全量首跑即绿无偶发），tsc 0 错误，**零 agent.ts 改动**，
+>   零 push、零敏感信息（diff 敏感扫描 0 命中）；装机版冒烟 server stdin ping → pong + `mcp call
+>   mock add_numbers --json`（success:true/output:'5'）/ fail_tool --json（success:false exit 1）实测通过
+> - **下一步候选**：① 【P1】分层上下文（Layer 1 异步滚动摘要——需评估 run 循环外异步，涉及
+>   agent.ts trimContext 异步化，铁律暂缓）；② 其他安全的外围增强（MCP 工具集完善、测试稳定性继续清扫等）
+
+**引导过程记录（引导 agent 视角，实现+测试+收尾直接完成）**：
+- 本轮实现由引导 agent 直接完成（「调研→执行→flare 验收」新范式，验收环节交给 flare）
+- **flare 验收结论：✅ 通过**——flare 独立运行 git log -1/git show 审查 diff、npx tsc 0 错误、
+  PATH=/usr/bin:$PATH npx vitest run 72 文件 1082/1082 全绿，逐项核对 --json 与 server mcp_call 回包
+  同构（对照 src/server.ts:1192-1199 源码）、工具级失败 success:false + error + exit 1、无文本输出
+  output 空串、-j 短选项、文本零回归、无敏感信息（并指出 --header help 示例改 Bearer *** 是安全
+  改进），结论与实况完全一致（验收指令经文件读入规避 confusable 误报，P1353 先例）
+- **教训**：① 外部 MCP 面 --json 系列三连收官（P143 查看类 → P144 补全类 → P145 执行类），
+  每步 tsc 0 + 全量绿 + flare 验收通过，节奏稳定；② 测试断言注意裸数字输出（'3'）本身是合法 JSON
+  数字，文本模式回归断言改为「不以 { 开头」而非 JSON.parse 抛错（首版断言踩坑后修正）；③ 失败语义
+  设计：工具级失败 --json 输出合法 JSON 且保持 exit 1（与文本模式一致），是脚本消费与既有语义的
+  最佳平衡；④ flare 验收会对照 server 源码逐字段核对同构，实现时须严格对齐 server 回包字段
 
 ---
 
