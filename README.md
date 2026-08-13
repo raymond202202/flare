@@ -198,6 +198,13 @@ cp .env.example ~/.flare/.env
 | `/mcp` | 查看 MCP 服务器状态（`~/.flare/mcp.json` 配置，v0.5.5） |
 | `/mcp connect <name>` | 连接 MCP 服务器并注入其工具（v0.5.5） |
 | `/mcp disconnect <name>` | 断开 MCP 服务器（v0.5.5） |
+| `/mcp resources [name]` | 查看已桥接资源/模板（v0.6.26，外部 MCP 服务器暴露的资源） |
+| `/mcp prompts [name]` | 查看已桥接提示词（v0.6.36，外部 MCP 服务器暴露的提示词） |
+| `/mcp tools [name]` | 查看已桥接工具（v0.6.58，外部 MCP 服务器暴露的工具名/描述） |
+| `/mcp read <server> <uri>` | 读取外部 MCP 资源内容（v0.6.39，resources/read 代理） |
+| `/mcp render <server> <prompt> [k=v ...]` | 渲染外部 MCP 提示词（v0.6.39，prompts/get 代理） |
+| `/mcp complete <server> <prompt> <argument> [value]` | 提示词参数补全候选（v0.6.57，completion/complete 代理） |
+| `/mcp call <server> <tool> [JSON参数]` | 调用外部 MCP 工具（v0.6.41，tools/call 代理） |
 | `/allow` | 查看已放行的确认工具（标注范围：本会话/跨会话持久化，v0.6.7/v0.6.10） |
 | `/allow add <工具名> [session\|always]` | 显式放行（默认本会话；always 跨会话持久化，v0.6.10） |
 | `/allow revoke <工具名>` | 撤销放行（恢复每次确认，v0.6.7） |
@@ -209,6 +216,10 @@ cp .env.example ~/.flare/.env
 | `/context` | 查看当前会话上下文占用（消息数/估算 tokens，v0.5.6；超预算提示 /trim，v0.6.46） |
 | `/trim [预算tokens]` | 智能裁剪上下文（v0.6.46：system 保底 + 最近消息 + 配对保护；缺省用配置预算） |
 | `/sessions` | 查看最近会话；带关键词搜索会话（如: `/sessions 缓存`，按标题/消息内容，v0.6.44） |
+| `/search <关键词>` | 跨会话搜索历史对话（按标题/消息内容，v0.6.24） |
+| `/archived` | 查看归档会话（v0.6.32，`/archive` 归档的会话） |
+| `/archive [会话ID]` | 归档会话（缺省当前会话；数据保留，`/restore` 可恢复） |
+| `/restore <会话ID>` | 恢复归档会话 |
 | `/clear` | 清屏 |
 | `/exit` | 退出 |
 
