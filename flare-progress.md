@@ -1,6 +1,9 @@
 # Flare 引擎迭代进度（夜间调研 agent）
 
 > **【已发布】v0.6.112 装机完成（P142 models --json 结构化输出，引导模式本机安装版，自循环）**
+> **【✅ 第一百一十四轮完成】测试稳定性修复**：commit `8818cc6`，消除 P142 装机时记录的
+> server-default-params chat 偶发超时（5000ms）——it() 补 45000ms vitest 超时与 request 助手对齐，
+> 纯测试层零 src/agent.ts 改动，1069/1069 全绿、tsc 0 错误（无版本变化，P123 先例）。
 > 上一版 v0.6.111 装机完成（P141 search/archived-sessions --json 结构化输出，引导模式本机安装版，自循环）
 > 再上一版 v0.6.110 装机完成（P140 search-messages --json 结构化输出，引导模式本机安装版，自循环）
 
@@ -454,6 +457,26 @@
   ③ 引导 agent 补测试时自身也会踩子串误匹配这类测试 bug，定位要快（首跑失败先看 Received 实值再推断）；
   ④ 写操作命令（会删 store 消息）的端到端持久验证（CLI 进程退出后 store 核对）是验收关键，不可只看 CLI
   输出
+
+---
+
+### 2026-08-13 第一百一十四轮实施——测试稳定性修复（server-default-params chat 偶发超时，装机版同源）
+
+> **完成**（commit `8818cc6`）：修复 `tests/server-default-params.test.ts` 3 个 chat 用例的
+> **it() 缺 vitest 超时参数**问题——补 `, 45000`，与 request() 助手默认 45s 等待对齐。
+> - **背景（真实问题，多轮记录）**：P142 装机日志明确记录『全量首跑 1 偶发超时——
+>   server-default-params chat 真实 LLM 调用 5000ms 超时，与本次改动无关，重跑 4/4 即绿』；
+>   更早 P123（server.test.ts tools/chat 偶发超时）与第九十四轮亦有同类偶发记录。
+> - **根因**：子进程 config.ts dotenv 会重新加载 ~/.flare/.env（含真实 key）→ chat 走远端 API，
+>   网络慢时响应超 5s；而该文件 3 个 chat it() 块未设 vitest 超时（默认 5s），request() 助手
+>   虽默认 45s，但 vitest 5s 先杀用例（报错恰为 5000ms 超时）。同族文件 server-context-trim/
+>   server-tool-output-policy 的 chat 用例均已带 45000，唯独此文件遗漏；且共享同一子进程时，
+>   慢 chat 会排队阻塞后续用例，故 3 个 chat 用例（含 1 个校验用例）统一补齐。
+> - **验证**：tsc 0 错误；**1069/1069 全绿**（72 文件，本文件 4/4 通过）；装机版冒烟
+>   server stdin ping → pong（FLARE_HOME 临时目录，真实 ~/.flare 零污染）。
+> - **零 src 改动**（纯测试层，P123 先例，无版本变化/无 Changelog/README 条目）。
+> - **下一步候选**：① 【P1】分层上下文（Layer 1 异步滚动摘要——需评估 run 循环外异步）；
+>   ② 其他安全的外围增强（MCP 工具集完善、测试稳定性继续清扫等）。
 
 ---
 
