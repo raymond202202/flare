@@ -2,7 +2,7 @@
 
 > **【已发布】v0.6.113 装机完成（P143 mcp resources/prompts/tools --json 结构化输出，引导模式本机安装版，自循环）**
 > **【✅ 第一百一十五轮完成】P143 (v0.6.113) mcp resources/prompts/tools --json 已装机**：
-> commit 待填，1074/1074 全绿、tsc 0 错误、零 agent.ts 改动（详情见下方第一百一十五轮条目）。
+> commit `9a261ee`，1074/1074 全绿、tsc 0 错误、零 agent.ts 改动（详情见下方第一百一十五轮条目）。
 > **【✅ 第一百一十四轮完成】测试稳定性修复**：commit `8818cc6`，消除 P142 装机时记录的
 > server-default-params chat 偶发超时（5000ms）——it() 补 45000ms vitest 超时与 request 助手对齐，
 > 纯测试层零 src/agent.ts 改动，1069/1069 全绿、tsc 0 错误（无版本变化，P123 先例）。
@@ -465,7 +465,7 @@
 
 ### 2026-08-13 第一百一十五轮实施（v0.6.113）——P143 flare mcp resources/prompts/tools --json 结构化输出（装机完成）
 
-> **P143 完成**（commit 见下）：外部 MCP 服务器查看类单次命令增加 **--json 结构化输出**——与 server 协议
+> **P143 完成**（commit `9a261ee`）：外部 MCP 服务器查看类单次命令增加 **--json 结构化输出**——与 server 协议
 > **mcp_resources / mcp_prompts / mcp_tools / mcp_read_resource / mcp_get_prompt 回包完全同构**（不带 type
 > 包装），宿主/脚本可程序化消费外部 MCP 服务器的资源/提示词/工具清单。这是 CLI 只读命令 --json 系列
 > （usage/messages/models/sessions/context-status/tools/config/version/ping/mcp status/cache-check/
