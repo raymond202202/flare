@@ -1,5 +1,7 @@
 # Flare 引擎迭代进度（夜间调研 agent）
 
+> **【✅ 第一百二十三轮小步】P155 (纯文档) memory-rag/multi-model 补 CLI 单次命令章节**：
+> commit `7a58413`，纯文档零 src 改动、tsc 0 错误、1108/1108 全绿、无版本变化（详情见下方 P155 条目）。
 > **【✅ 第一百二十三轮小步】P154 (纯文档) docs/confirmation.md 补 CLI 单次命令确认门管理章节**：
 > commit `5895179`，纯文档零 src 改动、tsc 0 错误、1108/1108 全绿、无版本变化（详情见下方 P154 条目）。
 > **【✅ 第一百二十三轮小步】P153 (纯文档) docs/mcp.md 非 text 内容处理章节同步四层同口径收官**：
@@ -634,6 +636,52 @@
   ② 安全设计要点：二进制（image/audio 的 data、resource 的 blob）只输出占位描述不含 base64
   明文——既防上下文 token 膨胀也防敏感数据回显；③ rich/struct-only 用 MOCK_MODE 环境变量控制
   fixture 返回，不动工具列表（工具数断言零影响），是扩展 mock 服务器行为的安全模式
+
+---
+
+### 2026-08-14 第一百二十三轮小步（P155 纯文档）——memory-rag/multi-model 补 CLI 单次命令章节（装机完成，自循环）
+
+> **P155 完成**（commit `7a58413`）：docs/memory-rag.md 与 docs/multi-model.md 两个专项文档的 CLI
+> 单次命令描述滞后——memory-rag 只有交互 `/forget`/`/memory`，缺 `flare memories`（v0.6.91）/
+> `flare remember`/`flare delete-memory`（v0.6.100）；multi-model 只有交互 `/model`，缺
+> `flare models`（v0.6.0 / v0.6.112 --json）——README 命令表/Changelog 已同步、docs 专项未跟上
+> （文档不对称，P146/P147/P149/P153/P154 同源问题）。纯文档增强，零 src 改动、零风险（纯文档先例）。
+> - **实现**（docs/memory-rag.md +24/-1、docs/multi-model.md +14/-2）：
+>   - memory-rag.md：记忆删除章节后新增「6. CLI 单次命令记忆管理」——`flare memories [<关键词>]`
+>     （v0.6.91 只读：无关键词列出 limit 默认 50 / ≥3 字 trigram FTS 短查询 LIKE 回退 / --kind 过滤 /
+>     --limit 1~100 非法 exit 1 / --json { memories } 与 server get_memories 回包同构 v0.6.109 /
+>     空库「暂无记忆」exit 0）；`flare remember <内容> [--kind]`（v0.6.100 写：默认 note / 空内容
+>     exit 1）；`flare delete-memory <id> | --content`（v0.6.100 写：id 正整数校验不存在 exit 1 /
+>     --content 批量幂等 exit 0 / id 优先）；附 6 行示例；原「6. 宿主协议」顺延为「7.」
+>   - multi-model.md：运行时切换章节后新增「3. CLI 单次命令查看（flare models）」——输出
+>     configured.main（端点/hasApiKey/provider）/ configured.vision（未配置 null）/ ollama 列表；
+>     Ollama 不可达 ok:false 不崩；--json { configured, ollama } 与 server models 回包同构 v0.6.112；
+>     纯只读不切换；原「3. 代码里指定」顺延为「4.」
+> - **验证**：tsc 0 错误；**零 src 改动**（git diff 仅 docs/memory-rag.md + docs/multi-model.md
+>   2 文件）；1108/1108 全绿（73 文件）；纯文档无版本变化（0.6.119 不变，dist 未动，无需自安装）；
+>   零 push、零敏感信息（hasApiKey 为字段名非密钥）
+> - **flare 验收结论：✅ 通过**——flare 独立运行 git show 审查 diff + npx tsc 0 错误 + 全量
+>   1108/1108 全绿；**逐条对照源码行号**验证两文档 14 项（memories 列出/搜索/--kind/--limit 非法
+>   exit 1/--json 同构/空库 exit 0、remember 默认 note 2753 行/空内容 exit 1 2749-2752、delete-memory
+>   id 校验 2771-2779/--content 幂等 2784-2787/id 优先 2769-2770、models --json 2100-2118/
+>   configured.main 2102-2109/vision null 2114/Ollama 降级 models.ts 47-62），并**实测编译产物**
+>   （flare memories 列出 10 条 / 搜索命中 / models 输出 deepseek-chat + qwen2.5vl:3b + Ollama 4 模型 /
+>   --limit 999 exit 1）；未改 agent.ts、未 push、无密钥明文；结论与实况完全一致（验收指令经
+>   文件读入规避 confusable 误报）
+> - **下一步候选**：① 【P1】分层上下文（Layer 1 异步滚动摘要——需评估 run 循环外异步，涉及
+>   agent.ts trimContext 异步化，铁律暂缓）；② 其他安全的外围增强（docs 专项逐一对齐中：
+>   memory-rag/multi-model 已补，剩余 memory-rag「后续候选」中记忆去重/摘要等为功能候选；
+>   测试稳定性继续清扫等）
+
+**引导过程记录（引导 agent 视角，实现+验收直接完成）**：
+- 本轮实现由引导 agent 直接完成（纯文档，写 memory-rag/multi-model 单次命令章节）
+- flare 验收延续高水准：14 项逐条对照源码行号 + **实测编译产物**（真实 CLI 行为验证文档），
+  一次通过；flare 冒烟均为只读命令（memories/models），真实 ~/.flare 零污染（最新会话仍为昨日）
+- **教训**：① memory-rag.md/multi-model.md 是 v0.6.91/100/0.6.112 的滞后点（README 命令表有行、
+  docs 专项没有）——「功能落地后检查三处（README 表 + Changelog + 对应 docs 专项）」铁律在
+  记忆面与模型面同样适用，本轮补齐后 docs 专项基本对齐；② 文档章节编号顺延（6→7、3→4）是
+  多文档编辑的易错点，diff 逐行核对；③ flare 验收对纯文档除源码对照外还做编译产物实测，
+  文档编写须确保 CLI 行为描述与实现完全一致
 
 ---
 
