@@ -397,6 +397,9 @@ flare server --profile <expert-profile-file> --storage <db-path> [--mcp <mcp-con
 - 代理转发 `tools/call`（McpManager.callTool）——与 `tools`（清单）配套：清单只能看到工具元数据，
   本接口**直接执行**外部 MCP 工具，宿主面板可一键触发/调试外部工具；**工具级失败**（isError）
   返回 `success:false` + `error`（服务不崩，工具结果原样透传）
+- `output`/`error` 内容提取（v0.6.118）：与 `createMcpTools`/CLI `mcp call` 同口径（`mcpContentToText`
+  纯函数）——text 项原文拼接；非 text 内容（image/audio/resource）输出占位描述（**不含 base64 明文**）；
+  content 为空且服务器返回 `structuredContent` → JSON 兜底
 - 错误：缺 `server`/`tool` → error 含用法；服务器未连接 → error「MCP 服务器未连接: <name>」；
   未知工具/协议层错误 → 透传外部服务器错误（服务不崩）
 - 不触发生成、不创建会话；等待启动时的后台连接落定（与 `mcp_status` 一致）

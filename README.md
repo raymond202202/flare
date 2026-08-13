@@ -366,6 +366,10 @@ Interactive mode commands:
 
 ### Changelog / Release Notes
 
+## v0.6.118（2026-08-14）
+- ✨ **server 协议 `mcp_call` 回包统一复用 `mcpContentToText`**：宿主协议（`flare server --mcp`）的 `mcp_call` 响应 `output`/`error` 字段此前与 CLI/工具桥不同口径（内联只提取 `type === 'text'`）——本版改为复用 v0.6.117 的纯函数 `mcpContentToText`（`src/server.ts` import + 替换内联 filter 提取）：宿主经协议拿 MCP 工具的非 text 内容（image/audio/resource 占位描述）与 `structuredContent` JSON 兜底，与 `createMcpTools`/CLI `mcp call` **三层同口径**；纯 text 行为与旧版逐字一致（回归由测试保证）
+- server 协议测试补 2 用例（server-mcp-resources.test.ts）：rich 模式 mcp_call output 含占位描述且绝不含 base64 明文 + 纯 text 回归逐字一致
+
 ## v0.6.117（2026-08-14）
 - ✨ **MCP 工具桥非 text 内容项处理（`mcpContentToText` 纯函数）**：`createMcpTools` 与 CLI `flare mcp call` 此前只提取 `content` 中 `type === 'text'` 项——MCP 工具返回 `image`/`audio`/`resource` 等非 text 内容时被**静默丢弃**（AI 只看到「无文本输出」），`structuredContent`（2025-06-18 协议结构化返回）也完全未处理；本版补齐——新库导出纯函数 `mcpContentToText(content, structuredContent?)`：text 项原文提取（多项按序拼接，与旧行为逐字一致）、image/audio 输出占位描述 `[图片/音频 mimeType: X, 数据 N 字符]`（**绝不含 base64 明文**，避免大体积/敏感二进制灌进上下文）、resource 输出 `[资源 uri: X mimeType: Y]` 占位（短 text 附内容、blob 绝不输出）、未知类型 `[内容类型: X]` 占位（不再静默丢弃）；content 全空且 structuredContent 存在 → JSON 序列化兜底（超 4000 字符截断 + 省略标记，循环引用安全）；`createMcpTools` 桥接输出与 CLI `mcp call` 文本模式/`--json` 的 `output` 字段统一复用该函数（同口径）
 - 安全设计：非 text 二进制（image/audio 的 data、resource 的 blob）只输出占位描述不含明文——既防上下文 token 膨胀，也避免把敏感二进制数据回显给模型/宿主

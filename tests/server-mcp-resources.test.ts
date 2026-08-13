@@ -225,3 +225,66 @@ describe('flare host server mcp_call 协议（v0.6.40 工具调用代理）', ()
     expect(msgs[0].message).toMatch(/未连接/)
   }, 30000)
 })
+
+describe('flare host server mcp_call 非 text 内容（v0.6.117）', () => {
+  let richChild: ChildProcess
+  let richRl: Interface
+  let richDir: string
+
+  function richRequest(msg: any, expectTypes: string[], timeout = 15000): Promise<any[]> {
+    return new Promise((resolve, reject) => {
+      const msgs: any[] = []
+      const timer = setTimeout(() => { richCleanup(); reject(new Error(`超时（请求 ${JSON.stringify(msg).slice(0, 80)}）`)) }, timeout)
+      const handler = (line: string) => {
+        try {
+          const parsed = JSON.parse(line)
+          if (expectTypes.includes(parsed.type)) {
+            msgs.push(parsed)
+            richCleanup()
+            resolve(msgs)
+          }
+        } catch { /* 非 JSON 行忽略 */ }
+      }
+      const richCleanup = () => { clearTimeout(timer); richRl.removeListener('line', handler) }
+      richRl.on('line', handler)
+      richChild.stdin!.write(JSON.stringify(msg) + '\n')
+    })
+  }
+
+  beforeAll(async () => {
+    richDir = mkdtempSync(path.join(os.tmpdir(), 'flare-server-mcp-rich-'))
+    const mcpConfig = path.join(richDir, 'mcp.json')
+    writeFileSync(mcpConfig, JSON.stringify({
+      servers: [{ name: 'mock', command: process.execPath, args: [MOCK_SERVER] }],
+    }))
+    const env: Record<string, string> = { ...process.env, MOCK_MODE: 'rich' } as Record<string, string>
+    delete env.DEEPSEEK_API_KEY
+    richChild = spawn(process.execPath, [CLI, 'server', '--storage', path.join(richDir, 'test.db'), '--mcp', mcpConfig], { env, stdio: ['pipe', 'pipe', 'pipe'] })
+    richRl = createInterface({ input: richChild.stdout! })
+    await richRequest({ type: 'version' }, ['version'])
+  })
+
+  afterAll(() => {
+    richChild.kill()
+    rmSync(richDir, { recursive: true, force: true })
+  })
+
+  it('mcp_call 非 text 内容（rich 模式）→ output 含占位描述，绝不含 base64 明文', async () => {
+    const msgs = await richRequest({ type: 'mcp_call', server: 'mock', tool: 'echo_text', args: { text: 'hi' } }, ['mcp_call'])
+    const res = msgs[0]
+    expect(res.type).toBe('mcp_call')
+    expect(res.success).toBe(true)
+    expect(res.output).toContain('echo: hi')
+    expect(res.output).toContain('[图片 mimeType: image/png')
+    expect(res.output).toContain('[音频 mimeType: audio/wav')
+    expect(res.output).toContain('[资源 uri: file:///tmp/a.txt')
+    expect(res.output).not.toContain('aGVsbG8taW1hZ2U=')
+    expect(res.output).not.toContain('YXVkaW8tZGF0YQ==')
+  }, 30000)
+
+  it('mcp_call 纯 text 回归（非 rich 服务器）→ output 与旧版逐字一致', async () => {
+    // 复用外层默认服务器（非 rich）：add_numbers 仍返回纯 text '5'，与旧行为一致
+    const msgs = await request({ type: 'mcp_call', server: 'mock', tool: 'add_numbers', args: { a: 2, b: 3 } }, ['mcp_call'])
+    expect(msgs[0].output).toBe('5')
+  }, 30000)
+})
