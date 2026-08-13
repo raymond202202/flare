@@ -186,7 +186,7 @@ cp .env.example ~/.flare/.env
 | `flare mcp complete <服务器> <提示词> <参数> [前缀]` | 请求 MCP 服务器提示词参数补全候选（--json 结构化输出（`{ server, prompt, argument, value?, values, total?, hasMore? }` 与 server mcp_complete 回包同构，空候选 `{ values: [] }` 合法 JSON exit 0）v0.6.114；v0.6.60） |
 | `flare mcp connect <服务器>` | 动态连接 MCP 服务器（stdio 或 HTTP transport；按名连接并打印摘要：transport/target/工具数/资源/模板/提示词 + [auth] 标记（不输出 token）；成功 exit 0、未配置/连接失败 exit 1；与 server mcp_connect、交互 /mcp connect 对称；单次命令进程内连接随进程退出释放；v0.6.120） |
 | `flare mcp disconnect <服务器>` | 动态断开 MCP 服务器（stdio 或 HTTP transport；已断开/未连接幂等 exit 0、未配置 exit 1；与 server mcp_disconnect、交互 /mcp disconnect 对称；v0.6.120） |
-| `flare cache-check [--model <模型>] [--json] [--rounds <N>]` | prompt caching 验收：连续两轮调用验证第二轮 cache_read_tokens > 0（v0.6.45；v0.6.48 起 --json 结构化输出供宿主/CI 消费；v0.6.54 起 --rounds 2~5 多轮连续命中验收；v0.6.75 起多轮 savedUsd 累加所有命中轮；v0.6.76 起 --json/输出含 runSavedUsd 每轮节省明细；v0.6.78 起基准轮命中带残留缓存诊断；v0.6.79 起每轮命中率百分比；v0.6.116 起 --json 含 hitRatio 末轮命中率与 runHitRatios 每轮命中率（与文本模式同口径四舍五入，promptTokens=0 或失败轮 null）） |
+| `flare cache-check [--model <模型>] [--json] [--rounds <N>]` | prompt caching 验收：连续两轮调用验证第二轮 cache_read_tokens > 0（v0.6.45；v0.6.48 起 --json 结构化输出供宿主/CI 消费；v0.6.54 起 --rounds 2~5 多轮连续命中验收；v0.6.75 起多轮 savedUsd 累加所有命中轮；v0.6.76 起 --json/输出含 runSavedUsd 每轮节省明细；v0.6.78 起基准轮命中带残留缓存诊断；v0.6.79 起每轮命中率百分比；v0.6.116 起 --json 含 hitRatio 末轮命中率与 runHitRatios 每轮命中率（与文本模式同口径四舍五入，promptTokens=0 或失败轮 null）；v0.6.132 起文本模式每轮含缓存写入（与 usage 观测面对称）） |
 
 交互模式命令：
 
@@ -381,6 +381,16 @@ Interactive mode commands:
 | `/exit` | Exit |
 
 ### Changelog / Release Notes
+
+## v0.6.132（2026-08-14）
+- ✨ **`flare cache-check` 文本模式每轮补「缓存写入」观测（prompt caching 基建深化，与 usage 观测面对称）**：
+  cache-check 每轮用量快照 `CacheCallUsage` 早已采集 `cacheWriteTokens`（且 `--json` 结构化输出带
+  `runs[].cacheWriteTokens`），唯独文本模式每轮行只显示 prompt/命中/节省——首轮 miss 基准的「写入量」
+  （建立缓存的输入量）无展示，与 v0.6.131 usage 补缓存写入后的观测面不对称。本版补齐：每轮行追加
+  ` · 写入 X tokens`（>0 才显示，零写入输出不变、向后兼容；与 usage 缓存写入行同口径）
+- 测试：cache-check.test.ts 既有用例覆盖 runCacheCheck/cacheCheckToJson 数据层（cacheWriteTokens 早已
+  断言），文本格式改动零风险；README 命令表 cache-check 行 + Changelog 条目 + package.json 0.6.132
+- 纯 CLI 外围增强：零 agent.ts 改动（Agent.run 核心循环零触碰）、零 push、零敏感信息
 
 ## v0.6.131（2026-08-14）
 - ✨ **`/usage` 与 `flare usage` 文本模式补「缓存写入」观测行（prompt caching 基建深化，观测面对称）**：
