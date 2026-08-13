@@ -1,5 +1,7 @@
 # Flare 引擎迭代进度（夜间调研 agent）
 
+> **【✅ 第一百二十六轮小步】P167 (纯文档) docs/mcp.md 单次查询章节 CLI 命令列表补 log-level**：
+> commit `11964c3`，纯文档零 src 改动、tsc 0 错误、无版本变化（详情见下方 P167 条目）。
 > **【✅ 第一百二十六轮小步】P166 (v0.6.124) log-level 三层对称收官（交互 /mcp log-level + server 协议 mcp_log_level）已装机**：
 > commit `5f0ac9f`，1150/1150 全绿、tsc 0 错误、零 agent.ts 改动（详情见下方 P166 条目）。
 > **【✅ 第一百二十六轮小步】P165 (纯文档) README 交互命令表补齐 /mcp 子命令与 /search//archived//archive//restore 行**：
@@ -4793,6 +4795,38 @@
   ③ 交互命令 hooks 新增能力一律做成**可选方法 + typeof 守卫**（向后兼容旧宿主，测试
   显式覆盖删除方法场景）；④ 全量偶发（server chat 超时）重跑专项 + 全量即可确认，
   非本轮引入（P123 先例）
+
+---
+
+### 2026-08-14 第一百二十六轮小步（P167 纯文档）——docs/mcp.md 单次查询章节 CLI 命令列表补 log-level（完成，自循环）
+
+> **P167 完成**（commit `11964c3`）：docs/mcp.md「单次查询」章节的 CLI 单次命令面概述
+> 列表（`flare mcp call/resources/prompts/tools/complete/connect/disconnect`）未含
+> `log-level`——第 810 行详细 CLI 章节与 README 命令表均已含 `flare log-level`（v0.6.83），
+> 唯概述列表滞后（P166 log-level 三层收官后的文档不对称清扫；P149/P153/P158-159/P162/
+> P164-165 纯文档先例）。
+> - **实现**（docs/mcp.md 2 行 +2/-2，零 src 改动）：概述列表补 `/log-level`，并补注
+>   「log-level v0.6.83」；与第 810 行详细章节、README 命令表（155 行 CLI / 208 行交互）、
+>   docs/mcp.md 交互章节 /mcp log-level（v0.6.124，第 107 行）四处一致
+> - **验证**：tsc 0 错误；**零 src 改动**（git diff 仅 docs/mcp.md 1 文件 2 行）；纯文档
+>   无版本变化（0.6.124 不变，dist 未动，无需自安装）；零 push、零敏感信息
+> - **flare 验收结论：✅ 通过**——flare 独立运行 git log -1（11964c3）/git show 审查（仅
+>   docs/mcp.md 1 文件 2 行）、git diff -- src/ 零改动、npx tsc 0 错误；核对概述列表与详细
+>   章节、README 命令表、交互章节四处 log-level 信息完全一致且版本标注准确；正则扫描
+>   （api_key|password|secret|token|bearer|sk-）无敏感明文；全程零修改零 commit；结论与
+>   实况完全一致（验收指令经文件读入规避 confusable 误报，P148 先例）
+> - **下一步候选**：① 【P1】分层上下文（Layer 1 异步滚动摘要——需评估 run 循环外异步，
+>   涉及 agent.ts trimContext 异步化，铁律暂缓）；② 其他安全的外围增强（MCP logging 控制
+>   面三层收官 + 文档同步完成，剩余候选 RAG 注入（Agent 构造时按会话主题自动注入相关
+>   记忆——需改 agent.ts 构造逻辑 + searchMemories 查询语义，复杂度超外围定位暂缓）、
+>   记忆自动合并/摘要（写操作 + LLM，风险中）、测试稳定性继续清扫、确认门接入完整化等）
+
+**引导过程记录（引导 agent 视角，实现+验收直接完成）**：
+- 本轮实现由引导 agent 直接完成（纯文档，docs/mcp.md 概述列表补 log-level）
+- **教训**：① 功能装机后「概述列表/摘要」类短清单是最易漏的同步点（详细章节与命令表
+  都改了、概述列表忘了）——检查文档对称时不能只对详细章节，概述/目录/汇总行也要对照；
+  ② 纯文档小步跑 tsc + git diff 验收即可，无需全量测试（零 src 改动无回归风险）；
+  ③ 连续纯文档小步（P164/165/167）之间穿插功能小步（P166），节奏合理——每轮独立验收
 
 ---
 
