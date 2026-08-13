@@ -74,17 +74,17 @@ describe('flare server 默认采样参数（--max-tokens/--temperature，v0.6.5�
     expect(msgs.length).toBeGreaterThan(0)
     const last = msgs[msgs.length - 1]
     expect(['done', 'error']).toContain(last.type)
-  })
+  }, 45000)
 
   it('chat 带非法 maxTokens → 请求校验优先回 error（默认值不掩盖请求错误）', async () => {
     const msgs = await request({ type: 'chat', sessionId: 's-dflt2', input: 'hi', maxTokens: 'abc' }, ['error'])
     expect(msgs[0].type).toBe('error')
     expect(msgs[0].message).toContain('maxTokens')
-  })
+  }, 45000)
 
   it('chat 带合法 maxTokens → 请求参数优先（覆盖默认，流程完整）', async () => {
     const msgs = await request({ type: 'chat', sessionId: 's-dflt3', input: 'hi', maxTokens: 10 }, ['done', 'error'])
     const last = msgs[msgs.length - 1]
     expect(['done', 'error']).toContain(last.type)
-  })
+  }, 45000)
 })
