@@ -775,6 +775,13 @@ client.close()
   鉴权用（如 `{ "Authorization": "Bearer <token>" }`）；stdio 模式忽略；`MCPHttpClient({ headers })`
   库级同样支持
 - `createMcpTools` 参数放宽为 `McpToolClient` 接口——stdio/HTTP 客户端都满足，工具桥传输无关
+- **非 text 内容项处理（v0.6.117）**：`createMcpTools` 桥接输出与 CLI `mcp call` 统一复用纯函数
+  `mcpContentToText(content, structuredContent?)`——text 项原文提取（多项按序拼接）；image/audio
+  输出占位描述 `[图片/音频 mimeType: X, 数据 N 字符]`（**绝不含 base64 明文**，防大体积/敏感二进制
+  灌进上下文）；resource 输出 `[资源 uri: X mimeType: Y]` 占位（短 text 附内容、blob 绝不输出）；
+  未知类型 `[内容类型: X]` 占位（不再静默丢弃）；content 全空且 `structuredContent`（2025-06-18
+  协议结构化返回）存在 → JSON 序列化兜底（超 4000 字符截断 + 省略标记，循环引用安全）。此前 MCP
+  工具返回图片/结构化数据时 flare 只看到「无文本输出」，信息丢失
 
 ```ts
 import { McpManager } from 'flare-agent'

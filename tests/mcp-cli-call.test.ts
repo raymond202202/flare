@@ -58,6 +58,19 @@ function runCli(args: string[]): Promise<{ code: number | null; stdout: string; 
   })
 }
 
+/** 带额外环境变量的 runCli（v0.6.117：MOCK_MODE=rich / struct-only 触发 mock fixture 非 text 返回） */
+function runCliEnv(args: string[], extraEnv: Record<string, string>): Promise<{ code: number | null; stdout: string; stderr: string }> {
+  return new Promise((resolve) => {
+    const child: ChildProcess = spawn(process.execPath, [CLI, ...args], { stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, ...extraEnv } })
+    children.push(child)
+    let out = ''
+    let err = ''
+    child.stdout!.on('data', (d: Buffer) => { out += d.toString() })
+    child.stderr!.on('data', (d: Buffer) => { err += d.toString() })
+    child.on('close', (code) => resolve({ code, stdout: out, stderr: err }))
+  })
+}
+
 describe('CLI flare mcp call', () => {
   it('--url 直连 HTTP transport 服务器 → 真实调用工具输出结果', async () => {
     const h = await startMcpHttpServer({ tools: [echoTool] })
@@ -634,5 +647,56 @@ describe('CLI flare mcp resources/prompts/tools --json（v0.6.113：结构化输
     expect(data.tools[0].name).toBe('echo')
     expect(data.tools[0].description).toMatch(/回显输入文本/)
     expect(data.tools[0].inputSchema).toBeTruthy()
+  }, 20000)
+
+  it('rich 模式：非 text 内容（image/audio/resource）输出占位描述，绝不含 base64 明文（v0.6.117）', async () => {
+    const cfgPath = join(dir, 'mcp.json')
+    writeFileSync(cfgPath, JSON.stringify({ servers: [{ name: 'mock', command: process.execPath, args: [MOCK_SERVER] }] }))
+    // MOCK_MODE=rich：mock fixture 的 echo_text 返回 text + image + audio + resource + structuredContent
+    const { code, stdout, stderr } = await runCliEnv(
+      ['mcp', 'call', 'mock', 'echo_text', '{"text":"hi"}', '--config', cfgPath],
+      { MOCK_MODE: 'rich' },
+    )
+    expect(code).toBe(0)
+    expect(stdout).toContain('echo: hi')
+    expect(stdout).toContain('[图片 mimeType: image/png')
+    expect(stdout).toContain('[音频 mimeType: audio/wav')
+    expect(stdout).toContain('[资源 uri: file:///tmp/a.txt mimeType: text/plain]')
+    expect(stdout).toContain('hello resource')
+    // 安全铁律：输出绝不含 base64 明文
+    expect(stdout).not.toContain('aGVsbG8taW1hZ2U=')
+    expect(stdout).not.toContain('YXVkaW8tZGF0YQ==')
+    expect(stderr).toBe('')
+  }, 20000)
+
+  it('rich 模式 --json：output 字段含占位描述（与 createMcpTools 同口径），无明文', async () => {
+    const cfgPath = join(dir, 'mcp.json')
+    writeFileSync(cfgPath, JSON.stringify({ servers: [{ name: 'mock', command: process.execPath, args: [MOCK_SERVER] }] }))
+    const { code, stdout, stderr } = await runCliEnv(
+      ['mcp', 'call', 'mock', 'echo_text', '{"text":"hi"}', '--config', cfgPath, '--json'],
+      { MOCK_MODE: 'rich' },
+    )
+    expect(code).toBe(0)
+    const parsed = JSON.parse(stdout)
+    expect(parsed.success).toBe(true)
+    expect(parsed.output).toContain('echo: hi')
+    expect(parsed.output).toContain('[图片 mimeType: image/png')
+    expect(parsed.output).toContain('[资源 uri: file:///tmp/a.txt')
+    expect(parsed.output).not.toContain('aGVsbG8taW1hZ2U=')
+    expect(stderr).toBe('')
+  }, 20000)
+
+  it('仅 structuredContent（content 为空）：--json output 为 JSON 兜底', async () => {
+    const cfgPath = join(dir, 'mcp.json')
+    writeFileSync(cfgPath, JSON.stringify({ servers: [{ name: 'mock', command: process.execPath, args: [MOCK_SERVER] }] }))
+    const { code, stdout, stderr } = await runCliEnv(
+      ['mcp', 'call', 'mock', 'add_numbers', '{"a":1,"b":2}', '--config', cfgPath, '--json'],
+      { MOCK_MODE: 'struct-only' },
+    )
+    expect(code).toBe(0)
+    const parsed = JSON.parse(stdout)
+    expect(parsed.success).toBe(true)
+    expect(parsed.output).toBe('{"sum":3,"source":"mock"}')
+    expect(stderr).toBe('')
   }, 20000)
 })
