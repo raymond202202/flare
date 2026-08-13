@@ -1,5 +1,7 @@
 # Flare 引擎迭代进度（夜间调研 agent）
 
+> **【✅ 第一百二十七轮小步】P170 (v0.6.126) /help 的 /memory 行同步 /memory similar [阈值]**：
+> commit `fe78af9`，1155/1155 全绿、tsc 0 错误、零 agent.ts 改动（详情见下方 P170 条目）。
 > **【✅ 第一百二十七轮小步】P169 (纯文档) docs/memory-rag.md 记忆相似度检测章节同步 /memory similar [阈值]**：
 > commit `15ca69e`，纯文档零 src 改动、tsc 0 错误、1155/1155 全绿、无版本变化（详情见下方 P169 条目）。
 > **【✅ 第一百二十七轮小步】P168 (v0.6.125) 交互命令 /memory similar [阈值] 可选相似度阈值已装机**：
@@ -194,6 +196,24 @@
 >    terminal 退出码（v0.6.33）✓ / CLI 归档命令（v0.6.32）✓ / 归档 API（v0.6.31）✓ /
 >    工具输出治理（v0.6.30）✓ / prompt caching P0（v0.6.29）✓ / MCP 动态资源提供器（v0.6.28）✓ /
 >    confirm 描述（v0.6.27）✓
+
+---
+
+### 2026-08-14 第一百二十七轮小步（P170，v0.6.126）——/help 的 /memory 行同步 /memory similar [阈值]
+
+> **P170 完成**（commit `fe78af9`）：`/help` 命令的 `/memory` 说明行同步 v0.6.125——P168 交互命令支持
+> 可选阈值但只更新了用法提示分支（阈值非法时的提示），`/help` 显示行仍停留在 v0.6.123 旧文案
+> （`/memory similar 检测相似记忆对（v0.6.123）`）→ 帮助面与功能不对称。
+> - **实现**（src/cli/index.ts 1 行）：/help 行改为 `/memory similar [阈值] 检测相似记忆对（默认 0.4，v0.6.123/125）`
+> - **测试**（tests/memory-command.test.ts 更新 1 用例）：/help 断言升级为包含 `/memory similar [阈值]` + 版本标注 `v0.6.123/125`
+> - README Changelog v0.6.126 条目 + package.json 0.6.126
+> - **1155/1155 全绿**（74 文件；**首跑即绿无偶发**），tsc 0 错误，**零 agent.ts 改动**，零 push、零敏感信息
+> - **flare 验收通过**：独立运行 tsc 0 错误 + 全量 1155/1155 全绿 + memory-command.test.ts 15/15；
+>   完整性审查（/help 文案/测试断言/README Changelog/命令表中英/package.json 版本五者一致性）无缺失；
+>   纯展示层改动无边界/安全问题；结论「✅ 通过，同意合并/发布 v0.6.126」
+> - **下一步候选**：① 【P1】分层上下文（Layer 1 异步滚动摘要——需改 Agent.run 核心循环，违反铁律跳过并记录理由）；
+>   ② 其他安全的外围增强（server 协议管理接口、MCP 工具集完善等）——/memory similar 帮助面收官，
+>   记忆去重检测面（store → 单次命令 → 交互命令 → 帮助面 → 文档）五层已闭环
 
 ---
 
