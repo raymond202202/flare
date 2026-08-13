@@ -1,5 +1,7 @@
 # Flare 引擎迭代进度（夜间调研 agent）
 
+> **【✅ 第一百二十六轮小步】P163 (v0.6.123) 交互命令 /memory similar 检测相似记忆对已装机**：
+> commit `dc9d122`，1143/1143 全绿、tsc 0 错误、零 agent.ts 改动（详情见下方 P163 条目）。
 > **【✅ 第一百二十六轮小步】P162 (纯文档) memory-rag.md 补记忆相似度检测正式章节**：
 > commit `e4007cd`，纯文档零 src 改动、tsc 0 错误、无版本变化（详情见下方 P162 条目）。
 > **【✅ 第一百二十六轮小步】P161 (v0.6.122) server 协议 find_similar_memories 接口已装机**：
@@ -4588,6 +4590,55 @@
   不等于正式能力文档，能力章节/协议表/测试统计三处要同步；② flare 深度验证时可能达迭代
   上限不输出结论，补一次「继续并总结」的聚焦指令即可收尾（不重复指令内容，只让它汇总）；
   ③ 纯文档小步同样跑记忆专项确认无回归（成本 ~5s，值得）
+
+---
+
+### 2026-08-14 第一百二十六轮小步（P163 v0.6.123）——交互命令 /memory similar 检测相似记忆对（装机完成，自循环）
+
+> **P163 完成**（commit `dc9d122`）：记忆去重检测面**第三层（交互面）**收官——交互模式
+> `/memory similar`（`/memory --similar` 等价别名）检测相似记忆对，与单次命令
+> `flare memories --similar`（v0.6.121 store+CLI 层）、server 协议 `find_similar_memories`
+> （v0.6.122 协议层）同源对称：交互模式用户此前只能翻列表人工比对重复记忆，本步补齐
+> 交互入口（默认阈值 0.4，只读不删除，发现后 `/forget` 提示自行清理）。
+> - **实现**（src/cli/index.ts +22，插在 /memory 分支头部）：`kw === 'similar' || kw ===
+>   '--similar'` 双入口；防御性 `typeof store.findSimilarMemories === 'function'`（store
+>   缺该方法时 []，不崩溃）；`store.findSimilarMemories({})` 走默认 threshold 0.4 / limit 20
+>   （与 CLI/server 同源单一口径）；无相似/空库 → 「未发现相似记忆（阈值 0.4；/memory similar
+>   可检测重复/近似记忆，v0.6.123）」友好提示；有相似对 → `#idA ↔ #idB 相似度 X.XX` + 两行
+>   内容（空白归一 + 截断 60 字符，空内容显示 [空内容]）+ `/forget <关键词>` 删除提示；
+>   return 'continue' 不打断循环；/help 行同步补说明；零新 import、零 agent.ts 改动
+> - **测试**（tests/memory-command.test.ts 追加 5 用例，+48 行）：检出近似对（#1↔#2、
+>   相似度 0.46、内容截断、含 /forget 提示、无关记忆「香蕉营养价值很高」不参与）/ --similar
+>   别名等价 / 无相似对「未发现相似记忆」/ 空库「未发现相似记忆」/ /help 含 /memory similar
+>   说明
+> - README Changelog v0.6.123 条目 + docs/memory-rag.md 第 8 节交互命令行 + package.json
+>   0.6.122 → 0.6.123
+> - **1143/1143 全绿**（基线 1138 + 5；74 文件；全量首跑即绿无偶发），tsc 0 错误，**零
+>   agent.ts 改动**，零 push、零敏感信息（diff 敏感扫描 0 命中）；已 commit `dc9d122`
+>   （5 文件 +75/-2）；真实 ~/.flare 零污染（本步纯代码+测试，未做真实库冒烟——/memory
+>   similar 只读调用与 CLI --similar 同源，P160 已实测真实库检出能力）
+> - **下一步候选**：① 【P1】分层上下文（Layer 1 异步滚动摘要——需评估 run 循环外异步，
+>   涉及 agent.ts trimContext 异步化，铁律暂缓）；② 其他安全的外围增强（记忆去重检测面
+>   三层收官（store+CLI v0.6.121、server 协议 v0.6.122、交互命令 v0.6.123），剩余候选
+>   RAG 注入（Agent 构造时按会话主题自动注入相关记忆——需改 agent.ts 构造逻辑 +
+>   searchMemories 查询语义（当前短语匹配整句难命中），复杂度超外围定位暂缓）、记忆自动
+>   合并/摘要（写操作 + LLM，风险中）、测试稳定性继续清扫、确认门接入完整化、MCP 增强
+>   （resources / HTTP transport 文档同步）等）
+> - **flare 验收结论：✅ 通过**——flare 独立运行 git log -1（dc9d122）/git show 审查完整
+>   diff（5 文件 +75/-2）、npx tsc 0 错误、PATH=/usr/bin:$PATH npx vitest run 全量 74 文件
+>   1143/1143 全绿（含新增 5 用例）、git 提交完整工作区干净；逐项核对 /memory similar 双
+>   入口、防御性 findSimilarMemories 调用（as any 沿用代码库既有 14 处先例风格）、只读
+>   不删除、内容截断、/forget 提示、/help 同步、与 v0.6.121 store 层同源默认阈值、零
+>   agent.ts 改动、版本号/README/docs 同步、无任何密钥明文；全程零修改零 commit；结论
+>   与实况完全一致（验收指令经文件读入规避 confusable 误报，P148 先例）
+
+**引导过程记录（引导 agent 视角，实现+验收直接完成）**：
+- 本轮实现由引导 agent 直接完成（「调研→执行→flare 验收」新范式，验收环节交给 flare）；
+  本步为 P160-163 记忆去重检测面三层收官的最后一块拼图
+- **教训**：① 交互命令与单次命令/server 协议三面对称是「能力面闭环」的完整形态——
+  每个能力落地时检查 store/CLI/server/交互/文档五处是否都有入口，缺哪个补哪个；
+  ② 交互命令防御性调用（typeof 检查）是低风险接入既有能力的好模式，即使 store 缺方法
+  也不崩；③ 验收指令纯文件读入（不经 -q 中文参数）稳定规避 confusable 误报，后续沿用
 
 ---
 
