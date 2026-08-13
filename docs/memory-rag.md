@@ -125,9 +125,41 @@ flare delete-memory --content 咖啡           # 按关键词批量删除（幂�
 |------|------|
 | `remember` | 保存记忆 `{ content, kind? }`（kind 为类型如 preference/note；不能用 `type`——那是请求判别符） |
 | `get_memories` | 列出或搜索 `{ query?, limit? }`（有 query → trigram 全文搜索） |
+| `find_similar_memories` | 检测重复/近似记忆 `{ threshold?, limit? }`（v0.6.122，回 `similar_memories` 的 pairs；纯只读） |
 | `delete_memory` | 删除 `{ id }`（单条）或 `{ content }`（按关键词批量），回 `deleted` 条数 |
 
-详见 `docs/host-protocol.md` 第 11-13 节。
+详见 `docs/host-protocol.md` 第 11-14 节。
+
+### 8. 记忆相似度检测（去重检测面，v0.6.121/122）
+
+让宿主/用户发现重复/近似记忆——记忆去重的第一步（**检测面**，只读不删除；自动合并/摘要留后续候选）：
+
+```ts
+import { MemoryStore, trigramJaccard } from 'flare-agent'
+
+const store = new MemoryStore('~/.pulse/pulse-ai.db')
+const pairs = store.findSimilarMemories({ threshold: 0.4, limit: 20 })
+// → [{ idA, idB, contentA, contentB, similarity }]，idA < idB 不重复、相似度降序
+```
+
+- **相似度算法**：`trigramJaccard(a, b)`——字符 3-gram 集合 Jaccard 相似度（中文友好：按字符取
+  连续 3 字子串集合，去除空白；交集/并集；<3 字短文本退化整段单个 gram；完全相同 = 1、
+  无共同 3-gram = 0）
+- **默认阈值 0.4**：能检出「一条是另一条超集」的常见重复模式（如「用户偏好浅色主题」vs
+  「用户偏好浅色主题，还喜欢极简风」≈0.46），换词区分型（浅色/深色 ≈0.33）不误报；
+  `threshold` 0~1 可调
+- **CLI**：`flare memories --similar [--threshold <0~1>] [--json]`——文本模式显示
+  `#idA ↔ #idB 相似度 X.XX` + 内容截断；`--json` 输出 `{ threshold, pairs }` 供宿主/脚本
+  程序化消费；非法阈值 exit 1、无相似/空库 exit 0
+- **server 协议**：`find_similar_memories` 请求（threshold 0~1 默认 0.4 / limit 1~100 默认 20，
+  非法回 error）→ `similar_memories` 响应（pairs 同上）——宿主面板可程序化发现重复记忆后
+  自行决定是否 `delete_memory` 清理
+
+```bash
+flare memories --similar                        # 默认阈值 0.4 检测近似记忆对
+flare memories --similar --threshold 0.9        # 只报高度重复（接近完全相同）
+flare memories --similar --json                 # 结构化输出供脚本消费
+```
 
 ## 迁移与兼容
 
@@ -153,7 +185,19 @@ v0.5.4 新增 16 项（记忆生命周期）：
 - CLI /forget：关键词删除 / 无匹配 / 无参数 / /help 同步
 - server 协议（tests/server.test.ts 另有 6 项）：remember / get_memories / delete_memory 数据往返
 
+v0.6.121/122 新增 18 项（记忆去重检测面，tests/store.test.ts + tests/cli-memories.test.ts +
+tests/server.test.ts）：
+
+- trigramJaccard 纯函数 6：完全相同 1 / 完全无关 0 / 近似 0~1 且共享越多越相似 / 空白差异不影响 /
+  短文本退化 / 空串边界
+- findSimilarMemories 6：近似对检出且 idA<idB 降序 / 完全重复相似度 1 / threshold 过滤 / limit 截断 /
+  空库 / 无相似空数组
+- CLI `memories --similar` e2e 6：文本对显示 / 无相似 exit 0 / 空库 exit 0 / --json 结构 / --threshold
+  调高无结果 / 非法阈值 exit 1
+- server 协议 4（server.test.ts）：检出对 / threshold+limit 参数 / 纯只读 / 参数校验 error
+
 ## 后续候选
 
 - RAG 注入：Agent 构造时按会话主题自动注入相关记忆（当前注入最近 5 条）
-- 记忆去重 / 摘要（相似记忆合并）：**检测面已完成（v0.6.121）**——`MemoryStore.findSimilarMemories({ threshold?, limit? })`（trigramJaccard 字符 3-gram 集合 Jaccard 相似度，中文友好）+ CLI `flare memories --similar [--threshold <0~1>] [--json]`（`{ threshold, pairs }`）只读检测近似记忆对；自动合并/摘要（写操作 + LLM）留待后续候选
+- 记忆自动合并 / 摘要（相似记忆合并）：检测面已完成（v0.6.121/122，见上方第 8 节）；自动合并/
+  摘要（写操作 + LLM）留待后续候选
