@@ -211,6 +211,9 @@
 > - **flare 验收通过**：独立运行 tsc 0 错误 + 全量 1155/1155 全绿 + memory-command.test.ts 15/15；
 >   完整性审查（/help 文案/测试断言/README Changelog/命令表中英/package.json 版本五者一致性）无缺失；
 >   纯展示层改动无边界/安全问题；结论「✅ 通过，同意合并/发布 v0.6.126」
+> - 自安装完成：installed 0.6.126 = repo 0.6.126（安装版冒烟 `flare version` → v0.6.126 +
+>   `FLARE_HOME=$(mktemp -d) memories --similar` →「未发现相似记忆（阈值 0.4）」exit 0 已验证）；
+>   真实 ~/.flare 零污染（冒烟用 FLARE_HOME 临时目录）
 > - **下一步候选**：① 【P1】分层上下文（Layer 1 异步滚动摘要——需改 Agent.run 核心循环，违反铁律跳过并记录理由）；
 >   ② 其他安全的外围增强（server 协议管理接口、MCP 工具集完善等）——/memory similar 帮助面收官，
 >   记忆去重检测面（store → 单次命令 → 交互命令 → 帮助面 → 文档）五层已闭环
