@@ -178,8 +178,9 @@ cp .env.example ~/.flare/.env
 | `flare ping` | 健康检查（进程存活即 pong；--json 结构化输出；不依赖任何初始化，只读；与 server ping 对称；v0.6.95） |
 | `flare version` | 输出引擎版本（只读：flare v<版本>；--json 输出 { engine }；不依赖任何初始化；与 server version 引擎字段对称；v0.6.102） |
 | `flare mcp status` | 查看配置的 MCP 服务器（名称 + 传输类型 + 端点/命令 + [auth] 鉴权标记；--json 结构化输出 v0.6.80；v0.6.6/v0.6.70） |
-| `flare mcp resources <服务器> [--read <uri>]` | 查看/读取 MCP 服务器暴露的资源（v0.6.10） |
-| `flare mcp prompts <服务器> [--get <名称>]` | 查看/渲染 MCP 服务器暴露的提示词（v0.6.10） |
+| `flare mcp resources <服务器> [--read <uri>]` | 查看/读取 MCP 服务器暴露的资源（--json 结构化输出（列表 `{ server, resources, templates }` 与 server mcp_resources 回包同构；--read `{ server, uri, contents }` 与 mcp_read_resource 同构，空数组结构稳定可解析）v0.6.113；v0.6.10） |
+| `flare mcp prompts <服务器> [--get <名称>]` | 查看/渲染 MCP 服务器暴露的提示词（--json 结构化输出（列表 `{ server, prompts }` 与 server mcp_prompts 回包同构；--get `{ server, prompt, description?, messages }` 与 mcp_get_prompt 同构）v0.6.113；v0.6.10） |
+| `flare mcp tools <服务器>` | 查看 MCP 服务器暴露的工具清单（--json 结构化输出（`{ server, tools }` 与 server mcp_tools 回包同构）v0.6.113；v0.6.59） |
 | `flare cache-check [--model <模型>] [--json] [--rounds <N>]` | prompt caching 验收：连续两轮调用验证第二轮 cache_read_tokens > 0（v0.6.45；v0.6.48 起 --json 结构化输出供宿主/CI 消费；v0.6.54 起 --rounds 2~5 多轮连续命中验收；v0.6.75 起多轮 savedUsd 累加所有命中轮；v0.6.76 起 --json/输出含 runSavedUsd 每轮节省明细；v0.6.78 起基准轮命中带残留缓存诊断；v0.6.79 起每轮命中率百分比） |
 
 交互模式命令：
@@ -363,6 +364,10 @@ Interactive mode commands:
 | `/exit` | Exit |
 
 ### Changelog / Release Notes
+
+## v0.6.113（2026-08-13）
+- ✨ **`flare mcp resources/prompts/tools` 增加 `--json` 结构化输出**：外部 MCP 服务器查看类命令程序化收官——resources 列表 `{ server, resources, templates }`（直连客户端同时取 resources/list + resources/templates/list）与 server mcp_resources 回包 servers[].resources/.templates 同构；`--read` `{ server, uri, contents }` 与 mcp_read_resource 同构；prompts 列表 `{ server, prompts }` 与 mcp_prompts 同构；`--get` `{ server, prompt, description?, messages }` 与 mcp_get_prompt 同构；tools 列表 `{ server, tools }`（含 inputSchema）与 mcp_tools 同构；空数组结构稳定可解析；只打印 JSON 不混彩色；文本模式与退出码语义完全不变
+- CLI 只读命令 --json 系列扩展至外部 MCP 面（此前已覆盖 usage/messages/models/sessions/context-status/tools/config/version/ping/mcp status/cache-check/memories/search-messages/search/archived-sessions/confirm-status；本版补 mcp resources/prompts/tools 及 --read/--get 模式）
 
 ## v0.6.112（2026-08-13）
 - ✨ **`flare models` 增加 `--json` 结构化输出**：与 server models 回包完全同构（`{ configured, ollama }`，不带 type 包装）；宿主/脚本可直接程序化消费可用模型清单（configured.main/vision 为 ModelEndpointInfo 同款 model/baseURL/hasApiKey/provider，vision 未配置 → null 与 server 语义一致，ollama 不可达 ok:false 不崩）；只打印 JSON 不混彩色；文本模式与退出码语义完全不变

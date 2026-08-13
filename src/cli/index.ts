@@ -1738,7 +1738,8 @@ export function main() {
     .option('--timeout <ms>', '单请求超时毫秒（默认 15000）')
     .option('--read <uri>', '读取指定资源内容（替代列出元数据）')
     .option('--header <kv>', '附加请求头 key:value（可重复；HTTP transport 鉴权，v0.6.68）', collectHeader, [])
-    .action(async (server: string, options: { url?: string; config?: string; timeout?: string; read?: string; header?: string[] }) => {
+    .option('--json', 'JSON 结构化输出（列表：{ server, resources, templates }；--read：{ server, uri, contents }；与 server mcp_resources/mcp_read_resource 回包同构，v0.6.113）')
+    .action(async (server: string, options: { url?: string; config?: string; timeout?: string; read?: string; header?: string[]; json?: boolean }) => {
       try {
         const { MCPClient, MCPHttpClient, McpManager } = await import('../index.js')
         const timeoutMs = options.timeout ? Number(options.timeout) : 15000
@@ -1766,6 +1767,11 @@ export function main() {
         if (options.read) {
           const contents = await client.readResource(options.read)
           client.close()
+          // v0.6.113 --json：与 server mcp_read_resource 回包同构（不带 type 包装）
+          if (options.json) {
+            console.log(JSON.stringify({ server, uri: options.read, contents }, null, 2))
+            return
+          }
           if (contents.length === 0) {
             console.log(`（资源 ${options.read} 无内容）`)
             return
@@ -1776,6 +1782,14 @@ export function main() {
           return
         }
         const resources = await client.listResources()
+        // v0.6.113 --json：与 server mcp_resources 回包 servers[].resources/.templates 同构
+        // （直连客户端同时取 resources/templates/list，空数组结构稳定可解析）
+        if (options.json) {
+          const templates = await client.listResourceTemplates()
+          client.close()
+          console.log(JSON.stringify({ server, resources, templates }, null, 2))
+          return
+        }
         client.close()
         if (resources.length === 0) {
           console.log(chalk.gray(`服务器 ${label} 未暴露任何资源（resources/list 为空）`))
@@ -1803,7 +1817,8 @@ export function main() {
     .option('--get <name>', '渲染指定提示词（替代列出元数据）')
     .option('--args <json>', '渲染提示词的参数（--get 时可选，JSON 对象）')
     .option('--header <kv>', '附加请求头 key:value（可重复；HTTP transport 鉴权，v0.6.68）', collectHeader, [])
-    .action(async (server: string, options: { url?: string; config?: string; timeout?: string; get?: string; args?: string; header?: string[] }) => {
+    .option('--json', 'JSON 结构化输出（列表：{ server, prompts }；--get：{ server, prompt, description?, messages }；与 server mcp_prompts/mcp_get_prompt 回包同构，v0.6.113）')
+    .action(async (server: string, options: { url?: string; config?: string; timeout?: string; get?: string; args?: string; header?: string[]; json?: boolean }) => {
       try {
         const { MCPClient, MCPHttpClient, McpManager } = await import('../index.js')
         const timeoutMs = options.timeout ? Number(options.timeout) : 15000
@@ -1839,6 +1854,16 @@ export function main() {
           }
           const result = await client.getPrompt(options.get, args)
           client.close()
+          // v0.6.113 --json：与 server mcp_get_prompt 回包同构（不带 type 包装）
+          if (options.json) {
+            console.log(JSON.stringify({
+              server,
+              prompt: options.get,
+              ...(result.description ? { description: result.description } : {}),
+              messages: result.messages,
+            }, null, 2))
+            return
+          }
           const texts = (result.messages || [])
             .filter((m: any) => m.content && typeof m.content.text === 'string')
             .map((m: any) => m.content.text)
@@ -1848,6 +1873,11 @@ export function main() {
         }
         const prompts = await client.listPrompts()
         client.close()
+        // v0.6.113 --json：与 server mcp_prompts 回包 servers[].prompts 同构（不带 type 包装）
+        if (options.json) {
+          console.log(JSON.stringify({ server, prompts }, null, 2))
+          return
+        }
         if (prompts.length === 0) {
           console.log(chalk.gray(`服务器 ${label} 未暴露任何提示词（prompts/list 为空）`))
           return
@@ -1874,7 +1904,8 @@ export function main() {
     .option('--config <path>', 'MCP 配置文件路径（默认 ~/.flare/mcp.json）')
     .option('--timeout <ms>', '单请求超时毫秒（默认 15000）')
     .option('--header <kv>', '附加请求头 key:value（可重复；HTTP transport 鉴权，v0.6.68）', collectHeader, [])
-    .action(async (server: string, options: { url?: string; config?: string; timeout?: string; header?: string[] }) => {
+    .option('--json', 'JSON 结构化输出（{ server, tools }，与 server mcp_tools 回包 servers[].tools 同构，v0.6.113）')
+    .action(async (server: string, options: { url?: string; config?: string; timeout?: string; header?: string[]; json?: boolean }) => {
       try {
         const { MCPClient, MCPHttpClient, McpManager } = await import('../index.js')
         const timeoutMs = options.timeout ? Number(options.timeout) : 15000
@@ -1901,6 +1932,11 @@ export function main() {
         await client.initialize()
         const tools = await client.listTools()
         client.close()
+        // v0.6.113 --json：与 server mcp_tools 回包 servers[].tools 同构（不带 type 包装）
+        if (options.json) {
+          console.log(JSON.stringify({ server, tools }, null, 2))
+          return
+        }
         if (tools.length === 0) {
           console.log(chalk.gray(`服务器 ${label} 未暴露任何工具（tools/list 为空）`))
           return

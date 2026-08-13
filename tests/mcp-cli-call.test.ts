@@ -427,3 +427,103 @@ describe('CLI flare mcp 单次命令 --header（v0.6.68：HTTP transport 鉴权�
     expect(stdout).not.toMatch(/open\s+HTTP \[auth\]/)
   }, 20000)
 })
+
+describe('CLI flare mcp resources/prompts/tools --json（v0.6.113：结构化输出，与 server 协议回包同构）', () => {
+  async function startResServer() {
+    return startMcpHttpServer({
+      tools: [echoTool],
+      resources: [
+        {
+          uri: 'flare://notes/hello',
+          name: 'hello-note',
+          description: '一条示例笔记',
+          mimeType: 'text/plain',
+          read: () => '你好，这是资源内容',
+        },
+      ],
+      prompts: [
+        {
+          name: 'greet',
+          description: '生成问候语',
+          arguments: [{ name: 'name', description: '称呼', required: true }],
+          render: async (args: any) => ([
+            { role: 'user' as const, content: { type: 'text' as const, text: `你好，${args.name}！` } },
+          ]),
+        },
+      ],
+    })
+  }
+
+  it('resources --json → { server, resources, templates }（空数组结构稳定）', async () => {
+    const h = await startResServer()
+    handles.push(h)
+    const { code, stdout } = await runCli(['mcp', 'resources', 'remote', '--json', '--url', h.url])
+    expect(code).toBe(0)
+    const data = JSON.parse(stdout)
+    expect(data.server).toBe('remote')
+    expect(Array.isArray(data.resources)).toBe(true)
+    expect(Array.isArray(data.templates)).toBe(true)
+    expect(data.resources).toHaveLength(1)
+    expect(data.resources[0]).toMatchObject({
+      uri: 'flare://notes/hello',
+      name: 'hello-note',
+      description: '一条示例笔记',
+      mimeType: 'text/plain',
+    })
+  }, 20000)
+
+  it('resources --read --json → { server, uri, contents }（与 server mcp_read_resource 同构）', async () => {
+    const h = await startResServer()
+    handles.push(h)
+    const { code, stdout } = await runCli(['mcp', 'resources', 'remote', '--read', 'flare://notes/hello', '--json', '--url', h.url])
+    expect(code).toBe(0)
+    const data = JSON.parse(stdout)
+    expect(data.server).toBe('remote')
+    expect(data.uri).toBe('flare://notes/hello')
+    expect(Array.isArray(data.contents)).toBe(true)
+    expect(data.contents[0].text).toBe('你好，这是资源内容')
+  }, 20000)
+
+  it('prompts --json → { server, prompts }（元数据 name/description/arguments）', async () => {
+    const h = await startResServer()
+    handles.push(h)
+    const { code, stdout } = await runCli(['mcp', 'prompts', 'remote', '--json', '--url', h.url])
+    expect(code).toBe(0)
+    const data = JSON.parse(stdout)
+    expect(data.server).toBe('remote')
+    expect(Array.isArray(data.prompts)).toBe(true)
+    expect(data.prompts).toHaveLength(1)
+    expect(data.prompts[0]).toMatchObject({ name: 'greet', description: '生成问候语' })
+    expect(data.prompts[0].arguments).toEqual([{ name: 'name', description: '称呼', required: true }])
+  }, 20000)
+
+  it('prompts --get --json → { server, prompt, description?, messages }（与 server mcp_get_prompt 同构）', async () => {
+    const h = await startResServer()
+    handles.push(h)
+    const { code, stdout } = await runCli(['mcp', 'prompts', 'remote', '--get', 'greet', '--args', '{"name":"世界"}', '--json', '--url', h.url])
+    expect(code).toBe(0)
+    const data = JSON.parse(stdout)
+    expect(data.server).toBe('remote')
+    expect(data.prompt).toBe('greet')
+    expect(data.description).toBe('生成问候语')
+    expect(Array.isArray(data.messages)).toBe(true)
+    expect(data.messages[0]).toEqual({
+      role: 'user',
+      content: { type: 'text', text: '你好，世界！' },
+    })
+  }, 20000)
+
+  it('tools --json → { server, tools }（名称 + 描述 + inputSchema）', async () => {
+    const h = await startMcpHttpServer({ tools: [echoTool] })
+    handles.push(h)
+    const { code, stdout } = await runCli(['mcp', 'tools', 'remote', '--json', '--url', h.url])
+    expect(code).toBe(0)
+    const data = JSON.parse(stdout)
+    expect(data.server).toBe('remote')
+    expect(Array.isArray(data.tools)).toBe(true)
+    expect(data.tools).toHaveLength(1)
+    expect(data.tools[0].name).toBe('echo')
+    expect(data.tools[0].description).toMatch(/回显输入文本/)
+    expect(data.tools[0].inputSchema).toBeTruthy()
+  }, 20000)
+})
