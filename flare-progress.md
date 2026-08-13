@@ -1,5 +1,7 @@
 # Flare 引擎迭代进度（夜间调研 agent）
 
+> **【✅ 第一百二十六轮完成】P160 (v0.6.121) 记忆相似度检测 findSimilarMemories + flare memories --similar 已装机**：
+> commit `fcf6ef1`，1134/1134 全绿、tsc 0 错误、零 agent.ts 改动（详情见下方第一百二十六轮条目）。
 > **【✅ 第一百二十五轮小步】P159 (纯文档) host-protocol.md 响应事件汇总表补齐 7 个缺失类型行**：
 > commit `a56b0fd`，纯文档零 src 改动、tsc 0 错误、1116/1116 全绿、无版本变化（详情见下方 P159 条目）。
 > **【✅ 第一百二十五轮小步】P158 (纯文档) docs/mcp.md 单次查询章节修正过时表述**：
@@ -4419,6 +4421,71 @@
         → cli 测试（mock 或跳过网络）
   - [x] **N3**（可选）memory_search 长消息折叠（tools/memory.ts 截断优化）
   - [x] **N4** README Changelog + 版本号 v0.6.0 + 文档收尾（随 N2 完成）
+
+---
+
+### 2026-08-14 第一百二十六轮实施（v0.6.121）——P160 记忆相似度检测（装机完成，自循环）
+
+> **P160 完成**（commit `fcf6ef1`）：memory-rag「后续候选」**记忆去重第一步——检测面**（只读）：
+> 新增 `MemoryStore.findSimilarMemories({ threshold?, limit? })` 与库导出纯函数
+> `trigramJaccard`，CLI `flare memories --similar [--threshold <0~1>] [--json]` 显示近似记忆对。
+> 宿主/用户此前无法发现重复/近似记忆（只能全部列出人工比对）；本版提供程序化检测面，
+> 发现后由宿主决定是否 deleteMemory / deleteMemoriesByContent 清理（自动合并摘要留后续候选）。
+> - **实现**（src/memory/store.ts +71、src/cli/index.ts +35、src/index.ts +4/-2）：
+>   - `trigramJaccard(a, b)`：字符 3-gram 集合 Jaccard 相似度（中文友好——按字符切分连续 3 字子串；
+>     去除空白；交集/并集；**<3 字短文本退化整段单个 gram**（相同 1 / 不同 0）；空串双方空 → 1、
+>     单方空 → 0）；库导出供外部/测试复用
+>   - `findSimilarMemories({ threshold = 0.4, limit = 20 })`：两两比较全部记忆（getAllMemories），
+>     相似度 ≥ threshold 入列，**idA < idB 不重复对**，按相似度降序，slice(limit) 截断——大库 O(n²)
+>     有 limit 保护（返回量受限，纯内存比对无写库）
+>   - **阈值校准（实测驱动）**：初稿注释默认 0.5，node 实测「用户偏好浅色主题」vs 超集
+>     「…，还喜欢极简风」= 0.4615 < 0.5 会漏检最常见的「一条是另一条超集」重复模式 →
+>     默认阈值下调 **0.4**（0.46 可检出；完全重复 = 1；换词区分型如浅色/深色 ≈0.33 不误报）
+>   - CLI `memories --similar`：文本模式 `#idA ↔ #idB 相似度 0.46:` + 两行内容截断 60 字符；
+>     `--threshold` 校验 0~1 数字（abc/-1/1.5 → 「❌ --threshold 必须是 0~1 的数字」exit 1）；
+>     `--json` 输出 `{ threshold, pairs }`（pairs 含 idA/idB/contentA/contentB/similarity 全字段）；
+>     无相似对/空库「未发现相似记忆（阈值 X）」exit 0；**纯只读不删除**；零新 import（chalk/
+>     getMemoryStore 顶部已有）
+> - **测试**（store.test.ts 追加 12 用例 + cli-memories.test.ts 追加 6 用例，共 +18）：
+>   - trigramJaccard 6：完全相同 1 / 完全无关 0 / 近似 0~1 且共享越多越相似（b-c > a-c，Jaccard
+>     对「包含」非单调故用共享内容比较断言）/ 空白差异不影响 / 短文本退化 / 空串边界
+>   - findSimilarMemories 6：近似对检出且 idA<idB 降序 / 完全重复相似度 1 / threshold 过滤（1 → 空、
+>     0 → 全）/ limit 截断 / 空库空数组 / 无相似空数组
+>   - CLI e2e 6：文本模式对显示（#1 ↔ #2 相似度 0.46）/ 无相似对「未发现」exit 0 / 空库 exit 0 /
+>     --json 结构 { threshold, pairs } 全字段 / --threshold 0.9 调高无结果 / 非法阈值（abc/-1/1.5）exit 1
+> - README 命令表 memories 行补 --similar + Changelog v0.6.121 条目 + docs/memory-rag.md 后续候选
+>   更新（记忆去重检测面已完成；memory_search 长消息折叠 v0.6.0 已实现一并划掉）+ package.json
+>   0.6.120 → 0.6.121
+> - **1134/1134 全绿**（基线 1116 + 18；74 文件；全量首跑即绿无偶发），tsc 0 错误，**零 agent.ts
+>   改动**，零 push、零敏感信息（diff 敏感扫描 0 命中）；已 commit `fcf6ef1`（8 文件 +254/-9）；
+>   安装版冒烟（FLARE_HOME 临时库）：--similar 文本对显示 / --json 结构 / --threshold 0.9 无结果
+>   exit 0 / 非法阈值 exit 1 全部符合预期；真实 ~/.flare 零污染（冒烟均用 FLARE_HOME 临时目录）
+> - **下一步候选**：① 【P1】分层上下文（Layer 1 异步滚动摘要——需评估 run 循环外异步，涉及
+>   agent.ts trimContext 异步化，铁律暂缓）；② 其他安全的外围增强（记忆去重检测面已完成（本步），
+>   后续候选剩 RAG 注入（Agent 构造时按会话主题自动注入相关记忆——改 agent.ts 构造逻辑，需谨慎
+>   评估）、记忆自动合并/摘要（写操作 + LLM，风险中）、测试稳定性继续清扫等）
+> - **flare 验收结论：✅ 通过**——flare 独立运行 git log -1/git show 审查完整 diff（8 文件 +254/-9）、
+>   npx tsc 0 错误、PATH=/usr/bin:$PATH npx vitest run 全量 74 文件 1134/1134 全绿（store.test.ts
+>   专项 + cli-memories.test.ts 专项通过）、**真实库冒烟实测**：当前 ~/.flare 库恰有多次重复
+>   「用户喜欢喝美式咖啡」，--similar 正确检出 21 对相似度 1.00 完全重复 + 1 对 0.75 近似
+>   （冒烟测试确认门 v3/v2）——功能价值实证；逐项核对 trigramJaccard 边界（短文本退化/空串）、
+>   findSimilarMemories 语义（idA<idB/降序/threshold/limit/纯只读）、CLI --threshold 校验与
+>   exit code、库导出、版本号/README/docs 三处同步、零 agent.ts 改动、无任何密钥明文；全程零修改
+>   零 commit；结论与实况完全一致（验收指令经文件读入规避 confusable 误报，P148 先例）
+
+**引导过程记录（引导 agent 视角，实现+验收直接完成）**：
+- 本轮实现由引导 agent 直接完成（「调研→执行→flare 验收」新范式，验收环节交给 flare）
+- 调研选定 P160：memory-rag「后续候选」中「记忆去重/摘要（相似记忆合并）」价值最高且
+  「检测面」是纯只读安全的第一步——RAG 注入需改 agent.ts 构造逻辑（谨慎）、自动合并需
+  LLM 写操作（风险中），检测面零 agent.ts 改动零风险
+- **教训**：① **阈值不能拍脑袋，必须实测校准**——初稿默认 0.5 注释「≈0.6 可检出」是估算错误，
+  node 实测超集模式 = 0.4615（Jaccard 并集含新增 gram 会稀释相似度，直觉高估），下调 0.4 后
+  才覆盖最常见重复模式；实现含数值语义（阈值/百分比）必须先跑真实数据验证再定稿断言；
+  ② **Jaccard 对「包含」关系非单调**——「a 是 b 前缀」时 b 越长并集越大相似度越低，测试断言
+  不能写 `sac >= sab`（初稿踩中，实测 a-c=0.33 < a-b=0.46），应断言「共享内容更多 → 更相似」
+  （b-c > a-c）；③ 验收指令仍走文件读入规避 confusable（本轮第一次 -q 带中文又被拦截，
+  改纯 ASCII 指令 + 文件读入一次通过）；④ 纯只读检测命令（--similar）是最安全的记忆去重
+  第一步，与既有写操作（delete-memory）天然衔接，宿主可程序化消费 --json 后自行清理
 
 ---
 
