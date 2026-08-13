@@ -154,13 +154,13 @@ cp .env.example ~/.flare/.env
 | `flare mcp call <服务器> <工具> [JSON参数]` | 调用 MCP 服务器工具（stdio 或 HTTP transport；服务器名查 `~/.flare/mcp.json`，`--url` 直连 HTTP 端点，v0.6.6；`--header <k:v>` 可重复附加鉴权请求头，v0.6.68） |
 | `flare log-level <服务器> <级别>` | 设置 MCP 服务器日志级别阈值（logging/setLevel，v0.6.83；级别 debug/info/notice/warning/error/critical/alert/emergency 按严重程度升序；stdio/HTTP transport 通用；`--url` 直连 HTTP 端点，`--header <k:v>` 附加鉴权请求头 v0.6.68） |
 | `flare messages <会话ID>` | 查看指定会话的消息历史（--limit N 1~500 默认 50；--recent 从最新开始；--json 结构化输出（与 server get_messages 回包同构 { sessionId, messages, ...(recent?{recent:true}:{}) }，宿主/脚本程序化消费，空会话输出 messages:[]）v0.6.107；v0.6.84） |
-| `flare search <关键词>` | 跨会话搜索标题/消息内容（--limit N 1~100 默认 20；v0.6.85） |
+| `flare search <关键词>` | 跨会话搜索标题/消息内容（--limit N 1~100 默认 20；--json 结构化输出（与 server search_sessions 回包同构 `{ query, sessions }`，含 id/title/createdAt/updatedAt/messageCount/archived；空结果 `{ query, sessions: [] }`）v0.6.111；v0.6.85） |
 | `flare search-messages <关键词>` | 全文搜索历史消息内容（--limit N 1~100 默认 10；--json 结构化输出（与 server search_messages 回包同构 `{ query, results }`，含 sessionId/role/content/createdAt，content 不截断不折叠；空结果 `{ query, results: [] }`）v0.6.110；v0.6.86） |
 | `flare sessions` | 查看最近会话列表（--limit N 1~50 默认 10；--json 结构化输出（与 server list_sessions 回包同构 { sessions }，宿主/脚本程序化消费，空库输出 sessions:[]）v0.6.108；v0.6.87） |
 | `flare rename <会话ID> <标题>` | 重命名会话（写操作：仅修改标题；title 非空必填；与 server rename_session 对称；v0.6.97） |
 | `flare delete-session <会话ID>` | 整体删除会话（写操作：删除会话及其全部消息与用量统计，不可恢复；不存在幂等 exit 1；与 server delete_session 对称；v0.6.99） |
 | `flare clear-session <会话ID>` | 清空会话全部消息（写操作：仅删除该会话消息，保留会话记录与用量；不存在幂等 exit 0；与 server clear_session 对称；v0.6.99） |
-| `flare archived-sessions` | 查看归档会话列表（--limit N 1~50 默认 10；v0.6.88） |
+| `flare archived-sessions` | 查看归档会话列表（--limit N 1~50 默认 10；--json 结构化输出（与 server archived_sessions 回包同构 `{ sessions }`，含 id/title/updatedAt/preview，preview 截断 120 字符；空库 `{ sessions: [] }`）v0.6.111；v0.6.88） |
 | `flare restore <会话ID>` | 恢复归档会话（写操作：仅修改 archived 标记，数据保留；与 server restore_session 对称；v0.6.96） |
 | `flare end-session <会话ID>` | 归档会话（写操作：仅修改 archived 标记，消息与用量保留，从最近会话隐藏；空 id exit 1、不存在或已归档幂等 exit 1；与 server end_session 对称；v0.6.101） |
 | `flare usage` | 查看 token 用量统计（全局汇总 + perModel 分解；--session <会话ID> 只看单会话；含缓存命中/节省；--json 结构化输出（与 server get_usage/session_usage stats 同构，宿主/脚本程序化消费，空库/无记录输出零值 stats）v0.6.106；v0.6.89） |
@@ -362,6 +362,11 @@ Interactive mode commands:
 | `/exit` | Exit |
 
 ### Changelog / Release Notes
+
+## v0.6.111（2026-08-13）
+- ✨ **`flare search` 增加 `--json` 结构化输出**：与 server search_sessions 回包完全同构（`{ query, sessions }`，不带 type 包装）；宿主/脚本可直接程序化消费跨会话搜索命中（--limit 语义与文本模式一致，按更新时间倒序）；每项为 store 原始行（id/title/createdAt/updatedAt/messageCount/archived，含归档标记）；空结果输出 `{ query, sessions: [] }`（结构稳定可解析）；只打印 JSON 不混彩色；文本模式与退出码语义完全不变
+- ✨ **`flare archived-sessions` 增加 `--json` 结构化输出**：与 server archived_sessions 回包完全同构（`{ sessions }`，不带 type 包装）；宿主/脚本可直接程序化消费归档会话列表（--limit 语义与文本模式一致）；每项为 server 同款映射（id/title/updatedAt/preview，title 默认'新会话'、preview 空白折叠 + 截断 120 字符）；空库输出 `{ sessions: [] }`（结构稳定可解析）；只打印 JSON 不混彩色；文本模式与退出码语义完全不变
+- 会话搜索面程序化收官（文本 search/archived-sessions、server search_sessions/archived_sessions 结构化 → CLI search/archived-sessions --json 结构化；CLI 只读命令 --json 系列至此覆盖 usage/messages/sessions/context-status/tools/config/version/ping/mcp status/cache-check/memories/search-messages/search/archived-sessions/confirm-status）
 
 ## v0.6.110（2026-08-13）
 - ✨ **`flare search-messages` 增加 `--json` 结构化输出**：与 server search_messages 回包完全同构（`{ query, results }`，不带 type 包装）；宿主/脚本可直接程序化消费历史消息全文搜索结果（--limit 语义与文本模式一致）；每项为 store 原始行（sessionId/role/content/createdAt，content 不截断不折叠）；空结果输出 `{ query, results: [] }`（结构稳定可解析）；只打印 JSON 不混彩色；文本模式与退出码语义完全不变
