@@ -151,7 +151,7 @@ cp .env.example ~/.flare/.env
 | `flare chat -q "问题" -i 图片.png` | 单次查询附带图片 |
 | `flare server [--profile --storage --mcp --confirm-tools --confirm-timeout --max-tokens --temperature --max-context-messages --max-context-tokens --context-summarize --tool-output-policy]` | 宿主协议服务（stdin/stdout JSON Lines，供 Qt 等宿主调用；v0.6.1 起写回类工具经确认门；v0.6.5 起 --max-tokens/--temperature 设 chat 默认采样参数；v0.6.17 起 --max-context-messages/--max-context-tokens 设默认上下文自动裁剪；v0.6.19 起 --context-summarize 默认开启上下文压缩摘要；v0.6.34 起 --tool-output-policy 设默认工具输出治理策略） |
 | `flare mcp-server [-t 工具名,...] [--http [--port <端口>] [--http-auth-token-env <VAR>]] [--bridge-resources] [--bridge-prompts] [--bridge-tools]` | MCP stdio 服务器：把 flare 工具集暴露给其他 AI 客户端（v0.5.8；v0.6.3 起 --http 起 HTTP transport；v0.6.28/0.6.37/0.6.47 起可透传外部 MCP 服务器资源/提示词/工具；v0.6.69 起 --http-auth-token-env 从环境变量读 Bearer 鉴权 token） |
-| `flare mcp call <服务器> <工具> [JSON参数]` | 调用 MCP 服务器工具（stdio 或 HTTP transport；服务器名查 `~/.flare/mcp.json`，`--url` 直连 HTTP 端点，v0.6.6；`--header <k:v>` 可重复附加鉴权请求头，v0.6.68） |
+| `flare mcp call <服务器> <工具> [JSON参数]` | 调用 MCP 服务器工具（stdio 或 HTTP transport；服务器名查 `~/.flare/mcp.json`，`--url` 直连 HTTP 端点，v0.6.6；`--header <k:v>` 可重复附加鉴权请求头，v0.6.68；--json 结构化输出（`{ server, tool, success, error?, output }` 与 server mcp_call 回包同构，工具级失败输出 `{ success:false, error }` 且 exit 1）v0.6.115） |
 | `flare log-level <服务器> <级别>` | 设置 MCP 服务器日志级别阈值（logging/setLevel，v0.6.83；级别 debug/info/notice/warning/error/critical/alert/emergency 按严重程度升序；stdio/HTTP transport 通用；`--url` 直连 HTTP 端点，`--header <k:v>` 附加鉴权请求头 v0.6.68） |
 | `flare messages <会话ID>` | 查看指定会话的消息历史（--limit N 1~500 默认 50；--recent 从最新开始；--json 结构化输出（与 server get_messages 回包同构 { sessionId, messages, ...(recent?{recent:true}:{}) }，宿主/脚本程序化消费，空会话输出 messages:[]）v0.6.107；v0.6.84） |
 | `flare models` | 查看可用模型：配置的主/视觉模型（settings 优先，含解析端点）+ 本地 Ollama 已拉取模型（--json 结构化输出（与 server models 回包同构 `{ configured, ollama }`，configured.main/vision 为 ModelEndpointInfo 同款 model/baseURL/hasApiKey/provider，vision 未配置 → null，ollama 不可达 ok:false 不崩）v0.6.112；v0.6.0） |
@@ -365,6 +365,10 @@ Interactive mode commands:
 | `/exit` | Exit |
 
 ### Changelog / Release Notes
+
+## v0.6.115（2026-08-13）
+- ✨ **`flare mcp call` 增加 `--json` 结构化输出**：外部 MCP 服务器工具调用命令程序化收官——输出 `{ server, tool, success, error?, output }` 与 server `mcp_call` 回包完全同构（不带 type 包装；error 仅在工具级失败时携带）；成功 → exit 0，工具级失败（isError）→ `{ success:false, error }` 合法 JSON 且 **exit 1**（脚本可同时按 stdout JSON 与退出码判断）；无文本输出 → `{ output: "" }` success:true exit 0（不打印「无文本输出」兜底）；`-j` 短选项等价；只打印 JSON 不混彩色；文本模式与退出码语义完全不变
+- CLI 只读命令 --json 系列外部 MCP 面全量收官（v0.6.113 mcp resources/prompts/tools、v0.6.114 mcp complete、本版 mcp call——执行类也程序化可消费）
 
 ## v0.6.114（2026-08-13）
 - ✨ **`flare mcp complete` 增加 `--json` 结构化输出**：外部 MCP 服务器提示词参数补全命令程序化收官——输出 `{ server, prompt, argument, value?, values, total?, hasMore? }` 与 server `mcp_complete` 回包完全同构（不带 type 包装；value 仅在传入时携带、total/hasMore 仅在服务器返回时携带，均与 server 回包 `...(value ? { value } : {})` 同款可选字段语义）；空候选输出 `{ values: [] }` 合法 JSON exit 0（不打印「无补全候选」提示，脚本可解析）；`-j` 短选项等价；只打印 JSON 不混彩色；文本模式与退出码语义完全不变

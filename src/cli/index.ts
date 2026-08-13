@@ -1672,12 +1672,13 @@ export function main() {
 
   mcpCmd
     .command('call <server> <tool> [jsonArgs]')
-    .description('调用 MCP 服务器工具（stdio 或 HTTP transport；服务器名查 ~/.flare/mcp.json 配置，--url 直连 HTTP 端点）')
+    .description('调用 MCP 服务器工具（stdio 或 HTTP transport；服务器名查 ~/.flare/mcp.json 配置，--url 直连 HTTP 端点；--json 结构化输出 v0.6.115）')
     .option('--url <url>', '直接连 HTTP transport 端点（如 http://127.0.0.1:8931/mcp），跳过配置查找')
     .option('--config <path>', 'MCP 配置文件路径（默认 ~/.flare/mcp.json）')
     .option('--timeout <ms>', '单请求超时毫秒（默认 15000）')
-    .option('--header <kv>', '附加请求头 key:value（可重复；HTTP transport 鉴权，如 --header "Authorization: Bearer <token>"，v0.6.68）', collectHeader, [])
-    .action(async (server: string, tool: string, jsonArgs: string | undefined, options: { url?: string; config?: string; timeout?: string; header?: string[] }) => {
+    .option('--header <kv>', '附加请求头 key:value（可重复；HTTP transport 鉴权，如 --header "Authorization: Bearer ***"，v0.6.68）', collectHeader, [])
+    .option('-j, --json', '以 JSON 结构化输出（与 server mcp_call 回包同构；工具级失败输出 { success:false, error } 且 exit 1，v0.6.115）')
+    .action(async (server: string, tool: string, jsonArgs: string | undefined, options: { url?: string; config?: string; timeout?: string; header?: string[]; json?: boolean }) => {
       try {
         const { MCPClient, MCPHttpClient, McpManager } = await import('../index.js')
         const timeoutMs = options.timeout ? Number(options.timeout) : 15000
@@ -1719,6 +1720,18 @@ export function main() {
           ? res.content.filter((c) => c.type === 'text' && typeof c.text === 'string').map((c) => c.text).join('\n')
           : ''
         client.close()
+        // --json：与 server mcp_call 回包同构（不带 type 包装）——工具级失败输出 JSON 且 exit 1
+        if (options.json) {
+          console.log(JSON.stringify({
+            server,
+            tool,
+            success: !res.isError,
+            ...(res.isError ? { error: text || `MCP 工具 ${tool} 执行失败` } : {}),
+            output: text,
+          }))
+          if (res.isError) process.exit(1)
+          return
+        }
         if (res.isError) {
           console.error(chalk.red(`❌ 工具 ${tool} 执行失败: ${text || '（无错误信息）'}`))
           process.exit(1)
