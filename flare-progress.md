@@ -1,5 +1,7 @@
 # Flare 引擎迭代进度（夜间调研 agent）
 
+> **【✅ 第一百二十六轮小步】P164 (纯文档) README 交互命令表同步 /memory similar 与 /usage 缓存能力**：
+> commit `d2eba8b`，纯文档零 src 改动、tsc 0 错误、无版本变化（详情见下方 P164 条目）。
 > **【✅ 第一百二十六轮小步】P163 (v0.6.123) 交互命令 /memory similar 检测相似记忆对已装机**：
 > commit `dc9d122`，1143/1143 全绿、tsc 0 错误、零 agent.ts 改动（详情见下方 P163 条目）。
 > **【✅ 第一百二十六轮小步】P162 (纯文档) memory-rag.md 补记忆相似度检测正式章节**：
@@ -4639,6 +4641,47 @@
   每个能力落地时检查 store/CLI/server/交互/文档五处是否都有入口，缺哪个补哪个；
   ② 交互命令防御性调用（typeof 检查）是低风险接入既有能力的好模式，即使 store 缺方法
   也不崩；③ 验收指令纯文件读入（不经 -q 中文参数）稳定规避 confusable 误报，后续沿用
+
+---
+
+### 2026-08-14 第一百二十六轮小步（P164 纯文档）——README 交互命令表同步 /memory similar 与 /usage 缓存能力（完成，自循环）
+
+> **P164 完成**（commit `d2eba8b`）：README 交互命令表三处滞后同步——P163（v0.6.123）
+> `/memory similar` 装机后中文交互命令表 `/memory` 行仍只有「查看持久记忆」一句话（未提
+> v0.6.25 关键词搜索、未提 v0.6.123 similar）、`/usage` 行未提缓存命中（v0.6.49）与缓存
+> 节省金额（v0.6.65）、英文交互命令表 `/memory` 行同样未提 similar——文档不对称（P149/
+> P153/P157-159/P162 纯文档先例：功能落地后 docs 专项是典型滞后点）。
+> - **实现**（README.md 3 行 +3/-3，零 src 改动）：
+>   - 中文 `/memory` 行：补「带关键词全文搜索（v0.6.25）；`/memory similar` 检测相似记忆对
+>     （默认阈值 0.4，只读不删除，v0.6.123）」
+>   - 中文 `/usage` 行：补「v0.6.49 起含缓存命中；v0.6.65 起含缓存节省金额」
+>   - 英文 `/memory` 行：同步补 similar 能力（default threshold 0.4, read-only, v0.6.123）
+> - **验证**：tsc 0 错误；记忆专项 80/80 全绿（store.test.ts + memory-command.test.ts +
+>   cli-memories.test.ts，纯文档改动专项确认无回归）；**零 src 改动**（git diff 仅 README.md
+>   1 文件）；纯文档无版本变化（0.6.123 不变，dist 未动，无需自安装）；零 push、零敏感信息
+>   （diff 敏感扫描 0 命中）
+> - **flare 验收结论：✅ 通过**——flare 独立运行 git log -1（d2eba8b）/git show 审查完整
+>   diff（仅 README.md 1 文件 3 行 +3/-3）、git diff -- src/ 零改动（agent.ts 未改）、npx tsc
+>   0 错误、专项 3 文件 80/80 全绿；逐条对照源码核对文档表述：/memory similar 默认阈值 0.4
+>   （src/cli/index.ts L1116-1134）、只读不删除、/forget 提示、/usage v0.6.49 本会话行缓存
+>   命中（L1307）、v0.6.65 本会话 perModel 子行节省金额（L1329）全部一致；无任何密钥明文；
+>   全程零修改零 commit；结论与实况完全一致（验收指令经文件读入规避 confusable 误报，
+>   P148 先例）
+> - **下一步候选**：① 【P1】分层上下文（Layer 1 异步滚动摘要——需评估 run 循环外异步，
+>   涉及 agent.ts trimContext 异步化，铁律暂缓）；② 其他安全的外围增强（记忆去重检测面
+>   三层收官 + 文档同步完成（store+CLI v0.6.121、server 协议 v0.6.122、交互命令 v0.6.123、
+>   文档 v0.6.123 本步），剩余候选 RAG 注入（Agent 构造时按会话主题自动注入相关记忆——
+>   需改 agent.ts 构造逻辑 + searchMemories 查询语义（当前短语匹配整句难命中），复杂度超
+>   外围定位暂缓）、记忆自动合并/摘要（写操作 + LLM，风险中）、测试稳定性继续清扫、
+>   确认门接入完整化、MCP 增强（resources / HTTP transport 文档同步）等）
+
+**引导过程记录（引导 agent 视角，实现+验收直接完成）**：
+- 本轮实现由引导 agent 直接完成（纯文档，README 交互命令表三处同步）
+- **教训**：① P163 装机后 README 交互命令表滞后是典型收尾遗漏——changelog 更新了但
+  命令表没同步，功能落地后要系统性检查「changelog/命令表/章节/协议表/统计」五处；
+  ② /usage 行的缓存能力（v0.6.49 命中 / v0.6.65 节省）也是历史遗漏（装机时只改了
+  changelog 未改命令表），本轮一并补齐；③ 纯文档小步同样跑记忆专项确认无回归
+  （成本 ~5s，值得）
 
 ---
 
