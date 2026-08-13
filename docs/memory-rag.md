@@ -95,7 +95,31 @@ const agent = new Agent({
 - FTS 索引由 memories 的 DELETE 触发器联动清理（删除后 searchMemories 不再命中）
 - CLI：`/forget <关键词>` 删除包含该关键词的记忆
 
-### 6. 宿主协议记忆接口（server）
+### 6. CLI 单次命令记忆管理（v0.6.91 memories / v0.6.100 remember、delete-memory）
+
+宿主/脚本场景（非交互终端）的记忆管理入口——与 server 协议 `get_memories`/`remember`/`delete_memory`
+对称的 CLI 单次命令形态，与交互模式 `/memory`（v0.6.25）/`/remember`/`/forget` 共用同一 store：
+
+- **`flare memories [<关键词>]`（v0.6.91，只读）**：查看持久记忆——无关键词列出全部（limit 默认 50）；
+  带关键词全文搜索（≥3 字 trigram FTS / 短查询 LIKE 回退）；`--kind <类型>` 按类型过滤（如
+  preference）；`--limit 1~100`（非法退出码 1）；`--json` 输出 `{ memories }` 与 server get_memories
+  回包同构（v0.6.109，content 不截断不折叠）；空库「暂无记忆」exit 0
+- **`flare remember <内容> [--kind <类型>]`（v0.6.100，写操作）**：保存持久记忆——默认类型 note，
+  `--kind` 指定（如 preference）；内容为空 exit 1；成功「已记住」exit 0
+- **`flare delete-memory <记忆ID>` 或 `--content <关键词>`（v0.6.100，写操作）**：删除持久记忆——
+  按 id 删单条（不存在 exit 1，正整数校验）；`--content` 按关键词批量删（幂等 exit 0，与 /forget
+  一致）；id 与 --content 同时提供以 id 为准
+
+```bash
+flare memories                              # 列出最近 50 条记忆
+flare memories 咖啡 --kind preference       # 按类型过滤搜索
+flare remember 用户喜欢美式咖啡              # 保存记忆（默认 note）
+flare remember "优先 DeepSeek" --kind preference
+flare delete-memory 12                      # 按 id 删除
+flare delete-memory --content 咖啡           # 按关键词批量删除（幂等）
+```
+
+### 7. 宿主协议记忆接口（server）
 
 | 请求 | 说明 |
 |------|------|

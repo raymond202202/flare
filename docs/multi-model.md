@@ -46,7 +46,21 @@ flare
 - 切换后自动重建当前会话（历史从记忆库恢复），无需重启
 - 单次查询（`flare chat -q "..."`）同样尊重保存的模型
 
-### 3. 代码里指定（宿主集成）
+### 3. CLI 单次命令查看（flare models，v0.6.0 / v0.6.112 --json）
+
+宿主/脚本场景（非交互终端）的模型查看入口——与 server 协议 `models`（v0.6.9）对称：
+
+```bash
+flare models               # 配置的主/视觉模型 + 本地 Ollama 已拉取模型清单
+flare models --json        # 结构化输出（v0.6.112：{ configured, ollama } 与 server models 回包同构）
+```
+
+- 输出：`configured.main` 当前主模型（含解析端点 / hasApiKey 密钥是否配置 / provider 推断）、
+  `configured.vision` 视觉模型（未配置 null）、`ollama` 本地 Ollama 已拉取模型列表（模型名 + 大小）
+- Ollama 未启动/不可达 → 友好提示不崩（`ollama.ok:false`），其余字段照常
+- 纯只读：不切换模型、不创建会话；切换请用交互模式 `/model`（见上节）
+
+### 4. 代码里指定（宿主集成）
 
 ```ts
 import { createProvider, Agent } from 'flare-agent'
