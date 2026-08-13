@@ -1,5 +1,7 @@
 # Flare 引擎迭代进度（夜间调研 agent）
 
+> **【✅ 第一百二十九轮小步】P174 (纯文档) USAGE.md 单次查询章节补 chat --session 续聊 + create-session**：
+> commit `0386a5a`，纯文档零 src 改动、tsc 0 错误、1164/1164 全绿、无版本变化（详情见下方 P174 条目）。
 > **【✅ 第一百二十九轮完成】P173 (v0.6.128) flare chat -q --session 续聊已有会话已装机**：
 > commit `c3ea2fc`，1164/1164 全绿、tsc 0 错误、零 agent.ts 改动（详情见下方 P173 条目）。
 > **【✅ 第一百二十八轮完成】P172 (v0.6.127) CLI 单次命令 flare create-session 已装机**：
@@ -202,6 +204,25 @@
 >    terminal 退出码（v0.6.33）✓ / CLI 归档命令（v0.6.32）✓ / 归档 API（v0.6.31）✓ /
 >    工具输出治理（v0.6.30）✓ / prompt caching P0（v0.6.29）✓ / MCP 动态资源提供器（v0.6.28）✓ /
 >    confirm 描述（v0.6.27）✓
+
+---
+
+### 2026-08-14 第一百二十九轮小步（P174，纯文档）——USAGE.md 单次查询章节补 chat --session 续聊 + create-session
+
+> **P174 完成**（commit `0386a5a`）：USAGE.md「单次查询模式」章节补两个新能力示例——P172
+> （create-session，v0.6.127）与 P173（chat --session 续聊，v0.6.128）装机后 USAGE 未同步，
+> 用户按 USAGE 入门只会看到最基础的两行（直接提问/带文件任务）。
+> - **改动**（USAGE.md +6/-0）：补「续聊已有会话（追加到该会话历史；v0.6.128）」
+>   `flare chat -q "接着刚才的话题" --session <会话ID>` +「显式创建会话（UPSERT 幂等——已存在则更新标题；v0.6.127）」
+>   `flare create-session <会话ID> "网络调试"` 两行带注释示例
+> - **验证**：tsc 0 错误；全量 1164/1164 全绿（76 文件；**首跑即绿无偶发**）；纯文档零 src 改动、
+>   零 agent.ts 改动；零 push、零敏感信息；无版本变化（0.6.128 不变，dist 未动，无需自安装）
+> - **flare 验收通过**：首次调用 600s 超时（flare 侧无响应），后台重跑成功——独立核验
+>   git show --stat 仅 M USAGE.md 零 src 改动；逐项对照 src/cli/index.ts（chat --session 选项 line 1505
+>   参数/版本标注 v0.6.128、create-session 命令 line 2439 参数/UPSERT 语义/v0.6.127）与 USAGE 示例
+>   完全一致；sk-/api_key/password/token 关键词扫描 0 命中；结论「✅ 予以通过」
+> - **下一步候选**：① 【P1】分层上下文（Layer 1 异步滚动摘要——需改 Agent.run 核心循环，
+>   违反铁律跳过并记录理由）；② 其他安全的外围增强（MCP 工具集完善、测试稳定性等）
 
 ---
 
