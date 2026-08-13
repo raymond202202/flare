@@ -1,6 +1,8 @@
 # Flare 引擎迭代进度（夜间调研 agent）
 
-> **【已发布】v0.6.115 装机完成（P145 mcp call --json 结构化输出 + P146 docs/mcp.md 文档同步，引导模式本机安装版，自循环）**
+> **【已发布】v0.6.115 装机完成（P145 mcp call --json 结构化输出 + P146/P147 文档同步，引导模式本机安装版，自循环）**
+> **【✅ 第一百一十九轮完成】P147 (纯文档) docs/context-observability.md 同步 trim/context-status 单次命令**：
+> commit `f3fc453`，纯文档零 src 改动、tsc 0 错误、无版本变化（详情见下方第一百一十九轮条目）。
 > **【✅ 第一百一十八轮完成】P146 (纯文档) docs/mcp.md 同步外部 MCP 面 --json 能力**：
 > commit `b634ad3`，纯文档零 src 改动、tsc 0 错误、无版本变化（详情见下方第一百一十八轮条目）。
 > **【✅ 第一百一十七轮完成】P145 (v0.6.115) mcp call --json 已装机**：
@@ -466,6 +468,38 @@
   ③ 引导 agent 补测试时自身也会踩子串误匹配这类测试 bug，定位要快（首跑失败先看 Received 实值再推断）；
   ④ 写操作命令（会删 store 消息）的端到端持久验证（CLI 进程退出后 store 核对）是验收关键，不可只看 CLI
   输出
+
+---
+
+### 2026-08-13 第一百一十九轮实施（P147 纯文档）——docs/context-observability.md 同步 trim/context-status 单次命令（装机完成，自循环）
+
+> **P147 完成**（commit `f3fc453`）：docs/context-observability.md「一键执行」章节（原描述停在
+> v0.6.35 apply_trim / v0.6.46 CLI /trim）补齐 P133/134/135 三连新增的 **CLI 单次命令能力**——
+> P133（v0.6.103）`flare trim <会话ID>`、P134（v0.6.104）`flare context-status --json`、P135
+> （v0.6.105）`trim --keep` 精确裁剪——README 命令表/Changelog 已同步、docs 专项文档未跟上
+> （文档不对称，P146 同源问题）。纯文档增强，零 src 改动、零风险（v0.6.74/0.6.77/0.6.82 纯文档先例）。
+> - **实现**（docs/context-observability.md +10/-1）：「一键执行」章节标题扩展（v0.6.103 单次命令），
+>   新增两条——`flare trim <会话ID>`（--budget 缺省用会话 maxContextTokens 或 16000、--keep 与
+>   context-status --json 的 suggestion.keepIndexes **同一索引空间**可程序化消费、空 id/会话不存在/
+>   无消息/非法 budget/非法越界 keep 各 exit 1、未超预算或全索引保留幂等 exit 0）；`flare
+>   context-status --json`（与 server context_status 同构、--budget 时附 suggestion.keepIndexes、
+>   与 trim --keep 配对形成「查看建议 → 精确执行」程序化闭环）
+> - **验证**：tsc 0 错误；**零 src 改动**（git diff 仅 docs/context-observability.md 1 文件）；纯文档
+>   无版本变化（0.6.115 不变，dist 未动，无需自安装）；零 push、零敏感信息
+> - **flare 验收结论：✅ 通过**——flare 独立运行 git show 审查 diff + npx tsc 0 错误，**逐条对照
+>   src/cli/index.ts 行号**验证 7 项文档表述（--budget 缺省值 2687 行、--keep/--budget 互斥 2624-2626、
+>   同一索引空间 2557/2663、越界/非法 exit 1 2640-2670、幂等 exit 0 2673-2675、suggestion.keepIndexes
+>   2571-2580、空 id/会话不存在 2620-2660），结论与实况完全一致
+> - **下一步候选**：① 【P1】分层上下文（Layer 1 异步滚动摘要——需评估 run 循环外异步，涉及
+>   agent.ts trimContext 异步化，铁律暂缓）；② 其他安全的外围增强（MCP 工具集完善、测试稳定性继续清扫等）
+
+**引导过程记录（引导 agent 视角，实现+验收直接完成）**：
+- 本轮实现由引导 agent 直接完成（纯文档，写 docs/context-observability.md 一键执行章节）
+- flare 验收延续 P146 的高标准：逐条对照源码行号验证文档表述（7 项全过）
+- **教训**：① P133/134/135 三连 CLI 单次命令是 docs/context-observability.md 的滞后点，与 P146 的
+  docs/mcp.md 滞后同源——**版本功能落地后须检查三处文档（README 表 + Changelog + 对应 docs 专项）**；
+  ② 纯文档小步连续两轮（P146/P147）节奏快、零风险，适合自循环窗口填充；③ flare 验收对纯文档也
+  保持逐条对照源码的高标准，文档编写时须先核对 README 命令表与 cli 实现的行号级事实
 
 ---
 
