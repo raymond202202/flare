@@ -154,7 +154,7 @@ cp .env.example ~/.flare/.env
 | `flare mcp-server [-t 工具名,...] [--http [--port <端口>] [--http-auth-token-env <VAR>]] [--bridge-resources] [--bridge-prompts] [--bridge-tools]` | MCP stdio 服务器：把 flare 工具集暴露给其他 AI 客户端（v0.5.8；v0.6.3 起 --http 起 HTTP transport；v0.6.28/0.6.37/0.6.47 起可透传外部 MCP 服务器资源/提示词/工具；v0.6.69 起 --http-auth-token-env 从环境变量读 Bearer 鉴权 token） |
 | `flare mcp call <服务器> <工具> [JSON参数]` | 调用 MCP 服务器工具（stdio 或 HTTP transport；服务器名查 `~/.flare/mcp.json`，`--url` 直连 HTTP 端点，v0.6.6；`--header <k:v>` 可重复附加鉴权请求头，v0.6.68；--json 结构化输出（`{ server, tool, success, error?, output }` 与 server mcp_call 回包同构，工具级失败输出 `{ success:false, error }` 且 exit 1）v0.6.115；非 text 内容项（image/audio/resource）输出占位描述、structuredContent 无文本时 JSON 兜底（v0.6.117）） |
 | `flare log-level <服务器> <级别>` | 设置 MCP 服务器日志级别阈值（logging/setLevel，v0.6.83；级别 debug/info/notice/warning/error/critical/alert/emergency 按严重程度升序；stdio/HTTP transport 通用；`--url` 直连 HTTP 端点，`--header <k:v>` 附加鉴权请求头 v0.6.68） |
-| `flare messages <会话ID>` | 查看指定会话的消息历史（--limit N 1~500 默认 50；--recent 从最新开始；--json 结构化输出（与 server get_messages 回包同构 { sessionId, messages, ...(recent?{recent:true}:{}) }，宿主/脚本程序化消费，空会话输出 messages:[]）v0.6.107；v0.6.84） |
+| `flare messages <会话ID>` | 查看指定会话的消息历史（--limit N 1~500 默认 50；--recent 从最新开始；--json 结构化输出（与 server get_messages 回包同构 { sessionId, messages, ...(recent?{recent:true}:{}) }，宿主/脚本程序化消费，空会话输出 messages:[]）v0.6.107；已归档会话文本模式标题带（已归档）标记 v0.6.130；v0.6.84） |
 | `flare models` | 查看可用模型：配置的主/视觉模型（settings 优先，含解析端点）+ 本地 Ollama 已拉取模型（--json 结构化输出（与 server models 回包同构 `{ configured, ollama }`，configured.main/vision 为 ModelEndpointInfo 同款 model/baseURL/hasApiKey/provider，vision 未配置 → null，ollama 不可达 ok:false 不崩）v0.6.112；v0.6.0） |
 | `flare search <关键词>` | 跨会话搜索标题/消息内容（--limit N 1~100 默认 20；--json 结构化输出（与 server search_sessions 回包同构 `{ query, sessions }`，含 id/title/createdAt/updatedAt/messageCount/archived；空结果 `{ query, sessions: [] }`）v0.6.111；v0.6.85） |
 | `flare search-messages <关键词>` | 全文搜索历史消息内容（--limit N 1~100 默认 10；--json 结构化输出（与 server search_messages 回包同构 `{ query, results }`，含 sessionId/role/content/createdAt，content 不截断不折叠；空结果 `{ query, results: [] }`）v0.6.110；v0.6.86） |
@@ -381,6 +381,17 @@ Interactive mode commands:
 | `/exit` | Exit |
 
 ### Changelog / Release Notes
+
+## v0.6.130（2026-08-14）
+- ✨ **`flare messages <会话ID>` 已归档会话文本模式标题带（已归档）标记**：search/sessions 命令展示会话时已带
+  `（已归档）` 标记（search line 2362 口径），唯独 messages 命令查看指定会话消息时无归档提示——宿主/脚本
+  直接查归档会话消息时无从知晓该会话已归档（从最近列表隐藏）。本版补齐：文本模式标题行 `💬 会话 <id>（已归档）`，
+  与 search/sessions 的 arch 标记同口径（chalk.gray）；**--json 不加字段**（保持与 server get_messages 回包
+  同构 `{ sessionId, messages }`，程序化消费结构不变）；空会话/未归档会话行为不变
+- 测试（tests/cli-messages.test.ts 追加 3 用例）：已归档会话文本模式标题带（已归档）标记（含消息内容正常显示）/
+  已归档会话 --json 不加 archived 字段（与 server 回包同构）/ 未归档会话不出现（已归档）标记（回归）
+- 文档：README 命令表 messages 行补归档标记说明 + Changelog 条目
+- 纯 CLI 外围增强：零 agent.ts 改动（Agent.run 核心循环零触碰）、零 push、零敏感信息
 
 ## v0.6.129（2026-08-14）
 - ✨ **`flare chat -q "…" --session <会话ID>` 续聊已归档会话给黄色提示（不拦截）**：v0.6.128 续聊面装机后，`getAllSessions` 含 archived 会话（P173 观察点①「归档会话也可续聊，是否拦截可留后续」）——本版补齐决策：**提示不拦截**，与 server chat 同语义（getAgent 加载归档会话历史不检查 archived，宿主协议 chat 带归档 sessionId 本就允许续聊）；CLI 侧增加可见性——指定会话已归档时 stderr 黄色提示「该会话已归档（续聊将追加到归档会话，最近列表不可见；flare restore <会话ID> 可恢复）」后继续进入生成，exit code 不受影响
