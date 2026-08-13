@@ -2609,7 +2609,11 @@ program
         console.log(chalk.yellow(`会话 ${sessionId} 暂无消息`))
         return
       }
-      console.log(chalk.cyan(`\n💬 会话 ${sessionId} ${options.recent ? '最近' : '前'} ${Math.min(limit, messages.length)} 条消息:`))
+      // v0.6.130：会话已归档 → 标题行带（已归档）标记（与 search/sessions 命令的 arch 标记对称；
+      // 仅文本模式标注，--json 保持与 server get_messages 回包同构不加字段）
+      const sessArch = store.getAllSessions().find((s) => s.id === sessionId)?.archived
+      const archMark = sessArch ? chalk.gray('（已归档）') : ''
+      console.log(chalk.cyan(`\n💬 会话 ${sessionId}${archMark} ${options.recent ? '最近' : '前'} ${Math.min(limit, messages.length)} 条消息:`))
       for (const m of messages) {
         const text = Array.isArray(m.content)
           ? m.content.map(p => 'text' in p ? p.text : '[图片]').join('')

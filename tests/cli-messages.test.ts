@@ -95,6 +95,36 @@ describe('flare messages（v0.6.84）', () => {
     expect(stdout).toContain('暂无消息')
   }, 20000)
 
+  it('已归档会话 → 文本模式标题带（已归档）标记（v0.6.130，与 search/sessions 命令 arch 标记对称）', async () => {
+    seedMessages('s-arch', 3)
+    store.archiveSession('s-arch')
+    const { code, stdout } = await runCli(['messages', 's-arch'])
+    expect(code).toBe(0)
+    expect(stdout).toContain('已归档')
+    expect(stdout).toContain('会话 s-arch（已归档）')
+    expect(stdout).toContain('msg-001')
+  }, 20000)
+
+  it('已归档会话 --json → 不加 archived 字段（与 server get_messages 回包同构，v0.6.130）', async () => {
+    seedMessages('s-archj', 3)
+    store.archiveSession('s-archj')
+    const { code, stdout } = await runCli(['messages', 's-archj', '--json'])
+    expect(code).toBe(0)
+    const parsed = JSON.parse(stdout)
+    expect(parsed.sessionId).toBe('s-archj')
+    expect(parsed.messages.length).toBe(3)
+    // 结构同构：不含归档标注字段（server get_messages 回包无 archived）
+    expect(parsed).not.toHaveProperty('archived')
+  }, 20000)
+
+  it('未归档会话 → 文本模式不出现（已归档）标记（回归）', async () => {
+    seedMessages('s-live', 3)
+    const { code, stdout } = await runCli(['messages', 's-live'])
+    expect(code).toBe(0)
+    expect(stdout).not.toContain('已归档')
+    expect(stdout).toContain('会话 s-live 前 3 条消息')
+  }, 20000)
+
   it('超长内容 200 字符截断 + 角色图标（🧑 user / 🤖 assistant）', async () => {
     const sid = 'long'
     store.saveMessage(sid, { role: 'user', content: 'u'.repeat(300) })
