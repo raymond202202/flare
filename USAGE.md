@@ -64,6 +64,12 @@ flare chat -q "帮我写一个排序算法"
 
 # 带文件操作的任务
 flare chat -q "阅读 src/app.ts 并帮我重构"
+
+# 续聊已有会话（追加到该会话历史；v0.6.128）
+flare chat -q "接着刚才的话题" --session <会话ID>
+
+# 显式创建会话（UPSERT 幂等——已存在则更新标题；v0.6.127）
+flare create-session <会话ID> "网络调试"
 ```
 
 ### 查看帮助
