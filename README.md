@@ -155,7 +155,7 @@ cp .env.example ~/.flare/.env
 | `flare log-level <服务器> <级别>` | 设置 MCP 服务器日志级别阈值（logging/setLevel，v0.6.83；级别 debug/info/notice/warning/error/critical/alert/emergency 按严重程度升序；stdio/HTTP transport 通用；`--url` 直连 HTTP 端点，`--header <k:v>` 附加鉴权请求头 v0.6.68） |
 | `flare messages <会话ID>` | 查看指定会话的消息历史（--limit N 1~500 默认 50；--recent 从最新开始；--json 结构化输出（与 server get_messages 回包同构 { sessionId, messages, ...(recent?{recent:true}:{}) }，宿主/脚本程序化消费，空会话输出 messages:[]）v0.6.107；v0.6.84） |
 | `flare search <关键词>` | 跨会话搜索标题/消息内容（--limit N 1~100 默认 20；v0.6.85） |
-| `flare search-messages <关键词>` | 全文搜索历史消息内容（--limit N 1~100 默认 10；v0.6.86） |
+| `flare search-messages <关键词>` | 全文搜索历史消息内容（--limit N 1~100 默认 10；--json 结构化输出（与 server search_messages 回包同构 `{ query, results }`，含 sessionId/role/content/createdAt，content 不截断不折叠；空结果 `{ query, results: [] }`）v0.6.110；v0.6.86） |
 | `flare sessions` | 查看最近会话列表（--limit N 1~50 默认 10；--json 结构化输出（与 server list_sessions 回包同构 { sessions }，宿主/脚本程序化消费，空库输出 sessions:[]）v0.6.108；v0.6.87） |
 | `flare rename <会话ID> <标题>` | 重命名会话（写操作：仅修改标题；title 非空必填；与 server rename_session 对称；v0.6.97） |
 | `flare delete-session <会话ID>` | 整体删除会话（写操作：删除会话及其全部消息与用量统计，不可恢复；不存在幂等 exit 1；与 server delete_session 对称；v0.6.99） |
@@ -362,6 +362,10 @@ Interactive mode commands:
 | `/exit` | Exit |
 
 ### Changelog / Release Notes
+
+## v0.6.110（2026-08-13）
+- ✨ **`flare search-messages` 增加 `--json` 结构化输出**：与 server search_messages 回包完全同构（`{ query, results }`，不带 type 包装）；宿主/脚本可直接程序化消费历史消息全文搜索结果（--limit 语义与文本模式一致）；每项为 store 原始行（sessionId/role/content/createdAt，content 不截断不折叠）；空结果输出 `{ query, results: [] }`（结构稳定可解析）；只打印 JSON 不混彩色；文本模式与退出码语义完全不变
+- 消息搜索只读面程序化收官（文本 search-messages、server search_messages 结构化 → CLI search-messages --json 结构化）
 
 ## v0.6.109（2026-08-13）
 - ✨ **`flare memories` 增加 `--json` 结构化输出**：与 server get_memories 回包完全同构（`{ memories }`，不带 type 包装）；宿主/脚本可直接程序化消费持久记忆（--kind/关键词搜索/--limit 语义与文本模式一致）；每项为 store 原始行（id/content/type/created_at，content 不截断不折叠）；空库输出 `{ memories: [] }`（结构稳定可解析）；只打印 JSON 不混彩色；文本模式与退出码语义完全不变

@@ -2134,9 +2134,10 @@ program
   // flare search-messages <关键词>：消息级全文搜索历史消息内容（v0.6.86，与 server search_messages 对称）
   program
     .command('search-messages <keyword>')
-    .description('全文搜索历史消息内容（v0.6.86）')
+    .description('全文搜索历史消息内容（v0.6.86；--json 输出 JSON 结构化 { query, results } 供宿主/脚本程序化消费，v0.6.110）')
     .option('-n, --limit <n>', '最多显示 N 条消息（默认 10，1~100）')
-    .action((keyword: string, options: { limit?: string }) => {
+    .option('-j, --json', 'JSON 结构化输出（与 server search_messages 回包同构：{ query, results }；宿主/脚本程序化消费）')
+    .action((keyword: string, options: { limit?: string; json?: boolean }) => {
       const store = getMemoryStore()
       let limit = options.limit !== undefined ? Number(options.limit) : 10
       if (!Number.isInteger(limit) || limit < 1 || limit > 100) {
@@ -2144,6 +2145,12 @@ program
         process.exit(1)
       }
       const hits = store.searchMessages(keyword, limit)
+      // --json 结构化输出：仅打印 JSON，与 server search_messages 回包同构 { query, results }
+      //（results 为 store.searchMessages 原始行，content 不截断不折叠；空结果输出 { query, results: [] }）
+      if (options.json) {
+        console.log(JSON.stringify({ query: keyword.trim(), results: hits }))
+        return
+      }
       if (hits.length === 0) {
         console.log(chalk.gray(`未找到包含「${keyword}」的消息`))
         return
