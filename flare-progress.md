@@ -1,5 +1,7 @@
 # Flare 引擎迭代进度（夜间调研 agent）
 
+> **【✅ 第一百二十六轮小步】P165 (纯文档) README 交互命令表补齐 /mcp 子命令与 /search//archived//archive//restore 行**：
+> commit `00889b0`，纯文档零 src 改动、tsc 0 错误、无版本变化（详情见下方 P165 条目）。
 > **【✅ 第一百二十六轮小步】P164 (纯文档) README 交互命令表同步 /memory similar 与 /usage 缓存能力**：
 > commit `d2eba8b`，纯文档零 src 改动、tsc 0 错误、无版本变化（详情见下方 P164 条目）。
 > **【✅ 第一百二十六轮小步】P163 (v0.6.123) 交互命令 /memory similar 检测相似记忆对已装机**：
@@ -4682,6 +4684,48 @@
   ② /usage 行的缓存能力（v0.6.49 命中 / v0.6.65 节省）也是历史遗漏（装机时只改了
   changelog 未改命令表），本轮一并补齐；③ 纯文档小步同样跑记忆专项确认无回归
   （成本 ~5s，值得）
+
+---
+
+### 2026-08-14 第一百二十六轮小步（P165 纯文档）——README 交互命令表补齐 /mcp 子命令与 /search//archived//archive//restore 行（完成，自循环）
+
+> **P165 完成**（commit `00889b0`）：README 中文交互命令表继续补齐历史遗漏行——/help
+> 输出与源码 handleSlashCommand 分支齐全的交互命令在命令表中缺行：/mcp 只有
+> connect/disconnect 两行（缺 resources/prompts/tools/read/render/complete/call 七个
+> 子命令，v0.6.26~58 已装机多年）、/search 缺行（英文表有中文表无）、/archived//archive/
+> /restore 三行缺（v0.6.32 归档体系已装机）——命令表是用户发现能力的第一入口，缺行 =
+> 能力不可见（P164 同源：功能落地后命令表同步是典型滞后点，本轮继续清扫）。
+> - **实现**（README.md 11 行 +11，零 src 改动）：/mcp resources（v0.6.26 已桥接资源/
+>   模板）/ prompts（v0.6.36）/ tools（v0.6.58）/ read（v0.6.39 resources/read 代理）/
+>   render（v0.6.39 prompts/get 代理）/ complete（v0.6.57 completion/complete 代理）/
+>   call（v0.6.41 tools/call 代理）七行 + /search（v0.6.24 跨会话搜索）行 + /archived
+>   （v0.6.32）/archive/restore 三行——描述与 /help 输出同口径
+> - **验证**：tsc 0 错误；**零 src 改动**（git diff 仅 README.md 1 文件 +11 行）；纯文档
+>   无版本变化（0.6.123 不变，dist 未动，无需自安装）；零 push、零敏感信息
+> - **flare 验收结论：✅ 通过**（两轮：首轮深度逐项核对后未收尾，补聚焦指令后 PASS）——
+>   flare 独立运行 git log -1（00889b0）/git show 审查（仅 README.md 1 文件 +11 行）、
+>   git diff -- src/ 零改动（agent.ts 未改）、npx tsc 0 错误；逐项核对 /mcp 八个子命令
+>   版本号（connect/disconnect v0.5.5、resources v0.6.26、prompts v0.6.36、tools v0.6.58、
+>   read/render v0.6.39、complete v0.6.57、call v0.6.41）与 src/cli/index.ts handleSlash
+>   Command 各分支注释完全一致，/search v0.6.24、/archived//archive//restore v0.6.32 一致，
+>   无缺行无版本号错误；无任何密钥明文；全程零修改零 commit；结论与实况完全一致
+>   （验收指令经文件读入规避 confusable 误报，P148 先例）
+> - **下一步候选**：① 【P1】分层上下文（Layer 1 异步滚动摘要——需评估 run 循环外异步，
+>   涉及 agent.ts trimContext 异步化，铁律暂缓）；② 其他安全的外围增强（README 交互
+>   命令表至此与 /help 输出全对称（P164 补 /memory//usage、P165 补 /mcp 子命令与
+>   /search//archived//archive//restore），剩余候选 RAG 注入（Agent 构造时按会话主题
+>   自动注入相关记忆——需改 agent.ts 构造逻辑 + searchMemories 查询语义，复杂度超外围
+>   定位暂缓）、记忆自动合并/摘要（写操作 + LLM，风险中）、测试稳定性继续清扫、
+>   确认门接入完整化、MCP 增强（resources / HTTP transport 文档同步）等）
+
+**引导过程记录（引导 agent 视角，实现+验收直接完成）**：
+- 本轮实现由引导 agent 直接完成（纯文档，README 交互命令表 11 行补齐）
+- **教训**：① 命令表缺行比内容过时更难发现——/mcp 七个子命令装机已多轮（v0.6.26~
+  v0.6.58）但命令表始终只有 connect/disconnect，说明「装机时改 changelog + 章节」的
+  惯性忽略了命令表，需要一次性全表对照 /help 输出清点（本轮发现并补齐 11 行）；
+  ② 中文表缺 /search 但英文表有，中英两表也要互相对照；③ flare 深度核对后可能不输出
+  最终 PASS（P162 同款），补「只汇总不收尾」聚焦指令即可；④ 纯文档小步跑 tsc +
+  git diff 验收即可，无需全量测试（零 src 改动无回归风险）
 
 ---
 
