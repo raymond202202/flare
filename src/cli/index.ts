@@ -942,9 +942,8 @@ export async function handleSlashCommand(
       }
       try {
         const res = await mcp.callTool(server, tool, args)
-        const text = Array.isArray(res.content)
-          ? res.content.filter((c) => c.type === 'text' && typeof c.text === 'string').map((c) => c.text).join('\n')
-          : ''
+        // 与 createMcpTools / CLI mcp call / server mcp_call 同口径（mcpContentToText 纯函数，v0.6.119）
+        const text = mcpContentToText(res.content, res.structuredContent)
         if (res.isError) {
           output(chalk.red(`\n  ❌ ${server} 的工具 ${chalk.cyan(tool)} 执行失败: ${text || '（无错误信息）'}`))
         } else {

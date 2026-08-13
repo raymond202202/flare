@@ -366,6 +366,10 @@ Interactive mode commands:
 
 ### Changelog / Release Notes
 
+## v0.6.119（2026-08-14）
+- ✨ **交互式 `/mcp call` 回包统一复用 `mcpContentToText`（第四层同口径收官）**：CLI 交互命令（`src/cli/index.ts` handleSlashCommand `/mcp call` 分支）此前仍是内联 `content.filter(type === 'text')` 提取（只取 text）——本版改为复用 v0.6.117 纯函数 `mcpContentToText(res.content, res.structuredContent)`：交互会话内调 MCP 工具的非 text 内容（image/audio/resource 占位描述）与 `structuredContent` JSON 兜底不再静默丢失，与 `createMcpTools`（工具桥）/CLI `mcp call`（单次命令）/server `mcp_call`（宿主协议）**四层同口径**（同一纯函数）；纯 text 行为与旧版逐字一致（回归由测试保证）；P150/P151 全库搜索内联 filter 变体的收官
+- 交互命令测试补 3 用例（mcp-command.test.ts）：rich 模式（text+image+audio+resource）占位描述且**绝不含 base64 明文** / 空 content + structuredContent JSON 兜底 / 非 text isError 占位作失败信息（base64 零泄漏）
+
 ## v0.6.118（2026-08-14）
 - ✨ **server 协议 `mcp_call` 回包统一复用 `mcpContentToText`**：宿主协议（`flare server --mcp`）的 `mcp_call` 响应 `output`/`error` 字段此前与 CLI/工具桥不同口径（内联只提取 `type === 'text'`）——本版改为复用 v0.6.117 的纯函数 `mcpContentToText`（`src/server.ts` import + 替换内联 filter 提取）：宿主经协议拿 MCP 工具的非 text 内容（image/audio/resource 占位描述）与 `structuredContent` JSON 兜底，与 `createMcpTools`/CLI `mcp call` **三层同口径**；纯 text 行为与旧版逐字一致（回归由测试保证）
 - server 协议测试补 2 用例（server-mcp-resources.test.ts）：rich 模式 mcp_call output 含占位描述且绝不含 base64 明文 + 纯 text 回归逐字一致
