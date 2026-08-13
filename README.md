@@ -149,7 +149,7 @@ cp .env.example ~/.flare/.env
 | `flare chat --context-summarize` | 交互模式开启上下文压缩摘要（裁剪时把丢弃历史压缩成摘要消息，AI 保留话题连续性；v0.6.19） |
 | `flare chat -q "问题"` | 单次查询模式 |
 | `flare chat -q "问题" -i 图片.png` | 单次查询附带图片 |
-| `flare chat -q "问题" --session <会话ID>` | 续聊已有会话（单次查询追加到该会话历史；缺省新建「单次查询」会话；会话不存在 exit 1 不触发生成；v0.6.128） |
+| `flare chat -q "问题" --session <会话ID>` | 续聊已有会话（单次查询追加到该会话历史；缺省新建「单次查询」会话；会话不存在 exit 1 不触发生成；已归档会话续聊给黄色提示不拦截 v0.6.129；v0.6.128） |
 | `flare server [--profile --storage --mcp --confirm-tools --confirm-timeout --max-tokens --temperature --max-context-messages --max-context-tokens --context-summarize --tool-output-policy]` | 宿主协议服务（stdin/stdout JSON Lines，供 Qt 等宿主调用；v0.6.1 起写回类工具经确认门；v0.6.5 起 --max-tokens/--temperature 设 chat 默认采样参数；v0.6.17 起 --max-context-messages/--max-context-tokens 设默认上下文自动裁剪；v0.6.19 起 --context-summarize 默认开启上下文压缩摘要；v0.6.34 起 --tool-output-policy 设默认工具输出治理策略） |
 | `flare mcp-server [-t 工具名,...] [--http [--port <端口>] [--http-auth-token-env <VAR>]] [--bridge-resources] [--bridge-prompts] [--bridge-tools]` | MCP stdio 服务器：把 flare 工具集暴露给其他 AI 客户端（v0.5.8；v0.6.3 起 --http 起 HTTP transport；v0.6.28/0.6.37/0.6.47 起可透传外部 MCP 服务器资源/提示词/工具；v0.6.69 起 --http-auth-token-env 从环境变量读 Bearer 鉴权 token） |
 | `flare mcp call <服务器> <工具> [JSON参数]` | 调用 MCP 服务器工具（stdio 或 HTTP transport；服务器名查 `~/.flare/mcp.json`，`--url` 直连 HTTP 端点，v0.6.6；`--header <k:v>` 可重复附加鉴权请求头，v0.6.68；--json 结构化输出（`{ server, tool, success, error?, output }` 与 server mcp_call 回包同构，工具级失败输出 `{ success:false, error }` 且 exit 1）v0.6.115；非 text 内容项（image/audio/resource）输出占位描述、structuredContent 无文本时 JSON 兜底（v0.6.117）） |
@@ -381,6 +381,12 @@ Interactive mode commands:
 | `/exit` | Exit |
 
 ### Changelog / Release Notes
+
+## v0.6.129（2026-08-14）
+- ✨ **`flare chat -q "…" --session <会话ID>` 续聊已归档会话给黄色提示（不拦截）**：v0.6.128 续聊面装机后，`getAllSessions` 含 archived 会话（P173 观察点①「归档会话也可续聊，是否拦截可留后续」）——本版补齐决策：**提示不拦截**，与 server chat 同语义（getAgent 加载归档会话历史不检查 archived，宿主协议 chat 带归档 sessionId 本就允许续聊）；CLI 侧增加可见性——指定会话已归档时 stderr 黄色提示「该会话已归档（续聊将追加到归档会话，最近列表不可见；flare restore <会话ID> 可恢复）」后继续进入生成，exit code 不受影响
+- 测试（tests/cli-chat-session.test.ts 追加 1 用例 + 既有用例补回归断言）：续聊已归档会话 → 黄色提示出现（含已归档说明与 restore 提示）+ 不误杀（「不存在」错误不出现）+ 提示后继续进入生成（「思考中」出现，证明不拦截）+ 会话保持归档状态与标题不变（提示不改写 archived 标记）；非归档会话续聊不出现「已归档」提示（回归）
+- 文档：README 命令表 chat --session 行补已归档提示说明 + Changelog 条目
+- 纯 CLI 外围增强：零 agent.ts 改动（Agent.run 核心循环零触碰）、零 push、零敏感信息
 
 ## v0.6.128（2026-08-14）
 - ✨ **`flare chat -q "…" --session <会话ID>` 续聊已有会话（单次查询续聊面）**：此前 `chat -q` 每次新建「单次查询」会话，宿主/脚本无法把单次查询追加到已有会话（续聊只能用交互模式或 server 协议 chat 带 sessionId）——本版补齐：`-s, --session <会话ID>` 指定已有会话，Agent 构造自动加载历史（`getMessagesWithIds`，零 run 循环改动），问答续接该会话上下文；缺省行为不变（新建「单次查询」会话）；**会话不存在 → exit 1 + 提示（不触发生成）**，宿主/脚本传错 ID 不静默新建会话
