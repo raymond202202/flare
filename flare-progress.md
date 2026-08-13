@@ -1,5 +1,7 @@
 # Flare 引擎迭代进度（夜间调研 agent）
 
+> **【✅ 第一百二十三轮小步】P154 (纯文档) docs/confirmation.md 补 CLI 单次命令确认门管理章节**：
+> commit `5895179`，纯文档零 src 改动、tsc 0 错误、1108/1108 全绿、无版本变化（详情见下方 P154 条目）。
 > **【✅ 第一百二十三轮小步】P153 (纯文档) docs/mcp.md 非 text 内容处理章节同步四层同口径收官**：
 > commit `6856f27`，纯文档零 src 改动、tsc 0 错误、1108/1108 全绿、无版本变化（详情见下方 P153 条目）。
 > **【已发布】v0.6.119 装机完成（P152 交互式 /mcp call 统一复用 mcpContentToText 第四层收官，引导模式本机安装版，自循环）**
@@ -632,6 +634,46 @@
   ② 安全设计要点：二进制（image/audio 的 data、resource 的 blob）只输出占位描述不含 base64
   明文——既防上下文 token 膨胀也防敏感数据回显；③ rich/struct-only 用 MOCK_MODE 环境变量控制
   fixture 返回，不动工具列表（工具数断言零影响），是扩展 mock 服务器行为的安全模式
+
+---
+
+### 2026-08-14 第一百二十三轮小步（P154 纯文档）——docs/confirmation.md 补 CLI 单次命令确认门管理（装机完成，自循环）
+
+> **P154 完成**（commit `5895179`）：docs/confirmation.md 此前只覆盖 v0.6.7 CLI 交互模式确认门与
+> server 宿主侧章节，**CLI 单次命令确认门管理（v0.6.94 confirm-status / v0.6.98 confirm-allow /
+> confirm-revoke）未入文档**——README 命令表/Changelog 已同步、docs 专项未跟上（文档不对称，
+> P146/P147/P149/P153 同源问题）。纯文档增强，零 src 改动、零风险（纯文档先例）。
+> - **实现**（docs/confirmation.md 末尾 +28 行）：「CLI 单次命令确认门管理」章节——`flare
+>   confirm-status [--json]`（v0.6.94 只读：confirmTools 默认 memory_save / allowedTools 会话级+持久化
+>   合并去重 / sessionAllowed / alwaysAllowed；--json 与 server confirm_status 回包同构；占位
+>   confirmer 永不触发确认，无放行记录 exit 0）；`flare confirm-allow <工具> [--session]`（v0.6.98
+>   写操作：默认 always 跨会话持久化到 settings 表，单次命令进程内会话级放行恒为空——每次运行新
+>   ConfirmationGate 实例 allowSession 仅进程内存，持久化才有实际效果；--session 仅本进程）；
+>   `flare confirm-revoke <工具>`（v0.6.98 写操作：会话级+持久化同步清除，未放行幂等 exit 0）；
+>   配套：flare config（v0.6.93）确认门配置（默认 memory_save + 超时 30000ms）、交互 /allow 共用
+>   同一持久化 settings 表；附 5 行可运行示例
+> - **验证**：tsc 0 错误；**零 src 改动**（git diff 仅 docs/confirmation.md 1 文件）；1108/1108 全绿
+>   （73 文件）；纯文档无版本变化（0.6.119 不变，dist 未动，无需自安装）；零 push、零敏感信息
+> - **flare 验收结论：✅ 通过**——flare 独立运行 git show 审查 diff + npx tsc 0 错误 + 全量
+>   1108/1108 全绿；**逐条对照源码行号**验证（confirm-status 2870-2910 / confirm-allow 2917-2936 /
+>   confirm-revoke 2941-2957）、功能细节 12 项（CLI_CONFIRM_TOOLS=memory_save 445 行 / 只读占位
+>   confirmer / listAllAllowed 合并去重 / allowAlways→store.set(alwaysKey,'1') 持久化 / allowSession
+>   仅内存 / revoke delete+set '' 同步清除 / 未放行幂等 exit 0 / config confirmTimeoutMs 30000 2843 行）；
+>   未改 agent.ts、未 push、无密钥明文；结论与实况完全一致（验收指令经文件读入规避 confusable 误报）
+> - **下一步候选**：① 【P1】分层上下文（Layer 1 异步滚动摘要——需评估 run 循环外异步，涉及
+>   agent.ts trimContext 异步化，铁律暂缓）；② 其他安全的外围增强（MCP 消费面四层闭环 + docs
+>   专项逐一对齐中：confirmation.md 已补、context-observability/flare-token-architecture 已同步；
+>   测试稳定性继续清扫等）
+
+**引导过程记录（引导 agent 视角，实现+验收直接完成）**：
+- 本轮实现由引导 agent 直接完成（纯文档，写 docs/confirmation.md 单次命令章节）
+- flare 验收延续高水准：12 项功能细节逐条对照源码（含 CLI_CONFIRM_TOOLS 定义行号、持久化
+  store.set 键格式、30000ms 超时行号），一次通过
+- **教训**：① confirmation.md 是 v0.6.94/98 的滞后点（README 命令表有行、docs 专项没有）——
+  「功能落地后检查三处（README 表 + Changelog + 对应 docs 专项）」铁律在确认门面同样适用；
+  ② 单次命令 confirm-allow 的「进程内会话级放行恒为空」是设计细节（每次运行新 Gate 实例），
+  文档必须如实说明，避免误导宿主以为 --session 有跨进程效果；③ 纯文档小步连续三轮
+  （P153/P154）节奏快、零风险，适合自循环窗口填充
 
 ---
 
