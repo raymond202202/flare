@@ -1,5 +1,8 @@
 # Flare 引擎迭代进度（夜间调研 agent）
 
+> **【✅ 第一百二十四轮完成】P156 (v0.6.120) CLI 单次命令 flare mcp connect/disconnect 已装机**：
+> commit `5768285`，1116/1116 全绿、tsc 0 错误、零 agent.ts 改动（详情见下方第一百二十四轮条目）。
+> **【已发布】v0.6.120 装机完成（P156 CLI mcp connect/disconnect 控制面收官，引导模式本机安装版，自循环）**
 > **【✅ 第一百二十三轮小步】P155 (纯文档) memory-rag/multi-model 补 CLI 单次命令章节**：
 > commit `7a58413`，纯文档零 src 改动、tsc 0 错误、1108/1108 全绿、无版本变化（详情见下方 P155 条目）。
 > **【✅ 第一百二十三轮小步】P154 (纯文档) docs/confirmation.md 补 CLI 单次命令确认门管理章节**：
@@ -636,6 +639,66 @@
   ② 安全设计要点：二进制（image/audio 的 data、resource 的 blob）只输出占位描述不含 base64
   明文——既防上下文 token 膨胀也防敏感数据回显；③ rich/struct-only 用 MOCK_MODE 环境变量控制
   fixture 返回，不动工具列表（工具数断言零影响），是扩展 mock 服务器行为的安全模式
+
+---
+
+### 2026-08-14 第一百二十四轮实施（v0.6.120）——P156 CLI 单次命令 flare mcp connect/disconnect（装机完成，自循环）
+
+> **P156 完成**（commit `5768285`）：新增 CLI 单次命令 `flare mcp connect <server>` 与
+> `flare mcp disconnect <server>`——与 server 协议 mcp_connect/mcp_disconnect（v0.6.56 控制面）
+> 与交互式 /mcp connect/disconnect（v0.5.5）对称的控制面单次命令收官：此前宿主/脚本非交互场景
+> 无法按需连接/断开配置的 MCP 服务器（`mcp status --connect` 只能「全部连接」），是 P113-145
+> 「server 接口补 CLI 单次命令」系列的收官缺口（P131 下一步候选明确点名「mcp disconnect」）。
+> 低风险评估：纯 CLI 外围、复用 McpManager.connect/disconnect 现有方法、与 run 循环无关，确认安全后实施。
+> - **实现**（src/cli/index.ts 纯新增 62 行，插在 mcp complete 命令与 log-level 命令之间）：
+>   - `mcp connect <server>`：new McpManager({ configPath, httpTimeoutMs }) → mgr.connect(server)
+>     （幂等：已连接直接返回已有工具）→ 摘要与交互式 /mcp connect 同构（v0.6.26/0.6.36/0.6.55/
+>     0.6.72 口径）：transport [HTTP]/[stdio] + target 端点 + 工具数 + 资源/模板/提示词数 + [auth]
+>     标记（**只标记不输出 token**）；成功 exit 0；未配置/连接错误 → 错误输出 exit 1；**命令完成后
+>     显式 mgr.closeAll()**——否则 stdio 子进程继承 stdio 管道会让 CLI 进程挂住不退出（与 mcp call
+>     的 client.close() 同因，实测首版挂住 124 超时被杀）；--timeout <ms> 接线到
+>     McpManager.httpTimeoutMs（HTTP 单请求超时，服务器级配置 timeoutMs 优先）
+>   - `mcp disconnect <server>`：先校验配置存在（未配置 → 「未配置 MCP 服务器」exit 1，与
+>     mcp call 同款提示）→ mgr.disconnect(server)：true →「已断开」exit 0；false →「未连接
+>     （单次命令进程内无持久连接；无需断开）」黄色幂等 exit 0（与 clear-session「不存在幂等
+>     exit 0」、交互式 /mcp disconnect「未连接黄色提示」同口径，区别于 restore/end-session 的
+>     幂等 false exit 1——disconnect 目标状态「已断开」达成即成功）
+> - **测试**（新建 tests/cli-mcp-connect-disconnect.test.ts，8 用例 spawn dist CLI + --config
+>   隔离 mcp.json，startMcpHttpServer in-process / mock fixture stdio / 原生静默 HTTP 服务器）：
+>   HTTP 连接摘要（[HTTP] + 端点 + 1 个工具）/ stdio 连接摘要（3 工具 + 2 资源 + 1 模板 +
+>   2 提示词，mock fixture 声明）/ **安全用例：HTTP 配 headers → [auth] 标记且输出绝不含
+>   token 明文**（断言不含 Bearer 与 token 值，密钥隔离铁律测试化）/ 未配置 exit 1 / 连接失败
+>   （端点不可达）exit 1 / **--timeout 接线验证：静默 HTTP 服务器不响应 initialize → 800ms
+>   快速超时 exit 1（实测 1001ms，而非默认 15s 挂住），断言耗时 < 5s** / disconnect 已配置
+>   未连接幂等 exit 0 / disconnect 未配置 exit 1
+> - README 命令表补 connect/disconnect 两行 + Changelog v0.6.120 条目（## 版本标题在顶部，日期
+>   2026-08-14）
+> - **1116/1116 全绿**（新增 8 用例，74 文件；**首跑即绿无偶发**），tsc 0 错误，**零 agent.ts 改动**，
+>   零 push、零敏感信息；自安装完成：installed 0.6.120 = repo 0.6.120（安装版冒烟 connect mock
+>   [stdio] 摘要 + disconnect 幂等 + 未配置 exit 1 已验证）；真实 ~/.flare 零污染（冒烟均用
+>   --config 临时 mcp.json）
+> - **flare 验收结论：✅ 通过**——flare 独立运行 git show 审查 diff + npx tsc 0 错误 + 全量
+>   1116/1116 全绿（74 文件，实测汇总行）；验收指出 `--timeout` 首版「定义了未使用」瑕疵 →
+>   引导 agent 接线到 McpManager.httpTimeoutMs + 补静默服务器超时测试用例（8/8）→ amend 为
+>   `5768285` → flare 复验 PASS（确认 timeout 接线链路 manager.ts L72/77/90/253 逐行核对 +
+>   全量 1116/1116 复跑）；未改 agent.ts、未 push、无密钥明文
+> - **下一步候选**：① 【P1】分层上下文（Layer 1 异步滚动摘要——需评估 run 循环外异步，涉及
+>   agent.ts trimContext 异步化，铁律暂缓）；② 其他安全的外围增强（MCP 控制面单次命令已收官：
+>   connect/disconnect 补齐后 CLI mcp 命令组 status/call/resources/prompts/tools/complete/
+>   connect/disconnect 全齐；剩余 server 协议接口 create_session（与 rename UPSERT 重叠价值低）、
+>   recent_sessions（与 sessions 冗余）、测试稳定性继续清扫等）
+
+**引导过程记录（引导 agent 视角，实现+验收直接完成）**：
+- 本轮实现由引导 agent 直接完成（标准流程：调研缺口 → 实现 → tsc → 新测试 → 全量 → 冒烟 →
+  commit → flare 验收）；flare 验收一次指出 `--timeout` 死代码瑕疵（首版定义了未用），引导 agent
+  接线 + 补精确测试用例（静默服务器 800ms 快速超时断言）后 amend，flare 复验 PASS
+- **教训**：① CLI 单次命令新增选项必须接线——「定义了选项但 action 未使用」是 flare 验收
+  高频抓点（P121/P122 已见），本轮首版自查漏掉 --timeout，被 flare 抓出后补上；② stdio 子进程
+  管道挂住是 MCP 相关 CLI 单次命令的共性坑（connect 用 McpManager 不显式 close 会挂），
+  closeAll 释放是必要收尾；③ disconnect 幂等 exit 0 vs restore/end-session 幂等 exit 1 的语义
+  差异要按「目标状态是否达成」判断——disconnect 目标「已断开」未连接即达成 → 幂等成功；
+  ④ 敏感扫描对「输出不得含 token 明文」的测试断言本身含 token 字样，扫描时需区分说明文字
+  与真实凭据（本轮扫描命中均为 README/注释中的「不输出 token」说明，非密钥）
 
 ---
 
