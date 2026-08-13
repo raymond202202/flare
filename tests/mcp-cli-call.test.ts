@@ -116,6 +116,57 @@ describe('CLI flare mcp call', () => {
     expect(stderr).toMatch(/MCP 错误|未知工具/)
   }, 20000)
 
+  it('--json 输出与 server mcp_call 回包同构（server/tool/success/output）', async () => {
+    const cfgPath = join(dir, 'mcp.json')
+    writeFileSync(cfgPath, JSON.stringify({ servers: [{ name: 'mock', command: process.execPath, args: [MOCK_SERVER] }] }))
+    const { code, stdout, stderr } = await runCli(['mcp', 'call', 'mock', 'add_numbers', '{"a":2,"b":3}', '--config', cfgPath, '--json'])
+    expect(code).toBe(0)
+    expect(stderr).toBe('')
+    const parsed = JSON.parse(stdout)
+    expect(parsed.server).toBe('mock')
+    expect(parsed.tool).toBe('add_numbers')
+    expect(parsed.success).toBe(true)
+    expect(parsed.output).toBe('5')
+    expect('error' in parsed).toBe(false)
+    // 纯 JSON 无 ANSI 彩色
+    expect(stdout).not.toMatch(/\u001b\[/)
+  }, 20000)
+
+  it('--json 无文本输出 → { output: "" } success:true exit 0（不打印「无文本输出」兜底）', async () => {
+    const h = await startMcpHttpServer({ tools: [echoTool] })
+    handles.push(h)
+    const { code, stdout } = await runCli(['mcp', 'call', 'remote', 'echo', '--url', h.url, '--json'])
+    expect(code).toBe(0)
+    const parsed = JSON.parse(stdout)
+    expect(parsed.success).toBe(true)
+    expect(parsed.output).toBe('')
+    expect(stdout).not.toMatch(/无文本输出/)
+  }, 20000)
+
+  it('--json 工具级失败（fail_tool isError）→ { success:false, error } 合法 JSON + exit 1', async () => {
+    const cfgPath = join(dir, 'mcp.json')
+    writeFileSync(cfgPath, JSON.stringify({ servers: [{ name: 'mock', command: process.execPath, args: [MOCK_SERVER] }] }))
+    const { code, stdout } = await runCli(['mcp', 'call', 'mock', 'fail_tool', '{}', '--config', cfgPath, '--json'])
+    expect(code).toBe(1)
+    const parsed = JSON.parse(stdout)
+    expect(parsed.server).toBe('mock')
+    expect(parsed.tool).toBe('fail_tool')
+    expect(parsed.success).toBe(false)
+    expect(parsed.error).toBe('出错了')
+    expect(parsed.output).toBe('出错了')
+  }, 20000)
+
+  it('--json -j 短选项等价 + 文本模式回归（纯文本输出且非 JSON）', async () => {
+    const cfgPath = join(dir, 'mcp.json')
+    writeFileSync(cfgPath, JSON.stringify({ servers: [{ name: 'mock', command: process.execPath, args: [MOCK_SERVER] }] }))
+    const { stdout: shortStdout } = await runCli(['mcp', 'call', 'mock', 'add_numbers', '{"a":1,"b":2}', '--config', cfgPath, '-j'])
+    expect(JSON.parse(shortStdout).output).toBe('3')
+    const { stdout: textStdout } = await runCli(['mcp', 'call', 'mock', 'add_numbers', '{"a":1,"b":2}', '--config', cfgPath])
+    expect(textStdout.trim()).toBe('3')
+    // 文本模式是裸输出（非 JSON 对象结构）
+    expect(textStdout.trim().startsWith('{')).toBe(false)
+  }, 20000)
+
   it('mcp status：列出配置服务器（名称 + 传输类型 + 端点/命令）', async () => {
     const cfgPath = join(dir, 'mcp.json')
     writeFileSync(cfgPath, JSON.stringify({
