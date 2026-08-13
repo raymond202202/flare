@@ -86,6 +86,11 @@
 - `flare mcp complete <server> <prompt> <argument> [value]`（v0.6.60）：单次命令请求提示词参数补全
   候选（`completion/complete` 代理，与 `/mcp complete` 交互命令、`mcp_complete` 协议同源）——显示
   候选列表（数量/总数），带 `value` 前缀收窄；未知引用/无候选友好提示（退出码 1 不崩溃）
+- `flare mcp connect <server>` / `flare mcp disconnect <server>`（v0.6.120）：单次命令动态连接/断开
+  配置的 MCP 服务器（stdio/HTTP 均可，与 server mcp_connect/mcp_disconnect、交互 `/mcp
+  connect`/`/mcp disconnect` 对称）——connect 成功打印摘要（transport/target/工具数/资源/模板/
+  提示词 + [auth] 标记不输出 token）exit 0、未配置/连接失败 exit 1；disconnect 已断开/未连接幂等
+  exit 0、未配置 exit 1；单次命令进程内连接随进程退出释放
 - `/mcp read <server> <uri>`（v0.6.39）：**读取已连接服务器的资源内容**（`resources/read` 代理，
   与 `mcp_read_resource` 协议请求同源）——`/mcp resources` 只能看元数据，本命令直接显示资源
   真实内容（uri + mimeType + text）；服务器未连接/未知资源错误输出不崩溃
@@ -795,7 +800,7 @@ await mgr.connect('remote')                  // 自动选 HTTP transport
 new Agent({ ..., tools: mgr.getAllTools() })
 ```
 
-#### CLI `flare mcp call` / `flare mcp status` / `flare mcp resources` / `flare mcp prompts` / `flare mcp tools` / `flare mcp complete` / `flare log-level`（v0.6.6/v0.6.10/v0.6.59/v0.6.60/v0.6.83）：一键调用/查看 MCP 工具
+#### CLI `flare mcp call` / `flare mcp status` / `flare mcp resources` / `flare mcp prompts` / `flare mcp tools` / `flare mcp complete` / `flare mcp connect` / `flare mcp disconnect` / `flare log-level`（v0.6.6/v0.6.10/v0.6.59/v0.6.60/v0.6.120/v0.6.83）：一键调用/查看 MCP 工具
 
 不启动交互模式直接调用 MCP 服务器工具（stdio 或 HTTP 均可）：
 
@@ -816,6 +821,14 @@ flare mcp call remote echo '{"text":"hi"}' --url http://127.0.0.1:8931/mcp --hea
 flare mcp status [--config ./mcp.json]
 flare mcp status --connect [--config ./mcp.json]
 flare mcp status --json [--config ./mcp.json]
+
+# 动态连接/断开服务器（v0.6.120：控制面单次命令，与 server mcp_connect/mcp_disconnect、
+# 交互 /mcp connect/disconnect 对称；stdio/HTTP transport 均可）
+flare mcp connect fs                          # 按名连接（--config 指定配置文件，--timeout <ms> 调 HTTP 超时）
+flare mcp connect remote --config ./mcp.json  # 成功打印摘要 exit 0；未配置/连接失败 exit 1
+# 摘要与交互式 /mcp connect 同构：transport [HTTP]/[stdio] + target 端点 + 工具/资源/模板/提示词数
+# + [auth] 标记（只标记不输出 token）；单次命令进程内连接随进程退出释放（命令完成后显式 closeAll）
+flare mcp disconnect fs                       # 按名断开；已断开/未连接幂等 exit 0、未配置 exit 1
 
 # 调超时（毫秒）
 flare mcp call remote ping --url http://127.0.0.1:8931/mcp --timeout 30000
