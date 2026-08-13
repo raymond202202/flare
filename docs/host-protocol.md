@@ -3,7 +3,7 @@
 > 供非 Node 宿主（如 Qt 应用）调用 flare 引擎的本地协议。
 > 传输：stdin/stdout · JSON Lines（每行一个 JSON 对象）
 > 实现：`src/server.ts`（`flare server` 命令）
-> 请求类型：chat / cancel / set_context / list_sessions / recent_sessions / search_sessions / get_messages / search_messages / get_usage / session_usage / context_status / apply_trim / ping / version / create_session / rename_session / clear_session / delete_session / end_session / restore_session / list_archived_sessions / remember / get_memories / find_similar_memories / delete_memory / tool_result / confirm_result / confirm_status / confirm_revoke / confirm_allow / models / get_config / tools / mcp_status / mcp_resources / mcp_tools / mcp_prompts / mcp_read_resource / mcp_get_prompt / mcp_call / mcp_complete / mcp_connect / mcp_disconnect
+> 请求类型：chat / cancel / set_context / list_sessions / recent_sessions / search_sessions / get_messages / search_messages / get_usage / session_usage / context_status / apply_trim / ping / version / create_session / rename_session / clear_session / delete_session / end_session / restore_session / list_archived_sessions / remember / get_memories / find_similar_memories / delete_memory / tool_result / confirm_result / confirm_status / confirm_revoke / confirm_allow / models / get_config / tools / mcp_status / mcp_resources / mcp_tools / mcp_prompts / mcp_read_resource / mcp_get_prompt / mcp_call / mcp_complete / mcp_connect / mcp_disconnect / mcp_log_level
 
 ## 启动
 
@@ -482,6 +482,24 @@ flare server --profile <expert-profile-file> --storage <db-path> [--mcp <mcp-con
   可用工具（名称/描述），面板可直接展示/搜索
 - 只读，不触发生成、不创建会话；等待启动时的后台连接落定（与 `mcp_status` 一致）
 
+### 16.10 mcp_log_level — 设置 MCP 服务器日志级别阈值（v0.6.124，控制面补齐）
+
+```json
+{"type":"mcp_log_level","server":"mock","level":"warning"}
+```
+
+响应：`{"type":"mcp_log_level","server":"mock","level":"warning"}`
+
+- `server`：必填，MCP 服务器名（见 `mcp_status` 列表）
+- `level`：必填，日志级别阈值——8 级按严重程度升序：`debug` < `info` < `notice` < `warning` <
+  `error` < `critical` < `alert` < `emergency`（非法级别 → error 含合法值提示，与 CLI `log-level`
+  v0.6.83 同款枚举）
+- 代理转发 `McpManager.setLogLevel`（`logging/setLevel`）：此后服务器低于该级别的
+  `notifications/message` 日志不再推送；stdio 与 HTTP transport 均支持
+- 错误：缺 `server`/`level` → error 含用法；服务器未连接/未配置 → error「MCP 服务器未连接: <name>」/
+  「未配置 MCP 服务器」透传（服务不崩）
+- 不触发生成、不创建会话；等待启动时的后台连接落定（与 `mcp_status` 一致）
+
 ### 17. confirm_result — 回传用户确认决策（v0.6.1，响应 confirm 事件）
 
 ```json
@@ -656,6 +674,7 @@ flare server --profile <expert-profile-file> --storage <db-path> [--mcp <mcp-con
 | `mcp_connect` | `server, connected, toolCount, transport, target, resourceCount?, templateCount?, promptCount?` | MCP 服务器动态连接结果（v0.6.56，与 mcp_status 同源） |
 | `mcp_disconnect` | `server, disconnected` | MCP 服务器动态断开结果（v0.6.56） |
 | `mcp_complete` | `server, prompt, argument, value?, values, total?, hasMore?` | MCP 提示词参数补全候选（v0.6.57） |
+| `mcp_log_level` | `server, level` | MCP 服务器日志级别设置结果（v0.6.124，logging/setLevel 代理；8 级枚举与 CLI log-level 同款） |
 
 ## 工具执行流（宿主代理工具）
 

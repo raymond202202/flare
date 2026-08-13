@@ -289,6 +289,8 @@ async function startInteractive(opts: { contextSummarize?: boolean } = {}) {
       completePrompt: (server, prompt, argument, value) => mcpManager.completePrompt(server, prompt, argument, value),
       // v0.6.41：调用已连接服务器工具（代理转发 tools/call——与 server 协议 mcp_call 同源）
       callTool: (server, tool, args) => mcpManager.callTool(server, tool, args),
+      // v0.6.124：设置服务器日志级别阈值（代理转发 logging/setLevel——与 CLI log-level v0.6.83、server mcp_log_level 同源）
+      setLogLevel: (server, level) => mcpManager.setLogLevel(server, level as 'debug' | 'info' | 'notice' | 'warning' | 'error' | 'critical' | 'alert' | 'emergency'),
       onChanged: () => {
         // 工具集变化后重建 Agent（同 sessionId，历史从记忆库恢复），使 MCP 工具立即生效
         agent = makeAgent()
@@ -563,6 +565,8 @@ export interface McpCommandHooks {
   completePrompt?(server: string, prompt: string, argument: string, value: string): Promise<McpCompletionResult>
   /** 调用已连接服务器工具（v0.6.41）：代理转发 tools/call；未提供回退提示不可用 */
   callTool?(server: string, tool: string, args?: Record<string, any>): Promise<McpCallResult>
+  /** 设置服务器日志级别阈值（v0.6.124）：代理转发 logging/setLevel（与 CLI log-level v0.6.83 对称）；未提供回退提示不可用 */
+  setLogLevel?(server: string, level: string): Promise<void>
 }
 
 /** /mcp resources 返回的资源/模板清单（v0.6.26） */
@@ -955,7 +959,30 @@ export async function handleSlashCommand(
       }
       return 'continue'
     }
-    output(chalk.yellow('\n  用法: /mcp | /mcp resources [name] | /mcp prompts [name] | /mcp tools [name] | /mcp read <server> <uri> | /mcp render <server> <prompt> [k=v ...] | /mcp complete <server> <prompt> <argument> [value] | /mcp call <server> <tool> [JSON参数] | /mcp connect <name> | /mcp disconnect <name>'))
+    // /mcp log-level <server> <level>（v0.6.124）：设置服务器日志级别阈值（与 CLI log-level v0.6.83 对称——
+    // 交互会话内直接调日志级别，无需退出到 shell；stdio/HTTP transport 通用）
+    if (sub === 'log-level' && rest.length >= 2) {
+      if (typeof mcp.setLogLevel !== 'function') {
+        output(chalk.yellow('\n  当前环境未提供日志级别设置（MCP 管理器不支持 setLogLevel）'))
+        return 'continue'
+      }
+      const server = rest[0]
+      const level = rest[1]
+      // 与 CLI log-level 同款 8 级枚举校验（MCP 协议 logging 级别，按严重程度升序）
+      const VALID = ['debug', 'info', 'notice', 'warning', 'error', 'critical', 'alert', 'emergency']
+      if (!VALID.includes(level)) {
+        output(chalk.yellow(`\n  无效日志级别: ${level}（可选: ${VALID.join('/')}，按严重程度升序）`))
+        return 'continue'
+      }
+      try {
+        await mcp.setLogLevel(server, level)
+        output(chalk.green(`\n  ✅ 已设置 ${server} 日志级别为 ${level}（低于该级别的 notifications/message 日志不再推送）`))
+      } catch (e: any) {
+        output(chalk.red(`\n  ❌ ${e?.message || e}`))
+      }
+      return 'continue'
+    }
+    output(chalk.yellow('\n  用法: /mcp | /mcp resources [name] | /mcp prompts [name] | /mcp tools [name] | /mcp read <server> <uri> | /mcp render <server> <prompt> [k=v ...] | /mcp complete <server> <prompt> <argument> [value] | /mcp call <server> <tool> [JSON参数] | /mcp log-level <server> <level> | /mcp connect <name> | /mcp disconnect <name>'))
     return 'continue'
   }
 
@@ -1255,6 +1282,7 @@ export async function handleSlashCommand(
       output('  /mcp render <server> <prompt> [k=v ...] - 渲染外部 MCP 提示词（v0.6.39，prompts/get 代理）')
       output('  /mcp complete <server> <prompt> <argument> [value] - 提示词参数补全候选（v0.6.57，completion/complete 代理）')
       output('  /mcp call <server> <tool> [JSON参数] - 调用外部 MCP 工具（v0.6.41，tools/call 代理）')
+      output('  /mcp log-level <server> <level> - 设置服务器日志级别阈值（v0.6.124，logging/setLevel 代理）')
       output('  /mcp connect <name> - 连接 MCP 服务器并注入其工具')
       output('  /mcp disconnect <name> - 断开 MCP 服务器')
       output('  /allow     - 查看已放行的确认工具（AI 写回类工具执行前会请求确认）')

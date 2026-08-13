@@ -37,7 +37,7 @@ function makeHooks(
   toolData: McpToolRef[] = [],
 ): {
   hooks: McpCommandHooks
-  calls: { connect: string[]; disconnect: string[]; changed: number; reads: string[]; renders: string[]; calls: string[]; completes: string[] }
+  calls: { connect: string[]; disconnect: string[]; changed: number; reads: string[]; renders: string[]; calls: string[]; completes: string[]; logLevels: string[] }
   setStatus: (s: McpServerStatus[]) => void
 } {
   let status = initial.map((s) => ({
@@ -46,7 +46,7 @@ function makeHooks(
     target: '',
     ...s,
   })) as McpServerStatus[]
-  const calls = { connect: [] as string[], disconnect: [] as string[], changed: 0, reads: [] as string[], renders: [] as string[], calls: [] as string[], completes: [] as string[] }
+  const calls = { connect: [] as string[], disconnect: [] as string[], changed: 0, reads: [] as string[], renders: [] as string[], calls: [] as string[], completes: [] as string[], logLevels: [] as string[] }
   return {
     calls,
     setStatus: (s) => { status = s },
@@ -93,6 +93,10 @@ function makeHooks(
         const hit = completeData[`${server}:${prompt}:${argument}`]
         if (!hit) throw new Error(`未知补全引用: ${prompt}/${argument}`)
         return hit
+      },
+      // v0.6.124：设置日志级别（真实代理由 McpManager.setLogLevel 转发）
+      setLogLevel: async (server, level) => {
+        calls.logLevels.push(`${server}:${level}`)
       },
       onChanged: () => { calls.changed++ },
     },
@@ -844,5 +848,55 @@ describe('/mcp 命令', () => {
     const r = await handleSlashCommand('/mcp bogus', store, (s) => lines.push(s), undefined, hooks)
     expect(r).toBe('continue')
     expect(lines.join('\n')).toContain('call <server> <tool>')
+  })
+
+  it('/mcp log-level <server> <level> → 调用 setLogLevel 并输出成功（v0.6.124）', async () => {
+    const lines: string[] = []
+    const { hooks, calls } = makeHooks([{ name: 'mock', connected: true, toolCount: 3 }])
+    const r = await handleSlashCommand('/mcp log-level mock debug', store, (s) => lines.push(s), undefined, hooks)
+    expect(r).toBe('continue')
+    expect(calls.logLevels).toEqual(['mock:debug'])
+    const out = lines.join('\n')
+    expect(out).toContain('已设置 mock 日志级别为 debug')
+    expect(out).toContain('notifications/message')
+  })
+
+  it('/mcp log-level 非法级别 → 提示合法枚举（不调用）', async () => {
+    const lines: string[] = []
+    const { hooks, calls } = makeHooks([{ name: 'mock', connected: true, toolCount: 3 }])
+    const r = await handleSlashCommand('/mcp log-level mock verbose', store, (s) => lines.push(s), undefined, hooks)
+    expect(r).toBe('continue')
+    expect(calls.logLevels.length).toBe(0)
+    expect(lines.join('\n')).toContain('无效日志级别: verbose')
+    expect(lines.join('\n')).toContain('debug/info/notice/warning/error/critical/alert/emergency')
+  })
+
+  it('/mcp log-level（缺 level）→ 提示用法（不调用）', async () => {
+    const lines: string[] = []
+    const { hooks, calls } = makeHooks([{ name: 'mock', connected: true, toolCount: 3 }])
+    const r = await handleSlashCommand('/mcp log-level mock', store, (s) => lines.push(s), undefined, hooks)
+    expect(r).toBe('continue')
+    expect(calls.logLevels.length).toBe(0)
+    expect(lines.join('\n')).toContain('用法: /mcp')
+  })
+
+  it('/mcp log-level（hooks 未提供 setLogLevel 方法）→ 提示不可用（向后兼容旧宿主）', async () => {
+    const lines: string[] = []
+    const { hooks } = makeHooks([])
+    const legacy = { ...hooks } as McpCommandHooks
+    delete (legacy as any).setLogLevel
+    const r = await handleSlashCommand('/mcp log-level mock debug', store, (s) => lines.push(s), undefined, legacy)
+    expect(r).toBe('continue')
+    expect(lines.join('\n')).toContain('未提供日志级别设置')
+  })
+
+  it('/mcp log-level 未连接服务器 → 错误输出不崩溃（透传 setLogLevel reject）', async () => {
+    const lines: string[] = []
+    const { hooks } = makeHooks([{ name: 'mock', connected: false, toolCount: 0 }])
+    const failing = { ...hooks } as McpCommandHooks
+    failing.setLogLevel = async () => { throw new Error(`MCP 服务器未连接: mock`) }
+    const r = await handleSlashCommand('/mcp log-level mock debug', store, (s) => lines.push(s), undefined, failing)
+    expect(r).toBe('continue')
+    expect(lines.join('\n')).toContain('未连接: mock')
   })
 })
