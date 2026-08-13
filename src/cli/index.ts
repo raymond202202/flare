@@ -1273,7 +1273,7 @@ export async function handleSlashCommand(
       output('  /search <关键词> - 搜索历史对话（跨会话，v0.6.24）')
       output('  /remember    - 保存一条记忆（如: /remember 用户喜欢浅色主题）')
       output('  /forget      - 删除记忆（如: /forget 浅色主题，删除包含该关键词的记忆）')
-      output('  /usage       - 查看 token 用量（含缓存命中/节省，v0.6.65）')
+      output('  /usage       - 查看 token 用量（含缓存命中/写入/节省，v0.6.65/131）')
       output('  /context     - 查看当前会话上下文占用（消息数/估算 tokens；超预算提示 /trim）')
       output('  /trim [预算tokens] - 智能裁剪上下文（v0.6.46，保留稳定前缀与最近消息）')
       output('  /sessions    - 查看会话列表；带关键词搜索会话（如: /sessions 缓存，v0.6.44）')
@@ -1325,6 +1325,11 @@ export async function handleSlashCommand(
             output(`  ${chalk.gray('缓存节省:')}   $${saved.toFixed(4)}`)
           }
         }
+        // v0.6.131：缓存写入观测（与命中行对称——写入是首轮建立缓存的开销，命中是后续的节省）
+        const cacheWrite = usage.cacheWriteTokens || 0
+        if (cacheWrite > 0) {
+          output(`  ${chalk.gray('缓存写入:')}   ${cacheWrite.toLocaleString()} tokens（首轮建立缓存的输入量）`)
+        }
         if (typeof usage.estimatedCostUsd === 'number' && usage.estimatedCostUsd > 0) {
           output(`  ${chalk.gray('估算成本:')}   $${usage.estimatedCostUsd.toFixed(4)}`)
         }
@@ -1339,6 +1344,11 @@ export async function handleSlashCommand(
               const mSaved = typeof m.cacheSavedUsd === 'number' ? m.cacheSavedUsd : 0
               const savedSuffix = mSaved > 0 ? `（节省 $${mSaved.toFixed(4)}）` : ''
               output(`    ${chalk.gray('缓存命中:')} ${mCache.toLocaleString()} tokens（${mRate}%）${savedSuffix}`)
+            }
+            // v0.6.131：perModel 缓存写入子行（与命中子行对称；store 分解新增 cacheWriteTokens）
+            const mWrite = m.cacheWriteTokens || 0
+            if (mWrite > 0) {
+              output(`    ${chalk.gray('缓存写入:')} ${mWrite.toLocaleString()} tokens`)
             }
           }
         }
@@ -1358,6 +1368,11 @@ export async function handleSlashCommand(
               mineLine += ` · 缓存节省 $${mineSaved.toFixed(4)}`
             }
           }
+          // v0.6.131：本会话缓存写入观测（与命中对称；无写入不显示——零写入会话行不变化）
+          const mineWrite = mine.cacheWriteTokens || 0
+          if (mineWrite > 0) {
+            mineLine += ` · 缓存写入 ${mineWrite.toLocaleString()} tokens`
+          }
           output(chalk.gray(mineLine))
           if (Array.isArray(mine.perModel) && mine.perModel.length > 0) {
             for (const m of mine.perModel) {
@@ -1369,6 +1384,11 @@ export async function handleSlashCommand(
                 const mSaved = typeof m.cacheSavedUsd === 'number' ? m.cacheSavedUsd : 0
                 const savedSuffix = mSaved > 0 ? `（节省 $${mSaved.toFixed(4)}）` : ''
                 output(`      ${chalk.gray('缓存命中:')} ${mCache.toLocaleString()} tokens（${mRate}%）${savedSuffix}`)
+              }
+              // v0.6.131：本会话 perModel 缓存写入子行（与命中子行对称）
+              const mWrite = m.cacheWriteTokens || 0
+              if (mWrite > 0) {
+                output(`      ${chalk.gray('缓存写入:')} ${mWrite.toLocaleString()} tokens`)
               }
             }
           }
@@ -2628,7 +2648,7 @@ program
   // flare usage：查看 token 用量统计（v0.6.89，与 server get_usage/session_usage 对称；v0.6.106 支持 --json 结构化输出）
   program
     .command('usage')
-    .description('查看 token 用量统计（含缓存命中/节省；--session 只看单会话；--json 结构化输出，v0.6.89/106）')
+    .description('查看 token 用量统计（含缓存命中/写入/节省；--session 只看单会话；--json 结构化输出，v0.6.89/106/131）')
     .option('-s, --session <sessionId>', '只显示指定会话的用量（缺省显示全局汇总）')
     .option('-j, --json', 'JSON 结构化输出（v0.6.106，与 server get_usage/session_usage stats 同构；宿主/脚本程序化消费）')
     .action((options: { session?: string; json?: boolean }) => {
@@ -2660,6 +2680,11 @@ program
           const saved = typeof u.cacheSavedUsd === 'number' ? u.cacheSavedUsd : 0
           if (saved > 0) console.log(' ' + chalk.gray('缓存节省:') + ' $' + saved.toFixed(4))
         }
+        // v0.6.131：缓存写入观测（与命中行对称——写入是首轮建立缓存的开销）
+        const cacheWrite = u.cacheWriteTokens || 0
+        if (cacheWrite > 0) {
+          console.log(' ' + chalk.gray('缓存写入:') + ' ' + cacheWrite.toLocaleString() + ' tokens')
+        }
         if (typeof u.estimatedCostUsd === 'number' && u.estimatedCostUsd > 0) {
           console.log(' ' + chalk.gray('估算成本:') + ' $' + u.estimatedCostUsd.toFixed(4))
         }
@@ -2672,6 +2697,11 @@ program
               const mSaved = typeof m.cacheSavedUsd === 'number' ? m.cacheSavedUsd : 0
               const savedSuffix = mSaved > 0 ? '（节省 $' + mSaved.toFixed(4) + '）' : ''
               console.log(' ' + chalk.gray('缓存命中:') + ' ' + mCache.toLocaleString() + ' tokens（' + mRate + '%）' + savedSuffix)
+            }
+            // v0.6.131：perModel 缓存写入子行（与命中子行对称；store 分解新增 cacheWriteTokens）
+            const mWrite = m.cacheWriteTokens || 0
+            if (mWrite > 0) {
+              console.log(' ' + chalk.gray('缓存写入:') + ' ' + mWrite.toLocaleString() + ' tokens')
             }
           }
         }
@@ -2694,6 +2724,11 @@ program
         const saved = typeof usage.cacheSavedUsd === 'number' ? usage.cacheSavedUsd : 0
         if (saved > 0) console.log(' ' + chalk.gray('缓存节省:') + ' $' + saved.toFixed(4))
       }
+      // v0.6.131：缓存写入观测（与命中行对称——写入是首轮建立缓存的开销，命中是后续的节省）
+      const cacheWrite = usage.cacheWriteTokens || 0
+      if (cacheWrite > 0) {
+        console.log(' ' + chalk.gray('缓存写入:') + ' ' + cacheWrite.toLocaleString() + ' tokens')
+      }
       if (typeof usage.estimatedCostUsd === 'number' && usage.estimatedCostUsd > 0) {
         console.log(' ' + chalk.gray('估算成本:') + ' $' + usage.estimatedCostUsd.toFixed(4))
       }
@@ -2706,6 +2741,11 @@ program
             const mSaved = typeof m.cacheSavedUsd === 'number' ? m.cacheSavedUsd : 0
             const savedSuffix = mSaved > 0 ? '（节省 $' + mSaved.toFixed(4) + '）' : ''
             console.log(' ' + chalk.gray('缓存命中:') + ' ' + mCache.toLocaleString() + ' tokens（' + mRate + '%）' + savedSuffix)
+          }
+          // v0.6.131：perModel 缓存写入子行（与命中子行对称；store 分解新增 cacheWriteTokens）
+          const mWrite = m.cacheWriteTokens || 0
+          if (mWrite > 0) {
+            console.log(' ' + chalk.gray('缓存写入:') + ' ' + mWrite.toLocaleString() + ' tokens')
           }
         }
       }

@@ -184,12 +184,17 @@ describe('MemoryStore', () => {
     const ds = stats.perModel.find((m: any) => m.model === 'deepseek-chat')
     expect(ds).toBeTruthy()
     expect(ds!.cacheReadTokens).toBe(2300)
+    // v0.6.131：perModel 分解补缓存写入（与汇总对称）
+    expect(ds!.cacheWriteTokens).toBe(200)
 
     // 单会话汇总同样带缓存
     const s1 = store.getSessionUsage('s1')
     expect(s1.cacheReadTokens).toBe(2300)
     expect(s1.cacheWriteTokens).toBe(200)
     expect(s1.estimatedCostUsd).toBeCloseTo(0.003234, 6)
+    // v0.6.131：单会话 perModel 同样带缓存写入
+    const s1Chat = s1.perModel.find((m: any) => m.model === 'deepseek-chat')
+    expect(s1Chat!.cacheWriteTokens).toBe(200)
   })
 
   it('缓存节省估算（v0.6.64）：cacheSavedUsd 命中价 vs 未命中价差值，无法定价模型不计入', () => {

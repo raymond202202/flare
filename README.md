@@ -166,7 +166,7 @@ cp .env.example ~/.flare/.env
 | `flare archived-sessions` | 查看归档会话列表（--limit N 1~50 默认 10；--json 结构化输出（与 server archived_sessions 回包同构 `{ sessions }`，含 id/title/updatedAt/preview，preview 截断 120 字符；空库 `{ sessions: [] }`）v0.6.111；v0.6.88） |
 | `flare restore <会话ID>` | 恢复归档会话（写操作：仅修改 archived 标记，数据保留；与 server restore_session 对称；v0.6.96） |
 | `flare end-session <会话ID>` | 归档会话（写操作：仅修改 archived 标记，消息与用量保留，从最近会话隐藏；空 id exit 1、不存在或已归档幂等 exit 1；与 server end_session 对称；v0.6.101） |
-| `flare usage` | 查看 token 用量统计（全局汇总 + perModel 分解；--session <会话ID> 只看单会话；含缓存命中/节省；--json 结构化输出（与 server get_usage/session_usage stats 同构，宿主/脚本程序化消费，空库/无记录输出零值 stats）v0.6.106；v0.6.89） |
+| `flare usage` | 查看 token 用量统计（全局汇总 + perModel 分解；--session <会话ID> 只看单会话；含缓存命中/写入/节省；--json 结构化输出（与 server get_usage/session_usage stats 同构，宿主/脚本程序化消费，空库/无记录输出零值 stats）v0.6.106；v0.6.89） |
 | `flare context-status [<会话ID>]` | 查看会话上下文占用（消息数 + 估算 tokens；--budget N 正整数附裁剪建议；--json 结构化输出（与 server context_status 同构，含 suggestion.keepIndexes 供 trim 程序化消费）v0.6.104；v0.6.90） |
 | `flare trim <会话ID> [--budget <tokens>]` \| `[--keep <索引列表>]` | 执行上下文裁剪（写操作：保留开头 system 块 + 最近消息，store 同步删除被裁消息、重建会话后依然生效；--budget 正整数，缺省用会话 maxContextTokens 或 16000；--keep 精确裁剪：逗号分隔整数或 JSON 数组索引列表（与 context-status --json 的 suggestion.keepIndexes 同一索引空间），与 --budget 互斥；空 id/会话不存在或无消息/非法 budget/非法或越界 keep 各 exit 1、未超预算或全索引保留幂等 exit 0；与 server apply_trim、交互 /trim 对称；v0.6.105 增 --keep；v0.6.103） |
 | `flare memories [<关键词>]` | 查看持久记忆（无关键词列出全部；带关键词全文搜索；--kind 按类型过滤；--limit 1~100 默认 50；--json 结构化输出（与 server get_memories 回包同构 `{ memories }`，含 id/content/type/created_at，content 不截断不折叠；空库 `{ memories: [] }`）v0.6.109；v0.6.91；**--similar 记忆相似度检测（去重检测面，v0.6.121）**：两两比对内容相似度显示近似记忆对（文本 `#idA ↔ #idB 相似度 X.XX`；--threshold 调阈值 0~1 默认 0.4 非法 exit 1；--json 输出 `{ threshold, pairs }`；无相似/空库 exit 0；纯只读不删除） |
@@ -215,7 +215,7 @@ cp .env.example ~/.flare/.env
 | `/memory` | 查看持久记忆；带关键词全文搜索（v0.6.25）；`/memory similar [阈值]` 检测相似记忆对（默认阈值 0.4，可传 0~1 阈值如 `/memory similar 0.6`，只读不删除，v0.6.123/125） |
 | `/remember` | 保存一条记忆（如: /remember 用户喜欢浅色主题） |
 | `/forget` | 删除记忆（如: /forget 浅色主题，删除包含该关键词的记忆） |
-| `/usage` | 查看 token 用量（v0.6.17 起含本会话用量行；v0.6.49 起含缓存命中；v0.6.65 起含缓存节省金额） |
+| `/usage` | 查看 token 用量（v0.6.17 起含本会话用量行；v0.6.49 起含缓存命中；v0.6.65 起含缓存节省金额；v0.6.131 起含缓存写入） |
 | `/context` | 查看当前会话上下文占用（消息数/估算 tokens，v0.5.6；超预算提示 /trim，v0.6.46） |
 | `/trim [预算tokens]` | 智能裁剪上下文（v0.6.46：system 保底 + 最近消息 + 配对保护；缺省用配置预算） |
 | `/sessions` | 查看最近会话；带关键词搜索会话（如: `/sessions 缓存`，按标题/消息内容，v0.6.44） |
@@ -381,6 +381,20 @@ Interactive mode commands:
 | `/exit` | Exit |
 
 ### Changelog / Release Notes
+
+## v0.6.131（2026-08-14）
+- ✨ **`/usage` 与 `flare usage` 文本模式补「缓存写入」观测行（prompt caching 基建深化，观测面对称）**：
+  用量统计早已落库 `cache_write_tokens`（v0.6.29 P0）且 `--json` 结构化输出也带 `cacheWriteTokens` 字段，
+  唯独**文本模式**只显示缓存命中、不显示缓存写入——用户/宿主看 `/usage` 只能看到「命中省了多少」，
+  看不到「首轮建立缓存写了多少输入」（DeepSeek 每次新前缀都会产生 cache_write_tokens，是缓存机制的另一半）。
+  本版补齐：总览行 + 全局/本会话 perModel 子行都补 `缓存写入: X tokens`（>0 才显示，零写入输出不变，
+  与命中行对称）；**store 分解同步补 `cacheWriteTokens` 字段**（getUsageStats/getSessionUsage 的
+  perModel 项此前只带 cacheReadTokens，--json 消费 perModel 拿不到写入量）
+- 测试：store.test.ts 补 perModel cacheWriteTokens 断言（全局 + 单会话）；cli-usage.test.ts 追加 4 用例
+  （全局缓存写入行 / 无写入不出现 / --session 分支写入行 / perModel 子行写入）；prompt-caching.test.ts 追加
+  2 用例（/usage 交互有写入显示 / 无写入不出现）
+- 文档：README 命令表 usage 行与 /usage 行补缓存写入说明 + Changelog 条目
+- 纯外围增强：零 agent.ts 改动（Agent.run 核心循环零触碰）、零 push、零敏感信息
 
 ## v0.6.130（2026-08-14）
 - ✨ **`flare messages <会话ID>` 已归档会话文本模式标题带（已归档）标记**：search/sessions 命令展示会话时已带
