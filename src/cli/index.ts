@@ -2766,11 +2766,13 @@ program
   // flare memories [关键词]：查看持久记忆（v0.6.91，与 server get_memories 对称）
   program
     .command('memories [keyword]')
-    .description('查看持久记忆（无关键词列出全部；带关键词全文搜索；--kind 按类型过滤；--json 结构化输出 { memories }，v0.6.91/109）')
+    .description('查看持久记忆（无关键词列出全部；带关键词全文搜索；--kind 按类型过滤；--similar 检测相似记忆对；--json 结构化输出 { memories }，v0.6.91/109/121）')
     .option('-k, --kind <type>', '只显示指定类型的记忆（如 note/preference）')
     .option('-l, --limit <n>', '最多显示条数（1~100，默认 50）')
+    .option('-s, --similar', '检测相似记忆对（记忆去重检测面，v0.6.121；--threshold 调阈值 0~1 默认 0.4；--json 输出 { pairs }）')
+    .option('-t, --threshold <n>', '相似度阈值（0~1，默认 0.4；仅 --similar 时生效）')
     .option('-j, --json', 'JSON 结构化输出（与 server get_memories 回包同构）')
-    .action((keyword: string | undefined, options: { kind?: string; limit?: string; json?: boolean }) => {
+    .action((keyword: string | undefined, options: { kind?: string; limit?: string; similar?: boolean; threshold?: string; json?: boolean }) => {
       const store = getMemoryStore()
       const q = (keyword || '').trim()
       const kind = (options.kind || '').trim()
@@ -2782,6 +2784,35 @@ program
           process.exit(1)
         }
         limit = n
+      }
+      // v0.6.121 --similar：记忆相似度检测（去重检测面，只读）——显示相似记忆对，不删除
+      if (options.similar) {
+        let threshold = 0.4
+        if (options.threshold !== undefined) {
+          const t = Number(options.threshold)
+          if (!Number.isFinite(t) || t < 0 || t > 1) {
+            console.error(chalk.red('❌ --threshold 必须是 0~1 的数字（相似度阈值，默认 0.4）'))
+            process.exit(1)
+          }
+          threshold = t
+        }
+        const pairs = (typeof (store as any).findSimilarMemories === 'function')
+          ? (store as any).findSimilarMemories({ threshold, limit })
+          : []
+        if (options.json) { console.log(JSON.stringify({ threshold, pairs })); return }
+        if (pairs.length === 0) {
+          console.log(chalk.yellow('未发现相似记忆（阈值 ' + threshold + '）'))
+          return
+        }
+        console.log(chalk.cyan('\n🔍 相似记忆（' + pairs.length + ' 对，阈值 ' + threshold + '）:'))
+        for (const p of pairs) {
+          const a = String(p.contentA).replace(/\s+/g, ' ').trim().slice(0, 60)
+          const b = String(p.contentB).replace(/\s+/g, ' ').trim().slice(0, 60)
+          console.log(' ' + chalk.gray('#' + p.idA + ' ↔ #' + p.idB) + ' ' + chalk.yellow('相似度 ' + (Math.round(p.similarity * 100) / 100).toFixed(2)) + ':')
+          console.log('   ' + (a || '[空内容]'))
+          console.log('   ' + (b || '[空内容]'))
+        }
+        return
       }
       let memories: { id: number; content: string; type: string; created_at: string }[] = []
       if (q && typeof store.searchMemories === 'function') {

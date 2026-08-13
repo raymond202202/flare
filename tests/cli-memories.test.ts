@@ -132,4 +132,58 @@ describe('flare memories', () => {
     expect(stdout).toContain('🧠 记忆')
     expect(() => JSON.parse(stdout)).toThrow()
   }, 20000)
+  it('--similar 检测近似记忆对（文本模式显示 id 对与相似度）', async () => {
+    store.saveMemory('用户偏好浅色主题', 'preference')
+    store.saveMemory('用户偏好浅色主题，还喜欢极简风', 'preference')
+    store.saveMemory('香蕉营养价值很高', 'note')
+    const { code, stdout } = await runCli(['memories', '--similar'])
+    expect(code).toBe(0)
+    expect(stdout).toContain('相似记忆（')
+    expect(stdout).toContain('#1 ↔ #2')
+    expect(stdout).toContain('相似度 0.46')
+    expect(stdout).toContain('用户偏好浅色主题')
+    expect(stdout).not.toContain('香蕉营养价值很高')
+  }, 20000)
+  it('--similar 无相似对 → 「未发现相似记忆」退出码 0', async () => {
+    store.saveMemory('苹果的营养价值', 'note')
+    store.saveMemory('香蕉的种植技巧', 'note')
+    const { code, stdout } = await runCli(['memories', '--similar'])
+    expect(code).toBe(0)
+    expect(stdout).toContain('未发现相似记忆')
+  }, 20000)
+  it('--similar 空库 → 「未发现相似记忆」退出码 0', async () => {
+    const { code, stdout } = await runCli(['memories', '--similar'])
+    expect(code).toBe(0)
+    expect(stdout).toContain('未发现相似记忆')
+  }, 20000)
+  it('--similar --json 输出合法 JSON { threshold, pairs }（idA/idB/similarity/content 全字段）', async () => {
+    store.saveMemory('用户偏好浅色主题', 'note')
+    store.saveMemory('用户偏好浅色主题，还喜欢极简风', 'note')
+    const { code, stdout } = await runCli(['memories', '--similar', '--json'])
+    expect(code).toBe(0)
+    const parsed = JSON.parse(stdout)
+    expect(parsed.threshold).toBe(0.4)
+    expect(parsed.pairs.length).toBeGreaterThanOrEqual(1)
+    for (const p of parsed.pairs) {
+      expect(p).toHaveProperty('idA')
+      expect(p).toHaveProperty('idB')
+      expect(p).toHaveProperty('contentA')
+      expect(p).toHaveProperty('contentB')
+      expect(p).toHaveProperty('similarity')
+    }
+  }, 20000)
+  it('--similar --threshold 调高 → 无结果（阈值过滤）', async () => {
+    store.saveMemory('用户偏好浅色主题', 'note')
+    store.saveMemory('用户偏好浅色主题，还喜欢极简风', 'note')
+    const { code, stdout } = await runCli(['memories', '--similar', '--threshold', '0.9'])
+    expect(code).toBe(0)
+    expect(stdout).toContain('未发现相似记忆')
+  }, 20000)
+  it('--similar --threshold 非法（abc/-1/1.5）退出码 1', async () => {
+    for (const bad of ['abc', '-1', '1.5']) {
+      const { code, stderr } = await runCli(['memories', '--similar', '--threshold', bad])
+      expect(code).toBe(1)
+      expect(stderr).toContain('--threshold')
+    }
+  }, 20000)
 })

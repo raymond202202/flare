@@ -27,6 +27,44 @@ interface MemoryRow {
   created_at: string
 }
 
+/** 相似记忆对（v0.6.121，findSimilarMemories 返回项；similarity 为 0~1 相似度） */
+export interface SimilarMemoryPair {
+  idA: number
+  idB: number
+  contentA: string
+  contentB: string
+  similarity: number
+}
+
+/**
+ * 字符 3-gram 集合 Jaccard 相似度（v0.6.121，记忆去重检测面）
+ *
+ * 中文友好：按字符取连续 3 字子串集合（去除空白），相似度 = 交集大小 / 并集大小。
+ * - 完全相同的文本 → 1
+ * - 无共同 3-gram → 0
+ * - 长度 < 3 的文本用整段作单个 gram（短串间仍可判同/异）
+ */
+export function trigramJaccard(a: string, b: string): number {
+  const gramsA = trigrams(a)
+  const gramsB = trigrams(b)
+  if (gramsA.size === 0 && gramsB.size === 0) return 1
+  if (gramsA.size === 0 || gramsB.size === 0) return 0
+  let inter = 0
+  for (const g of gramsA) {
+    if (gramsB.has(g)) inter++
+  }
+  const union = gramsA.size + gramsB.size - inter
+  return union === 0 ? 1 : inter / union
+}
+
+function trigrams(text: string): Set<string> {
+  const t = (text || '').replace(/\s+/g, '')
+  if (t.length < 3) return new Set(t ? [t] : [])
+  const set = new Set<string>()
+  for (let i = 0; i <= t.length - 3; i++) set.add(t.slice(i, i + 3))
+  return set
+}
+
 /** P0（v0.6.29）：缓存/成本用量附加字段（logUsage 可选扩展，缺省行为与旧版一致） */
 export interface UsageExtra {
   /** 缓存命中 input tokens（DeepSeek prompt_cache_hit_tokens / OpenAI cached_tokens） */
@@ -734,6 +772,39 @@ export class MemoryStore {
   /** 获取相关记忆（RAG 增强版：FTS 全文检索 + 相关度排序） */
   getRelevantMemories(query: string, limit = 5): MemoryRow[] {
     return this.searchMemories(query, limit)
+  }
+
+  /**
+   * 查找相似记忆对（v0.6.121，记忆去重第一步——检测面，只读）
+   *
+   * 两两比较全部记忆的内容相似度（trigramJaccard），返回相似度 ≥ threshold 的对，
+   * 按相似度降序。宿主/用户据此发现重复/近似记忆，再决定是否手动删除
+   * （配合 deleteMemory / deleteMemoriesByContent；自动合并留后续候选）。
+   * - threshold：0~1，默认 0.4（中文字符 3-gram 交集占比；「用户偏好浅色主题」vs
+   *   「用户偏好浅色主题，还喜欢极简风」≈0.46 可检出，完全重复 = 1.0）
+   * - limit：最多返回对数量（默认 20）；每对 idA < idB 不重复
+   */
+  findSimilarMemories(options: { threshold?: number; limit?: number } = {}): SimilarMemoryPair[] {
+    const threshold = options.threshold ?? 0.4
+    const limit = options.limit ?? 20
+    const mems = this.getAllMemories()
+    const pairs: SimilarMemoryPair[] = []
+    for (let i = 0; i < mems.length; i++) {
+      for (let j = i + 1; j < mems.length; j++) {
+        const similarity = trigramJaccard(mems[i].content, mems[j].content)
+        if (similarity >= threshold) {
+          pairs.push({
+            idA: mems[i].id,
+            idB: mems[j].id,
+            contentA: mems[i].content,
+            contentB: mems[j].content,
+            similarity,
+          })
+        }
+      }
+    }
+    pairs.sort((a, b) => b.similarity - a.similarity)
+    return pairs.slice(0, limit)
   }
 
   /** 获取所有记忆 */

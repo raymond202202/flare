@@ -156,5 +156,4 @@ v0.5.4 新增 16 项（记忆生命周期）：
 ## 后续候选
 
 - RAG 注入：Agent 构造时按会话主题自动注入相关记忆（当前注入最近 5 条）
-- memory_search 结果截断优化（长消息折叠）
-- 记忆去重 / 摘要（相似记忆合并）
+- 记忆去重 / 摘要（相似记忆合并）：**检测面已完成（v0.6.121）**——`MemoryStore.findSimilarMemories({ threshold?, limit? })`（trigramJaccard 字符 3-gram 集合 Jaccard 相似度，中文友好）+ CLI `flare memories --similar [--threshold <0~1>] [--json]`（`{ threshold, pairs }`）只读检测近似记忆对；自动合并/摘要（写操作 + LLM）留待后续候选

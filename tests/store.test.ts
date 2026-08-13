@@ -3,7 +3,7 @@
  * 覆盖：CRUD、tool_calls 配对、FTS 触发器、用量记录
  */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
-import { MemoryStore } from '../src/memory/store.js'
+import { MemoryStore, trigramJaccard } from '../src/memory/store.js'
 import { mkdtempSync, rmSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
@@ -609,5 +609,91 @@ describe('MemoryStore 记忆删除（v0.5.4）', () => {
 
     store.deleteMemoriesByContent('网络请求超时')
     expect(store.searchMemories('网络请求超时')).toEqual([])
+  })
+})
+
+describe('trigramJaccard（v0.6.121 记忆去重检测面）', () => {
+  it('完全相同文本 → 1', () => {
+    expect(trigramJaccard('用户偏好浅色主题', '用户偏好浅色主题')).toBe(1)
+  })
+  it('完全无关文本 → 0（无共同 3-gram）', () => {
+    expect(trigramJaccard('用户偏好浅色主题', '香蕉营养价值很高')).toBe(0)
+  })
+  it('近似文本 → 0~1 之间，共享内容越多越相似', () => {
+    const a = '用户偏好浅色主题'
+    const b = '用户偏好浅色主题，还喜欢极简风'
+    const c = '用户偏好浅色主题，还喜欢极简风和简洁布局'
+    const sab = trigramJaccard(a, b)
+    const sac = trigramJaccard(a, c)
+    const sbc = trigramJaccard(b, c)
+    // a 是 b/c 的前缀（超集模式）：a-b ≈0.46 可检出，均不相等
+    expect(sab).toBeGreaterThan(0)
+    expect(sab).toBeLessThan(1)
+    expect(sac).toBeGreaterThan(0)
+    expect(sac).toBeLessThan(1)
+    // b 与 c 共享前缀+后缀更多 → 相似度高于 a 与 c
+    expect(sbc).toBeGreaterThan(sac)
+  })
+  it('空白差异不影响相似度（去除空白后比较）', () => {
+    expect(trigramJaccard('用户 偏好 浅色', '用户偏好浅色')).toBe(1)
+  })
+  it('短文本（<3 字）退化：相同 → 1，不同 → 0', () => {
+    expect(trigramJaccard('咖啡', '咖啡')).toBe(1)
+    expect(trigramJaccard('咖啡', '茶')).toBe(0)
+  })
+  it('空串边界：双方为空 → 1，单方为空 → 0', () => {
+    expect(trigramJaccard('', '')).toBe(1)
+    expect(trigramJaccard('', '咖啡')).toBe(0)
+  })
+})
+
+describe('MemoryStore.findSimilarMemories（v0.6.121 记忆去重检测面）', () => {
+  it('检出重复/近似记忆对（idA < idB，相似度降序）', () => {
+    store.saveMemory('用户偏好浅色主题', 'preference')
+    store.saveMemory('用户偏好浅色主题，还喜欢极简风', 'preference')
+    store.saveMemory('香蕉营养价值很高', 'note')
+    const pairs = store.findSimilarMemories()
+    expect(pairs.length).toBeGreaterThanOrEqual(1)
+    for (const p of pairs) {
+      expect(p.idA).toBeLessThan(p.idB)
+      expect(p.similarity).toBeGreaterThanOrEqual(0.4)
+    }
+    // 近似记忆对（超集模式 ≈0.46）被检出；最高相似对按相似度降序排前
+    const ab = pairs.find(p => p.contentA === '用户偏好浅色主题' && p.contentB === '用户偏好浅色主题，还喜欢极简风')
+    expect(ab).toBeTruthy()
+    for (let i = 1; i < pairs.length; i++) {
+      expect(pairs[i - 1].similarity).toBeGreaterThanOrEqual(pairs[i].similarity)
+    }
+  })
+  it('完全重复记忆相似度 1 且被检出', () => {
+    store.saveMemory('记住这个结论', 'note')
+    store.saveMemory('记住这个结论', 'note')
+    const pairs = store.findSimilarMemories()
+    expect(pairs.length).toBe(1)
+    expect(pairs[0].similarity).toBe(1)
+    expect(pairs[0].idA).not.toBe(pairs[0].idB)
+  })
+  it('threshold 过滤：高于阈值才返回', () => {
+    store.saveMemory('用户偏好浅色主题', 'note')
+    store.saveMemory('用户偏好浅色主题，还喜欢极简风', 'note')
+    store.saveMemory('香蕉营养价值很高', 'note')
+    // 阈值 1 只保留完全重复 → 无
+    expect(store.findSimilarMemories({ threshold: 1 })).toEqual([])
+    // 阈值 0 全部（含近似对）
+    const all = store.findSimilarMemories({ threshold: 0 })
+    expect(all.length).toBeGreaterThanOrEqual(1)
+  })
+  it('limit 截断返回数量', () => {
+    for (let i = 0; i < 5; i++) store.saveMemory('相同记忆内容' + (i % 2), 'note')
+    const pairs = store.findSimilarMemories({ limit: 2 })
+    expect(pairs.length).toBeLessThanOrEqual(2)
+  })
+  it('空库返回空数组', () => {
+    expect(store.findSimilarMemories()).toEqual([])
+  })
+  it('无相似记忆返回空数组（默认阈值）', () => {
+    store.saveMemory('苹果的营养价值', 'note')
+    store.saveMemory('香蕉的种植技巧', 'note')
+    expect(store.findSimilarMemories()).toEqual([])
   })
 })
