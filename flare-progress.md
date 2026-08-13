@@ -3,6 +3,8 @@
 > **【已发布】v0.6.116 装机完成（P148 cache-check --json 补命中率 hitRatio/runHitRatios，引导模式本机安装版，自循环）**
 > **【✅ 第一百二十轮完成】P148 (v0.6.116) cache-check --json 命中率字段已装机**：
 > commit `f63d7a8`，1085/1085 全绿、tsc 0 错误、零 agent.ts 改动（详情见下方第一百二十轮条目）。
+> **【✅ 第一百二十轮小步】P149 (纯文档) docs/flare-token-architecture.md 同步 cache-check --json 字段**：
+> commit `40129fe`，纯文档零 src 改动、tsc 0 错误、无版本变化（详情见下方 P149 条目）。
 > **【✅ 第一百一十九轮完成】P147 (纯文档) docs/context-observability.md 同步 trim/context-status 单次命令**：
 > commit `f3fc453`，纯文档零 src 改动、tsc 0 错误、无版本变化（详情见下方第一百一十九轮条目）。
 > **【✅ 第一百一十八轮完成】P146 (纯文档) docs/mcp.md 同步外部 MCP 面 --json 能力**：
@@ -524,6 +526,38 @@
   同口径是验收重点（核心 ratioOf 与 CLI pct 必须逐字一致），实现时直接复用同式而非复制粘贴变体；
   ③ 失败路径的 runHitRatios 语义（第一次失败 [null] 因 usages 为空、第二次失败 [0,null]）易在
   测试断言中写错，先跑通再断言
+
+---
+
+### 2026-08-13 第一百二十轮小步（P149 纯文档）——docs/flare-token-architecture.md 同步 cache-check --json 字段（完成，自循环）
+
+> **P149 完成**（commit `40129fe`）：docs/flare-token-architecture.md「验收标准」章节
+> 的 cache-check --json 字段清单停在 v0.6.48 基础（ok/model/hitTokens/savedUsd/detail + 两轮
+> 用量快照），未跟上 v0.6.54 rounds/runs 每轮快照、v0.6.76 runSavedUsd 每轮节省明细、
+> v0.6.116 hitRatio/runHitRatios 命中率字段——README 命令表/Changelog 已同步、docs 专项未跟上
+> （文档不对称，P146/P147 同源问题）。纯文档增强，零 src 改动、零风险（v0.6.74/0.6.77/0.6.82/
+> 0.6.113/0.6.114 纯文档先例）。
+> - **实现**（docs/flare-token-architecture.md +4/-1）：「验收程序化消费（v0.6.48）」条目补
+>   v0.6.54 rounds/runs、v0.6.76 runSavedUsd、v0.6.116 hitRatio/runHitRatios（末轮/每轮命中率、
+>   promptTokens=0 或失败轮 null、与 CLI 文本模式同口径）——宿主可同时按命中量/命中率/节省三视角
+>   程序化判定缓存效率
+> - **验证**：tsc 0 错误；**零 src 改动**（git diff 仅 docs/flare-token-architecture.md 1 文件）；
+>   纯文档无版本变化（0.6.116 不变，dist 未动，无需自安装）；零 push、零敏感信息（diff 敏感扫描
+>   0 命中）
+> - **flare 验收结论：✅ 通过**——flare 独立运行 git log -1/git show 审查 diff（仅 1 文件纯文档）、
+>   npx tsc 0 错误、cache-check.test.ts 专项 22/22，**逐条对照源码验证 5 项文档表述**（rounds/runs
+>   注释 v0.6.54、runSavedUsd 注释 v0.6.76、hitRatio/runHitRatios 注释 v0.6.116、ratioOf
+>   promptTokens>0 防御、CLI index.ts:2184 pct 公式与 ratioOf 逐字一致），结论与实况完全一致
+> - **下一步候选**：① 【P1】分层上下文（Layer 1 异步滚动摘要——需评估 run 循环外异步，涉及
+>   agent.ts trimContext 异步化，铁律暂缓）；② 其他安全的外围增强（MCP 工具集完善、测试稳定性继续清扫等）
+
+**引导过程记录（引导 agent 视角，实现+验收直接完成）**：
+- 本轮实现由引导 agent 直接完成（纯文档，写 docs/flare-token-architecture.md 验收标准章节）
+- flare 验收延续 P146/P147 的高标准：逐条对照源码行号验证文档表述（5 项全过）
+- **教训**：① P148 新增 --json 字段后，docs 专项（flare-token-architecture.md 验收标准清单）是
+  典型滞后点——**功能落地后须检查三处（README 表 + Changelog + 对应 docs 专项）**，本小步补上
+  第三处；② 纯文档小步节奏快、零风险，适合自循环窗口填充（本轮 P148 装机后 25 分钟内继续跑完）；
+  ③ flare 验收对纯文档也保持逐条源码对照的高标准，文档编写时须先核对 src 注释的版本标注
 
 ---
 
