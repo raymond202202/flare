@@ -1,5 +1,7 @@
 # Flare 引擎迭代进度（夜间调研 agent）
 
+> **【✅ 第一百三十一轮小步】P178 (纯文档) host-protocol.md 同步 usage perModel cacheWriteTokens 字段**：
+> commit `24dffc5`，纯文档零 src 改动、tsc 0 错误、1174/1174 全绿、无版本变化（详情见下方 P178 条目）。
 > **【✅ 第一百三十一轮小步】P177 (v0.6.131) /usage 与 usage 文本模式补缓存写入观测行 + store perModel 补 cacheWriteTokens 已装机**：
 > commit `a4703ab`，1174/1174 全绿、tsc 0 错误、零 agent.ts 改动（详情见下方 P177 条目）。
 > **【✅ 第一百三十轮小步】P176 (v0.6.130) flare messages 已归档会话文本模式标题带（已归档）标记已装机**：
@@ -210,6 +212,26 @@
 >    terminal 退出码（v0.6.33）✓ / CLI 归档命令（v0.6.32）✓ / 归档 API（v0.6.31）✓ /
 >    工具输出治理（v0.6.30）✓ / prompt caching P0（v0.6.29）✓ / MCP 动态资源提供器（v0.6.28）✓ /
 >    confirm 描述（v0.6.27）✓
+
+---
+
+### 2026-08-14 第一百三十一轮小步（P178，纯文档）——host-protocol.md 同步 usage perModel cacheWriteTokens 字段
+
+> **P178 完成**（commit `24dffc5`）：docs/host-protocol.md 的 `get_usage`/`session_usage` 响应示例与
+> perModel 说明补 `cacheWriteTokens` 字段——P177 装机后 server 协议实际回包（透传 store stats）的
+> perModel 每项已带 cacheWriteTokens，但 host-protocol.md 响应示例 JSON 与字段说明仍停留在旧形状
+> （perModel 只列 cacheReadTokens/cacheSavedUsd），宿主按文档解析会漏掉新字段（P149 文档对称先例）。
+> - **改动**（docs/host-protocol.md +4/-4）：`get_usage` 响应示例两个 perModel 项补 `cacheWriteTokens: 0` +
+>   perModel 说明补「v0.6.131 起每项含 cacheWriteTokens（本模型缓存写入，与汇总对称）」；`session_usage`
+>   响应示例 perModel 项补 `cacheWriteTokens: 0` + perModel 说明同步
+> - **验证**：tsc 0 错误；全量 1174/1174 全绿（76 文件）；纯文档零 src 改动、零 agent.ts 改动；
+>   零 push、零敏感信息；无版本变化（0.6.131 不变，dist 未动，无需自安装）
+> - **flare 验收通过**：独立运行 tsc 0 错误 + 全量 76 文件/1174 测试全绿；逐处对照 src/memory/store.ts
+>   实现核对（getUsageStats L660-671 / getSessionUsage L712-723 perModel 含 cacheWriteTokens ✅、
+>   版本号 0.6.131 与 package.json 一致 ✅）；文档示例与源码对称一致、工作区干净；结论「✅ 验收通过」
+> - **下一步候选**：① 【P1】分层上下文（Layer 1 异步滚动摘要——需改 Agent.run 核心循环，违反铁律跳过并记录理由）；
+>   ② 其他安全的外围增强（MCP 工具集完善、测试稳定性等）——缓存观测面（命中/写入/节省）三层对称收官，
+>   文本/--json/server 协议/文档口径一致，prompt caching 基建观测面全闭环
 
 ---
 
