@@ -1,5 +1,7 @@
 # Flare 引擎迭代进度（夜间调研 agent）
 
+> **【✅ 第一百二十六轮小步】P161 (v0.6.122) server 协议 find_similar_memories 接口已装机**：
+> commit `116e768`，1138/1138 全绿、tsc 0 错误、零 agent.ts 改动（详情见下方 P161 条目）。
 > **【✅ 第一百二十六轮完成】P160 (v0.6.121) 记忆相似度检测 findSimilarMemories + flare memories --similar 已装机**：
 > commit `fcf6ef1`，1134/1134 全绿、tsc 0 错误、零 agent.ts 改动（详情见下方第一百二十六轮条目）。
 > **【✅ 第一百二十五轮小步】P159 (纯文档) host-protocol.md 响应事件汇总表补齐 7 个缺失类型行**：
@@ -4486,6 +4488,60 @@
   （b-c > a-c）；③ 验收指令仍走文件读入规避 confusable（本轮第一次 -q 带中文又被拦截，
   改纯 ASCII 指令 + 文件读入一次通过）；④ 纯只读检测命令（--similar）是最安全的记忆去重
   第一步，与既有写操作（delete-memory）天然衔接，宿主可程序化消费 --json 后自行清理
+
+---
+
+### 2026-08-14 第一百二十六轮小步（P161 v0.6.122）——server 协议 find_similar_memories 接口（装机完成，自循环）
+
+> **P161 完成**（commit `116e768`）：server 宿主协议新增 `find_similar_memories` 请求
+> （响应 `similar_memories`）——P160 记忆去重检测面的**协议口**：宿主（Pulse/StorySpire 等
+> 非 Node 宿主）此前只能经 CLI `flare memories --similar` 消费检测（需 shell），协议面缺失
+> （宿主面板无法程序化发现重复/近似记忆）。本步与 store.findSimilarMemories（v0.6.121）
+> 同源，宿主经协议拿到 pairs 后自行决定是否 delete_memory 清理。
+> - **实现**（src/server.ts +30，插在 get_memories case 与 delete_memory case 之间）：
+>   - 请求 `{ type: "find_similar_memories", threshold?, limit? }`：threshold 0~1 数字
+>     （非法回 error「threshold 必须是 0~1 的数字」）、limit 1~100 整数（非法回 error
+>     「limit 必须是 1~100 的整数」）——校验风格对齐 get_memories limit（v0.6.25）
+>   - 调用 `store.findSimilarMemories({ threshold: 未提供→undefined, limit: 未提供→undefined })`
+>     ——未提供参数时传 undefined 让 store 用默认值（0.4/20），**与 CLI 同口径不重复实现**
+>   - 响应 `{ type: "similar_memories", threshold, pairs }`（threshold 回显实际值，未提供时 0.4）；
+>     pairs 含 idA/idB/contentA/contentB/similarity，idA < idB 不重复、相似度降序；
+>     **纯只读不生成不删除**
+> - **测试**（tests/server.test.ts 追加 4 用例，+71 行）：检出重复/近似对（seed 独特前缀
+>   「P161检测」避免与其他测试共享进程库的记忆混淆；超集模式 ≥0.4 检出、无关记忆不参与、
+>   idA<idB 且降序）/ threshold 0.9 过滤 + limit 1 限量（断言只针对本次 seed，因共享进程库
+>   已有其他测试记忆——**初版断言「pairs 全空」失败，实测发现共享库污染改为内容级断言**）/
+>   纯只读（请求前后 get_memories 计数不变）/ 参数校验（threshold -1/1.5/abc、limit 0/101/abc
+>   回 error 含提示）
+> - 文档：docs/host-protocol.md 三处同步（请求类型列表 + 13.5 章节 + 响应汇总表
+>   similar_memories 行）+ README Changelog v0.6.122 条目 + package.json 0.6.121 → 0.6.122
+> - **1138/1138 全绿**（基线 1134 + 4；74 文件；server.test.ts 76/76 专项通过），tsc 0 错误，
+>   **零 agent.ts 改动**，零 push、零敏感信息（diff 敏感扫描 0 命中）；已 commit `116e768`
+>   （5 文件 +125/-2）；安装版冒烟（FLARE_HOME 临时库 + 请求文件 stdin）：检出 0.46 对 /
+>   threshold 0.9 空 / 非法 threshold、limit 各回 error 全部符合预期；真实 ~/.flare 零污染
+> - **下一步候选**：① 【P1】分层上下文（Layer 1 异步滚动摘要——需评估 run 循环外异步，涉及
+>   agent.ts trimContext 异步化，铁律暂缓）；② 其他安全的外围增强（记忆去重检测面两层收官
+>   （store+CLI v0.6.121、server 协议 v0.6.122），后续候选剩 RAG 注入（Agent 构造时按会话主题
+>   自动注入相关记忆——改 agent.ts 构造逻辑，需谨慎评估）、记忆自动合并/摘要（写操作 + LLM，
+>   风险中）、测试稳定性继续清扫等）
+> - **flare 验收结论：✅ 通过**——flare 独立运行 git log -1/git show 审查完整 diff（5 文件
+>   +125/-2）、npx tsc 0 错误、PATH=/usr/bin:$PATH npx vitest run 全量 74 文件 1138/1138 全绿、
+>   server.test.ts 专项 76/76（含 4 新用例）、git 提交完整工作区干净；逐项核对 threshold/limit
+>   校验、未提供参数时传 undefined 走 store 默认（与 CLI 同口径）、响应结构、纯只读语义、
+>   文档三处同步、版本号/README、零 agent.ts 改动、无任何密钥明文；全程零修改零 commit；
+>   结论与实况完全一致（验收指令经文件读入规避 confusable 误报，P148 先例）
+
+**引导过程记录（引导 agent 视角，实现+验收直接完成）**：
+- 本轮实现由引导 agent 直接完成（「调研→执行→flare 验收」新范式，验收环节交给 flare）
+- 调研选定 P161：P160 检测面只剩协议口缺口（CLI/store 已装机），server 协议补接口是
+  对称收官且零 agent.ts 改动零风险
+- **教训**：① **共享进程库测试的断言陷阱**——server.test.ts 整个 describe 共享一个 server
+  子进程 + 临时库，初版「空库 pairs 全空」「threshold 0.9 pairs 全空」断言因前序测试
+  remember 的记忆残留而失败（实测 idA=1/4 同内容产生跨测试完全重复对）——共享库测试必须
+  用独特前缀 seed + 内容级断言（find 本次 seed），不能断言全局空；② 协议测试 spawn 的是
+  **dist** 产物——改了 src 必须先 `npx tsc` 编译 dist 再跑 vitest（只跑 --noEmit 会导致
+  「未知请求类型」假失败，本轮踩中）；③ 参数未提供时传 undefined 让 store 用默认值，避免
+  在 server 层重复实现默认值（单一口径，与 CLI --similar 默认 0.4 天然一致）
 
 ---
 
