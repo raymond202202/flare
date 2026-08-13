@@ -1,6 +1,8 @@
 # Flare 引擎迭代进度（夜间调研 agent）
 
-> **【已发布】v0.6.113 装机完成（P143 mcp resources/prompts/tools --json 结构化输出，引导模式本机安装版，自循环）**
+> **【已发布】v0.6.114 装机完成（P144 mcp complete --json 结构化输出，引导模式本机安装版，自循环）**
+> **【✅ 第一百一十六轮完成】P144 (v0.6.114) mcp complete --json 已装机**：
+> commit `93d52c8`，1078/1078 全绿、tsc 0 错误、零 agent.ts 改动（详情见下方第一百一十六轮条目）。
 > **【✅ 第一百一十五轮完成】P143 (v0.6.113) mcp resources/prompts/tools --json 已装机**：
 > commit `9a261ee`，1074/1074 全绿、tsc 0 错误、零 agent.ts 改动（详情见下方第一百一十五轮条目）。
 > **【✅ 第一百一十四轮完成】测试稳定性修复**：commit `8818cc6`，消除 P142 装机时记录的
@@ -463,6 +465,47 @@
 
 ---
 
+### 2026-08-13 第一百一十六轮实施（v0.6.114）——P144 flare mcp complete --json 结构化输出（装机完成）
+
+> **P144 完成**（commit `93d52c8`）：`flare mcp complete <服务器> <提示词> <参数> [前缀]` 增加 **--json
+> 结构化输出**——与 server 协议 **mcp_complete 回包完全同构**（`{ server, prompt, argument, value?,
+> values, total?, hasMore? }`，不带 type 包装），宿主/脚本可程序化消费外部 MCP 服务器的提示词参数补全
+> 候选；这是 P143（v0.6.113 mcp resources/prompts/tools --json）外部 MCP 面 --json 系列的**收官一环**
+> （mcp call 是执行类无清单可列，CLI 只读命令 --json 系列至此全量收官）；顺带补齐 README CLI 命令摘要表
+> 缺失的 `flare mcp complete` 行（v0.6.60 起就有命令但从未入表）。纯只读增强，风险极低，零 agent.ts 改动。
+> - **实现**（src/cli/index.ts mcp complete 命令块 +16/-1）：新增 `.option('-j, --json', ...)`；action
+>   签名 options 增加 `json?: boolean`；在 result 获取后、文本输出前插入 JSON 分支——输出结构逐字段与
+>   server mcp_complete 回包同构（server/prompt/argument 原样、value 仅在传入时携带
+>   `...(value ? { value } : {})`、values 原样、total/hasMore 仅在服务器返回时携带，全部与 server
+>   回包同款可选字段语义）；空候选也输出 `{ values: [] }` 合法 JSON exit 0（不打印「无补全候选」提示，
+>   脚本可解析，与 P143 空数组结构稳定同思路）；只打印 JSON 不混彩色；文本模式与退出码语义一字不改
+> - **测试**（tests/mcp-cli-call.test.ts complete describe 追加 4 用例至 8 个，spawn dist CLI + 真实
+>   stdio mock fixture，现有 4 用例零删改）：--json 输出合法 JSON + 与 server 回包同构（含 value 且
+>   4 候选全命中 total 4——mock 4 个候选均以 flare 开头）/ 前缀收窄 + 未传 value 时省略 value 字段
+>   （server 同款可选字段语义）/ 空候选（前缀 xyz）→ `{ values: [] }` 合法 JSON exit 0 不打印「无补全
+>   候选」/ -j 短选项等价 + 文本模式回归（含「候选」标题且非 JSON）
+> - README 命令表补 mcp complete 行（含 --json 能力说明）+ Changelog v0.6.114 条目 + package.json
+>   0.6.113 → 0.6.114 + flare-progress 摘要/下一步候选更新
+> - **1078/1078 全绿**（新增 4 用例，72 文件；全量首跑即绿无偶发），tsc 0 错误，**零 agent.ts 改动**，
+>   零 push、零敏感信息（diff 敏感扫描 0 命中）；装机版冒烟 server stdin ping → pong + `mcp complete
+>   mock summarize topic flare --json`（4 候选/前缀收窄 1 候选/空候选 [] exit 0）实测通过
+> - **下一步候选**：① 【P1】分层上下文（Layer 1 异步滚动摘要——需评估 run 循环外异步，涉及
+>   agent.ts trimContext 异步化，铁律暂缓）；② 其他安全的外围增强（MCP 工具集完善、测试稳定性继续清扫等）
+
+**引导过程记录（引导 agent 视角，实现+测试+收尾直接完成）**：
+- 本轮实现由引导 agent 直接完成（flare 验收前置的独立实现——沿用「调研→执行→flare 验收」新范式，
+  实现阶段不依赖 flare 代写，验收环节交给 flare 锻炼其能力）
+- **flare 验收结论：✅ 通过**——flare 独立运行 git log -1/git show 审查完整 diff、npx tsc EXIT 0、
+  PATH=/usr/bin:$PATH npx vitest run 72 文件 1078/1078 全绿、逐项核对 --json 与 server mcp_complete
+  回包同构/空候选/可选字段省略语义/无敏感信息，结论与实况完全一致（验收指令经文件读入规避 confusable
+  误报，P1353 先例）
+- **教训**：① 中文全角引号内联会触发安全扫描 confusable 误报（P1353 先例再现），验收指令统一「写入
+  文件 + $(cat) 读入」模式最稳；② mock fixture 4 个候选均以 flare 开头，value=flare 时全命中——
+  测试断言以实测为准（首版断言 2 个候选出错，实测 4 个后修正）；③ 连续小步节奏稳定：P143 → P144
+  外部 MCP 面 --json 系列收官，每步 tsc 0 + 全量绿 + flare 验收通过
+
+---
+
 ### 2026-08-13 第一百一十五轮实施（v0.6.113）——P143 flare mcp resources/prompts/tools --json 结构化输出（装机完成）
 
 > **P143 完成**（commit `9a261ee`）：外部 MCP 服务器查看类单次命令增加 **--json 结构化输出**——与 server 协议
@@ -510,8 +553,8 @@
 > - **验证**：tsc 0 错误；**1069/1069 全绿**（72 文件，本文件 4/4 通过）；装机版冒烟
 >   server stdin ping → pong（FLARE_HOME 临时目录，真实 ~/.flare 零污染）。
 > - **零 src 改动**（纯测试层，P123 先例，无版本变化/无 Changelog/README 条目）。
-> - **下一步候选**：① 【P1】分层上下文（Layer 1 异步滚动摘要——需评估 run 循环外异步）；
->   ② 其他安全的外围增强（MCP 工具集完善、测试稳定性继续清扫等）。
+> - **下一步候选**：① 【P1】分层上下文（Layer 1 异步滚动摘要——需评估 run 循环外异步）；② 其他安全的外围
+>   增强（MCP 工具集完善、测试稳定性继续清扫等）
 
 ---
 
