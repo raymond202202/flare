@@ -1,5 +1,7 @@
 # Flare 引擎迭代进度（夜间调研 agent）
 
+> **【✅ 第一百二十五轮小步】P158 (纯文档) docs/mcp.md 单次查询章节修正过时表述**：
+> commit `07c4eb0`，纯文档零 src 改动、tsc 0 错误、1116/1116 全绿、无版本变化（详情见下方 P158 条目）。
 > **【✅ 第一百二十五轮小步】P157 (纯文档) docs/mcp.md 补 CLI 单次命令 connect/disconnect 章节**：
 > commit `588ee30`，纯文档零 src 改动、tsc 0 错误、1116/1116 全绿、无版本变化（详情见下方 P157 条目）。
 > **【✅ 第一百二十四轮完成】P156 (v0.6.120) CLI 单次命令 flare mcp connect/disconnect 已装机**：
@@ -641,6 +643,42 @@
   ② 安全设计要点：二进制（image/audio 的 data、resource 的 blob）只输出占位描述不含 base64
   明文——既防上下文 token 膨胀也防敏感数据回显；③ rich/struct-only 用 MOCK_MODE 环境变量控制
   fixture 返回，不动工具列表（工具数断言零影响），是扩展 mock 服务器行为的安全模式
+
+---
+
+### 2026-08-14 第一百二十五轮小步（P158 纯文档）——docs/mcp.md 单次查询章节修正过时表述（装机完成，自循环）
+
+> **P158 完成**（commit `07c4eb0`）：docs/mcp.md「### 3. 单次查询」章节原表述「单次查询模式暂不注入
+> MCP 工具（交互模式 + 宿主协议已覆盖主要场景）」**遗漏 CLI 单次命令面**——`flare mcp call` 等单次命令
+> v0.6.6 起已可直接调用 MCP 服务器（docs/mcp.md 自身下方「CLI 单次命令」章节、README 命令表、P157 刚补的
+> connect/disconnect 都证明 CLI 面存在），括号表述易误导读者以为 CLI 无法使用 MCP。纯文档增强，零 src
+> 改动、零风险（纯文档先例）。
+> - **实现**（docs/mcp.md +3/-1，仅 1 处）：「### 3. 单次查询」章节修正为——`flare chat -q "..."`
+>   单次查询模式不把 MCP 工具注入 Agent 工具集（交互模式 + 宿主协议已覆盖注入场景）；CLI 直接调用
+>   MCP 服务器走单次命令面——`flare mcp call/resources/prompts/tools/complete/connect/disconnect`
+>   （见下方「CLI 单次命令」章节，v0.6.6 起）。语义精确区分「注入（chat -q 不注入）」与
+>   「直接调用（单次命令面）」两条路径
+> - **验证**：tsc 0 错误；**零 src 改动**（git diff 仅 docs/mcp.md 1 文件）；1116/1116 全绿（74 文件）；
+>   纯文档无版本变化（0.6.120 不变，dist 未动，无需自安装）；零 push、零敏感信息
+> - **flare 验收结论：✅ 通过**——flare 独立运行 git log -1 --stat + git show 审查 diff + npx tsc
+>   0 错误 + 全量 1116/1116（74 文件）；**逐项核对 8 项全过**：仅改 docs/mcp.md（name-status 确认
+>   无 src/tests/agent.ts/package.json）/ MCP 子命令清单与实现一致（src/cli/index.ts 实际注册
+>   call 1673 / resources 1746 / prompts 1824 / tools 1913 / complete 1970 / connect 2037 /
+>   disconnect 2074 行逐一核对）/ 版本标注 v0.6.6 起与当前 0.6.120 语义成立 / 章节位置正确（111-112
+>   行）且引用下方「CLI 单次命令」章节无误 / tsc 0 / 1116 全绿 / 全 diff 无密钥明文 / git status
+>   工作区干净；未改 agent.ts、未 push；结论与实况完全一致
+> - **下一步候选**：① 【P1】分层上下文（Layer 1 异步滚动摘要——需评估 run 循环外异步，涉及
+>   agent.ts trimContext 异步化，铁律暂缓）；② 其他安全的外围增强（docs 专项逐一对齐收官：
+>   P157 补 connect/disconnect 章节 + 本步修正单次查询过时表述后 docs/mcp.md CLI 面完整一致；
+>   剩余 memory-rag「后续候选」中记忆去重/摘要等为功能候选；测试稳定性继续清扫等）
+
+**引导过程记录（引导 agent 视角，实现+验收直接完成）**：
+- 本轮实现由引导 agent 直接完成（纯文档 1 处修正）
+- flare 验收延续高水准：8 项逐条核对（含子命令注册行号逐一对照 src/cli/index.ts）+ 独立
+  tsc/全量 vitest 复核，一次通过
+- **教训**：① 文档「覆盖主要场景」类模糊表述是过时点高发区——v0.6.6 起 CLI 单次命令面已存在，
+  「交互 + 宿主」二分表述漏了 CLI 面；修正后精确区分「注入」与「直接调用」两条路径；② 纯文档
+  修正同样跑全量 vitest 确认无回归，成本可控
 
 ---
 
