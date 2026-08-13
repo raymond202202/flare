@@ -3,7 +3,7 @@
 > 供非 Node 宿主（如 Qt 应用）调用 flare 引擎的本地协议。
 > 传输：stdin/stdout · JSON Lines（每行一个 JSON 对象）
 > 实现：`src/server.ts`（`flare server` 命令）
-> 请求类型：chat / cancel / set_context / list_sessions / recent_sessions / search_sessions / get_messages / search_messages / get_usage / session_usage / context_status / apply_trim / ping / version / create_session / rename_session / clear_session / delete_session / end_session / restore_session / list_archived_sessions / remember / get_memories / delete_memory / tool_result / confirm_result / confirm_status / confirm_revoke / confirm_allow / models / get_config / tools / mcp_status / mcp_resources / mcp_tools / mcp_prompts / mcp_read_resource / mcp_get_prompt / mcp_call / mcp_complete / mcp_connect / mcp_disconnect
+> 请求类型：chat / cancel / set_context / list_sessions / recent_sessions / search_sessions / get_messages / search_messages / get_usage / session_usage / context_status / apply_trim / ping / version / create_session / rename_session / clear_session / delete_session / end_session / restore_session / list_archived_sessions / remember / get_memories / find_similar_memories / delete_memory / tool_result / confirm_result / confirm_status / confirm_revoke / confirm_allow / models / get_config / tools / mcp_status / mcp_resources / mcp_tools / mcp_prompts / mcp_read_resource / mcp_get_prompt / mcp_call / mcp_complete / mcp_connect / mcp_disconnect
 
 ## 启动
 
@@ -289,6 +289,22 @@ flare server --profile <expert-profile-file> --storage <db-path> [--mcp <mcp-con
 - `limit`：可选，默认 50，合法范围 1~100 整数（非法值如 0/-1/101/非数字回 error 含用法提示，
   对齐 get_messages 校验风格，v0.6.25）
 - 宿主面板展示/管理记忆、按类型筛选记忆时使用
+
+### 13.5 find_similar_memories — 检测重复/近似记忆（v0.6.122 记忆去重检测面）
+
+```json
+{"type":"find_similar_memories"}                                   // 默认阈值 0.4 / limit 20
+{"type":"find_similar_memories","threshold":0.6,"limit":10}         // 调阈值/限量
+```
+
+响应：`{"type":"similar_memories","threshold":0.4,"pairs":[{"idA":1,"idB":2,"contentA":"...","contentB":"...","similarity":0.4615}]}`
+
+- `threshold`：可选 0~1 相似度阈值（默认 0.4，与 CLI `flare memories --similar` 同口径；
+  非法值回 error 含用法提示）
+- `limit`：可选 1~100 整数（默认 20，返回相似对数量上限；非法值回 error）
+- 两两比较全部记忆内容相似度（字符 3-gram 集合 Jaccard，中文友好），返回 `idA < idB` 不重复对，
+  按相似度降序；**纯只读不删除**——宿主据此发现重复后自行决定是否 `delete_memory` 清理
+  （自动合并/摘要留后续候选）
 
 ### 14. delete_memory — 删除记忆（隐私管理）
 
@@ -619,6 +635,7 @@ flare server --profile <expert-profile-file> --storage <db-path> [--mcp <mcp-con
 | `search_results` | `query, results` | 消息搜索结果（search_messages 响应，v0.6.24） |
 | `messages` | `sessionId, messages` | 指定会话的消息历史 |
 | `memories` | `memories` | 记忆列表（get_memories 响应） |
+| `similar_memories` | `threshold, pairs` | 重复/近似记忆对（find_similar_memories 响应，v0.6.122，pairs 含 idA/idB/contentA/contentB/similarity，降序） |
 | `ok` | `sessionId, deleted?/tool?/resetSession?/mode?/title?/cleared?` | 通用确认（set_context/cancel/create_session/rename_session/clear_session/delete_session/remember/delete_memory/confirm_revoke/confirm_allow） |
 | `pong` | `ts` | ping 响应（宿主健康检查） |
 | `version` | `protocol, engine` | 版本协商（协议版本 + 引擎版本） |
