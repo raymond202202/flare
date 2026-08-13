@@ -1,5 +1,7 @@
 # Flare 引擎迭代进度（夜间调研 agent）
 
+> **【✅ 第一百二十八轮完成】P172 (v0.6.127) CLI 单次命令 flare create-session 已装机**：
+> commit `12f7338`，1161/1161 全绿、tsc 0 错误、零 agent.ts 改动（详情见下方 P172 条目）。
 > **【✅ 第一百二十七轮小步】P171 (纯文档) USAGE.md 交互命令表补全常用命令行**：
 > commit `c2911ee`，纯文档零 src 改动、tsc 0 错误、1155/1155 全绿、无版本变化（详情见下方 P171 条目）。
 > **【✅ 第一百二十七轮小步】P170 (v0.6.126) /help 的 /memory 行同步 /memory similar [阈值]**：
@@ -198,6 +200,33 @@
 >    terminal 退出码（v0.6.33）✓ / CLI 归档命令（v0.6.32）✓ / 归档 API（v0.6.31）✓ /
 >    工具输出治理（v0.6.30）✓ / prompt caching P0（v0.6.29）✓ / MCP 动态资源提供器（v0.6.28）✓ /
 >    confirm 描述（v0.6.27）✓
+
+---
+
+### 2026-08-14 第一百二十八轮完成（P172，v0.6.127）——flare create-session 单次命令（会话管理单次命令面闭合）
+
+> **P172 完成**（commit `12f7338`）：新增 CLI 单次命令 `flare create-session <会话ID> [标题]`——
+> server 协议 `create_session`（宿主显式建会话）是会话管理接口中唯一缺 CLI 对称的：
+> delete-session/clear-session（v0.6.99）、restore（v0.6.96）、rename（v0.6.97）、end-session（v0.6.101）
+> 均有，唯独「创建」语义缺失（`set_context` 为进程内存操作、单次命令退出即失无持久意义；
+> `cancel`/`tool_result`/`confirm_result` 为协议内部接口，均不入 CLI 单次命令面）。
+> - **实现**（src/cli/index.ts 纯新增 17 行，插在 rename 命令之前）：UPSERT 幂等——已存在会话更新标题
+>   不报错（与 server create_session 同语义，底层同走 `store.updateSessionTitle`）；title 缺省
+>   「新会话」、首尾空格 trim；空会话 ID（纯空格）exit 1 + 黄色提示不写库
+> - **测试**（新建 tests/cli-create-session.test.ts，6 用例 spawn dist CLI + FLARE_HOME 隔离）：
+>   带标题创建（exit 0 + 输出 + store 落库）/ 缺省标题「新会话」/ 标题空格 trim /
+>   UPSERT 幂等（已存在更新标题不报错）/ 空 ID exit 1 不写库 / 数据往返（create 后 getRecentSessions 可见）
+> - README 命令表补 create-session 行 + Changelog v0.6.127 条目 + package.json 0.6.127
+> - **1161/1161 全绿**（75 文件；**首跑即绿无偶发**），tsc 0 错误，**零 agent.ts 改动**，零 push、零敏感信息
+> - **flare 验收通过**：独立运行 tsc 0 错误 + 全量 1161/1161 全绿；逐条审查代码（空 ID exit 1 不写库 /
+>   title 缺省回退 / UPSERT 幂等语义与 server create_session 同走 updateSessionTitle 完全对称）；
+>   安全审查（sessionId/title 经 better-sqlite3 prepared statement 参数绑定无 SQL 注入、
+>   仅输出 sid + title 不打印敏感信息、沿用既有空 ID 校验与 exitCode 非强退风格）无问题；
+>   结论「✅ 验收通过，可合入」
+> - **下一步候选**：① 【P1】分层上下文（Layer 1 异步滚动摘要——需改 Agent.run 核心循环，
+>   违反铁律跳过并记录理由）；② 其他安全的外围增强（server 协议管理接口、MCP 工具集完善等）——
+>   会话管理单次命令面闭合（create/rename/end/restore/clear/delete 全齐），下一小步可转向
+>   server 协议 `set_context` 是否值得 CLI 化（进程内存操作评估）或继续 MCP/测试稳定性
 
 ---
 
