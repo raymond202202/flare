@@ -1,5 +1,7 @@
 # Flare 引擎迭代进度（夜间调研 agent）
 
+> **【✅ 第一百三十轮完成】P175 (v0.6.129) chat --session 续聊已归档会话给黄色提示（不拦截）已装机**：
+> commit `c49bb48`，1165/1165 全绿、tsc 0 错误、零 agent.ts 改动（详情见下方 P175 条目）。
 > **【✅ 第一百二十九轮小步】P174 (纯文档) USAGE.md 单次查询章节补 chat --session 续聊 + create-session**：
 > commit `0386a5a`，纯文档零 src 改动、tsc 0 错误、1164/1164 全绿、无版本变化（详情见下方 P174 条目）。
 > **【✅ 第一百二十九轮完成】P173 (v0.6.128) flare chat -q --session 续聊已有会话已装机**：
@@ -204,6 +206,34 @@
 >    terminal 退出码（v0.6.33）✓ / CLI 归档命令（v0.6.32）✓ / 归档 API（v0.6.31）✓ /
 >    工具输出治理（v0.6.30）✓ / prompt caching P0（v0.6.29）✓ / MCP 动态资源提供器（v0.6.28）✓ /
 >    confirm 描述（v0.6.27）✓
+
+---
+
+### 2026-08-14 第一百三十轮完成（P175，v0.6.129）——chat -q --session 续聊已归档会话给黄色提示（不拦截）
+
+> **P175 完成**（commit `c49bb48`）：`flare chat -q "…" --session <会话ID>` 续聊**已归档**会话时给黄色提示
+> 但不拦截——P173 装机后遗留观察点①「归档会话也可续聊（getAllSessions 含 archived，是否拦截可留后续）」，
+> 本轮补齐决策：**提示不拦截**。
+> - **背景**：`getAllSessions()` 不过滤 archived（store.ts:297 全量返回），所以 P173 的 runQuery 校验（`getAllSessions().some(...)`）
+>   对已归档会话也放行——续聊会追加消息到归档会话，但宿主/脚本从 `flare sessions`（getRecentSessions 排除归档）看不到，
+>   无任何提示容易困惑；而 server 协议 chat 同样不检查 archived（getAgent 直接加载历史），**拦截会破坏与 server 的对称性**
+> - **实现**（src/cli/index.ts runQuery +8 行）：`.some()` 改为 `.find()` 拿到会话对象；会话存在但 `sess.archived === true` →
+>   stderr 黄色提示 `⚠️ 会话 <id> 已归档（续聊将追加到归档会话，最近列表不可见；flare restore <id> 可恢复）` 后**继续进入生成**；
+>   会话不存在 → exit 1 不触发生成（行为不变）；提示只读 `sess.archived` 不改写归档标记；chat --session 选项描述同步
+> - **测试**（tests/cli-chat-session.test.ts 追加 1 用例 + 既有用例补回归断言）：续聊已归档会话 → 黄色提示出现
+>   （含已归档说明与 restore 提示）+ 不误杀（「不存在」错误不出现）+ 提示后继续进入生成（「思考中」出现，证明不拦截）+
+>   会话保持归档状态与标题不变（提示不改写 archived 标记）；非归档会话续聊不出现「已归档」提示（回归）
+> - README 命令表 chat --session 行补已归档提示说明 + Changelog v0.6.129 条目 + package.json 0.6.129
+> - **1165/1165 全绿**（76 文件；**首跑即绿无偶发**），tsc 0 错误，**零 agent.ts 改动**（Agent.run 核心循环零触碰），
+>   零 push、零敏感信息
+> - **flare 验收通过**：独立运行 tsc 0 错误 + 全量 1165/1165 全绿（含新增归档用例 4/4）；逐项核对 git show 仅 4 文件
+>   零 agent.ts + 版本 0.6.129；逻辑核验（.find 替代 .some 捕获会话对象、提示只读 archived 不改写、不拦截继续生成、
+>   会话不存在 exit 1 不触发生成、与 server chat 同语义）全部成立；安全审查无密钥/token 明文（grep 命中仅
+>   --http-auth-token-env 文档引用非字面量）；结论「✅ 所有检查项通过」
+> - **下一步候选**：① 【P1】分层上下文（Layer 1 异步滚动摘要——需改 Agent.run 核心循环，违反铁律跳过并记录理由）；
+>   ② 其他安全的外围增强（MCP 工具集完善、测试稳定性等）——归档会话续聊观察点①已闭环（提示不拦截决策落地），
+>   P173 观察点②（长会话 + trimContext 裁剪交互，turnStartIdx 基于加载时长度 >50 条被裁时本轮可能不落库）
+>   属 Agent 既有机制与续聊组合的深层边界、需动 run 循环，仍留后续
 
 ---
 
