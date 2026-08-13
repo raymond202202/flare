@@ -1,5 +1,7 @@
 # Flare 引擎迭代进度（夜间调研 agent）
 
+> **【✅ 第一百二十九轮完成】P173 (v0.6.128) flare chat -q --session 续聊已有会话已装机**：
+> commit `c3ea2fc`，1164/1164 全绿、tsc 0 错误、零 agent.ts 改动（详情见下方 P173 条目）。
 > **【✅ 第一百二十八轮完成】P172 (v0.6.127) CLI 单次命令 flare create-session 已装机**：
 > commit `12f7338`，1161/1161 全绿、tsc 0 错误、零 agent.ts 改动（详情见下方 P172 条目）。
 > **【✅ 第一百二十七轮小步】P171 (纯文档) USAGE.md 交互命令表补全常用命令行**：
@@ -200,6 +202,35 @@
 >    terminal 退出码（v0.6.33）✓ / CLI 归档命令（v0.6.32）✓ / 归档 API（v0.6.31）✓ /
 >    工具输出治理（v0.6.30）✓ / prompt caching P0（v0.6.29）✓ / MCP 动态资源提供器（v0.6.28）✓ /
 >    confirm 描述（v0.6.27）✓
+
+---
+
+### 2026-08-14 第一百二十九轮完成（P173，v0.6.128）——flare chat -q --session 续聊已有会话（单次查询续聊面）
+
+> **P173 完成**（commit `c3ea2fc`）：`flare chat -q "…" --session <会话ID>` 续聊已有会话——
+> 此前 `chat -q` 每次新建「单次查询」会话，宿主/脚本无法把单次查询追加到已有会话
+> （续聊只能用交互模式或 server 协议 chat 带 sessionId）。本版补齐：
+> - **实现**（src/cli/index.ts）：chat 命令加 `-s, --session <会话ID>` 选项；runQuery 增加 sessionId
+>   参数——指定已有会话时 Agent 构造自动加载历史（`getMessagesWithIds`，零 run 循环改动），
+>   问答续接该会话上下文；缺省行为不变（新建「单次查询」会话）；**会话不存在 → exit 1 + 红色提示
+>   （不触发生成）**，宿主/脚本传错 ID 不静默新建会话
+> - **测试**（新建 tests/cli-chat-session.test.ts，3 用例 spawn dist CLI + FLARE_HOME 隔离）：
+>   --help 含 --session 说明（命令注册完整）/ 会话不存在 exit 1 快速返回不触发生成 /
+>   预建会话续聊校验通过不误杀（seed 会话标题不变；真实生成 fallback 本地模型 ~7s 正常）
+> - README 命令表补 chat --session 行 + Changelog v0.6.128 条目 + package.json 0.6.128
+> - **1164/1164 全绿**（76 文件；首跑 1 个偶发失败——历史已知真实调用类超时源，重跑连续
+>   三轮全绿且新测试两轮 9/9 确认与改动无关），tsc 0 错误，**零 agent.ts 改动**，零 push、零敏感信息
+> - **flare 验收通过**：独立运行 tsc 0 错误 + 全量 1164/1164 全绿；逐项核对（runQuery sessionId
+>   传参 → agent.ts getMessagesWithIds 加载历史「续聊」语义成立；**持久化不重不漏**——
+>   turnStartIdx 在加载历史之后取值、只写本轮新增不重复保存历史，续聊最易踩的坑设计正确）；
+>   两个不阻塞观察点：① 归档会话也可续聊（getAllSessions 含 archived，是否拦截可留后续）；
+>   ② 长会话 + trimContext 裁剪交互（turnStartIdx 基于加载时长度，>50 条被裁时本轮可能不落库，
+>   Agent 既有机制与续聊组合的深层边界，本次零 run 循环改动刻意绕开，宿主依赖时单开问题跟进）；
+>   结论「✅ 可以 merge」
+> - **下一步候选**：① 【P1】分层上下文（Layer 1 异步滚动摘要——需改 Agent.run 核心循环，
+>   违反铁律跳过并记录理由）；② 其他安全的外围增强（MCP 工具集完善、测试稳定性等）——
+>   单次查询续聊面补齐，与 create-session（P172）配对：create-session 建会话 → chat --session 续聊
+>   闭环；set_context 为进程内存操作不入 CLI 面（P172 已记录理由）
 
 ---
 
