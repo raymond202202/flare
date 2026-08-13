@@ -1,6 +1,8 @@
 # Flare 引擎迭代进度（夜间调研 agent）
 
-> **【已发布】v0.6.115 装机完成（P145 mcp call --json 结构化输出，引导模式本机安装版，自循环）**
+> **【已发布】v0.6.115 装机完成（P145 mcp call --json 结构化输出 + P146 docs/mcp.md 文档同步，引导模式本机安装版，自循环）**
+> **【✅ 第一百一十八轮完成】P146 (纯文档) docs/mcp.md 同步外部 MCP 面 --json 能力**：
+> commit `b634ad3`，纯文档零 src 改动、tsc 0 错误、无版本变化（详情见下方第一百一十八轮条目）。
 > **【✅ 第一百一十七轮完成】P145 (v0.6.115) mcp call --json 已装机**：
 > commit `13998e8`，1082/1082 全绿、tsc 0 错误、零 agent.ts 改动（详情见下方第一百一十七轮条目）。
 > **【✅ 第一百一十六轮完成】P144 (v0.6.114) mcp complete --json 已装机**：
@@ -464,6 +466,40 @@
   ③ 引导 agent 补测试时自身也会踩子串误匹配这类测试 bug，定位要快（首跑失败先看 Received 实值再推断）；
   ④ 写操作命令（会删 store 消息）的端到端持久验证（CLI 进程退出后 store 核对）是验收关键，不可只看 CLI
   输出
+
+---
+
+### 2026-08-13 第一百一十八轮实施（P146 纯文档）——docs/mcp.md 同步外部 MCP 面 --json 能力（装机完成，自循环）
+
+> **P146 完成**（commit `b634ad3`）：docs/mcp.md CLI 章节（v0.6.6/v0.6.10/v0.6.59/v0.6.60/v0.6.83
+> 标题下的示例区）补齐 P143/144/145 三连新增的 **--json 结构化输出能力说明**——P143 给 mcp
+> resources/prompts/tools、P144 给 mcp complete、P145 给 mcp call 都加了 --json，但 README 命令表/
+> Changelog 已同步、docs/mcp.md 未跟上（文档不对称）。纯文档增强，零 src 改动、零风险（v0.6.74/0.6.77/
+> 0.6.82 纯文档先例）。
+> - **实现**（docs/mcp.md +22/-4）：CLI 示例区按命令逐个补齐——call 补 `{ server, tool, success,
+>   error?, output }` 结构与工具级失败 exit 1 说明（v0.6.115）+ --json/-j 示例；resources 补列表
+>   `{ server, resources, templates }` 与 --read `{ server, uri, contents }` 结构（v0.6.113）；
+>   prompts 补列表 `{ server, prompts }` 与 --get `{ server, prompt, description?, messages }` 结构
+>   （v0.6.113）；tools 补 `{ server, tools }` 含 inputSchema（v0.6.113）；complete 补
+>   `{ server, prompt, argument, value?, values, total?, hasMore? }` 与空候选 exit 0（v0.6.114）；
+>   每个命令附 --json 实际可运行示例行
+> - **验证**：tsc 0 错误；**零 src 改动**（git diff 仅 docs/mcp.md 1 文件）；纯文档无版本变化（0.6.115
+>   不变，dist 未动，无需自安装）；零 push、零敏感信息（鉴权示例沿用 Bearer *** 占位符）
+> - **flare 验收结论：✅ 通过**——flare 独立运行 git show 审查 diff + npx tsc 0 错误，**逐条对照源码**
+>   验证 7 个 --json 结构（call/resources/read_resource/prompts/get_prompt/tools/complete 分别核对
+>   src/cli/index.ts 输出块与 src/server.ts 回包）、版本号标注与源码注释吻合、边界行为准确
+>   （工具级失败 exit 1、complete 空候选 exit 0），结论与实况完全一致
+> - **下一步候选**：① 【P1】分层上下文（Layer 1 异步滚动摘要——需评估 run 循环外异步，涉及
+>   agent.ts trimContext 异步化，铁律暂缓）；② 其他安全的外围增强（MCP 工具集完善、测试稳定性继续清扫等）
+
+**引导过程记录（引导 agent 视角，实现+验收直接完成）**：
+- 本轮实现由引导 agent 直接完成（纯文档，写 docs/mcp.md 示例区）
+- flare 验收**逐条对照源码**验证文档结构（比前两轮更细：7 个 --json 结构逐一核对 cli/server 源码），
+  文档对称增强也走完整验收流程
+- **教训**：① P143/144/145 三连 --json 是文档同步的典型滞后点——README 命令表/Changelog 有更新
+  习惯，docs/mcp.md 专项文档常漏，后续 --json 系列扩展须检查三处（README 表 + Changelog +
+  docs/mcp.md）；② 纯文档小步（v0.6.74/0.6.77/0.6.82/0.6.113 先例）节奏快、零风险，适合填充
+  自循环窗口；③ flare 验收质量持续稳定，逐条源码对照是文档类验收的高标准形态
 
 ---
 
