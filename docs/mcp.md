@@ -808,24 +808,42 @@ flare mcp status --json [--config ./mcp.json]
 # 调超时（毫秒）
 flare mcp call remote ping --url http://127.0.0.1:8931/mcp --timeout 30000
 
-# 查看服务器暴露的资源（v0.6.10：元数据 uri/name/description/mimeType）
+# 结构化输出（v0.6.115：--json 与 server mcp_call 回包同构 { server, tool, success, error?, output }；
+# 工具级失败输出 { success:false, error } 且 exit 1，脚本可程序化消费）
+flare mcp call mock add_numbers '{"a":2,"b":3}' --config ./mcp.json --json
+flare mcp call remote echo '{"text":"hi"}' --url http://127.0.0.1:8931/mcp -j
+
+# 查看服务器暴露的资源（v0.6.10：元数据 uri/name/description/mimeType；v0.6.113：--json
+# 与 server mcp_resources/mcp_read_resource 回包同构，列表 { server, resources, templates }、
+# --read { server, uri, contents }，空数组结构稳定可解析）
 flare mcp resources remote --url http://127.0.0.1:8931/mcp
 flare mcp resources local-fs [--config ./mcp.json]
+flare mcp resources remote --json --url http://127.0.0.1:8931/mcp
 
 # 读取资源内容（--read <uri>）
 flare mcp resources remote --read file:///tmp/a.txt --url http://127.0.0.1:8931/mcp
+flare mcp resources remote --read file:///tmp/a.txt --url http://127.0.0.1:8931/mcp --json
 
-# 查看/渲染服务器暴露的提示词（v0.6.10：prompts/list 元数据；--get <name> 渲染，--args JSON 可选）
+# 查看/渲染服务器暴露的提示词（v0.6.10：prompts/list 元数据；--get <name> 渲染，--args JSON 可选；
+# v0.6.113：--json 与 server mcp_prompts/mcp_get_prompt 回包同构，列表 { server, prompts }、
+# --get { server, prompt, description?, messages }）
 flare mcp prompts remote --url http://127.0.0.1:8931/mcp
 flare mcp prompts remote --get greet --args '{"name":"世界"}' --url http://127.0.0.1:8931/mcp
+flare mcp prompts remote --json --url http://127.0.0.1:8931/mcp
+flare mcp prompts remote --get greet --args '{"name":"世界"}' --url http://127.0.0.1:8931/mcp --json
 
-# 查看服务器暴露的工具清单（v0.6.59：tools/list 名称/描述，配合 call 使用）
+# 查看服务器暴露的工具清单（v0.6.59：tools/list 名称/描述，配合 call 使用；v0.6.113：--json
+# 与 server mcp_tools 回包同构 { server, tools }，含 inputSchema）
 flare mcp tools remote --url http://127.0.0.1:8931/mcp
 flare mcp tools mock [--config ./mcp.json]
+flare mcp tools remote --json --url http://127.0.0.1:8931/mcp
 
-# 请求提示词参数补全候选（v0.6.60：completion/complete；末尾 value 可选，带前缀收窄）
+# 请求提示词参数补全候选（v0.6.60：completion/complete；末尾 value 可选，带前缀收窄；
+# v0.6.114：--json 与 server mcp_complete 回包同构 { server, prompt, argument, value?, values,
+# total?, hasMore? }，空候选 { values: [] } 合法 JSON exit 0）
 flare mcp complete remote summarize topic flare --url http://127.0.0.1:8931/mcp
 flare mcp complete remote summarize topic 'flare M' --url http://127.0.0.1:8931/mcp
+flare mcp complete remote summarize topic flare --url http://127.0.0.1:8931/mcp --json
 
 # 设置服务器日志级别阈值（v0.6.83：logging/setLevel 桥接；8 级 debug/info/notice/warning/
 # error/critical/alert/emergency 按严重程度升序；低于该级别的 notifications/message 不再推送；
