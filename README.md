@@ -181,6 +181,7 @@ cp .env.example ~/.flare/.env
 | `flare mcp resources <服务器> [--read <uri>]` | 查看/读取 MCP 服务器暴露的资源（--json 结构化输出（列表 `{ server, resources, templates }` 与 server mcp_resources 回包同构；--read `{ server, uri, contents }` 与 mcp_read_resource 同构，空数组结构稳定可解析）v0.6.113；v0.6.10） |
 | `flare mcp prompts <服务器> [--get <名称>]` | 查看/渲染 MCP 服务器暴露的提示词（--json 结构化输出（列表 `{ server, prompts }` 与 server mcp_prompts 回包同构；--get `{ server, prompt, description?, messages }` 与 mcp_get_prompt 同构）v0.6.113；v0.6.10） |
 | `flare mcp tools <服务器>` | 查看 MCP 服务器暴露的工具清单（--json 结构化输出（`{ server, tools }` 与 server mcp_tools 回包同构）v0.6.113；v0.6.59） |
+| `flare mcp complete <服务器> <提示词> <参数> [前缀]` | 请求 MCP 服务器提示词参数补全候选（--json 结构化输出（`{ server, prompt, argument, value?, values, total?, hasMore? }` 与 server mcp_complete 回包同构，空候选 `{ values: [] }` 合法 JSON exit 0）v0.6.114；v0.6.60） |
 | `flare cache-check [--model <模型>] [--json] [--rounds <N>]` | prompt caching 验收：连续两轮调用验证第二轮 cache_read_tokens > 0（v0.6.45；v0.6.48 起 --json 结构化输出供宿主/CI 消费；v0.6.54 起 --rounds 2~5 多轮连续命中验收；v0.6.75 起多轮 savedUsd 累加所有命中轮；v0.6.76 起 --json/输出含 runSavedUsd 每轮节省明细；v0.6.78 起基准轮命中带残留缓存诊断；v0.6.79 起每轮命中率百分比） |
 
 交互模式命令：
@@ -364,6 +365,10 @@ Interactive mode commands:
 | `/exit` | Exit |
 
 ### Changelog / Release Notes
+
+## v0.6.114（2026-08-13）
+- ✨ **`flare mcp complete` 增加 `--json` 结构化输出**：外部 MCP 服务器提示词参数补全命令程序化收官——输出 `{ server, prompt, argument, value?, values, total?, hasMore? }` 与 server `mcp_complete` 回包完全同构（不带 type 包装；value 仅在传入时携带、total/hasMore 仅在服务器返回时携带，均与 server 回包 `...(value ? { value } : {})` 同款可选字段语义）；空候选输出 `{ values: [] }` 合法 JSON exit 0（不打印「无补全候选」提示，脚本可解析）；`-j` 短选项等价；只打印 JSON 不混彩色；文本模式与退出码语义完全不变
+- CLI 只读命令 --json 系列外部 MCP 面补齐最后一环（v0.6.113 已覆盖 mcp resources/prompts/tools 及 --read/--get 模式；本版补 mcp complete），并补齐 README CLI 命令摘要表缺失的 `flare mcp complete` 行
 
 ## v0.6.113（2026-08-13）
 - ✨ **`flare mcp resources/prompts/tools` 增加 `--json` 结构化输出**：外部 MCP 服务器查看类命令程序化收官——resources 列表 `{ server, resources, templates }`（直连客户端同时取 resources/list + resources/templates/list）与 server mcp_resources 回包 servers[].resources/.templates 同构；`--read` `{ server, uri, contents }` 与 mcp_read_resource 同构；prompts 列表 `{ server, prompts }` 与 mcp_prompts 同构；`--get` `{ server, prompt, description?, messages }` 与 mcp_get_prompt 同构；tools 列表 `{ server, tools }`（含 inputSchema）与 mcp_tools 同构；空数组结构稳定可解析；只打印 JSON 不混彩色；文本模式与退出码语义完全不变

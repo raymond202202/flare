@@ -353,6 +353,64 @@ describe('CLI flare mcp complete（v0.6.60）', () => {
     expect(code).toBe(1)
     expect(stderr).toMatch(/未配置 MCP 服务器/)
   }, 20000)
+
+  it('--json 输出与 server mcp_complete 回包同构（server/prompt/argument/value/values/total/hasMore）', async () => {
+    const cfgPath = join(dir, 'mcp.json')
+    writeFileSync(cfgPath, JSON.stringify({ servers: [{ name: 'mock', command: process.execPath, args: [MOCK_SERVER] }] }))
+    const { code, stdout, stderr } = await runCli(['mcp', 'complete', 'mock', 'summarize', 'topic', 'flare', '--config', cfgPath, '--json'])
+    expect(code).toBe(0)
+    expect(stderr).toBe('')
+    const parsed = JSON.parse(stdout)
+    expect(parsed.server).toBe('mock')
+    expect(parsed.prompt).toBe('summarize')
+    expect(parsed.argument).toBe('topic')
+    expect(parsed.value).toBe('flare')
+    // 4 个候选均以 'flare' 开头 → 全部命中（与 v0.6.60 文本用例 4/4 断言一致）
+    expect(parsed.values).toEqual(['flare 缓存', 'flare MCP', 'flare 上下文', 'flare 用量'])
+    expect(parsed.total).toBe(4)
+    expect(parsed.hasMore).toBe(false)
+    // 纯 JSON 无 ANSI 彩色
+    expect(stdout).not.toMatch(/\u001b\[/)
+  }, 20000)
+
+  it('--json 前缀收窄 + 未传 value 时省略 value 字段（server 同款可选字段语义）', async () => {
+    const cfgPath = join(dir, 'mcp.json')
+    writeFileSync(cfgPath, JSON.stringify({ servers: [{ name: 'mock', command: process.execPath, args: [MOCK_SERVER] }] }))
+    const { code, stdout } = await runCli(['mcp', 'complete', 'mock', 'summarize', 'topic', 'flare M', '--config', cfgPath, '--json'])
+    expect(code).toBe(0)
+    const parsed = JSON.parse(stdout)
+    expect(parsed.values).toEqual(['flare MCP'])
+    expect(parsed.total).toBe(1)
+    expect(parsed.value).toBe('flare M')
+    // 不带 value 参数（只传前缀场景省略 value 字段——与 server 回包 ...(value ? { value } : {}) 同构）
+    const { stdout: stdout2 } = await runCli(['mcp', 'complete', 'mock', 'summarize', 'topic', '', '--config', cfgPath, '--json'])
+    const parsed2 = JSON.parse(stdout2)
+    expect(parsed2.values).toHaveLength(4)
+    expect(parsed2.total).toBe(4)
+    expect('value' in parsed2).toBe(false)
+  }, 20000)
+
+  it('--json 空候选 → { values: [] } 合法 JSON exit 0（不打印「无补全候选」提示）', async () => {
+    const cfgPath = join(dir, 'mcp.json')
+    writeFileSync(cfgPath, JSON.stringify({ servers: [{ name: 'mock', command: process.execPath, args: [MOCK_SERVER] }] }))
+    const { code, stdout } = await runCli(['mcp', 'complete', 'mock', 'summarize', 'topic', 'xyz', '--config', cfgPath, '--json'])
+    expect(code).toBe(0)
+    const parsed = JSON.parse(stdout)
+    expect(parsed.values).toEqual([])
+    expect(parsed.total).toBe(0)
+    expect(stdout).not.toMatch(/无补全候选/)
+  }, 20000)
+
+  it('--json -j 短选项等价 + 文本模式回归（含「候选」标题且非 JSON）', async () => {
+    const cfgPath = join(dir, 'mcp.json')
+    writeFileSync(cfgPath, JSON.stringify({ servers: [{ name: 'mock', command: process.execPath, args: [MOCK_SERVER] }] }))
+    const { stdout: shortStdout } = await runCli(['mcp', 'complete', 'mock', 'summarize', 'topic', 'flare', '--config', cfgPath, '-j'])
+    expect(JSON.parse(shortStdout).values).toHaveLength(4)
+    const { stdout: textStdout } = await runCli(['mcp', 'complete', 'mock', 'summarize', 'topic', 'flare', '--config', cfgPath])
+    expect(textStdout).toMatch(/候选/)
+    expect(textStdout).toMatch(/flare 缓存/)
+    expect(() => JSON.parse(textStdout)).toThrow()
+  }, 20000)
 })
 
 describe('CLI flare mcp 单次命令 --header（v0.6.68：HTTP transport 鉴权请求头，可重复）', () => {
