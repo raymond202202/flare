@@ -160,8 +160,8 @@ export type {
 } from './core/models.js'
 
 // ===== 记忆系统 =====
-export { MemoryStore, getMemoryStore, serializeContent, deserializeContent } from './memory/store.js'
-export type { UsageExtra } from './memory/store.js'
+export { MemoryStore, getMemoryStore, serializeContent, deserializeContent, trigramJaccard } from './memory/store.js'
+export type { UsageExtra, SimilarMemoryPair } from './memory/store.js'
 
 // ===== 配置（M2 将解耦为可注入；先导出保留现状）=====
 export { config } from './core/config.js'

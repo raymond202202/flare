@@ -167,7 +167,7 @@ cp .env.example ~/.flare/.env
 | `flare usage` | 查看 token 用量统计（全局汇总 + perModel 分解；--session <会话ID> 只看单会话；含缓存命中/节省；--json 结构化输出（与 server get_usage/session_usage stats 同构，宿主/脚本程序化消费，空库/无记录输出零值 stats）v0.6.106；v0.6.89） |
 | `flare context-status [<会话ID>]` | 查看会话上下文占用（消息数 + 估算 tokens；--budget N 正整数附裁剪建议；--json 结构化输出（与 server context_status 同构，含 suggestion.keepIndexes 供 trim 程序化消费）v0.6.104；v0.6.90） |
 | `flare trim <会话ID> [--budget <tokens>]` \| `[--keep <索引列表>]` | 执行上下文裁剪（写操作：保留开头 system 块 + 最近消息，store 同步删除被裁消息、重建会话后依然生效；--budget 正整数，缺省用会话 maxContextTokens 或 16000；--keep 精确裁剪：逗号分隔整数或 JSON 数组索引列表（与 context-status --json 的 suggestion.keepIndexes 同一索引空间），与 --budget 互斥；空 id/会话不存在或无消息/非法 budget/非法或越界 keep 各 exit 1、未超预算或全索引保留幂等 exit 0；与 server apply_trim、交互 /trim 对称；v0.6.105 增 --keep；v0.6.103） |
-| `flare memories [<关键词>]` | 查看持久记忆（无关键词列出全部；带关键词全文搜索；--kind 按类型过滤；--limit 1~100 默认 50；--json 结构化输出（与 server get_memories 回包同构 `{ memories }`，含 id/content/type/created_at，content 不截断不折叠；空库 `{ memories: [] }`）v0.6.109；v0.6.91） |
+| `flare memories [<关键词>]` | 查看持久记忆（无关键词列出全部；带关键词全文搜索；--kind 按类型过滤；--limit 1~100 默认 50；--json 结构化输出（与 server get_memories 回包同构 `{ memories }`，含 id/content/type/created_at，content 不截断不折叠；空库 `{ memories: [] }`）v0.6.109；v0.6.91；**--similar 记忆相似度检测（去重检测面，v0.6.121）**：两两比对内容相似度显示近似记忆对（文本 `#idA ↔ #idB 相似度 X.XX`；--threshold 调阈值 0~1 默认 0.4 非法 exit 1；--json 输出 `{ threshold, pairs }`；无相似/空库 exit 0；纯只读不删除） |
 | `flare remember <内容> [--kind <类型>]` | 保存持久记忆（写操作：默认类型 note；--kind 指定如 preference；空内容 exit 1；与 server remember、交互 /remember 对称；v0.6.100） |
 | `flare delete-memory <记忆ID>` / `--content <关键词>` | 删除持久记忆（写操作：按 id 删单条（不存在 exit 1）或 --content 按关键词批量删（幂等 exit 0）；非法 id exit 1；与 server delete_memory、交互 /forget 对称；v0.6.100） |
 | `flare tools` | 查看可用工具清单（内置；含 [确认] 门标注；--json 结构化输出；v0.6.92） |
@@ -367,6 +367,10 @@ Interactive mode commands:
 | `/exit` | Exit |
 
 ### Changelog / Release Notes
+
+## v0.6.121（2026-08-14）
+- ✨ **记忆相似度检测（`MemoryStore.findSimilarMemories` + `flare memories --similar`，记忆去重检测面）**：memory-rag「后续候选」记忆去重的第一步——宿主/用户此前无法发现重复/近似记忆（只能全部列出人工比对）。本版新增：`trigramJaccard` 纯函数（字符 3-gram 集合 Jaccard 相似度，中文友好，去除空白，<3 字短文本退化整段比较）库导出；`MemoryStore.findSimilarMemories({ threshold?, limit? })` 两两比较全部记忆内容相似度，返回 `SimilarMemoryPair[]`（idA/idB/contentA/contentB/similarity，idA < idB 不重复，按相似度降序，默认阈值 0.4 / limit 20）；CLI `flare memories --similar [--threshold <0~1>]` 显示相似记忆对（文本模式 `#idA ↔ #idB 相似度 X.XX` + 内容截断；`--json` 输出 `{ threshold, pairs }` 结构化），`--threshold` 非法（非数字/越界）exit 1，无相似对/空库「未发现相似记忆」exit 0；**纯只读不删除**（发现后由宿主决定是否 deleteMemory / deleteMemoriesByContent；自动合并摘要留后续候选）
+- 测试（store.test.ts 追加 12 用例 + cli-memories.test.ts 追加 6 用例）：trigramJaccard 纯函数 6（完全相同 1 / 完全无关 0 / 近似 0~1 且共享越多越相似 / 空白差异不影响 / 短文本退化 / 空串边界）+ findSimilarMemories 6（近似对检出且 idA<idB 降序 / 完全重复 1 / threshold 过滤 / limit 截断 / 空库 / 无相似空数组）+ CLI e2e 6（文本模式对显示 / 无相似对 exit 0 / 空库 exit 0 / --json 结构 / --threshold 调高无结果 / 非法阈值 exit 1）
 
 ## v0.6.120（2026-08-14）
 - ✨ **CLI 单次命令 `flare mcp connect <server>` / `flare mcp disconnect <server>`（MCP 控制面收官）**：server 协议 mcp_connect/mcp_disconnect（v0.6.56）与交互式 /mcp connect/disconnect（v0.5.5）此前均已有，唯独 CLI 单次命令形态缺失——宿主/脚本非交互场景无法按需连接/断开配置的 MCP 服务器（`mcp status --connect` 只能「全部连接」）。本版补齐：`connect` 按名连接（stdio 或 HTTP transport）并打印摘要（transport/target/工具数/资源/模板/提示词 + [auth] 标记，与交互式 /mcp connect 同构，**只标记不输出 token**）；`--timeout <ms>` 接线到 McpManager.httpTimeoutMs（HTTP 单请求超时）；成功 exit 0、未配置/连接失败 exit 1；`disconnect` 按名断开——已断开/未连接幂等 exit 0（单次命令进程内无持久连接，与 clear-session「不存在幂等 exit 0」同口径）、未配置 exit 1；单次命令进程内连接在命令完成后显式 closeAll 释放（否则 stdio 子进程继承管道会让 CLI 进程挂住，与 mcp call 的 client.close() 同因）
