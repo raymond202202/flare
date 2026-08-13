@@ -1419,14 +1419,26 @@ export async function handleSlashCommand(
   return 'continue'
 }
 
-async function runQuery(query: string, maxIterations?: number, attachments?: string[]) {
+async function runQuery(query: string, maxIterations?: number, attachments?: string[], sessionId?: string) {
   const store = getMemoryStore()
-  const sessionId = store.createSession('单次查询')
+  // v0.6.128：--session 续聊已有会话（Agent 构造自动加载历史）；缺省新建「单次查询」会话。
+  // 会话不存在 → 立即提示 exit 1（不触发生成；宿主/脚本传错 ID 时不静默新建会话）
+  let sid: string
+  if (sessionId) {
+    const exists = store.getAllSessions().some((s) => s.id === sessionId)
+    if (!exists) {
+      console.error(chalk.red(`❌ 会话 ${sessionId} 不存在（chat --session 续聊需要已有会话；flare sessions 查看现有会话）`))
+      process.exit(1)
+    }
+    sid = sessionId
+  } else {
+    sid = store.createSession('单次查询')
+  }
   // 单次查询同样尊重 /model 保存的主模型（settings main_model）
   const savedModel = store.getSetting('main_model') || undefined
   const agent = savedModel
-    ? new Agent({ sessionId, maxIterations, llm: createProvider({ model: savedModel }) })
-    : new Agent({ sessionId, maxIterations })
+    ? new Agent({ sessionId: sid, maxIterations, llm: createProvider({ model: savedModel }) })
+    : new Agent({ sessionId: sid, maxIterations })
 
   console.error(Y('⚡ Flare 思考中...'))
 
@@ -1490,11 +1502,12 @@ export function main() {
     .option('-q, --query <text>', '单次查询模式，直接提问')
     .option('-i, --image <path>', '附带图片路径（可与 -q 一起用；也可在问题中直接写路径）')
     .option('-m, --max-iterations <n>', '最大工具调用迭代次数（默认30，上限50）')
+    .option('-s, --session <sessionId>', '续聊已有会话（单次查询追加到该会话历史；缺省新建「单次查询」会话；会话不存在 exit 1 不触发生成；v0.6.128）')
     .option('--context-summarize', '交互模式开启上下文压缩摘要（裁剪时把丢弃历史压缩成摘要消息，AI 保留话题连续性；v0.6.19）')
-    .action(async (options: { query?: string; image?: string; maxIterations?: string; contextSummarize?: boolean }) => {
+    .action(async (options: { query?: string; image?: string; maxIterations?: string; session?: string; contextSummarize?: boolean }) => {
       if (options.query) {
         const maxIter = options.maxIterations ? parseInt(options.maxIterations, 10) : undefined
-        await runQuery(options.query, maxIter, options.image ? [options.image] : undefined)
+        await runQuery(options.query, maxIter, options.image ? [options.image] : undefined, options.session)
       } else {
         startInteractive({ contextSummarize: options.contextSummarize })
       }
