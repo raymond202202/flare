@@ -1,5 +1,7 @@
 # Flare 引擎迭代进度（夜间调研 agent）
 
+> **【✅ 第一百三十二轮小步】P181 测试稳定性修复：cli-chat-session 注入 mock LLM 服务器根治偶发超时源**：
+> commit `ace7c65`，纯测试层零 src 改动、tsc 0 错误、1174/1174 全绿、无版本变化（详情见下方 P181 条目）。
 > **【✅ 第一百三十一轮小步】P180 (纯文档) USAGE.md /usage 行同步缓存写入**：
 > commit `a7117a5`，纯文档零 src 改动、tsc 0 错误、1174/1174 全绿、无版本变化（详情见下方 P180 条目）。
 > **【✅ 第一百三十一轮小步】P179 (v0.6.132) flare cache-check 文本模式每轮补缓存写入观测已装机**：
@@ -216,6 +218,45 @@
 >    terminal 退出码（v0.6.33）✓ / CLI 归档命令（v0.6.32）✓ / 归档 API（v0.6.31）✓ /
 >    工具输出治理（v0.6.30）✓ / prompt caching P0（v0.6.29）✓ / MCP 动态资源提供器（v0.6.28）✓ /
 >    confirm 描述（v0.6.27）✓
+
+---
+
+### 2026-08-14 第一百三十二轮小步（P181，测试稳定性修复）——cli-chat-session 注入 mock LLM 服务器根治偶发超时源
+
+> **P181 完成**（commit `ace7c65`）：`tests/cli-chat-session.test.ts` 的两个真实生成用例（预建会话续聊、
+> 归档会话续聊）注入 **mock LLM HTTP 服务器**（OpenAI 兼容 `/v1/chat/completions`），根治 P173/174/177
+> 三次记录的已知偶发超时源「真实生成 fallback 本地模型可能慢/失败」——纯测试层改动，方向②测试稳定性清扫
+> （P123/P142 先例），零 src/agent.ts 改动、无版本变化。
+> - **背景**：cli-chat-session 的两个生成用例（P173 引入续聊校验、P175 引入归档提示）通过 spawn dist CLI
+>   真实触发生成，无注入时走外部模型/网络（无 key fallback 本地模型，~7s 正常但可能慢/失败）——P173/174/177
+>   三次全量首跑均记录「1 个 cli-chat-session 真实调用超时（历史已知超时源，与改动无关，重跑即绿）」；
+>   本轮用本地 mock 彻底消除该不确定性：生成路径稳定快速（专项 867ms 完成），断言聚焦校验路径语义不变
+> - **实现**（tests/cli-chat-session.test.ts +61/-6，纯测试层）：
+>   - `beforeAll` 起 node:http mock LLM 服务器：仅 `POST` 且 URL 含 `/chat/completions` 返回固定 OpenAI
+>     兼容 JSON（id/object/created/model/choices[0].message.content/finish_reason/usage），其余 404；
+>     `req.resume()` 消费请求体防 keep-alive 连接挂起；`listen(0, '127.0.0.1')` 随机端口避免冲突；
+>     `afterAll` `mockLlm?.close()` 释放端口
+>   - `runCli` spawn env 显式注入 `LLM_BASE_URL=mockLlmUrl`、`LLM_API_KEY='mock-key'`、
+>     `DEFAULT_MODEL='mock-model'`——config 构造时 process.env 优先于 dotenv 加载，显式覆盖外部
+>     ~/.flare/.env 的真实 key/模型，测试子进程不继承真实凭据（安全）
+>   - 用例断言：4 个原用例全保留（--help / 不存在 exit 1 不触发生成 / 预建会话校验不误杀 + 标题不变 /
+>     归档提示不拦截 + 保持归档 + 标题不变），并**新增「mock 回复」到达断言**证明生成确实执行成功——
+>     相较原「fallback 可能失败只断言不误杀」反而增强而非弱化；归档用例 vitest 超时 45000 → 15000ms
+>     （mock 下稳定快速，收紧超时体现确定性）
+> - **验证**：tsc 0 错误；专项 4/4 全绿（867ms）；全量 **1174/1174 全绿**（76 文件；**首跑即绿无偶发**，
+>   历史超时源消除后无需重跑）；纯测试层零 src 改动、零 agent.ts 改动、无版本变化（0.6.132 不变）、
+>   零 push、零敏感信息
+> - **flare 验收通过**：独立运行 git log -1/git show（仅 tests/cli-chat-session.test.ts 1 文件 +61/-6）、
+>   tsc 0 错误、专项 4/4 全绿（875ms）+ 全量 76 文件/1174 全绿（17.92s）+ 工作区干净；逐项核验
+>   （mock 服务器仅 POST /chat/completions 返回固定 JSON 其余 404、req.resume 防挂起、listen(0) 随机端口、
+>   afterAll close 释放；env 显式 LLM_API_KEY=mock-key/DEFAULT_MODEL=mock-model 覆盖外部真实 key、
+>   process.env 优先于 dotenv 不继承真实凭据；4 原用例全保留 + 新增 mock 回复断言增强而非弱化；diff 无
+>   真实凭据仅 mock 值）；结论「✅ 通过」
+> - **下一步候选**：① 【P1】分层上下文（Layer 1 异步滚动摘要——需改 Agent.run 核心循环，违反铁律跳过并记录理由）；
+>   ② 其他安全的外围增强（测试稳定性继续清扫——cli-chat-session 偶发超时源已根治（P181），其余真实调用类
+>   测试仍有 server-default-params chat（P142 已补 45000ms 超时）等偶发源可继续观察；MCP 工具集完善、
+>   确认门接入完整化已收官）——prompt caching 基建观测面（命中/写入/节省）在
+>   usage/cache-check/--json/server 协议/README/USAGE/host-protocol 全口径闭环
 
 ---
 
