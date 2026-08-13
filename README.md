@@ -154,6 +154,7 @@ cp .env.example ~/.flare/.env
 | `flare mcp call <服务器> <工具> [JSON参数]` | 调用 MCP 服务器工具（stdio 或 HTTP transport；服务器名查 `~/.flare/mcp.json`，`--url` 直连 HTTP 端点，v0.6.6；`--header <k:v>` 可重复附加鉴权请求头，v0.6.68） |
 | `flare log-level <服务器> <级别>` | 设置 MCP 服务器日志级别阈值（logging/setLevel，v0.6.83；级别 debug/info/notice/warning/error/critical/alert/emergency 按严重程度升序；stdio/HTTP transport 通用；`--url` 直连 HTTP 端点，`--header <k:v>` 附加鉴权请求头 v0.6.68） |
 | `flare messages <会话ID>` | 查看指定会话的消息历史（--limit N 1~500 默认 50；--recent 从最新开始；--json 结构化输出（与 server get_messages 回包同构 { sessionId, messages, ...(recent?{recent:true}:{}) }，宿主/脚本程序化消费，空会话输出 messages:[]）v0.6.107；v0.6.84） |
+| `flare models` | 查看可用模型：配置的主/视觉模型（settings 优先，含解析端点）+ 本地 Ollama 已拉取模型（--json 结构化输出（与 server models 回包同构 `{ configured, ollama }`，configured.main/vision 为 ModelEndpointInfo 同款 model/baseURL/hasApiKey/provider，vision 未配置 → null，ollama 不可达 ok:false 不崩）v0.6.112；v0.6.0） |
 | `flare search <关键词>` | 跨会话搜索标题/消息内容（--limit N 1~100 默认 20；--json 结构化输出（与 server search_sessions 回包同构 `{ query, sessions }`，含 id/title/createdAt/updatedAt/messageCount/archived；空结果 `{ query, sessions: [] }`）v0.6.111；v0.6.85） |
 | `flare search-messages <关键词>` | 全文搜索历史消息内容（--limit N 1~100 默认 10；--json 结构化输出（与 server search_messages 回包同构 `{ query, results }`，含 sessionId/role/content/createdAt，content 不截断不折叠；空结果 `{ query, results: [] }`）v0.6.110；v0.6.86） |
 | `flare sessions` | 查看最近会话列表（--limit N 1~50 默认 10；--json 结构化输出（与 server list_sessions 回包同构 { sessions }，宿主/脚本程序化消费，空库输出 sessions:[]）v0.6.108；v0.6.87） |
@@ -362,6 +363,10 @@ Interactive mode commands:
 | `/exit` | Exit |
 
 ### Changelog / Release Notes
+
+## v0.6.112（2026-08-13）
+- ✨ **`flare models` 增加 `--json` 结构化输出**：与 server models 回包完全同构（`{ configured, ollama }`，不带 type 包装）；宿主/脚本可直接程序化消费可用模型清单（configured.main/vision 为 ModelEndpointInfo 同款 model/baseURL/hasApiKey/provider，vision 未配置 → null 与 server 语义一致，ollama 不可达 ok:false 不崩）；只打印 JSON 不混彩色；文本模式与退出码语义完全不变
+- 📋 **README CLI 命令摘要表补齐 `flare models` 行**（此前唯一未入表的查看类命令），并同步 --json 能力；只读命令 --json 系列至此覆盖 usage/messages/models/sessions/context-status/tools/config/version/ping/mcp status/cache-check/memories/search-messages/search/archived-sessions/confirm-status
 
 ## v0.6.111（2026-08-13）
 - ✨ **`flare search` 增加 `--json` 结构化输出**：与 server search_sessions 回包完全同构（`{ query, sessions }`，不带 type 包装）；宿主/脚本可直接程序化消费跨会话搜索命中（--limit 语义与文本模式一致，按更新时间倒序）；每项为 store 原始行（id/title/createdAt/updatedAt/messageCount/archived，含归档标记）；空结果输出 `{ query, sessions: [] }`（结构稳定可解析）；只打印 JSON 不混彩色；文本模式与退出码语义完全不变
