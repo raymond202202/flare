@@ -2028,6 +2028,72 @@ export function main() {
       }
     })
 
+  // flare mcp connect <server>：动态连接 MCP 服务器（v0.6.120；与 server mcp_connect、交互式
+  // /mcp connect 对称的控制面单次命令收官）——宿主/脚本此前只有交互式 /mcp connect（需终端）与
+  // server 协议 mcp_connect（需宿主进程），非交互场景无法按需连接配置的服务器（mcp status --connect
+  // 只能「全部连接」）；本命令按名连接并打印摘要（transport/target/工具数/资源/模板/提示词 + [auth]），
+  // 成功 exit 0、失败（未配置/连接错误）exit 1。注意：单次命令进程内连接随进程退出自动释放。
+  mcpCmd
+    .command('connect <server>')
+    .description('动态连接 MCP 服务器（stdio 或 HTTP transport；服务器名查 ~/.flare/mcp.json 配置；成功打印摘要 exit 0、失败 exit 1；与 server mcp_connect、交互 /mcp connect 对称，v0.6.120）')
+    .option('--config <path>', 'MCP 配置文件路径（默认 ~/.flare/mcp.json）')
+    .option('--timeout <ms>', '单请求超时毫秒（默认 15000；HTTP transport 用）')
+    .action(async (server: string, options: { config?: string; timeout?: string }) => {
+      try {
+        const { McpManager } = await import('../index.js')
+        // --timeout 接线到 McpManager.httpTimeoutMs（HTTP transport 单请求超时；stdio 不受影响）
+        const mgr = new McpManager({ configPath: options.config, httpTimeoutMs: options.timeout ? Number(options.timeout) : undefined })
+        const tools = await mgr.connect(server)
+        // 摘要与交互式 /mcp connect 同构（v0.6.26/0.6.36/0.6.55/0.6.72 口径）：
+        // transport/target/工具数/资源/模板/提示词 + [auth]（只标记不输出 token）
+        const st = mgr.status().find((s) => s.name === server)
+        const resCount = mgr.getAllResources().filter((r) => r.server === server).length
+        const tmplCount = mgr.getAllResourceTemplates().filter((t) => t.server === server).length
+        const promptCount = mgr.getAllPrompts().filter((p) => p.server === server).length
+        const extra = resCount || tmplCount || promptCount
+          ? ` · ${resCount} 个资源${tmplCount ? ` · ${tmplCount} 个模板` : ''}${promptCount ? ` · ${promptCount} 个提示词` : ''}`
+          : ''
+        const transport = st?.transport === 'http' ? '[HTTP]' : '[stdio]'
+        const auth = st?.auth ? chalk.yellow('[auth]') : ''
+        const target = st?.target ? ` ${st.target}` : ''
+        console.log(chalk.green(`已连接 ${server} ${chalk.gray(transport)}${auth}${chalk.gray(target)}（${tools.length} 个 MCP 工具${extra}）`))
+        // 单次命令进程内连接随进程退出自动释放；显式 closeAll 关闭 stdio 子进程（否则
+        // 子进程继承 stdio 管道会让 CLI 进程挂住不退出——与 mcp call 的 client.close() 同因）
+        mgr.closeAll()
+      } catch (e: any) {
+        console.error(chalk.red(`❌ ${e?.message || e}`))
+        process.exit(1)
+      }
+    })
+
+  // flare mcp disconnect <server>：动态断开 MCP 服务器（v0.6.120；与 server mcp_disconnect、交互式
+  // /mcp disconnect 对称）——非交互场景的断开入口；单次命令进程内无持久连接（每次命令新建
+  // McpManager），断开未连接服务器幂等提示 exit 0（与 clear-session「不存在幂等 exit 0」、交互式
+  // /mcp disconnect「未连接黄色提示」同口径）、未配置服务器 exit 1
+  mcpCmd
+    .command('disconnect <server>')
+    .description('动态断开 MCP 服务器（stdio 或 HTTP transport；服务器名查 ~/.flare/mcp.json 配置；已断开/未连接幂等 exit 0、未配置 exit 1；与 server mcp_disconnect、交互 /mcp disconnect 对称，v0.6.120）')
+    .option('--config <path>', 'MCP 配置文件路径（默认 ~/.flare/mcp.json）')
+    .action(async (server: string, options: { config?: string }) => {
+      try {
+        const { McpManager } = await import('../index.js')
+        const mgr = new McpManager({ configPath: options.config })
+        if (!mgr.servers.some((s) => s.name === server)) {
+          console.error(chalk.red(`❌ 未配置 MCP 服务器: ${server}（~/.flare/mcp.json 的 servers 列表）`))
+          process.exit(1)
+        }
+        const ok = mgr.disconnect(server)
+        if (ok) {
+          console.log(chalk.green(`已断开 ${server}`))
+        } else {
+          console.log(chalk.yellow(`${server} 未连接（单次命令进程内无持久连接；无需断开）`))
+        }
+      } catch (e: any) {
+        console.error(chalk.red(`❌ ${e?.message || e}`))
+        process.exit(1)
+      }
+    })
+
     program
     .command('log-level <server> <level>')
     .description('设置 MCP 服务器日志级别阈值（logging/setLevel；v0.6.83 桥接库层 logging 能力，stdio/HTTP 通用）')

@@ -182,6 +182,8 @@ cp .env.example ~/.flare/.env
 | `flare mcp prompts <服务器> [--get <名称>]` | 查看/渲染 MCP 服务器暴露的提示词（--json 结构化输出（列表 `{ server, prompts }` 与 server mcp_prompts 回包同构；--get `{ server, prompt, description?, messages }` 与 mcp_get_prompt 同构）v0.6.113；v0.6.10） |
 | `flare mcp tools <服务器>` | 查看 MCP 服务器暴露的工具清单（--json 结构化输出（`{ server, tools }` 与 server mcp_tools 回包同构）v0.6.113；v0.6.59） |
 | `flare mcp complete <服务器> <提示词> <参数> [前缀]` | 请求 MCP 服务器提示词参数补全候选（--json 结构化输出（`{ server, prompt, argument, value?, values, total?, hasMore? }` 与 server mcp_complete 回包同构，空候选 `{ values: [] }` 合法 JSON exit 0）v0.6.114；v0.6.60） |
+| `flare mcp connect <服务器>` | 动态连接 MCP 服务器（stdio 或 HTTP transport；按名连接并打印摘要：transport/target/工具数/资源/模板/提示词 + [auth] 标记（不输出 token）；成功 exit 0、未配置/连接失败 exit 1；与 server mcp_connect、交互 /mcp connect 对称；单次命令进程内连接随进程退出释放；v0.6.120） |
+| `flare mcp disconnect <服务器>` | 动态断开 MCP 服务器（stdio 或 HTTP transport；已断开/未连接幂等 exit 0、未配置 exit 1；与 server mcp_disconnect、交互 /mcp disconnect 对称；v0.6.120） |
 | `flare cache-check [--model <模型>] [--json] [--rounds <N>]` | prompt caching 验收：连续两轮调用验证第二轮 cache_read_tokens > 0（v0.6.45；v0.6.48 起 --json 结构化输出供宿主/CI 消费；v0.6.54 起 --rounds 2~5 多轮连续命中验收；v0.6.75 起多轮 savedUsd 累加所有命中轮；v0.6.76 起 --json/输出含 runSavedUsd 每轮节省明细；v0.6.78 起基准轮命中带残留缓存诊断；v0.6.79 起每轮命中率百分比；v0.6.116 起 --json 含 hitRatio 末轮命中率与 runHitRatios 每轮命中率（与文本模式同口径四舍五入，promptTokens=0 或失败轮 null）） |
 
 交互模式命令：
@@ -365,6 +367,10 @@ Interactive mode commands:
 | `/exit` | Exit |
 
 ### Changelog / Release Notes
+
+## v0.6.120（2026-08-14）
+- ✨ **CLI 单次命令 `flare mcp connect <server>` / `flare mcp disconnect <server>`（MCP 控制面收官）**：server 协议 mcp_connect/mcp_disconnect（v0.6.56）与交互式 /mcp connect/disconnect（v0.5.5）此前均已有，唯独 CLI 单次命令形态缺失——宿主/脚本非交互场景无法按需连接/断开配置的 MCP 服务器（`mcp status --connect` 只能「全部连接」）。本版补齐：`connect` 按名连接（stdio 或 HTTP transport）并打印摘要（transport/target/工具数/资源/模板/提示词 + [auth] 标记，与交互式 /mcp connect 同构，**只标记不输出 token**）；`--timeout <ms>` 接线到 McpManager.httpTimeoutMs（HTTP 单请求超时）；成功 exit 0、未配置/连接失败 exit 1；`disconnect` 按名断开——已断开/未连接幂等 exit 0（单次命令进程内无持久连接，与 clear-session「不存在幂等 exit 0」同口径）、未配置 exit 1；单次命令进程内连接在命令完成后显式 closeAll 释放（否则 stdio 子进程继承管道会让 CLI 进程挂住，与 mcp call 的 client.close() 同因）
+- 测试（新建 tests/cli-mcp-connect-disconnect.test.ts，8 用例）：HTTP 连接摘要（[HTTP] + 端点 + 工具数）/ stdio 连接摘要（工具数 + 资源/模板/提示词数）/ HTTP 配 headers → [auth] 标记且**输出绝不含 token 明文**（密钥隔离铁律测试化）/ 未配置 exit 1 / 连接失败（端点不可达）exit 1 / **--timeout 接线验证（静默服务器不响应 → 800ms 快速超时 exit 1，而非默认 15s 挂住）** / disconnect 已配置未连接幂等 exit 0 / disconnect 未配置 exit 1
 
 ## v0.6.119（2026-08-14）
 - ✨ **交互式 `/mcp call` 回包统一复用 `mcpContentToText`（第四层同口径收官）**：CLI 交互命令（`src/cli/index.ts` handleSlashCommand `/mcp call` 分支）此前仍是内联 `content.filter(type === 'text')` 提取（只取 text）——本版改为复用 v0.6.117 纯函数 `mcpContentToText(res.content, res.structuredContent)`：交互会话内调 MCP 工具的非 text 内容（image/audio/resource 占位描述）与 `structuredContent` JSON 兜底不再静默丢失，与 `createMcpTools`（工具桥）/CLI `mcp call`（单次命令）/server `mcp_call`（宿主协议）**四层同口径**（同一纯函数）；纯 text 行为与旧版逐字一致（回归由测试保证）；P150/P151 全库搜索内联 filter 变体的收官
