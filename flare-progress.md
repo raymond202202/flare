@@ -1,12 +1,14 @@
 # Flare 引擎迭代进度（夜间调研 agent）
 
-> **【已发布】v0.6.110 装机完成（P140 search-messages --json 结构化输出，引导模式本机安装版，自循环）**
-> 上一版 v0.6.109 装机完成（P139 memories --json 结构化输出，引导模式本机安装版）
-> 再上一版 v0.6.108 装机完成（P138 sessions --json 结构化输出，引导模式本机安装版，自循环三小步）
+> **【已发布】v0.6.111 装机完成（P141 search/archived-sessions --json 结构化输出，引导模式本机安装版，自循环）**
+> 上一版 v0.6.110 装机完成（P140 search-messages --json 结构化输出，引导模式本机安装版，自循环）
+> 再上一版 v0.6.109 装机完成（P139 memories --json 结构化输出，引导模式本机安装版）
 
 > 目标：flare 是 Pulse/StorySpire 依赖的 AI Agent 引擎（TS）。任何改动必须安全（tsc 0 错 + 测试全绿才 commit）。
 > 铁律：禁止 push；禁止修改 src/core/agent.ts 的 Agent.run 核心循环。
 
+> **【✅ 第一百一十二轮完成】P141 (v0.6.111) search/archived-sessions --json 已装机**：
+> commit `54b7849`，1066/1066 全绿、tsc 0 错误、零 agent.ts 改动（详情见下方第一百一十二轮条目）。
 > **【✅ 第一百一十一轮完成】P140 (v0.6.110) search-messages --json 已装机**：
 > commit `a086951`，1056/1056 全绿、tsc 0 错误、零 agent.ts 改动（详情见下方第一百一十一轮条目）。
 > **【✅ 第一百一十轮完成】P139 (v0.6.109) memories --json 已装机**：
@@ -93,6 +95,8 @@
 > 下一步候选（按优先级）：
 > ① 【P1】分层上下文（Layer 1 异步滚动摘要——摘要内容升级为 LLM 生成语义级压缩，需评估 run 循环外异步）
 > ② 其他安全的外围增强（server 协议其他管理接口、MCP 工具集完善、测试稳定性等）
+>    CLI 只读命令 --json 系列已全覆盖：usage/messages/sessions/context-status/tools/config/version/
+>    ping/mcp status/cache-check/memories/search-messages/search/archived-sessions/confirm-status（v0.6.111 收官）
 >    已覆盖：HTTP 服务端 Bearer 鉴权（v0.6.69）✓ /
 >    CLI 单次命令 --header（v0.6.68）✓ /
 >    MCP HTTP transport 鉴权 headers（v0.6.67）✓ /
@@ -448,6 +452,41 @@
   ③ 引导 agent 补测试时自身也会踩子串误匹配这类测试 bug，定位要快（首跑失败先看 Received 实值再推断）；
   ④ 写操作命令（会删 store 消息）的端到端持久验证（CLI 进程退出后 store 核对）是验收关键，不可只看 CLI
   输出
+
+---
+
+### 2026-08-13 第一百一十二轮实施（v0.6.111）——P141 flare search / archived-sessions --json 结构化输出（装机完成）
+
+> **P141 完成**（commit `54b7849`）：`flare search <关键词>` 与 `flare archived-sessions` 两个只读命令各增加
+> **--json 结构化输出**——分别与 server search_sessions（v0.6.43 会话搜索回包）、archived_sessions（v0.6.31
+> 归档列表回包）**完全同构**（不带 type 包装），宿主/脚本可程序化消费跨会话搜索命中与归档会话列表；
+> 至此 CLI 只读命令 --json 系列（usage/messages/sessions/context-status/tools/config/version/ping/mcp
+> status/cache-check/memories/search-messages/search/archived-sessions/confirm-status）**全部收官**。
+> 纯只读增强，风险极低。
+> - **实现**（src/cli/index.ts search 命令块 +8/-2、archived-sessions 命令块 +13/-2）：各新增
+>   `.option('-j, --json', ...)`；action 签名 options 增加 `json?: boolean`；在空结果判断之前插入
+>   JSON 分支——search 输出 `{ query: keyword.trim(), sessions: hits }`（hits 为 store.searchSessions
+>   原始行，含 id/title/createdAt/updatedAt/messageCount/archived 六字段，与 server 同构）；
+>   archived-sessions 输出 `{ sessions: sessions.map(...) }`，每项为 **server 同款映射**
+>   （id/title（默认'新会话'）/updatedAt/preview（空白折叠 + 截断 120 字符））；空结果/空库输出
+>   `{ query, sessions: [] }` / `{ sessions: [] }` 合法 JSON exit 0（不打印「未找到包含」「暂无归档会话」
+>   提示，脚本可解析）；--limit 校验/查询逻辑一字不改，文本模式（标题/截断/空提示/exit code）完全不变；
+>   只打印 JSON 不混彩色；零新 import；description 补 --json（v0.6.111）
+> - **测试**（cli-search.test.ts 追加 5 用例至 11 个；cli-archived-sessions.test.ts 追加 5 用例至 11 个，
+>   spawn dist CLI + FLARE_HOME 隔离，seed 用 store.createSession + saveMessage + archiveSession 直插）：
+>   search：--json 合法 JSON + 六字段完整 / 归档会话 archived:true 保留 / --json --limit 1 只输出 1 个 /
+>   空结果 `{ query, sessions: [] }` exit 0 不打印「未找到包含」/ 文本模式回归（含「搜索会话」标题且非 JSON）；
+>   archived-sessions：--json 合法 JSON + 四字段与 server 同构 / 空库 `{ sessions: [] }` exit 0 /
+>   --limit 1 只输出 1 个 / preview 空白折叠 + 超长截断 120 字符（server 语义）/ 文本模式回归（含「已归档会话」且非 JSON）；
+>   **现有用例零删改**
+> - README 命令表 search/archived-sessions 两行补 --json + Changelog v0.6.111 条目（## 版本标题在顶部，
+>   日期 2026-08-13）+ package.json 0.6.111 + description 版本注释 + flare-progress 摘要/下一步候选更新
+> - **1066/1066 全绿**（新增 10 用例，71 文件；全量首跑即绿无偶发），tsc 0 错误，**零 agent.ts 改动**，
+>   零 push、零敏感信息（diff 敏感扫描 0 命中）；自安装完成：installed 0.6.111 = repo 0.6.111（安装版冒烟
+>   FLARE_HOME 临时目录 seed → search --json / archived-sessions --json 输出正确 JSON + server stdin ping
+>   pong 已验证）；真实 ~/.flare 零污染（冒烟均用 FLARE_HOME 临时目录）
+> - **下一步候选**：① 【P1】分层上下文（Layer 1 异步滚动摘要——需评估 run 循环外异步）；② 其他安全的外围
+>   增强——CLI 只读命令 --json 系列已全覆盖，剩余 MCP 工具集完善、测试稳定性等
 
 ---
 
