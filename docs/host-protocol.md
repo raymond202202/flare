@@ -614,14 +614,21 @@ flare server --profile <expert-profile-file> --storage <db-path> [--mcp <mcp-con
 | `error` | `message` | 错误（含未配置 key 等） |
 | `sessions` | `sessions` | 会话列表 |
 | `recent_sessions` | `sessions` | 最近会话列表（含 preview，v0.6.0） |
+| `archived_sessions` | `sessions` | 归档会话列表（list_archived_sessions 响应，v0.6.31，结构同 recent_sessions 含 preview） |
 | `search_sessions` | `query, sessions` | 会话搜索结果（search_sessions 响应，v0.6.43） |
+| `search_results` | `query, results` | 消息搜索结果（search_messages 响应，v0.6.24） |
 | `messages` | `sessionId, messages` | 指定会话的消息历史 |
 | `memories` | `memories` | 记忆列表（get_memories 响应） |
 | `ok` | `sessionId, deleted?/tool?/resetSession?/mode?/title?/cleared?` | 通用确认（set_context/cancel/create_session/rename_session/clear_session/delete_session/remember/delete_memory/confirm_revoke/confirm_allow） |
 | `pong` | `ts` | ping 响应（宿主健康检查） |
 | `version` | `protocol, engine` | 版本协商（协议版本 + 引擎版本） |
 | `usage` | `stats` | token 用量统计（get_usage 响应；v0.6.18 起 stats 含 `perModel` 按模型分解） |
+| `session_usage` | `sessionId, stats` | 单会话 token 用量（session_usage 响应，v0.6.17，stats 含 perModel v0.6.52） |
+| `context_status` | `sessionId, messageCount, estimatedTokens, suggestion?` | 会话上下文占用（context_status 响应，v0.5.6；`suggestion` 预算裁剪建议 v0.6.4） |
 | `mcp_status` | `servers` | MCP 服务器连接状态（mcp_status 响应，v0.5.5） |
+| `mcp_resources` | `servers` | 外部 MCP 资源/模板清单（mcp_resources 响应，v0.6.26） |
+| `mcp_prompts` | `servers` | 外部 MCP 提示词清单（mcp_prompts 响应，v0.6.36） |
+| `mcp_tools` | `servers` | 外部 MCP 工具桥接清单（mcp_tools 响应，v0.6.58） |
 | `confirm_status` | `sessionId, confirmTools, allowedTools, sessionAllowed, alwaysAllowed` | 确认门状态（confirm_status 响应，v0.6.8） |
 | `models` | `configured, ollama` | 可切换模型（models 响应，v0.6.9） |
 | `tools` | `sessionId, tools, confirmTools` | Agent 工具清单（tools 响应，v0.6.11） |
