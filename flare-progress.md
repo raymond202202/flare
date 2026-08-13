@@ -1,5 +1,7 @@
 # Flare 引擎迭代进度（夜间调研 agent）
 
+> **【✅ 第一百二十五轮小步】P157 (纯文档) docs/mcp.md 补 CLI 单次命令 connect/disconnect 章节**：
+> commit `588ee30`，纯文档零 src 改动、tsc 0 错误、1116/1116 全绿、无版本变化（详情见下方 P157 条目）。
 > **【✅ 第一百二十四轮完成】P156 (v0.6.120) CLI 单次命令 flare mcp connect/disconnect 已装机**：
 > commit `5768285`，1116/1116 全绿、tsc 0 错误、零 agent.ts 改动（详情见下方第一百二十四轮条目）。
 > **【已发布】v0.6.120 装机完成（P156 CLI mcp connect/disconnect 控制面收官，引导模式本机安装版，自循环）**
@@ -639,6 +641,47 @@
   ② 安全设计要点：二进制（image/audio 的 data、resource 的 blob）只输出占位描述不含 base64
   明文——既防上下文 token 膨胀也防敏感数据回显；③ rich/struct-only 用 MOCK_MODE 环境变量控制
   fixture 返回，不动工具列表（工具数断言零影响），是扩展 mock 服务器行为的安全模式
+
+---
+
+### 2026-08-14 第一百二十五轮小步（P157 纯文档）——docs/mcp.md 补 CLI 单次命令 connect/disconnect 章节（装机完成，自循环）
+
+> **P157 完成**（commit `588ee30`）：docs/mcp.md 的 CLI 单次命令章节滞后——标题行与示例块列出
+> `flare mcp call/status/resources/prompts/tools/complete/log-level`，**独缺 v0.6.120 新增的
+> `connect/disconnect`**（README 命令表与 Changelog 已同步、docs 专项未跟上，P153/P154/P155 同源
+> 文档不对称问题；P156 装机 commit `5768285` 只改了 README/package.json/src/tests，漏了 docs/mcp.md）。
+> 纯文档增强，零 src 改动、零风险（纯文档先例）。
+> - **实现**（docs/mcp.md +14/-1，三处）：
+>   - 标题行：`CLI flare mcp call / ... / flare mcp complete / flare mcp connect / flare mcp disconnect
+>     / flare log-level`——补 connect/disconnect 两个命令名 + 版本序列补 v0.6.120
+>   - 示例块：status 示例后补「动态连接/断开服务器（v0.6.120：控制面单次命令，与 server
+>     mcp_connect/mcp_disconnect、交互 /mcp connect/disconnect 对称；stdio/HTTP 均可）」——
+>     `flare mcp connect fs`（--config 指定配置文件、--timeout <ms> 调 HTTP 超时）/ `connect remote
+>     --config ./mcp.json`（成功打印摘要 exit 0、未配置/连接失败 exit 1）/ 摘要与交互式 /mcp connect
+>     同构（transport [HTTP]/[stdio] + target 端点 + 工具/资源/模板/提示词数 + [auth] 标记只标记不
+>     输出 token；单次命令进程内连接随进程退出释放——命令完成后显式 closeAll）/ `disconnect fs`
+>     （已断开/未连接幂等 exit 0、未配置 exit 1）
+>   - 交互章节 bullet 区：`flare mcp complete` 条目后补 connect/disconnect 单次命令提示（与既有
+>     flare mcp tools/complete 条目同风格：命令名 + 版本 + 对称关系 + exit 码语义 + 摘要口径）
+> - **验证**：tsc 0 错误；**零 src 改动**（git diff 仅 docs/mcp.md 1 文件）；1116/1116 全绿（74 文件）；
+>   纯文档无版本变化（0.6.120 不变，dist 未动，无需自安装）；零 push、零敏感信息
+> - **flare 验收结论：✅ 通过**——flare 独立运行 git log -1 --stat + git show 审查 diff + npx tsc
+>   0 错误 + 全量 1116/1116（74 文件）；**逐项核对 1a-1h 全过**：标题行命令名+v0.6.120 标注 /
+>   示例块 6 项覆盖（--config/--timeout/connect 摘要+exit 码/与交互 /mcp connect 摘要同构含 [auth]
+>   只标记不输出 token/disconnect 幂等+exit 码/closeAll 释放）/ bullet 风格与既有条目一致 / 与
+>   README 第 185-186 行同口径 / 无密钥明文（全文仅「不输出 token」说明文字）/ exit 码语义明确 /
+>   安全审查通过；未改 agent.ts、未 push、无密钥明文；结论与实况完全一致
+> - **下一步候选**：① 【P1】分层上下文（Layer 1 异步滚动摘要——需评估 run 循环外异步，涉及
+>   agent.ts trimContext 异步化，铁律暂缓）；② 其他安全的外围增强（docs 专项逐一对齐中：
+>   mcp.md CLI 章节 connect/disconnect 本轮补齐，文档对称基本收官；剩余 memory-rag「后续候选」
+>   中记忆去重/摘要等为功能候选；测试稳定性继续清扫等）
+
+**引导过程记录（引导 agent 视角，实现+验收直接完成）**：
+- 本轮实现由引导 agent 直接完成（纯文档，写 docs/mcp.md connect/disconnect 章节三处）
+- flare 验收延续高水准：1a-1h 八项逐条核对 + 独立 tsc/全量 vitest 复核 + 与 README 对照，一次通过
+- **教训**：① P156 装机 commit 漏同步 docs/mcp.md（README 表有行、docs 专项没有）——「功能落地后
+  检查三处（README 表 + Changelog + 对应 docs 专项）」铁律在 MCP 面同样适用，下轮装机时须对照
+  专项文档；② 纯文档改动验收同样跑全量 vitest（74 文件 1116/1116）确认无回归，成本可控
 
 ---
 
