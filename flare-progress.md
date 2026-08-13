@@ -1,5 +1,8 @@
 # Flare 引擎迭代进度（夜间调研 agent）
 
+> **【已发布】v0.6.118 装机完成（P151 server mcp_call 回包统一复用 mcpContentToText，引导模式本机安装版，自循环）**
+> **【✅ 第一百二十二轮完成】P151 (v0.6.118) server mcp_call 回包统一复用 mcpContentToText 已装机**：
+> commit `09bc5fb`，1105/1105 全绿、tsc 0 错误、零 agent.ts 改动（详情见下方第一百二十二轮条目）。
 > **【已发布】v0.6.117 装机完成（P150 MCP 工具桥非 text 内容项处理 mcpContentToText + structuredContent 兜底，引导模式本机安装版，自循环）**
 > **【✅ 第一百二十一轮完成】P150 (v0.6.117) MCP 工具桥非 text 内容项处理已装机**：
 > commit `5dac289`，1103/1103 全绿、tsc 0 错误、零 agent.ts 改动（详情见下方第一百二十一轮条目）。
@@ -624,6 +627,53 @@
   ② 安全设计要点：二进制（image/audio 的 data、resource 的 blob）只输出占位描述不含 base64
   明文——既防上下文 token 膨胀也防敏感数据回显；③ rich/struct-only 用 MOCK_MODE 环境变量控制
   fixture 返回，不动工具列表（工具数断言零影响），是扩展 mock 服务器行为的安全模式
+
+---
+
+### 2026-08-14 第一百二十二轮实施（v0.6.118）——P151 server mcp_call 回包统一复用 mcpContentToText（装机完成，自循环）
+
+> **P151 完成**（commit `09bc5fb`）：**server 协议 `mcp_call` 回包与 P150 同口径补齐**——
+> `src/server.ts` 的 `mcp_call` 分支（宿主协议，`flare server --mcp` 场景）此前仍是内联
+> `content.filter(type === 'text')` 提取（只取 text），与 v0.6.117 新增的 `mcpContentToText`
+> 纯函数**不同口径**——宿主经协议拿 MCP 工具的非 text 内容（image/audio/resource）与
+> `structuredContent`（2025-06-18 结构化返回）仍会丢失，是 P150 三层消费面（工具桥/CLI/server）
+> 的最后一处不对称。纯外围增强（server.ts import + 替换 2 行 + 测试 + 文档），零 agent.ts
+> 改动、零风险，落在「MCP 工具集完善」方向。
+> - **实现**（src/server.ts +4/-3）：
+>   - import 增加 `mcpContentToText`（从 ./index.js 库导出）
+>   - `mcp_call` 分支内容提取替换为 `mcpContentToText(res.content, res.structuredContent)`——
+>     与 createMcpTools（src/tools/mcp.ts）和 CLI mcp call（src/cli/index.ts）**三层同口径**
+>     （同一纯函数）；isError 分支 `error: text || \`MCP 工具 ${tool} 执行失败\`` 保持
+> - **测试**（tests/server-mcp-resources.test.ts 追加 describe「mcp_call 非 text 内容」2 用例，
+>   新增独立 rich server 实例 beforeAll/afterAll 不干扰既有用例）：
+>   ① rich 模式（server 子进程 env 传 MOCK_MODE=rich → mock fixture echo_text 返回
+>     text+image+audio+resource+structuredContent）：mcp_call output 含占位描述
+>     （`[图片 mimeType: image/png` / `[音频 mimeType: audio/wav` / `[资源 uri: file:///tmp/a.txt`）
+>     且**绝不含 base64 明文**（aGVsbG8taW1hZ2U= / YXVkaW8tZGF0YQ== 零命中）
+>   ② 纯 text 回归（复用外层默认服务器）：add_numbers output 逐字 '5'，与旧版一致
+> - README Changelog v0.6.118 条目 + docs/host-protocol.md 16.5 节补 output/error 提取说明
+>   + package.json 0.6.117 → 0.6.118
+> - **1105/1105 全绿**（新增 2 用例，73 文件；全量首跑即绿无偶发），tsc 0 错误，**零 agent.ts
+>   改动**，零 push、零敏感信息（diff 敏感扫描 0 命中）；已 commit `09bc5fb`（5 文件 +75/-4）
+> - **下一步候选**：① 【P1】分层上下文（Layer 1 异步滚动摘要——需评估 run 循环外异步，涉及
+>   agent.ts trimContext 异步化，铁律暂缓）；② 其他安全的外围增强（MCP 消费面非 text 处理已
+>   三层闭环（工具桥/CLI/server）；McpManager.callTool 直接透传原始 McpCallResult 无需提取；
+>   测试稳定性继续清扫等）
+> - **flare 验收结论：✅ 通过**——flare 独立运行 git log -1/git show 审查完整 diff，逐项核对
+>   server.ts import + 替换（第 1191-1192 行）、mcpContentToText 优先级（有文本绝不 fallback）、
+>   三层同口径（mcp.ts:106 / cli/index.ts:1721 / server.ts:1192 同一纯函数）、isError 分支兜底、
+>   base64 零泄漏安全、rich 独立 describe 2 用例与纯 text 回归；独立跑 tsc 编译通过 +
+>   server-mcp-resources 20/20 + mcp-tools/mcp-cli-server/mcp-client 58/58 无回归；全程零修改
+>   零 commit，输出无任何密钥明文；结论与实况完全一致（验收指令经文件读入规避 confusable 误报）
+
+**引导过程记录（引导 agent 视角，实现+验收直接完成）**：
+- 本轮实现由引导 agent 直接完成（P150 同款「调研→执行→flare 验收」流程，验收环节交给 flare）
+- flare 验收延续高水准：逐项核对三层同口径 + 优先级语义 + 回归，一次通过
+- **教训**：① 新引入统一纯函数后须**全库搜索旧的内联 filter 变体**（P150 只改了工具桥与 CLI，
+  server.ts 是第三处）——「createMcpTools/CLI/server 三层消费面」是同源逻辑的三个落点，遗漏
+  即不对称；② server 协议测试补 rich 模式需独立 server 实例（MOCK_MODE 环境变量经 server
+  子进程 env 传给 mock fixture），beforeAll/afterAll 独立管理不干扰既有用例；③ 纯 text 回归
+  用例（add_numbers 仍 '5'）是协议层改动的最小安全网，后续同类替换可沿用
 
 ---
 
