@@ -2016,22 +2016,50 @@ export function main() {
 
 program
     .command('models')
-    .description('查看可用模型：配置的主/视觉模型 + 本地 Ollama 已拉取模型（v0.6.0）')
-    .action(async () => {
+    .description('查看可用模型：配置的主/视觉模型 + 本地 Ollama 已拉取模型（v0.6.0；--json 结构化输出，v0.6.112）')
+    .option('-j, --json', 'JSON 结构化输出（与 server models 回包同构：{ configured, ollama }；宿主/脚本程序化消费）')
+    .action(async (options: { json?: boolean }) => {
       const { config } = await import('../core/config.js')
       const { resolveProviderOptions } = await import('../core/llm.js')
       const { listOllamaModels, formatModelSize } = await import('../core/models.js')
-      const lines: string[] = []
 
-      // 配置的模型（纯本地，无网络）
-      lines.push(chalk.cyan('⚙️  配置的模型:'))
+      // 运行时 /model 切换的模型优先（settings 表）
       let mainModel = config.get('DEFAULT_MODEL') || 'gpt-4o'
       try {
-        // 运行时 /model 切换的模型优先（settings 表）
         const { getMemoryStore } = await import('../memory/store.js')
         const saved = getMemoryStore().getSetting('main_model')
         if (saved) mainModel = saved
       } catch { /* 无全局库（宿主环境）用默认 */ }
+
+      // --json 结构化输出：与 server models 回包同构 { configured, ollama }
+      //（configured.main/vision 为 ModelEndpointInfo 同款：model/baseURL/hasApiKey/provider/可选 error；
+      //  vision 未配置 → null，与 server 语义一致；ollama 为 listOllamaModels 原始结果（不可达 ok:false 不崩）；
+      //  只打印 JSON 不混彩色；文本模式与退出码语义一字不改）
+      if (options.json) {
+        const { detectProvider } = await import('../server.js')
+        const resolveOne = (model: string) => {
+          try {
+            const r = resolveProviderOptions({ model })
+            return { model: r.model, baseURL: r.baseURL, hasApiKey: Boolean(r.apiKey), provider: detectProvider(r.model) }
+          } catch (e: any) {
+            return { model, baseURL: '', hasApiKey: false, provider: detectProvider(model), error: e?.message || String(e) }
+          }
+        }
+        const visionModel = config.get('VISION_MODEL')
+        console.log(JSON.stringify({
+          configured: {
+            main: resolveOne(mainModel),
+            vision: visionModel ? resolveOne(visionModel) : null,
+          },
+          ollama: await listOllamaModels(),
+        }))
+        return
+      }
+
+      const lines: string[] = []
+
+      // 配置的模型（纯本地，无网络）
+      lines.push(chalk.cyan('⚙️  配置的模型:'))
       const mainResolved = resolveProviderOptions({ model: mainModel })
       lines.push(`  主模型:   ${chalk.green(mainModel)} → ${mainResolved.baseURL}`)
       const visionModel = config.get('VISION_MODEL') || 'qwen2.5vl:3b'
