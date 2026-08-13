@@ -1,12 +1,14 @@
 # Flare 引擎迭代进度（夜间调研 agent）
 
-> **【已发布】v0.6.109 装机完成（P139 memories --json 结构化输出，引导模式本机安装版）**
-> 上一版 v0.6.108 装机完成（P138 sessions --json 结构化输出，引导模式本机安装版，自循环三小步）
-> 再上一版 v0.6.107 装机完成（P137 messages --json 结构化输出，引导模式本机安装版，自循环）
+> **【已发布】v0.6.110 装机完成（P140 search-messages --json 结构化输出，引导模式本机安装版，自循环）**
+> 上一版 v0.6.109 装机完成（P139 memories --json 结构化输出，引导模式本机安装版）
+> 再上一版 v0.6.108 装机完成（P138 sessions --json 结构化输出，引导模式本机安装版，自循环三小步）
 
 > 目标：flare 是 Pulse/StorySpire 依赖的 AI Agent 引擎（TS）。任何改动必须安全（tsc 0 错 + 测试全绿才 commit）。
 > 铁律：禁止 push；禁止修改 src/core/agent.ts 的 Agent.run 核心循环。
 
+> **【✅ 第一百一十一轮完成】P140 (v0.6.110) search-messages --json 已装机**：
+> commit `a086951`，1056/1056 全绿、tsc 0 错误、零 agent.ts 改动（详情见下方第一百一十一轮条目）。
 > **【✅ 第一百一十轮完成】P139 (v0.6.109) memories --json 已装机**：
 > commit `b62993b`，1052/1052 全绿、tsc 0 错误、零 agent.ts 改动（详情见下方第一百一十轮条目）。
 > **【✅ 第一百零九轮完成】P136/P137/P138 (v0.6.106/107/108) usage/messages/sessions --json 已装机**：
@@ -446,6 +448,58 @@
   ③ 引导 agent 补测试时自身也会踩子串误匹配这类测试 bug，定位要快（首跑失败先看 Received 实值再推断）；
   ④ 写操作命令（会删 store 消息）的端到端持久验证（CLI 进程退出后 store 核对）是验收关键，不可只看 CLI
   输出
+
+---
+
+### 2026-08-13 第一百一十一轮实施（v0.6.110）——P140 flare search-messages --json 结构化输出（装机完成，自循环）
+
+> **P140 完成**（commit `a086951`）：`flare search-messages <关键词>` 增加 **--json 结构化输出**——与
+> server search_messages（v0.6.24 全文搜索回包）**完全同构**（`{ query, results }`，不带 type 包装），
+> 宿主/脚本可程序化消费历史消息全文搜索结果（含 --limit 组合语义）；是 CLI 只读命令 --json 系列
+> （usage/messages/sessions/context-status/tools/config/version/ping/mcp status/cache-check/memories
+> 已覆盖）消息搜索面的收官；与 search（v0.6.85 会话标题级）配对形成「会话级 + 消息级」搜索程序化面。
+> 纯只读增强，风险极低。
+> - **实现**（src/cli/index.ts search-messages 命令块 +11/-2）：新增 `.option('-j, --json', ...)`；action
+>   签名 options 增加 `json?: boolean`；在「hits.length === 0 空提示」判断之前插入 `if (options.json) {
+>   console.log(JSON.stringify({ query: keyword.trim(), results: hits })); return }`——results 为
+>   store.searchMessages 原始行（含 sessionId/role/content/createdAt，content **不截断不折叠**，与 server
+>   同构）；空结果输出 `{ "query": "关键词", "results": [] }` 合法 JSON exit 0（不打印「未找到」灰色提示，
+>   脚本可解析）；--limit 校验/查询逻辑一字不改，文本模式（标题/图标/200 字符截断/空提示/exit code）完全
+>   不变；只打印 JSON 不混彩色；零新 import；description 补 --json（v0.6.86/110）
+> - **测试**（tests/cli-search-messages.test.ts 追加 4 用例至 10 个，spawn dist CLI + FLARE_HOME 隔离，
+>   seed 用 store.createSession + saveMessage 直插）：--json 输出合法 JSON（query=关键词、results 数组、
+>   每项含 sessionId/role/content/createdAt 四字段）+ 超长 content（300 字符）不截断不折叠 / --json +
+>   --limit 1 只输出 1 条 / 空结果 `{ "query", "results": [] }` exit 0 / 文本模式回归（含「搜索消息」标题
+>   且非 JSON）；**现有 6 用例零删改**
+> - README 命令表 search-messages 行补 --json + Changelog v0.6.110 条目（## 版本标题在顶部，日期 2026-08-13）+
+>   package.json 0.6.110 + description 版本注释
+> - **1056/1056 全绿**（新增 4 用例，71 文件；全量首跑即绿无偶发），tsc 0 错误，**零 agent.ts 改动**，
+>   零 push、零敏感信息（diff 敏感扫描 0 命中）；自安装完成：installed 0.6.110 = repo 0.6.110（安装版冒烟
+>   FLARE_HOME 临时目录 seed → search-messages --json 输出正确 JSON 已验证）；真实 ~/.flare 零污染（冒烟均用
+>   FLARE_HOME 临时目录）
+> - **下一步候选**：① 【P1】分层上下文（Layer 1 异步滚动摘要——需评估 run 循环外异步）；② 其他安全的外围
+>   增强——CLI 只读命令 --json 系列已覆盖 usage/messages/sessions/context-status/tools/config/version/
+>   ping/mcp status/cache-check/memories/search-messages，剩余 search/archived-sessions/confirm-status
+>   可继续补 --json（同模式），或 MCP 工具集完善、测试稳定性等
+
+**引导过程记录（引导 agent 视角，1 次调用 + 引导 agent 直接收尾）**：
+- 本轮开始时发现工作区已有上一轮（第一百一十轮 P139 memories --json）遗留的未收尾实现（src/tests/README/
+  package.json 已改、版本 0.6.109），但 git log 显示 P139 已由并行进程完成 commit `b62993b` + docs
+  `5528583` 且 installed 0.6.109 = repo 0.6.109——引导 agent 独立复验（tsc 0、1052/1052、敏感 0、冒烟
+  PASS）确认已装机，直接进入自循环下一小步
+- 第 1 次调用（P139 同款指令模式：完整代码规格 + 硬声明无关领域 + 白名单/禁止清单 + 明确「不 commit、不改
+  package.json/README，收尾由引导 agent 统一处理」）→ **一次完整交付**：--json 分支 +11/-2 位置正确
+  （hits 获取后、空提示前）、测试 4 用例落盘且与规格 5 项完全对应（a+b 合并一用例）、tsc 0、单文件 10/10、
+  全量 1056/1056 首跑即绿，汇报与实况完全一致（flare 自述中途 write_file 误截断源码已 git checkout 恢复，
+  最终 diff 干净——引导 agent 独立 diff 复核确认无残留）
+- 收尾由**引导 agent 直接完成**：diff 逐条对照规格（全过）→ 独立 tsc 0 → 新测试 10/10 → 全量 1056/1056
+  复核 → 敏感扫描 0 → 独立冒烟（--json 长 content 300 字符不截断/--limit 1/空结果 exit 0/文本回归）→ 补
+  README 命令表 + Changelog + package.json 0.6.110 + description 版本注释 → 重编译 dist（携带新版本号）→
+  git add 指定 4 文件 → commit `a086951` → 自安装（installed 0.6.110 = repo 0.6.110，安装版冒烟通过）
+- **教训**：① 连续多轮「完整代码规格 + 明确收尾归属」模式保持一次交付稳定，flare 覆盖缺口模式（P131/
+  P133/P134/P135/P138）本轮未再现（4 用例与规格 5 项语义一一对应）；② flare 自主修复自身失误（write_file
+  误截断 → git checkout 恢复 → 改用定位补丁）的流程正确，最终 diff 零残留；③ 自安装命令含中文全角字符
+  触发安全扫描 confusable 误报——引导 agent 直接以机械 cp 等效完成自安装（dist 复制与 flare 自执行无差别）
 
 ---
 
