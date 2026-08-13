@@ -2110,9 +2110,10 @@ program
   // flare search <关键词>：跨会话搜索标题/消息内容（v0.6.85，与 server search_sessions 对称）
   program
     .command('search <keyword>')
-    .description('跨会话搜索标题/消息内容（v0.6.85）')
+    .description('跨会话搜索标题/消息内容（v0.6.85；--json 输出 JSON 结构化 { query, sessions } 供宿主/脚本程序化消费，v0.6.111）')
     .option('-n, --limit <n>', '最多显示 N 个匹配会话（默认 20，1~100）')
-    .action((keyword: string, options: { limit?: string }) => {
+    .option('-j, --json', 'JSON 结构化输出（与 server search_sessions 回包同构：{ query, sessions }；宿主/脚本程序化消费）')
+    .action((keyword: string, options: { limit?: string; json?: boolean }) => {
       const store = getMemoryStore()
       let limit = options.limit !== undefined ? Number(options.limit) : 20
       if (!Number.isInteger(limit) || limit < 1 || limit > 100) {
@@ -2120,6 +2121,10 @@ program
         process.exit(1)
       }
       const hits = store.searchSessions(keyword, limit)
+      if (options.json) {
+        console.log(JSON.stringify({ query: keyword.trim(), sessions: hits }))
+        return
+      }
       if (hits.length === 0) {
         console.log(chalk.gray(`未找到包含「${keyword}」的会话（标题或消息内容）`))
         return
@@ -2218,9 +2223,10 @@ program
   // flare archived-sessions：查看归档会话列表（v0.6.88，与 server list_archived_sessions 对称）
   program
     .command('archived-sessions')
-    .description('查看归档会话列表（v0.6.88）')
+    .description('查看归档会话列表（v0.6.88；--json 输出 JSON 结构化 { sessions } 供宿主/脚本程序化消费，v0.6.111）')
     .option('-n, --limit <n>', '最多显示 N 个归档会话（默认 10，1~50）')
-    .action((options: { limit?: string }) => {
+    .option('-j, --json', 'JSON 结构化输出（与 server archived_sessions 回包同构：{ sessions }，含 id/title/updatedAt/preview；宿主/脚本程序化消费）')
+    .action((options: { limit?: string; json?: boolean }) => {
       const store = getMemoryStore()
       let limit = options.limit !== undefined ? Number(options.limit) : 10
       if (!Number.isInteger(limit) || limit < 1 || limit > 50) {
@@ -2228,6 +2234,17 @@ program
         process.exit(1)
       }
       const sessions = store.listArchivedSessions(limit)
+      if (options.json) {
+        console.log(JSON.stringify({
+          sessions: sessions.map((s: any) => ({
+            id: s.id,
+            title: s.title || '新会话',
+            updatedAt: s.updated_at || '',
+            preview: (s.first_user_msg || '').replace(/\s+/g, ' ').trim().slice(0, 120),
+          })),
+        }))
+        return
+      }
       if (sessions.length === 0) {
         console.log(chalk.yellow('暂无归档会话'))
         return
