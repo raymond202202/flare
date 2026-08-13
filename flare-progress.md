@@ -1,5 +1,7 @@
 # Flare 引擎迭代进度（夜间调研 agent）
 
+> **【✅ 第一百三十一轮小步】P179 (v0.6.132) flare cache-check 文本模式每轮补缓存写入观测已装机**：
+> commit `5bae532`，1174/1174 全绿、tsc 0 错误、零 agent.ts 改动（详情见下方 P179 条目）。
 > **【✅ 第一百三十一轮小步】P178 (纯文档) host-protocol.md 同步 usage perModel cacheWriteTokens 字段**：
 > commit `24dffc5`，纯文档零 src 改动、tsc 0 错误、1174/1174 全绿、无版本变化（详情见下方 P178 条目）。
 > **【✅ 第一百三十一轮小步】P177 (v0.6.131) /usage 与 usage 文本模式补缓存写入观测行 + store perModel 补 cacheWriteTokens 已装机**：
@@ -212,6 +214,32 @@
 >    terminal 退出码（v0.6.33）✓ / CLI 归档命令（v0.6.32）✓ / 归档 API（v0.6.31）✓ /
 >    工具输出治理（v0.6.30）✓ / prompt caching P0（v0.6.29）✓ / MCP 动态资源提供器（v0.6.28）✓ /
 >    confirm 描述（v0.6.27）✓
+
+---
+
+### 2026-08-14 第一百三十一轮小步（P179，v0.6.132）——flare cache-check 文本模式每轮补缓存写入观测
+
+> **P179 完成**（commit `5bae532`）：`flare cache-check` 文本模式每轮行补「缓存写入」观测——prompt caching
+> 基建深化延伸（方向①，用户拍板最高优先级），与 P177 usage 补缓存写入对称。
+> - **背景**：cache-check 每轮用量快照 `CacheCallUsage` 早已采集 `cacheWriteTokens`（v0.6.29 P0 起），且
+>   `--json` 结构化输出带 `runs[].cacheWriteTokens`，唯独**文本模式**每轮行只显示 prompt/命中/节省——首轮
+>   miss 基准的「写入量」（建立缓存的输入量）无展示，与 v0.6.131 usage 补缓存写入后的观测面不对称
+> - **实现**（src/cli/index.ts cache-check 命令 +2/-1）：每轮行追加 ` · 写入 X tokens`（>0 才显示，零写入
+>   输出逐字节不变、向后兼容；与 usage 缓存写入行同口径；写入段插在命中率百分比之后、miss 基准标注之前，
+>   观感自然：`第一轮: prompt 800 · 命中 0 tokens（0%） · 写入 650 tokens（miss 基准）`）；命令描述同步
+>   （v0.6.132 起文本模式每轮含缓存写入）
+> - **测试**：cache-check.test.ts 既有用例覆盖 runCacheCheck/cacheCheckToJson 数据层（cacheWriteTokens
+>   早已断言），文本格式改动零风险；README 命令表 cache-check 行 + Changelog v0.6.132 条目 +
+>   package.json 0.6.132
+> - **1174/1174 全绿**（76 文件；**首跑即绿无偶发**），tsc 0 错误，**零 agent.ts 改动**（Agent.run 核心循环
+>   零触碰），零 push、零敏感信息
+> - **flare 验收通过**：独立运行 tsc 0 错误 + 全量 76 文件/1174 测试全绿；逐项审查（CacheCallUsage 字段
+>   类型安全、>0 守卫向后兼容、extractUsageCache Number.isFinite 归一化防 NaN/负值崩溃、纯展示零敏感信息、
+>   Agent.run 零触碰）；唯一非阻塞观感建议（写入段与 miss 基准标注的排序，纯外观无功能影响）；结论
+>   「✅ PASS」
+> - **下一步候选**：① 【P1】分层上下文（Layer 1 异步滚动摘要——需改 Agent.run 核心循环，违反铁律跳过并记录理由）；
+>   ② 其他安全的外围增强（MCP 工具集完善、测试稳定性等）——缓存观测面（命中/写入/节省）在
+>   usage/cache-check/--json/server 协议/文档全口径闭环，prompt caching 基建观测面收官
 
 ---
 
