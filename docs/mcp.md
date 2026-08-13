@@ -108,7 +108,9 @@
 
 ### 3. 单次查询
 
-单次查询模式暂不注入 MCP 工具（交互模式 + 宿主协议已覆盖主要场景）。
+`flare chat -q "..."` 单次查询模式不把 MCP 工具注入 Agent 工具集（交互模式 + 宿主协议已覆盖注入场景）；
+CLI 直接调用 MCP 服务器走单次命令面——`flare mcp call/resources/prompts/tools/complete/connect/disconnect`
+（见下方「CLI 单次命令」章节，v0.6.6 起）。
 
 ## 宿主协议（server）接入
 
