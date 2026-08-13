@@ -1,6 +1,8 @@
 # Flare 引擎迭代进度（夜间调研 agent）
 
-> **【已发布】v0.6.115 装机完成（P145 mcp call --json 结构化输出 + P146/P147 文档同步，引导模式本机安装版，自循环）**
+> **【已发布】v0.6.116 装机完成（P148 cache-check --json 补命中率 hitRatio/runHitRatios，引导模式本机安装版，自循环）**
+> **【✅ 第一百二十轮完成】P148 (v0.6.116) cache-check --json 命中率字段已装机**：
+> commit `f63d7a8`，1085/1085 全绿、tsc 0 错误、零 agent.ts 改动（详情见下方第一百二十轮条目）。
 > **【✅ 第一百一十九轮完成】P147 (纯文档) docs/context-observability.md 同步 trim/context-status 单次命令**：
 > commit `f3fc453`，纯文档零 src 改动、tsc 0 错误、无版本变化（详情见下方第一百一十九轮条目）。
 > **【✅ 第一百一十八轮完成】P146 (纯文档) docs/mcp.md 同步外部 MCP 面 --json 能力**：
@@ -468,6 +470,60 @@
   ③ 引导 agent 补测试时自身也会踩子串误匹配这类测试 bug，定位要快（首跑失败先看 Received 实值再推断）；
   ④ 写操作命令（会删 store 消息）的端到端持久验证（CLI 进程退出后 store 核对）是验收关键，不可只看 CLI
   输出
+
+---
+
+### 2026-08-13 第一百二十轮实施（v0.6.116）——P148 flare cache-check --json 补命中率字段（装机完成，自循环）
+
+> **P148 完成**（commit `f63d7a8`）：`flare cache-check --json` 结构化输出增加 **命中率字段
+> （hitRatio / runHitRatios）**——prompt caching 验收工具程序化观测面补齐：CLI 文本模式（v0.6.79）
+> 早已显示每轮命中率百分比、/usage 命中率观测面（v0.6.49）也有，唯独 cache-check --json
+> （v0.6.48 结构化输出）没有命中率字段——宿主/CI 消费 `--json` 时只能拿到命中量 token 数，无法
+> 程序化判定缓存效率（命中率），是与文本模式及 /usage 的不对称缺口。纯外围增强（核心逻辑 +
+> 序列化 + CLI 帮助文案 + 文档），零 agent.ts 改动、零风险，且落在用户拍板最高优先级方向
+> （prompt caching 基建深化）的验收工具化延长线上。
+> - **实现**（src/core/cache-check.ts +17/-3）：
+>   - `CacheCheckResult` 新增 `hitRatio: number | null`（**末轮**命中率百分比 = cacheReadTokens /
+>     promptTokens × 100 四舍五入；promptTokens=0 或失败 → null）+ `runHitRatios: (number | null)[]`
+>     （**每轮**命中率数组，与 runs 对齐；第 i 项 = 第 i 轮命中率，失败轮/空用量轮 null）
+>   - 新增 `ratioOf(u)` 辅助函数——**与 CLI 文本模式同口径**（src/cli/index.ts cache-check action 的
+>     pct 计算 `Math.round((u.cacheReadTokens / u.promptTokens) * 100)` 逐字一致），避免除零
+>     （promptTokens > 0 才计算，否则 null）
+>   - 两个返回分支都注入新字段：失败分支（第一次调用失败 → usages 为空 → runHitRatios [null]；
+>     第二次失败 → 成功轮按实际计算、失败轮 null）与成功分支（usages.map(ratioOf)）
+>   - `cacheCheckToJson` 输出 hitRatio/runHitRatios（JSON 键名与类型注释同步）
+> - **CLI**（src/cli/index.ts cache-check 命令 -j 帮助文案 +1）：--json 说明补
+>   hitRatio/runHitRatios；文本模式与退出码语义一字不改（文本模式 pct 计算本就存在，未动）
+> - **测试**（tests/cache-check.test.ts 追加 3 用例至 22，现有用例零删改）：
+>   ① 末轮+每轮命中率（650/800 → 81、[0, 81]，JSON 同步）② 多轮对齐（640/800=80、650/800=81，
+>     中断轮 0 如实反映）③ promptTokens=0 → null 不除零 + 失败路径（第一次失败 [null]、第二次失败
+>     [0, null]）
+> - README 命令表 cache-check 行补 v0.6.116 能力说明 + Changelog v0.6.116 条目（## 版本标题在顶部，
+>   日期 2026-08-13）+ package.json 0.6.115 → 0.6.116
+> - **1085/1085 全绿**（新增 3 用例，72 文件；全量首跑即绿无偶发），tsc 0 错误，**零 agent.ts 改动**，
+>   零 push、零敏感信息（diff 敏感扫描 0 命中）；自安装完成：installed 0.6.116 = repo 0.6.116
+>   （cp -r dist 全量同步 + package.json，安装版冒烟 `version` → flare v0.6.116、`cache-check --json`
+>   fake-model 失败路径 hitRatio null/runHitRatios [null] 结构完整、**真实 API 冒烟 PASS：ok:true
+>   第二轮命中 896 tokens、hitRatio 92（896/971=92.3→92%）、runHitRatios [0, 92]**——命中率与文本
+>   模式同口径实测一致）；真实 ~/.flare 零污染（冒烟均用 FLARE_HOME 临时目录）
+> - **下一步候选**：① 【P1】分层上下文（Layer 1 异步滚动摘要——需评估 run 循环外异步，涉及
+>   agent.ts trimContext 异步化，铁律暂缓）；② 其他安全的外围增强（MCP 工具集完善、测试稳定性继续清扫等）
+> - **flare 验收结论：✅ 通过**——flare 独立运行 git log -1/git show 审查完整 diff、npx tsc 0 错误、
+>   PATH=/usr/bin:$PATH npx vitest run 72 文件 1085/1085 全绿、cache-check.test.ts 专项 22/22，
+>   逐项核对：hitRatio/runHitRatios 类型与语义（末轮/每轮、null 边界）、ratioOf 与 CLI 文本模式
+>   计算公式**逐字一致**（对照 src/cli/index.ts 文本模式 pct 行）、失败路径 [null]/[0,null] 与 runs
+>   对齐、promptTokens=0 防御、cacheCheckToJson 输出、package.json 0.6.116、README Changelog 条目、
+>   **无任何密钥明文**（全 diff 仅模型名 deepseek-chat），结论与实况完全一致（验收指令经文件读入
+>   规避 confusable 误报，P1353 先例）
+
+**引导过程记录（引导 agent 视角，实现+验收直接完成）**：
+- 本轮实现由引导 agent 直接完成（「调研→执行→flare 验收」新范式，验收环节交给 flare）
+- flare 验收延续高水准：独立全量测试 + 逐字对照核心计算与 CLI 文本模式口径（连 2184 行都指出来）
+- **教训**：① 文本模式有百分比、--json 没有的结构不对称是 --json 系列的常见缺口（P143-145 系列
+  之后又发现 cache-check 一处）——新加文本观测时须同步检查对应 --json 序列化函数；② 命中率计算
+  同口径是验收重点（核心 ratioOf 与 CLI pct 必须逐字一致），实现时直接复用同式而非复制粘贴变体；
+  ③ 失败路径的 runHitRatios 语义（第一次失败 [null] 因 usages 为空、第二次失败 [0,null]）易在
+  测试断言中写错，先跑通再断言
 
 ---
 
