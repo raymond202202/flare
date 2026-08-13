@@ -113,12 +113,21 @@ console.log(r.droppedCount, r.estimatedKeptTokens)
 }
 ```
 
-### 一键执行（v0.6.35 apply_trim / v0.6.46 CLI /trim）
+### 一键执行（v0.6.35 apply_trim / v0.6.46 CLI /trim / v0.6.103 单次命令）
 
 - **server 协议**：`apply_trim {budgetTokens, reserveForOutput?}` 或 `{keepIndexes}` → 服务器按
   suggestTrim 计算并执行 `agent.applyTrim`（内存裁剪 + store 同步删除被裁消息，重建后依然生效）
 - **CLI 交互模式**：`/trim [预算tokens]` 一键智能裁剪（缺省用当前配置 maxContextTokens）；
   `/context` 超预算时提示可裁剪条数与 `/trim` 指引——宿主/终端用户无需手工算索引
+- **CLI 单次命令 `flare trim <会话ID>`（v0.6.103，与 server apply_trim 对称）**：宿主/脚本场景的
+  非交互裁剪入口——`--budget <tokens>` 按预算智能裁剪（缺省用会话 maxContextTokens 或 16000），
+  `--keep <索引列表>` 精确裁剪（v0.6.105：逗号分隔整数或 JSON 数组，与 context-status --json 的
+  suggestion.keepIndexes **同一索引空间**，可直接程序化消费）；空 id/会话不存在或无消息/非法
+  budget/非法或越界 keep 各 exit 1，未超预算或全索引保留幂等 exit 0
+- **CLI 单次命令 `flare context-status [<会话ID>] --json`（v0.6.104，与 server context_status 同构）**：
+  输出 `{ sessionId, messageCount, estimatedTokens, suggestion? }`——`--budget N` 时附
+  `suggestion.keepIndexes`（建议保留的消息索引，含开头 system 前缀，与 trim --keep 同一索引空间）；
+  与 trim 配对形成「查看建议 → 精确执行」程序化闭环
 
 ## 引擎内部自动裁剪（v0.6.17，trimContextMessages）
 
