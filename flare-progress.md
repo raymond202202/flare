@@ -1,10 +1,13 @@
 # Flare 引擎迭代进度（夜间调研 agent）
 
-> **【已发布】v0.6.112 装机完成（P142 models --json 结构化输出，引导模式本机安装版，自循环）**
+> **【已发布】v0.6.113 装机完成（P143 mcp resources/prompts/tools --json 结构化输出，引导模式本机安装版，自循环）**
+> **【✅ 第一百一十五轮完成】P143 (v0.6.113) mcp resources/prompts/tools --json 已装机**：
+> commit 待填，1074/1074 全绿、tsc 0 错误、零 agent.ts 改动（详情见下方第一百一十五轮条目）。
 > **【✅ 第一百一十四轮完成】测试稳定性修复**：commit `8818cc6`，消除 P142 装机时记录的
 > server-default-params chat 偶发超时（5000ms）——it() 补 45000ms vitest 超时与 request 助手对齐，
 > 纯测试层零 src/agent.ts 改动，1069/1069 全绿、tsc 0 错误（无版本变化，P123 先例）。
-> 上一版 v0.6.111 装机完成（P141 search/archived-sessions --json 结构化输出，引导模式本机安装版，自循环）
+> 上一版 v0.6.112 装机完成（P142 models --json 结构化输出，引导模式本机安装版，自循环）
+> 再上一版 v0.6.111 装机完成（P141 search/archived-sessions --json 结构化输出，引导模式本机安装版，自循环）
 > 再上一版 v0.6.110 装机完成（P140 search-messages --json 结构化输出，引导模式本机安装版，自循环）
 
 > 目标：flare 是 Pulse/StorySpire 依赖的 AI Agent 引擎（TS）。任何改动必须安全（tsc 0 错 + 测试全绿才 commit）。
@@ -457,6 +460,38 @@
   ③ 引导 agent 补测试时自身也会踩子串误匹配这类测试 bug，定位要快（首跑失败先看 Received 实值再推断）；
   ④ 写操作命令（会删 store 消息）的端到端持久验证（CLI 进程退出后 store 核对）是验收关键，不可只看 CLI
   输出
+
+---
+
+### 2026-08-13 第一百一十五轮实施（v0.6.113）——P143 flare mcp resources/prompts/tools --json 结构化输出（装机完成）
+
+> **P143 完成**（commit 见下）：外部 MCP 服务器查看类单次命令增加 **--json 结构化输出**——与 server 协议
+> **mcp_resources / mcp_prompts / mcp_tools / mcp_read_resource / mcp_get_prompt 回包完全同构**（不带 type
+> 包装），宿主/脚本可程序化消费外部 MCP 服务器的资源/提示词/工具清单。这是 CLI 只读命令 --json 系列
+> （usage/messages/models/sessions/context-status/tools/config/version/ping/mcp status/cache-check/
+> memories/search-messages/search/archived-sessions/confirm-status）收官后的**外部 MCP 面补全**——server 协议
+> 侧 mcp_resources/mcp_prompts/mcp_tools/mcp_read_resource/mcp_get_prompt 早已结构化，CLI 单次命令此前只能
+> 文本展示，宿主脚本无法直接消费。纯只读增强，风险极低，零 agent.ts 改动。
+> - **实现**（src/cli/index.ts mcp resources/prompts/tools 三命令块 +42/-2）：
+>   - `mcp resources`：`.option('--json')`；列表模式输出 `{ server, resources, templates }`（直连客户端
+>     同时取 resources/list + resources/templates/list，空数组结构稳定）与 server mcp_resources 回包
+>     servers[].resources/.templates 同构；`--read` 模式输出 `{ server, uri, contents }` 与 mcp_read_resource
+>     同构；只打印 JSON 不混彩色；文本模式与退出码语义一字不改
+>   - `mcp prompts`：`.option('--json')`；列表模式输出 `{ server, prompts }` 与 server mcp_prompts 同构；
+>     `--get` 模式输出 `{ server, prompt, description?, messages }`（description 缺省省略）与 mcp_get_prompt 同构
+>   - `mcp tools`：`.option('--json')`；输出 `{ server, tools }`（McpTool 原始项含 name/description/inputSchema）
+>     与 server mcp_tools 同构
+> - **测试**（tests/mcp-cli-call.test.ts 追加 5 用例，spawn dist CLI + 真实 HTTP MCP 服务器）：
+>   resources --json 结构（server/resources/templates 空数组）/ resources --read --json（contents 内容）/
+>   prompts --json（name/description/arguments 元数据）/ prompts --get --json（渲染 messages 与 server 同构）/
+>   tools --json（含 inputSchema）；**现有用例零删改**
+> - README CLI 命令摘要表 mcp resources/prompts/tools 三行补 --json 能力说明 + Changelog v0.6.113 条目 +
+>   package.json 版本 0.6.112 → 0.6.113；安装版 ~/.flare/install dist + package.json 同步
+> - **验证**：tsc 0 错误；**1074/1074 全绿**（72 文件，+5 新增）；装机版冒烟 server stdin ping → pong +
+>   `mcp tools self --json`（6 工具，首工具 read_file）/ `mcp resources self --json`（0/0 空数组）/
+>   `mcp prompts self --json`（空数组）实测通过
+> - **下一步候选**：① 【P1】分层上下文（Layer 1 异步滚动摘要——需评估 run 循环外异步）；② 其他安全的外围
+>   增强（MCP 工具集完善、测试稳定性继续清扫等）
 
 ---
 
