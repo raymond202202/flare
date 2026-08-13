@@ -1,5 +1,8 @@
 # Flare 引擎迭代进度（夜间调研 agent）
 
+> **【已发布】v0.6.119 装机完成（P152 交互式 /mcp call 统一复用 mcpContentToText 第四层收官，引导模式本机安装版，自循环）**
+> **【✅ 第一百二十三轮完成】P152 (v0.6.119) 交互式 /mcp call 统一复用 mcpContentToText 已装机**：
+> commit `8618c70`，1108/1108 全绿、tsc 0 错误、零 agent.ts 改动（详情见下方第一百二十三轮条目）。
 > **【已发布】v0.6.118 装机完成（P151 server mcp_call 回包统一复用 mcpContentToText，引导模式本机安装版，自循环）**
 > **【✅ 第一百二十二轮完成】P151 (v0.6.118) server mcp_call 回包统一复用 mcpContentToText 已装机**：
 > commit `09bc5fb`，1105/1105 全绿、tsc 0 错误、零 agent.ts 改动（详情见下方第一百二十二轮条目）。
@@ -627,6 +630,60 @@
   ② 安全设计要点：二进制（image/audio 的 data、resource 的 blob）只输出占位描述不含 base64
   明文——既防上下文 token 膨胀也防敏感数据回显；③ rich/struct-only 用 MOCK_MODE 环境变量控制
   fixture 返回，不动工具列表（工具数断言零影响），是扩展 mock 服务器行为的安全模式
+
+---
+
+### 2026-08-14 第一百二十三轮实施（v0.6.119）——P152 交互式 /mcp call 统一复用 mcpContentToText（装机完成，自循环）
+
+> **P152 完成**（commit `8618c70`）：**CLI 交互命令 `/mcp call` 输出提取与 P150/P151 同口径收官**——
+> `src/cli/index.ts` handleSlashCommand 的 `/mcp call` 分支（交互会话内调用已连接 MCP 服务器工具，
+> v0.6.41 引入）此前仍是内联 `content.filter(type === 'text')` 提取（只取 text），与 v0.6.117 新增的
+> `mcpContentToText` 纯函数**不同口径**——交互会话内调 MCP 工具的非 text 内容（image/audio/resource）
+> 与 `structuredContent`（2025-06-18 结构化返回）仍会静默丢失。P151 教训明言「新引入统一纯函数后须
+> **全库搜索旧的内联 filter 变体**」——P150 改工具桥+CLI 单次命令、P151 改 server.ts，交互命令是
+> **第四处（也是最后一处）遗漏**：`grep content.filter((c) => c.type === 'text'` 全库 src 已零命中。
+> 纯外围增强（cli 替换 2 行 + 测试 3 用例 + 文档），零 agent.ts 改动、零风险，落在「MCP 工具集完善」
+> 方向（P150/P151 同源续作）。
+> - **实现**（src/cli/index.ts -3/+2）：`/mcp call` 分支内容提取替换为
+>   `mcpContentToText(res.content, res.structuredContent)`——与 createMcpTools（src/tools/mcp.ts:106）、
+>   CLI 单次命令 mcp call（src/cli/index.ts:1720）、server mcp_call（src/server.ts:1192）**四层同口径**
+>   （同一纯函数）；isError 分支 `text || '（无错误信息）'` 保持；mcpContentToText 已在本文件顶部
+>   import（零新 import）
+> - **测试**（tests/mcp-command.test.ts 追加 3 用例 + makeHooks callData 类型扩展
+>   `structuredContent?: unknown` + content 类型放宽 McpContentItem[]）：
+>   ① rich 模式（text+image+audio+resource 混合）：交互输出含占位描述（`[图片 mimeType: image/png,
+>   数据 16 字符]` / `[音频 mimeType: audio/wav, 数据 16 字符]` / `[资源 uri: file:///tmp/a.txt
+>   mimeType: text/plain]` + resource 短 text 附上）且**绝不含 base64 明文**（`aGVsbG8taW1hZ2U=` /
+>   `YXVkaW8tZGF0YQ==` 零命中——安全铁律测试化）；② 空 content + structuredContent → JSON 兜底
+>   （`{"result":"ok","count":3,"tags":["a","b"]}`）；③ 非 text isError → 占位描述作失败信息
+>   （base64 零泄漏）
+> - README Changelog v0.6.119 条目 + docs/mcp.md 交互命令章节（/mcp call 行补非 text 同口径说明）
+>   + package.json 0.6.118 → 0.6.119
+> - **1108/1108 全绿**（新增 3 用例，73 文件；基线 1105 + 3；全量首跑即绿无偶发），tsc 0 错误，
+>   **零 agent.ts 改动**，零 push、零敏感信息（diff 敏感扫描 0 命中）；已 commit `8618c70`
+>   （5 文件 +81/-8）；dist 重编译携带 0.6.119
+> - **下一步候选**：① 【P1】分层上下文（Layer 1 异步滚动摘要——需评估 run 循环外异步，涉及
+>   agent.ts trimContext 异步化，铁律暂缓）；② 其他安全的外围增强（MCP 消费面非 text 处理已
+>   **四层闭环收官**（工具桥/CLI 单次/server/交互）；McpManager.callTool 直接透传原始 McpCallResult
+>   无需提取；测试稳定性继续清扫等）
+> - **flare 验收结论：✅ 通过**——flare 独立运行 git log -1/git show 审查完整 diff，逐项核对
+>   四层同口径位置（tools/mcp.ts:106 / cli/index.ts:1720 / server.ts:1192 / cli/index.ts:946 本次）、
+>   交互命令替换语义、makeHooks 类型扩展与 3 用例、README/docs/版本号同步；独立跑 npx tsc 0 错误 +
+>   PATH=/usr/bin:$PATH npx vitest run 全量 73 文件 **1108/1108 全绿**；安全核对 base64 明文零泄漏
+>   （`not.toContain('aGVsbG8taW1hZ2U=')` 守住底线）、纯 text 与旧版逐字一致；全程零修改零 commit，
+>   输出无任何密钥明文；结论与实况完全一致（验收指令经文件读入规避 confusable 误报，P150/P151 先例）
+
+**引导过程记录（引导 agent 视角，实现+验收直接完成）**：
+- 本轮实现由引导 agent 直接完成（「调研→执行→flare 验收」新范式，验收环节交给 flare）
+- 调研切入点：P151 教训「全库搜索旧的内联 filter 变体」→ grep 全库发现 src/cli/index.ts:946
+  交互 `/mcp call` 是第四处遗漏（P150/P151 只覆盖工具桥/CLI 单次/server 三层）
+- flare 验收一次通过：四层同口径逐项核对 + 独立全量 1108/1108 + base64 零泄漏安全核对
+- **教训**：① 「全库搜索旧变体」的教训要执行到位——P151 记录后本轮第一时间 grep 确认，果然
+  交互命令是漏网之鱼（P150/P151 的记录都写了「三层」，实际消费面有四层：工具桥/CLI 单次/server/
+  交互命令）；② 交互命令测试用 handleSlashCommand 纯逻辑注入（makeHooks callData 扩展
+  structuredContent）即可覆盖，无需 spawn dist e2e——与 P150 的 CLI e2e 测试互补，成本更低；
+  ③ 版本号注释（v0.6.119）与 docs/mcp.md 同步是收尾三件套（README 表 + Changelog + docs 专项）
+  的延续
 
 ---
 
