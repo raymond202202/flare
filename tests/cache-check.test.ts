@@ -310,4 +310,68 @@ describe('runCacheCheck（v0.6.45）', () => {
     expect(parsed.runs[2].cacheReadTokens).toBe(650)
     expect(parsed.second.cacheReadTokens).toBe(650)
   })
+
+  it('命中率百分比（v0.6.116）：hitRatio 末轮 + runHitRatios 每轮（与 CLI 文本模式同口径四舍五入）', async () => {
+    const { llm } = makeFake([
+      { model: 'deepseek-chat', usage: { prompt_tokens: 800, completion_tokens: 10, prompt_cache_hit_tokens: 0 } },
+      { model: 'deepseek-chat', usage: { prompt_tokens: 800, completion_tokens: 10, prompt_cache_hit_tokens: 650 } },
+    ])
+    const r = await runCacheCheck(llm)
+    // 650/800 = 81.25 → 81%；基准轮 0/800 = 0%
+    expect(r.hitRatio).toBe(81)
+    expect(r.runHitRatios).toEqual([0, 81])
+    const parsed = JSON.parse(cacheCheckToJson(r))
+    expect(parsed.hitRatio).toBe(81)
+    expect(parsed.runHitRatios).toEqual([0, 81])
+  })
+
+  it('命中率百分比（v0.6.116）：多轮时与 runs 对齐（命中轮 >0、中断轮 0）', async () => {
+    const { llm } = makeFake([
+      { model: 'deepseek-chat', usage: { prompt_tokens: 800, completion_tokens: 10, prompt_cache_hit_tokens: 0 } },
+      { model: 'deepseek-chat', usage: { prompt_tokens: 800, completion_tokens: 10, prompt_cache_hit_tokens: 640 } },
+      { model: 'deepseek-chat', usage: { prompt_tokens: 800, completion_tokens: 10, prompt_cache_hit_tokens: 650 } },
+    ])
+    const r = await runCacheCheck(llm, { rounds: 3 })
+    expect(r.runHitRatios).toEqual([0, 80, 81]) // 640/800=80%、650/800=81.25→81%
+    expect(r.hitRatio).toBe(81)
+    // 中断场景：第 3 轮 miss → ok:false，命中率如实反映（末轮 0）
+    const miss = await runCacheCheck(makeFake([
+      { model: 'deepseek-chat', usage: { prompt_tokens: 800, completion_tokens: 10, prompt_cache_hit_tokens: 0 } },
+      { model: 'deepseek-chat', usage: { prompt_tokens: 800, completion_tokens: 10, prompt_cache_hit_tokens: 640 } },
+      { model: 'deepseek-chat', usage: { prompt_tokens: 800, completion_tokens: 10, prompt_cache_hit_tokens: 0 } },
+    ]).llm, { rounds: 3 })
+    expect(miss.ok).toBe(false)
+    expect(miss.hitRatio).toBe(0)
+    expect(miss.runHitRatios).toEqual([0, 80, 0])
+  })
+
+  it('命中率百分比（v0.6.116）：promptTokens=0 → null（避免除零）；失败路径同样 null', async () => {
+    // promptTokens=0（异常空用量）→ hitRatio null，不抛错
+    const { llm } = makeFake([
+      { model: 'deepseek-chat', usage: { prompt_tokens: 0, completion_tokens: 0, prompt_cache_hit_tokens: 0 } },
+      { model: 'deepseek-chat', usage: { prompt_tokens: 0, completion_tokens: 0, prompt_cache_hit_tokens: 0 } },
+    ])
+    const r = await runCacheCheck(llm)
+    expect(r.hitRatio).toBeNull()
+    expect(r.runHitRatios).toEqual([null, null])
+    const parsed = JSON.parse(cacheCheckToJson(r))
+    expect(parsed.hitRatio).toBeNull()
+    expect(parsed.runHitRatios).toEqual([null, null])
+    // 失败路径：第一次调用失败 → usages 为空、失败轮 null（第二次调用不会执行）
+    const fail = await runCacheCheck(makeFake([
+      { error: new Error('401 api key 无效') },
+      { model: 'deepseek-chat', usage: { prompt_tokens: 800, completion_tokens: 10, prompt_cache_hit_tokens: 600 } },
+    ]).llm)
+    expect(fail.ok).toBe(false)
+    expect(fail.hitRatio).toBeNull()
+    expect(fail.runHitRatios).toEqual([null])
+    // 失败路径：第二次调用失败 → 第一轮成功按实际计算、失败轮 null
+    const fail2 = await runCacheCheck(makeFake([
+      { model: 'deepseek-chat', usage: { prompt_tokens: 800, completion_tokens: 10, prompt_cache_hit_tokens: 0 } },
+      { error: new Error('网络超时') },
+    ]).llm)
+    expect(fail2.ok).toBe(false)
+    expect(fail2.hitRatio).toBe(0) // 最后成功轮为基准轮
+    expect(fail2.runHitRatios).toEqual([0, null])
+  })
 })

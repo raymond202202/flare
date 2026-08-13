@@ -37,6 +37,12 @@ export interface CacheCheckResult {
   detail: string
   /** 命中量（最后一轮 cache_read_tokens） */
   hitTokens: number
+  /** 命中率百分比（最后一轮 cache_read_tokens / prompt_tokens × 100，四舍五入；promptTokens=0 或失败 → null；v0.6.116）
+   *  与 CLI 文本模式（v0.6.79）及 /usage 命中率观测面对称，宿主/CI 消费 --json 时可程序化判定缓存效率 */
+  hitRatio: number | null
+  /** 每轮命中率百分比（v0.6.116：与 runs 对齐；第 i 项 = 第 i 轮 cacheReadTokens/promptTokens × 100，
+   *  promptTokens=0 或调用失败轮 → null；基准轮未命中通常为 0） */
+  runHitRatios: (number | null)[]
   /** 估算节省成本 USD（命中部分按命中价计 vs 未命中价；模型无法定价时为 null） */
   savedUsd: number | null
   /** 每轮节省明细（v0.6.76：与 runs 对齐；第 i 项 = 第 i+1 轮 miss 价 − hit 价，
@@ -87,6 +93,10 @@ export async function runCacheCheck(llm: LLMProvider = createProvider(), opts: {
 
   const zero = (): CacheCallUsage => ({ promptTokens: 0, completionTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 })
 
+  /** 单轮命中率百分比（v0.6.116）：promptTokens=0 → null（无法计算，避免除零）；与 CLI 文本模式同口径四舍五入 */
+  const ratioOf = (u: CacheCallUsage): number | null =>
+    u.promptTokens > 0 ? Math.round((u.cacheReadTokens / u.promptTokens) * 100) : null
+
   // 逐轮调用：第 1 轮建立缓存（miss 基准），第 2..N 轮期望命中；任一轮失败 → ok:false 不抛
   const usages: CacheCallUsage[] = []
   let model = ''
@@ -105,6 +115,8 @@ export async function runCacheCheck(llm: LLMProvider = createProvider(), opts: {
         runs: [...usages, zero()],
         detail: `${failLabel}调用失败: ${(e?.message || String(e)).slice(0, 200)}`,
         hitTokens: 0,
+        hitRatio: usages.length > 0 ? ratioOf(usages[usages.length - 1]) : null,
+        runHitRatios: [...usages.map(ratioOf), null],
         savedUsd: null,
         runSavedUsd: [...usages.map(() => null), null],
       }
@@ -172,6 +184,8 @@ export async function runCacheCheck(llm: LLMProvider = createProvider(), opts: {
     runs: usages,
     detail: detailWithDiag,
     hitTokens,
+    hitRatio: ratioOf(last),
+    runHitRatios: usages.map(ratioOf),
     savedUsd,
     runSavedUsd,
   }
@@ -181,9 +195,10 @@ export async function runCacheCheck(llm: LLMProvider = createProvider(), opts: {
  * 把验收结果序列化为 JSON（v0.6.48，宿主/CI 程序化消费用——`cache-check --json`；
  * v0.6.54 起含 rounds 与 runs 多轮快照）。
  *
- * 结构化字段与 CacheCheckResult 一致：ok / model / hitTokens / savedUsd / detail /
- * rounds / runs / first / second（各含 promptTokens/completionTokens/cacheReadTokens/
- * cacheWriteTokens；v0.6.76 起含 runSavedUsd 每轮节省明细）。纯函数不触网、不读密钥；
+ * 结构化字段与 CacheCheckResult 一致：ok / model / hitTokens / hitRatio / runHitRatios /
+ * savedUsd / detail / rounds / runs / first / second（各含 promptTokens/completionTokens/
+ * cacheReadTokens/cacheWriteTokens；v0.6.76 起含 runSavedUsd 每轮节省明细；v0.6.116 起含
+ * hitRatio 末轮命中率与 runHitRatios 每轮命中率）。纯函数不触网、不读密钥；
  * CLI 只负责打印与 exit code（ok → 0，未命中/失败 → 1）。
  */
 export function cacheCheckToJson(r: CacheCheckResult): string {
@@ -192,6 +207,8 @@ export function cacheCheckToJson(r: CacheCheckResult): string {
       ok: r.ok,
       model: r.model,
       hitTokens: r.hitTokens,
+      hitRatio: r.hitRatio,
+      runHitRatios: r.runHitRatios,
       savedUsd: r.savedUsd,
       detail: r.detail,
       rounds: r.rounds,

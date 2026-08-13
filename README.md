@@ -182,7 +182,7 @@ cp .env.example ~/.flare/.env
 | `flare mcp prompts <服务器> [--get <名称>]` | 查看/渲染 MCP 服务器暴露的提示词（--json 结构化输出（列表 `{ server, prompts }` 与 server mcp_prompts 回包同构；--get `{ server, prompt, description?, messages }` 与 mcp_get_prompt 同构）v0.6.113；v0.6.10） |
 | `flare mcp tools <服务器>` | 查看 MCP 服务器暴露的工具清单（--json 结构化输出（`{ server, tools }` 与 server mcp_tools 回包同构）v0.6.113；v0.6.59） |
 | `flare mcp complete <服务器> <提示词> <参数> [前缀]` | 请求 MCP 服务器提示词参数补全候选（--json 结构化输出（`{ server, prompt, argument, value?, values, total?, hasMore? }` 与 server mcp_complete 回包同构，空候选 `{ values: [] }` 合法 JSON exit 0）v0.6.114；v0.6.60） |
-| `flare cache-check [--model <模型>] [--json] [--rounds <N>]` | prompt caching 验收：连续两轮调用验证第二轮 cache_read_tokens > 0（v0.6.45；v0.6.48 起 --json 结构化输出供宿主/CI 消费；v0.6.54 起 --rounds 2~5 多轮连续命中验收；v0.6.75 起多轮 savedUsd 累加所有命中轮；v0.6.76 起 --json/输出含 runSavedUsd 每轮节省明细；v0.6.78 起基准轮命中带残留缓存诊断；v0.6.79 起每轮命中率百分比） |
+| `flare cache-check [--model <模型>] [--json] [--rounds <N>]` | prompt caching 验收：连续两轮调用验证第二轮 cache_read_tokens > 0（v0.6.45；v0.6.48 起 --json 结构化输出供宿主/CI 消费；v0.6.54 起 --rounds 2~5 多轮连续命中验收；v0.6.75 起多轮 savedUsd 累加所有命中轮；v0.6.76 起 --json/输出含 runSavedUsd 每轮节省明细；v0.6.78 起基准轮命中带残留缓存诊断；v0.6.79 起每轮命中率百分比；v0.6.116 起 --json 含 hitRatio 末轮命中率与 runHitRatios 每轮命中率（与文本模式同口径四舍五入，promptTokens=0 或失败轮 null）） |
 
 交互模式命令：
 
@@ -365,6 +365,10 @@ Interactive mode commands:
 | `/exit` | Exit |
 
 ### Changelog / Release Notes
+
+## v0.6.116（2026-08-13）
+- ✨ **`flare cache-check --json` 增加命中率字段（hitRatio / runHitRatios）**：prompt caching 验收结构化输出补齐命中率观测——`hitRatio`（末轮 cache_read_tokens / prompt_tokens × 100，四舍五入，promptTokens=0 或失败 → null）+ `runHitRatios`（每轮命中率数组，与 runs 对齐）；与 CLI 文本模式（v0.6.79 每轮命中率百分比）及 /usage 命中率观测面完全同口径，宿主/CI 消费 `--json` 时可程序化判定缓存效率（此前文本模式有百分比、--json 没有，是不对称缺口）；文本模式与退出码语义完全不变
+- prompt caching 验收工具程序化观测面补齐（v0.6.48 --json 结构 → v0.6.54 rounds/runs → v0.6.76 runSavedUsd → 本版 hitRatio/runHitRatios，宿主可同时按命中量/命中率/节省三视角判定）
 
 ## v0.6.115（2026-08-13）
 - ✨ **`flare mcp call` 增加 `--json` 结构化输出**：外部 MCP 服务器工具调用命令程序化收官——输出 `{ server, tool, success, error?, output }` 与 server `mcp_call` 回包完全同构（不带 type 包装；error 仅在工具级失败时携带）；成功 → exit 0，工具级失败（isError）→ `{ success:false, error }` 合法 JSON 且 **exit 1**（脚本可同时按 stdout JSON 与退出码判断）；无文本输出 → `{ output: "" }` success:true exit 0（不打印「无文本输出」兜底）；`-j` 短选项等价；只打印 JSON 不混彩色；文本模式与退出码语义完全不变
