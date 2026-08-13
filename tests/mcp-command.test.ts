@@ -10,7 +10,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { MemoryStore } from '../src/memory/store.js'
 import { handleSlashCommand, type McpCommandHooks } from '../src/cli/index.js'
-import type { McpServerStatus, McpResourceRef, McpResourceTemplateRef, McpPromptRef, McpToolRef } from '../src/mcp/types.js'
+import type { McpServerStatus, McpResourceRef, McpResourceTemplateRef, McpPromptRef, McpToolRef, McpContentItem } from '../src/mcp/types.js'
 
 let store: MemoryStore
 let dir: string
@@ -32,7 +32,7 @@ function makeHooks(
   promptData: McpPromptRef[] = [],
   readData: Record<string, { uri: string; mimeType?: string; text: string }[]> = {},
   renderData: Record<string, { description?: string; messages: { role: 'user' | 'assistant'; content: { type: 'text'; text: string } }[] }> = {},
-  callData: Record<string, { isError?: boolean; content: { type: string; text?: string }[] }> = {},
+  callData: Record<string, { isError?: boolean; content: McpContentItem[]; structuredContent?: unknown }> = {},
   completeData: Record<string, { values: string[]; total?: number; hasMore?: boolean }> = {},
   toolData: McpToolRef[] = [],
 ): {
@@ -696,6 +696,74 @@ describe('/mcp 命令', () => {
     const r = await handleSlashCommand('/mcp call mock echo_text', store, (s) => lines.push(s), undefined, legacy)
     expect(r).toBe('continue')
     expect(lines.join('\n')).toContain('未提供工具调用')
+  })
+
+  // ===== v0.6.119 非 text 内容（与 createMcpTools/CLI mcp call/server mcp_call 同口径）=====
+  it('/mcp call 非 text 内容（image/audio/resource）→ 占位描述且不含 base64 明文（v0.6.119 同口径）', async () => {
+    const lines: string[] = []
+    const { hooks } = makeHooks(
+      [{ name: 'mock', connected: true, toolCount: 3 }],
+      undefined, undefined, undefined, undefined,
+      {
+        'mock:rich_tool': {
+          content: [
+            { type: 'text', text: '分析结果' },
+            { type: 'image', mimeType: 'image/png', data: 'aGVsbG8taW1hZ2U=' },
+            { type: 'audio', mimeType: 'audio/wav', data: 'YXVkaW8tZGF0YQ==' },
+            { type: 'resource', resource: { uri: 'file:///tmp/a.txt', mimeType: 'text/plain', text: '文件内容' } },
+          ],
+        },
+      },
+    )
+    const r = await handleSlashCommand('/mcp call mock rich_tool', store, (s) => lines.push(s), undefined, hooks)
+    expect(r).toBe('continue')
+    const text = lines.join('\n')
+    expect(text).toContain('分析结果')
+    expect(text).toContain('[图片 mimeType: image/png, 数据 16 字符]')
+    expect(text).toContain('[音频 mimeType: audio/wav, 数据 16 字符]')
+    expect(text).toContain('[资源 uri: file:///tmp/a.txt mimeType: text/plain]')
+    expect(text).toContain('文件内容')
+    // 安全铁律：base64 明文零泄漏
+    expect(text).not.toContain('aGVsbG8taW1hZ2U=')
+    expect(text).not.toContain('YXVkaW8tZGF0YQ==')
+  })
+
+  it('/mcp call 空 content + structuredContent → JSON 兜底（v0.6.119 同口径）', async () => {
+    const lines: string[] = []
+    const { hooks } = makeHooks(
+      [{ name: 'mock', connected: true, toolCount: 3 }],
+      undefined, undefined, undefined, undefined,
+      {
+        'mock:struct_tool': {
+          content: [],
+          structuredContent: { result: 'ok', count: 3, tags: ['a', 'b'] },
+        },
+      },
+    )
+    const r = await handleSlashCommand('/mcp call mock struct_tool', store, (s) => lines.push(s), undefined, hooks)
+    expect(r).toBe('continue')
+    const text = lines.join('\n')
+    expect(text).toContain('{"result":"ok","count":3,"tags":["a","b"]}')
+  })
+
+  it('/mcp call 非 text isError → 占位描述作失败信息（v0.6.119 同口径）', async () => {
+    const lines: string[] = []
+    const { hooks } = makeHooks(
+      [{ name: 'mock', connected: true, toolCount: 3 }],
+      undefined, undefined, undefined, undefined,
+      {
+        'mock:rich_fail': {
+          isError: true,
+          content: [{ type: 'image', mimeType: 'image/png', data: 'aGVsbG8taW1hZ2U=' }],
+        },
+      },
+    )
+    const r = await handleSlashCommand('/mcp call mock rich_fail', store, (s) => lines.push(s), undefined, hooks)
+    expect(r).toBe('continue')
+    const text = lines.join('\n')
+    expect(text).toContain('执行失败')
+    expect(text).toContain('[图片 mimeType: image/png, 数据 16 字符]')
+    expect(text).not.toContain('aGVsbG8taW1hZ2U=')
   })
 
   it('/mcp complete <server> <prompt> <argument> [value] → 显示补全候选（代理转发 completePrompt）', async () => {
