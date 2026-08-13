@@ -1113,8 +1113,28 @@ export async function handleSlashCommand(
   }
 
   // /memory 列出全部记忆；/memory <关键词> 全文搜索记忆（v0.6.25：与 /search 对称，FTS5 中文友好）
+  // /memory similar 检测相似记忆对（v0.6.123：交互面对称补齐单次命令 memories --similar）
   if (lower === '/memory' || lower.startsWith('/memory ')) {
     const kw = cmd.replace(/^\/memory(?:\s+|$)/, '').trim()
+    if (kw === 'similar' || kw === '--similar') {
+      const pairs = (typeof (store as any).findSimilarMemories === 'function')
+        ? (store as any).findSimilarMemories({})
+        : []
+      if (pairs.length === 0) {
+        output(chalk.gray('\n未发现相似记忆（阈值 0.4；/memory similar 可检测重复/近似记忆，v0.6.123）'))
+      } else {
+        output(chalk.cyan(`\n🔍 相似记忆（${pairs.length} 对，阈值 0.4）:`))
+        for (const p of pairs) {
+          const a = String(p.contentA).replace(/\s+/g, ' ').trim().slice(0, 60)
+          const b = String(p.contentB).replace(/\s+/g, ' ').trim().slice(0, 60)
+          output(`  ${chalk.gray(`#${p.idA} ↔ #${p.idB}`)} ${chalk.yellow('相似度 ' + (Math.round(p.similarity * 100) / 100).toFixed(2))}:`)
+          output(`    ${a || '[空内容]'}`)
+          output(`    ${b || '[空内容]'}`)
+        }
+        output(chalk.gray('  提示: /forget <关键词> 可删除重复记忆（如 /forget 美式咖啡）'))
+      }
+      return 'continue'
+    }
     const memories = kw
       ? store.searchMemories(kw, 10)
       : store.getAllMemories()
@@ -1211,7 +1231,7 @@ export async function handleSlashCommand(
       output(chalk.cyan('\n可用命令:'))
       output('  /help        - 显示帮助')
       output('  /exit        - 退出')
-      output('  /memory [关键词] - 查看记忆；带关键词全文搜索记忆（v0.6.25）')
+      output('  /memory [关键词] - 查看记忆；带关键词全文搜索记忆（v0.6.25）；/memory similar 检测相似记忆对（v0.6.123）')
       output('  /search <关键词> - 搜索历史对话（跨会话，v0.6.24）')
       output('  /remember    - 保存一条记忆（如: /remember 用户喜欢浅色主题）')
       output('  /forget      - 删除记忆（如: /forget 浅色主题，删除包含该关键词的记忆）')

@@ -368,6 +368,9 @@ Interactive mode commands:
 
 ### Changelog / Release Notes
 
+## v0.6.123（2026-08-14）
+- ✨ **交互命令 `/memory similar`（记忆去重检测面交互入口）**：交互模式可检测重复/近似记忆对——与单次命令 `flare memories --similar`（v0.6.121）同源（`MemoryStore.findSimilarMemories`，默认阈值 0.4）；显示 `#idA ↔ #idB 相似度 X.XX` + 内容截断 + `/forget` 删除提示；`/memory --similar` 等价别名；`/help` 同步
+
 ## v0.6.122（2026-08-14）
 - ✨ **server 协议 `find_similar_memories` 接口（记忆去重检测面协议口）**：宿主（Pulse/StorySpire 等非 Node 宿主）经宿主协议消费记忆相似度检测——与 `MemoryStore.findSimilarMemories`（v0.6.121 store 层）同源，宿主面板可程序化发现重复/近似记忆后自行决定是否 `delete_memory` 清理（自动合并/摘要留后续候选）。请求 `{ type: "find_similar_memories", threshold?, limit? }`（threshold 可选 0~1 默认 0.4、limit 可选 1~100 默认 20，非法回 error 含提示）；响应 `{ type: "similar_memories", threshold, pairs }`（pairs 含 idA/idB/contentA/contentB/similarity，idA < idB 不重复、按相似度降序）；**纯只读不生成不删除**
 - 测试（server.test.ts 追加 4 用例）：检出重复/近似对（超集模式 ≈0.46 ≥ 0.4、无关记忆不参与、idA<idB 降序）/ threshold 0.9 过滤空 + limit 1 限量 / 空库空 pairs 幂等 / 参数校验（threshold -1/1.5/abc、limit 0/101/abc 回 error 含提示）

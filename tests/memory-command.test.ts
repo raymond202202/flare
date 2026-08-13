@@ -71,4 +71,52 @@ describe('/memory 命令', () => {
     await handleSlashCommand('/help', store, (s) => lines.push(s))
     expect(lines.join('\n')).toContain('/memory')
   })
+
+  it('/memory similar → 检测近似记忆对（文本显示 id 对与相似度）', async () => {
+    store.saveMemory('用户偏好浅色主题', 'preference')
+    store.saveMemory('用户偏好浅色主题，还喜欢极简风', 'preference')
+    store.saveMemory('香蕉营养价值很高', 'note')
+    const lines: string[] = []
+    const r = await handleSlashCommand('/memory similar', store, (s) => lines.push(s))
+    expect(r).toBe('continue')
+    const out = lines.join('\n')
+    expect(out).toContain('相似记忆（')
+    expect(out).toContain('#1 ↔ #2')
+    expect(out).toContain('相似度 0.46')
+    expect(out).toContain('用户偏好浅色主题')
+    expect(out).not.toContain('香蕉营养价值很高')
+    // 提示删除入口
+    expect(out).toContain('/forget')
+  })
+
+  it('/memory --similar 等价（别名）', async () => {
+    store.saveMemory('用户偏好浅色主题', 'note')
+    store.saveMemory('用户偏好浅色主题，还喜欢极简风', 'note')
+    const lines: string[] = []
+    const r = await handleSlashCommand('/memory --similar', store, (s) => lines.push(s))
+    expect(r).toBe('continue')
+    expect(lines.join('\n')).toContain('相似记忆（')
+  })
+
+  it('/memory similar 无相似对 → 「未发现相似记忆」', async () => {
+    store.saveMemory('苹果的营养价值', 'note')
+    store.saveMemory('香蕉的种植技巧', 'note')
+    const lines: string[] = []
+    const r = await handleSlashCommand('/memory similar', store, (s) => lines.push(s))
+    expect(r).toBe('continue')
+    expect(lines.join('\n')).toContain('未发现相似记忆')
+  })
+
+  it('/memory similar 空库 → 「未发现相似记忆」', async () => {
+    const lines: string[] = []
+    const r = await handleSlashCommand('/memory similar', store, (s) => lines.push(s))
+    expect(r).toBe('continue')
+    expect(lines.join('\n')).toContain('未发现相似记忆')
+  })
+
+  it('/help 包含 /memory similar 说明（v0.6.123）', async () => {
+    const lines: string[] = []
+    await handleSlashCommand('/help', store, (s) => lines.push(s))
+    expect(lines.join('\n')).toContain('/memory similar')
+  })
 })
