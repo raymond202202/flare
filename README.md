@@ -202,10 +202,10 @@ cp .env.example ~/.flare/.env
 | `/allow add <工具名> [session\|always]` | 显式放行（默认本会话；always 跨会话持久化，v0.6.10） |
 | `/allow revoke <工具名>` | 撤销放行（恢复每次确认，v0.6.7） |
 | `/tools` | 查看当前 Agent 可用工具清单（含确认门标注 ⚠需确认 与来源，v0.6.11） |
-| `/memory` | 查看持久记忆 |
+| `/memory` | 查看持久记忆；带关键词全文搜索（v0.6.25）；`/memory similar` 检测相似记忆对（默认阈值 0.4，只读不删除，v0.6.123） |
 | `/remember` | 保存一条记忆（如: /remember 用户喜欢浅色主题） |
 | `/forget` | 删除记忆（如: /forget 浅色主题，删除包含该关键词的记忆） |
-| `/usage` | 查看 token 用量（v0.6.17 起含本会话用量行） |
+| `/usage` | 查看 token 用量（v0.6.17 起含本会话用量行；v0.6.49 起含缓存命中；v0.6.65 起含缓存节省金额） |
 | `/context` | 查看当前会话上下文占用（消息数/估算 tokens，v0.5.6；超预算提示 /trim，v0.6.46） |
 | `/trim [预算tokens]` | 智能裁剪上下文（v0.6.46：system 保底 + 最近消息 + 配对保护；缺省用配置预算） |
 | `/sessions` | 查看最近会话；带关键词搜索会话（如: `/sessions 缓存`，按标题/消息内容，v0.6.44） |
@@ -357,7 +357,7 @@ Interactive mode commands:
 | Command | Function |
 |---------|----------|
 | `/help` | Show help |
-| `/memory` | View persistent memories (`/memory <keyword>` searches memories, v0.6.25) |
+| `/memory` | View persistent memories (`/memory <keyword>` searches memories, v0.6.25; `/memory similar` detects similar/duplicate memory pairs, default threshold 0.4, read-only, v0.6.123) |
 | `/search <关键词>` | Search chat history across sessions (v0.6.24) |
 | `/remember` | Save a memory (e.g. /remember user likes light theme) |
 | `/forget` | Delete memories by keyword (e.g. /forget light theme) |
