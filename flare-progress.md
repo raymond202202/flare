@@ -1,5 +1,7 @@
 # Flare 引擎迭代进度（夜间调研 agent）
 
+> **【✅ 第一百二十五轮小步】P159 (纯文档) host-protocol.md 响应事件汇总表补齐 7 个缺失类型行**：
+> commit `a56b0fd`，纯文档零 src 改动、tsc 0 错误、1116/1116 全绿、无版本变化（详情见下方 P159 条目）。
 > **【✅ 第一百二十五轮小步】P158 (纯文档) docs/mcp.md 单次查询章节修正过时表述**：
 > commit `07c4eb0`，纯文档零 src 改动、tsc 0 错误、1116/1116 全绿、无版本变化（详情见下方 P158 条目）。
 > **【✅ 第一百二十五轮小步】P157 (纯文档) docs/mcp.md 补 CLI 单次命令 connect/disconnect 章节**：
@@ -643,6 +645,44 @@
   ② 安全设计要点：二进制（image/audio 的 data、resource 的 blob）只输出占位描述不含 base64
   明文——既防上下文 token 膨胀也防敏感数据回显；③ rich/struct-only 用 MOCK_MODE 环境变量控制
   fixture 返回，不动工具列表（工具数断言零影响），是扩展 mock 服务器行为的安全模式
+
+---
+
+### 2026-08-14 第一百二十五轮小步（P159 纯文档）——host-protocol.md 响应事件汇总表补齐 7 个缺失类型行（装机完成，自循环）
+
+> **P159 完成**（commit `a56b0fd`）：docs/host-protocol.md「## 响应（服务 → 宿主）」事件汇总表
+> **缺 7 个实际回复类型行**——`archived_sessions` / `search_results` / `session_usage` /
+> `context_status` / `mcp_resources` / `mcp_prompts` / `mcp_tools`（正文章节 25.1/5.1/9.1/10/16.1/16.2/16.9
+> 都有格式说明，但汇总索引表——宿主快速查阅响应类型的入口——漏列；脚本核对 server.ts 全部
+> reply({ type }) 与表行差集非空）。纯文档增强，零 src 改动、零风险（纯文档先例）。
+> - **实现**（docs/host-protocol.md +7，仅汇总表）：
+>   - sessions 区补 `archived_sessions`（list_archived_sessions 响应 v0.6.31，结构同 recent_sessions
+>     含 preview）与 `search_results`（search_messages 响应 v0.6.24，query/results）
+>   - usage/status 区补 `session_usage`（v0.6.17，sessionId/stats 含 perModel v0.6.52）、
+>     `context_status`（v0.5.6，sessionId/messageCount/estimatedTokens/suggestion? v0.6.4）、
+>     `mcp_resources`（v0.6.26）/`mcp_prompts`（v0.6.36）/`mcp_tools`（v0.6.58）三行 servers 结构
+>   - 版本标注与 server.ts 各 case 注释版本一致
+> - **验证**：tsc 0 错误；**零 src 改动**（git diff 仅 docs/host-protocol.md 1 文件）；1116/1116
+>   全绿（74 文件）；纯文档无版本变化（0.6.120 不变，dist 未动，无需自安装）；零 push、零敏感信息；
+>   **脚本核对 server.ts reply 类型与汇总表差集为空**（全部对齐）
+> - **flare 验收结论：✅ 通过**——flare 独立运行 git log -1 --stat + git show 审查 diff + npx tsc
+>   0 错误 + 全量 1116/1116（74 文件）+ git status 干净；**7 行逐项字段/版本核对全过**（archived_sessions
+>   sessions 结构同 recent_sessions、search_results query/results、session_usage sessionId/stats 含
+>   perModel v0.6.52、context_status 可选 suggestion 条件展开、mcp_* servers 三行），版本号与
+>   src/server.ts 注释一致、表格分隔符与既有行格式统一、无密钥明文；未改 agent.ts、未 push；
+>   结论与实况完全一致
+> - **下一步候选**：① 【P1】分层上下文（Layer 1 异步滚动摘要——需评估 run 循环外异步，涉及
+>   agent.ts trimContext 异步化，铁律暂缓）；② 其他安全的外围增强（docs 逐一对齐收官：mcp.md
+>   connect/disconnect + 单次查询修正（P157/P158）、host-protocol 汇总表补齐（本步）后文档面完整；
+>   剩余 memory-rag「后续候选」中记忆去重/摘要等为功能候选；测试稳定性继续清扫等）
+
+**引导过程记录（引导 agent 视角，实现+验收直接完成）**：
+- 本轮实现由引导 agent 直接完成（纯文档 1 处，先脚本核对 server reply 类型差集再补 7 行）
+- flare 验收延续高水准：7 行逐项字段对照 src/server.ts + 版本号对照注释 + 格式统一性检查 +
+  独立 tsc/全量 vitest 复核，一次通过
+- **教训**：① 协议文档的「响应事件汇总表」是宿主编程查阅入口，新增协议接口后必须同步——
+  正文章节有说明但汇总表漏列是隐蔽不对称（脚本化核对 reply 类型 vs 表行差集可防）；② 纯文档
+  补齐同样跑全量 vitest 确认无回归，成本可控
 
 ---
 
