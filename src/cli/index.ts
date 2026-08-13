@@ -1269,7 +1269,7 @@ export async function handleSlashCommand(
       output(chalk.cyan('\n可用命令:'))
       output('  /help        - 显示帮助')
       output('  /exit        - 退出')
-      output('  /memory [关键词] - 查看记忆；带关键词全文搜索记忆（v0.6.25）；/memory similar 检测相似记忆对（v0.6.123）')
+      output('  /memory [关键词] - 查看记忆；带关键词全文搜索记忆（v0.6.25）；/memory similar [阈值] 检测相似记忆对（默认 0.4，v0.6.123/125）')
       output('  /search <关键词> - 搜索历史对话（跨会话，v0.6.24）')
       output('  /remember    - 保存一条记忆（如: /remember 用户喜欢浅色主题）')
       output('  /forget      - 删除记忆（如: /forget 浅色主题，删除包含该关键词的记忆）')

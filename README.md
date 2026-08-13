@@ -380,6 +380,9 @@ Interactive mode commands:
 
 ### Changelog / Release Notes
 
+## v0.6.126（2026-08-14）
+- ✨ **`/help` 的 `/memory` 行同步 `/memory similar [阈值]`**：v0.6.125 交互命令支持可选阈值但 `/help` 说明行仍停留在 v0.6.123 旧文案（P168 只更新了用法提示分支）——本版补齐：`/help` 显示 `/memory similar [阈值] 检测相似记忆对（默认 0.4，v0.6.123/125）`；`/help` 测试断言同步（`/memory similar [阈值]` + 版本标注）
+
 ## v0.6.125（2026-08-14）
 - ✨ **交互命令 `/memory similar [阈值]`（可选相似度阈值，与单次命令 `memories --similar --threshold` 对称）**：v0.6.123 交互入口只支持默认阈值 0.4，无法调高/调低检出灵敏度（单次命令 v0.6.121 已有 `--threshold`）——本版补齐：`/memory similar <0~1>` 或 `/memory --similar <0~1>` 传阈值（如 `/memory similar 0.6` 只检更相似的记忆对）；阈值非法（非数字/越界 0~1）输出用法提示不崩溃；输出行显示当前阈值（`相似记忆（N 对，阈值 X）` / `未发现相似记忆（阈值 X）`）；缺省行为与 v0.6.123 逐字一致（默认 0.4，回归由测试保证）；`/help` 与命令表同步
 

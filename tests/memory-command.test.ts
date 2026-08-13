@@ -161,9 +161,11 @@ describe('/memory 命令', () => {
     expect(lines.join('\n')).toContain('阈值 0.3')
   })
 
-  it('/help 包含 /memory similar 说明（v0.6.123）', async () => {
+  it('/help 包含 /memory similar [阈值] 说明（v0.6.125）', async () => {
     const lines: string[] = []
     await handleSlashCommand('/help', store, (s) => lines.push(s))
-    expect(lines.join('\n')).toContain('/memory similar')
+    const out = lines.join('\n')
+    expect(out).toContain('/memory similar [阈值]')
+    expect(out).toContain('v0.6.123/125')
   })
 })
