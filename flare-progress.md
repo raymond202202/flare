@@ -1,12 +1,14 @@
 # Flare 引擎迭代进度（夜间调研 agent）
 
-> **【已发布】v0.6.108 装机完成（P138 sessions --json 结构化输出，引导模式本机安装版，自循环三小步）**
-> 上一版 v0.6.107 装机完成（P137 messages --json 结构化输出，引导模式本机安装版，自循环）
-> 再上一版 v0.6.106 装机完成（P136 usage --json 结构化输出，引导模式本机安装版，自循环）
+> **【已发布】v0.6.109 装机完成（P139 memories --json 结构化输出，引导模式本机安装版）**
+> 上一版 v0.6.108 装机完成（P138 sessions --json 结构化输出，引导模式本机安装版，自循环三小步）
+> 再上一版 v0.6.107 装机完成（P137 messages --json 结构化输出，引导模式本机安装版，自循环）
 
 > 目标：flare 是 Pulse/StorySpire 依赖的 AI Agent 引擎（TS）。任何改动必须安全（tsc 0 错 + 测试全绿才 commit）。
 > 铁律：禁止 push；禁止修改 src/core/agent.ts 的 Agent.run 核心循环。
 
+> **【✅ 第一百一十轮完成】P139 (v0.6.109) memories --json 已装机**：
+> commit `b62993b`，1052/1052 全绿、tsc 0 错误、零 agent.ts 改动（详情见下方第一百一十轮条目）。
 > **【✅ 第一百零九轮完成】P136/P137/P138 (v0.6.106/107/108) usage/messages/sessions --json 已装机**：
 > commits `21695d0`/`30ca1be`/`fed4160`，1047/1047 全绿、tsc 0 错误、零 agent.ts 改动（详情见下方第一百零九轮条目）。
 > **【✅ 第一百零八轮完成】P135 (v0.6.105) trim --keep 精确裁剪已装机**：
@@ -444,6 +446,56 @@
   ③ 引导 agent 补测试时自身也会踩子串误匹配这类测试 bug，定位要快（首跑失败先看 Received 实值再推断）；
   ④ 写操作命令（会删 store 消息）的端到端持久验证（CLI 进程退出后 store 核对）是验收关键，不可只看 CLI
   输出
+
+---
+
+### 2026-08-13 第一百一十轮实施（v0.6.109）——P139 flare memories --json 结构化输出（装机完成）
+
+> **P139 完成**（commit `b62993b`）：`flare memories [<关键词>]` 增加 **--json 结构化输出**——与
+> server get_memories（v0.5.4 记忆读取；v0.6.25 kind 过滤）回包**完全同构**（`{ memories }`，不带 type
+> 包装），宿主/脚本可程序化消费持久记忆（含 --kind/关键词搜索/--limit 组合语义）；是 CLI 只读命令
+> --json 系列（usage/messages/sessions/context-status/tools/config/version/ping/mcp status/cache-check
+> 已覆盖）记忆面的收官；与 remember/delete-memory（v0.6.100 写操作）配对形成「程序化查看 → 保存 → 删除」
+> 记忆管理闭环。纯只读增强，风险极低。
+> - **实现**（src/cli/index.ts memories 命令块 +4/-1）：新增 `.option('-j, --json', ...)`；action 签名
+>   options 增加 `json?: boolean`；在「memories.length === 0 空提示」判断之前插入 `if (options.json) {
+>   console.log(JSON.stringify({ memories })); return }`——memories 为 store 原始行（含 id/content/type/
+>   created_at，content **不截断不折叠**，与 server 同构）；空库/无命中输出 `{ "memories": [] }` 合法
+>   JSON exit 0（不打印「暂无记忆」黄色提示，脚本可解析）；--kind/关键词/--limit 查询逻辑一字不改，
+>   文本模式（标题/200 字符截断/空提示/exit code）完全不变；只打印 JSON 不混彩色；零新 import；
+>   description 补 --json（v0.6.91/109）
+> - **测试**（tests/cli-memories.test.ts 追加 5 用例至 11 个，spawn dist CLI + FLARE_HOME 隔离，seed 用
+>   MemoryStore.saveMemory 直插）：--json 输出合法 JSON + 四字段完整 + 超长 content（300 字符）不截断
+>   不折叠 / --json --kind preference 只输出该类型 / --json + 关键词搜索命中项 / 空库 `{ "memories": [] }`
+>   exit 0 / 文本模式回归（含「🧠 记忆」且非 JSON）；**现有 6 用例零删改**
+> - README 命令表 memories 行补 --json + Changelog v0.6.109 条目（## 版本标题在顶部，日期 2026-08-13）+
+>   package.json 0.6.109 + description 版本注释
+> - **1052/1052 全绿**（新增 5 用例，71 文件；两轮全量均首跑即绿无偶发），tsc 0 错误，**零 agent.ts 改动**，
+>   零 push、零敏感信息（diff 敏感扫描 0 命中）；自安装完成：installed 0.6.109 = repo 0.6.109（安装版冒烟
+>   FLARE_HOME 临时目录 seed → memories --json 输出正确 JSON 已验证）；真实 ~/.flare 零污染（冒烟均用
+>   FLARE_HOME 临时目录）
+> - **下一步候选**：① 【P1】分层上下文（Layer 1 异步滚动摘要——需评估 run 循环外异步）；② 其他安全的外围
+>   增强——CLI 只读命令 --json 系列已覆盖 usage/messages/sessions/context-status/tools/config/version/
+>   ping/mcp status/cache-check/memories，剩余 search/search-messages/archived-sessions/confirm-status
+>   可继续补 --json（同模式），或 MCP 工具集完善、测试稳定性等
+
+**引导过程记录（引导 agent 视角，1 次调用 + 引导 agent 直接收尾）**：
+- 第 1 次调用（P136-138 同款完整代码规格 + 硬声明无关领域 + 白名单/禁止清单 + 明确「不 commit、不改
+  package.json/README，收尾由引导 agent 统一处理」）→ **一次完整交付**：--json 选项 + action 签名 +
+  JSON 分支全部落地（+4/-1，位置正确：limit 校验后、空判断前）、5 测试落盘（6→11）、npm run build +
+  cli-memories 11/11 通过，汇报与实况完全一致（无 P136「删现有用例」违规、无 P137 版本文案问题）
+- flare 工作区残留：指令文件 .flare-task-p139.md 未被自动删除（P120 曾自行删除）+ 空文件
+  src/cli/index.ts.patch（0 行）——引导 agent 收尾时清理
+- 收尾由**引导 agent 直接完成**：diff 逐条对照规格（全过）→ 独立 tsc 0 → 全量 1052/1052（71 文件）复核 →
+  敏感扫描 0 → 独立冒烟（seed 2 条 → --json 四字段/--kind/关键词/文本模式回归全 PASS）→ 补 README 命令表
+  + Changelog + package.json 0.6.109 + description 版本注释 → 重编译 dist（携带 0.6.109）→ 全量 1052/1052
+  再复核 → git add 指定 4 文件 → commit `b62993b`（4 文件 60 insertions，无临时文件混入）→ flare 自安装
+  （installed 0.6.109 = repo 0.6.109，安装版冒烟 memories --json PASS）
+- **教训**：① 「完整代码规格 + 明确收尾归属」模式下 flare 一次完整交付的稳定性继续延续（本轮零偏差、零
+  违规、零测试缺口——P136 的删用例、P137 的附件 400、P138 的覆盖缺口均未再现）；② 只读 --json 小步的
+  验收成本极低（冒烟即全量验证、无 LLM 依赖、无数据风险），是快节奏自循环的最佳形态；③ flare 工作区
+  残留（指令 .md / 空 .patch）需收尾清理，防误 add 进 commit；④ 本轮 1 小步即耗尽 25 分钟窗口（flare
+  调用约 09:01-09:07 + 独立验收 + 收尾 + 自安装），未进入自循环第二小步
 
 ---
 
