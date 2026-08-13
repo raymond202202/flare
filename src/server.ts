@@ -32,6 +32,7 @@ import {
   config,
   tools as builtinTools,
   validateToolOutputPolicy,
+  mcpContentToText,
   type ExpertProfile,
   type ToolDefinition,
   type Tool,
@@ -1186,9 +1187,9 @@ export function startHostServer(opts: HostServerOptions) {
             ? req.args as Record<string, any>
             : undefined
           const res = await mcpManager.callTool(server, tool, args)
-          const text = Array.isArray(res.content)
-            ? res.content.filter((c) => c.type === 'text' && typeof c.text === 'string').map((c) => c.text).join('\n')
-            : ''
+          // v0.6.117：非 text 内容（image/audio/resource）占位描述 + structuredContent 兜底——与
+          // createMcpTools / CLI mcp call 同口径（mcpContentToText 纯函数），宿主拿图片/结构化返回不再丢失
+          const text = mcpContentToText(res.content, res.structuredContent)
           reply({
             type: 'mcp_call',
             server,
