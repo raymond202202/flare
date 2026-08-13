@@ -1425,10 +1425,16 @@ async function runQuery(query: string, maxIterations?: number, attachments?: str
   // 会话不存在 → 立即提示 exit 1（不触发生成；宿主/脚本传错 ID 时不静默新建会话）
   let sid: string
   if (sessionId) {
-    const exists = store.getAllSessions().some((s) => s.id === sessionId)
-    if (!exists) {
+    const sess = store.getAllSessions().find((s) => s.id === sessionId)
+    if (!sess) {
       console.error(chalk.red(`❌ 会话 ${sessionId} 不存在（chat --session 续聊需要已有会话；flare sessions 查看现有会话）`))
       process.exit(1)
+    }
+    // v0.6.129：续聊已归档会话 → 黄色提示不拦截（与 server chat 同语义——getAgent 加载归档会话
+    // 历史不检查 archived；提示让宿主/脚本知晓：续聊消息追加到归档会话、flare sessions 最近列表
+    // 不可见，flare restore <id> 可恢复后回到最近列表）
+    if (sess.archived) {
+      console.error(chalk.yellow(`⚠️ 会话 ${sessionId} 已归档（续聊将追加到归档会话，最近列表不可见；flare restore ${sessionId} 可恢复）`))
     }
     sid = sessionId
   } else {
@@ -1502,7 +1508,7 @@ export function main() {
     .option('-q, --query <text>', '单次查询模式，直接提问')
     .option('-i, --image <path>', '附带图片路径（可与 -q 一起用；也可在问题中直接写路径）')
     .option('-m, --max-iterations <n>', '最大工具调用迭代次数（默认30，上限50）')
-    .option('-s, --session <sessionId>', '续聊已有会话（单次查询追加到该会话历史；缺省新建「单次查询」会话；会话不存在 exit 1 不触发生成；v0.6.128）')
+    .option('-s, --session <sessionId>', '续聊已有会话（单次查询追加到该会话历史；缺省新建「单次查询」会话；会话不存在 exit 1 不触发生成；已归档会话续聊给黄色提示不拦截 v0.6.129；v0.6.128）')
     .option('--context-summarize', '交互模式开启上下文压缩摘要（裁剪时把丢弃历史压缩成摘要消息，AI 保留话题连续性；v0.6.19）')
     .action(async (options: { query?: string; image?: string; maxIterations?: string; session?: string; contextSummarize?: boolean }) => {
       if (options.query) {
