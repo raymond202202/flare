@@ -94,7 +94,7 @@ flare chat --help
 | `/remember` | 保存一条记忆（如: /remember 用户喜欢浅色主题） |
 | `/forget` | 删除记忆（如: /forget 浅色主题，删除包含该关键词的记忆） |
 | `/sessions` | 查看历史会话 |
-| `/usage` | 查看 token 用量（含缓存命中/节省） |
+| `/usage` | 查看 token 用量（含缓存命中/写入/节省，v0.6.131 起缓存写入） |
 | `/clear` | 清屏 |
 
 ---
