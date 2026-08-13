@@ -1,5 +1,7 @@
 # Flare 引擎迭代进度（夜间调研 agent）
 
+> **【✅ 第一百三十一轮小步】P177 (v0.6.131) /usage 与 usage 文本模式补缓存写入观测行 + store perModel 补 cacheWriteTokens 已装机**：
+> commit `a4703ab`，1174/1174 全绿、tsc 0 错误、零 agent.ts 改动（详情见下方 P177 条目）。
 > **【✅ 第一百三十轮小步】P176 (v0.6.130) flare messages 已归档会话文本模式标题带（已归档）标记已装机**：
 > commit `888c5db`，1168/1168 全绿、tsc 0 错误、零 agent.ts 改动（详情见下方 P176 条目）。
 > **【✅ 第一百三十轮完成】P175 (v0.6.129) chat --session 续聊已归档会话给黄色提示（不拦截）已装机**：
@@ -208,6 +210,41 @@
 >    terminal 退出码（v0.6.33）✓ / CLI 归档命令（v0.6.32）✓ / 归档 API（v0.6.31）✓ /
 >    工具输出治理（v0.6.30）✓ / prompt caching P0（v0.6.29）✓ / MCP 动态资源提供器（v0.6.28）✓ /
 >    confirm 描述（v0.6.27）✓
+
+---
+
+### 2026-08-14 第一百三十一轮小步（P177，v0.6.131）——/usage 与 usage 文本模式补缓存写入观测行 + store perModel 补 cacheWriteTokens
+
+> **P177 完成**（commit `a4703ab`）：`/usage` 交互命令与 `flare usage` 单次命令文本模式补「缓存写入」观测行，
+> 同时 `getUsageStats`/`getSessionUsage` 的 perModel 分解补 `cacheWriteTokens` 字段——prompt caching 基建
+> 观测面对称收尾（方向①，用户拍板最高优先级）。
+> - **背景**：用量统计自 v0.6.29 P0 起已落库 `cache_write_tokens`，且 `usage --json` 结构化输出带
+>   `cacheWriteTokens` 字段，唯独**文本模式**只显示缓存命中、不显示缓存写入——用户/宿主看 `/usage` 只见
+>   「命中省了多少」，不见「首轮建立缓存写了多少输入」（DeepSeek 每次新前缀产生 cache_write_tokens，是缓存
+>   机制的另一半）；且 perModel 分解此前只带 cacheReadTokens，--json 消费 perModel 拿不到写入量（不对称缺口）
+> - **实现**：
+>   - src/memory/store.ts（+10/-2）：`getUsageStats` 与 `getSessionUsage` 的 perModel SQL 补
+>     `COALESCE(SUM(cache_write_tokens),0) as cacheWriteTokens` + map 输出 `cacheWriteTokens` 字段
+>     （汇总行/单会话行本就带该字段，只补分解层）
+>   - src/cli/index.ts（+44/-2）：`/usage` 交互命令与 `usage` 单次命令文本模式补行——
+>     总览行 `缓存写入: X tokens`（>0 才显示，零写入输出不变、向后兼容，与命中行对称）；
+>     全局/本会话 perModel 子行 `缓存写入: X tokens` 同守卫；`/help` 的 /usage 行与 usage 命令描述同步
+>     （含缓存命中/写入/节省，v0.6.65/131）；`--json` 路径零改动（store 结构自动透传新字段）
+> - **测试**（3 文件 +6 用例）：store.test.ts 补 perModel cacheWriteTokens 断言（全局 + 单会话，200 写入
+>   精确断言）；cli-usage.test.ts 追加 4 用例（全局缓存写入行 / 无写入不出现 / --session 分支写入行 /
+>   perModel 子行写入）；prompt-caching.test.ts 追加 2 用例（/usage 交互有写入显示 / 无写入不出现）+ 
+>   更新 /help 断言（缓存命中/写入/节省）
+> - README 命令表 usage 行与 /usage 行补缓存写入说明 + Changelog v0.6.131 条目 + package.json 0.6.131
+> - **1174/1174 全绿**（76 文件；首跑 1 个 cli-chat-session 真实调用超时——历史已知超时源（P173/174 记录），
+>   与改动无关，重跑连续两轮全绿且新增用例 6/6 确认），tsc 0 错误，**零 agent.ts 改动**（Agent.run 核心循环
+>   零触碰），零 push、零敏感信息
+> - **flare 验收通过**：独立运行 tsc 0 错误 + 全量 76 文件/1174 测试全绿（25.8s）+ 工作区干净；逐项审查
+>   7 文件 +121/-9——store 数据层字段贯通（usage_log → 汇总/perModel）、展示层三个输出路径（slash/CLI 文本/
+>   CLI JSON）对称补行、每个显示点带 >0 守卫保持向后兼容、测试覆盖正向与零值两种场景；安全审查无密钥/token
+>   明文命中；结论「✅ 验收通过」
+> - **下一步候选**：① 【P1】分层上下文（Layer 1 异步滚动摘要——需改 Agent.run 核心循环，违反铁律跳过并记录理由）；
+>   ② 其他安全的外围增强（MCP 工具集完善、测试稳定性等）——缓存观测面写入/命中/节省三层对称收官，
+>   文本/--json/server 协议口径一致，prompt caching 基建观测面已闭环
 
 ---
 
