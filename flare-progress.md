@@ -1,12 +1,14 @@
 # Flare 引擎迭代进度（夜间调研 agent）
 
-> **【已发布】v0.6.111 装机完成（P141 search/archived-sessions --json 结构化输出，引导模式本机安装版，自循环）**
-> 上一版 v0.6.110 装机完成（P140 search-messages --json 结构化输出，引导模式本机安装版，自循环）
-> 再上一版 v0.6.109 装机完成（P139 memories --json 结构化输出，引导模式本机安装版）
+> **【已发布】v0.6.112 装机完成（P142 models --json 结构化输出，引导模式本机安装版，自循环）**
+> 上一版 v0.6.111 装机完成（P141 search/archived-sessions --json 结构化输出，引导模式本机安装版，自循环）
+> 再上一版 v0.6.110 装机完成（P140 search-messages --json 结构化输出，引导模式本机安装版，自循环）
 
 > 目标：flare 是 Pulse/StorySpire 依赖的 AI Agent 引擎（TS）。任何改动必须安全（tsc 0 错 + 测试全绿才 commit）。
 > 铁律：禁止 push；禁止修改 src/core/agent.ts 的 Agent.run 核心循环。
 
+> **【✅ 第一百一十三轮完成】P142 (v0.6.112) models --json 已装机**：
+> commit `965f7f6`，1069/1069 全绿、tsc 0 错误、零 agent.ts 改动（详情见下方第一百一十三轮条目）。
 > **【✅ 第一百一十二轮完成】P141 (v0.6.111) search/archived-sessions --json 已装机**：
 > commit `54b7849`，1066/1066 全绿、tsc 0 错误、零 agent.ts 改动（详情见下方第一百一十二轮条目）。
 > **【✅ 第一百一十一轮完成】P140 (v0.6.110) search-messages --json 已装机**：
@@ -95,8 +97,8 @@
 > 下一步候选（按优先级）：
 > ① 【P1】分层上下文（Layer 1 异步滚动摘要——摘要内容升级为 LLM 生成语义级压缩，需评估 run 循环外异步）
 > ② 其他安全的外围增强（server 协议其他管理接口、MCP 工具集完善、测试稳定性等）
->    CLI 只读命令 --json 系列已全覆盖：usage/messages/sessions/context-status/tools/config/version/
->    ping/mcp status/cache-check/memories/search-messages/search/archived-sessions/confirm-status（v0.6.111 收官）
+>    CLI 只读命令 --json 系列已全覆盖：usage/messages/models/sessions/context-status/tools/config/version/
+>    ping/mcp status/cache-check/memories/search-messages/search/archived-sessions/confirm-status（v0.6.112 收官）
 >    已覆盖：HTTP 服务端 Bearer 鉴权（v0.6.69）✓ /
 >    CLI 单次命令 --header（v0.6.68）✓ /
 >    MCP HTTP transport 鉴权 headers（v0.6.67）✓ /
@@ -452,6 +454,37 @@
   ③ 引导 agent 补测试时自身也会踩子串误匹配这类测试 bug，定位要快（首跑失败先看 Received 实值再推断）；
   ④ 写操作命令（会删 store 消息）的端到端持久验证（CLI 进程退出后 store 核对）是验收关键，不可只看 CLI
   输出
+
+---
+
+### 2026-08-13 第一百一十三轮实施（v0.6.112）——P142 flare models --json 结构化输出（装机完成）
+
+> **P142 完成**（commit `965f7f6`）：`flare models` 只读查询命令增加 **--json 结构化输出**——与 server
+> **models 回包（v0.6.9 models 协议）完全同构**（`{ configured, ollama }`，不带 type 包装），宿主/脚本可
+> 程序化消费可用模型清单；同时 **README CLI 命令摘要表补齐 `flare models` 行**（此前唯一未入表的查看类
+> 命令，连 search/messages 等都有表行而 models 缺失）。至此 CLI 只读命令 --json 系列
+> （usage/messages/models/sessions/context-status/tools/config/version/ping/mcp status/cache-check/
+> memories/search-messages/search/archived-sessions/confirm-status）**全部收官**。纯只读增强，风险极低。
+> - **实现**（src/cli/index.ts models 命令块 +30/-3）：`.option('-j, --json', ...)`；action 签名 options
+>   增加 `json?: boolean`；mainModel 的 settings 解析提到命令顶部（两种模式共享）；`--json` 分支构造与
+>   server 同构结构——configured.main/vision 为 **ModelEndpointInfo 同款字段**（model/baseURL/hasApiKey/
+>   provider/解析失败带 error），vision 未配置 → null（与 server 语义一致，不套文本模式的 'qwen2.5vl:3b'
+>   显示兜底）；ollama 为 listOllamaModels 原始结果（不可达 ok:false 不崩）；main 反映运行时 /model 切换
+>   （settings 表 main_model 优先）与文本模式一致；动态 import detectProvider（server.ts，CLI 已有
+>   startHostServer 先例，模块无顶层副作用）；只打印 JSON 不混彩色；文本模式与退出码语义一字不改；零
+>   agent.ts 改动
+> - **测试**（新增 tests/cli-models.test.ts 3 用例，spawn dist CLI + FLARE_HOME 隔离）：文本模式回归
+>   （「配置的模型/主模型/本地 Ollama」区块仍在）/ --json 合法 JSON + 纯 JSON 无 ANSI + 结构与 server
+>   同构（main 字段完整、vision null 或对象、ollama.ok boolean + models 数组、stderr 空）/ -j 短选项等价
+>   且 settings 表设 main_model=qwen2.5:7b 后 --json configured.main 与文本模式一致（settings 优先）；
+>   **现有用例零删改**
+> - README 命令摘要表补 `flare models` 行（含 --json 能力说明）+ Changelog v0.6.112 条目 + package.json
+>   0.6.112 + flare-progress 摘要/下一步候选更新
+> - **1069/1069 全绿**（新增 3 用例，72 文件；全量首跑 1 偶发超时——server-default-params chat 真实 LLM
+>   调用 5000ms 超时，与本次改动无关，重跑 4/4 即绿；二次全量 1069/1069 绿），tsc 0 错误，**零 agent.ts
+>   改动**，零 push、零敏感信息；自安装完成：installed 0.6.112 = repo 0.6.112（rsync dist + 版本号，
+>   清理 3 个旧构建残留 dist/core/index.js、dist/core/store.js、dist/memory/index.js；安装版冒烟
+>   models --json 输出正确 JSON + version 0.6.112 + server stdin ping 返回 pong）
 
 ---
 
