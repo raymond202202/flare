@@ -1,5 +1,7 @@
 # Flare 引擎迭代进度（夜间调研 agent）
 
+> **【✅ 第一百五十轮完成】P199 (v0.6.141) findSimilarMemories 相似对规范化 idA < idB（测试稳定性修复，flare 验收提示的偶发失败源）**：
+> commit `5433809`，tsc 0 错误、1217/1217 全绿、零 agent.ts 改动、已自安装（详情见下方 P199 条目）。
 > **【✅ 第一百四十九轮完成】P198 (v0.6.140) route 命令支持批量多参数 + stdin 管道读取（路由决策可视化深化）**：
 > commit `22e6363`，tsc 0 错误、1216/1216 全绿、零 agent.ts 改动、已自安装（详情见下方 P198 条目）。
 > **【✅ 第一百四十八轮完成】P197 (v0.6.139) cache-check 补 provider 标注 + 预期命中片段规模（prompt caching 基建深化 + 混合模式观测面）**：
@@ -5828,3 +5830,36 @@
 >   偶发失败源，P186/187 先例）；② 【P1】prompt caching 基建深化：命中片段占比/未命中诊断深化；
 >   ③ CLI/server 确认门接入完整化（confirm 门策略检查现有覆盖面）；④ MCP 增强（resources 订阅/
 >   采样等协议面）；⑤ 分层上下文（需评估 run 循环外异步，铁律暂缓）
+
+---
+
+### 2026-08-15 第一百五十轮完成（P199，v0.6.141）——findSimilarMemories 相似对规范化 idA < idB
+
+> **P199 完成**（commit `5433809`，5 文件 +37/-7）：测试稳定性修复（flare P198 验收提示的
+> 偶发失败源——server.test.ts 的 idA < idB 断言在共享内存库残留重复记忆时偶发失败）：
+> - 根因：`getAllMemories()` 按 `created_at DESC`（秒级精度）排序，同秒插入多条记忆时返回顺序
+>   不稳定——旧实现 `findSimilarMemories` 直接取 `mems[i].id / mems[j].id`，可能产出 `idA > idB`
+>   的相似对，违反「每对 idA < idB」文档契约（与同文件 getMemoriesByType 的 id 次级排序对比，
+>   getAllMemories 无次级排序，同秒顺序不确定）
+> - 修复：`src/memory/store.ts` 构造 pair 时按 id 比较交换（`[a, b] = mems[i].id <= mems[j].id
+>   ? [mems[i], mems[j]] : [mems[j], mems[i]]`），idA 恒为较小者（INTEGER PRIMARY KEY 唯一，
+>   <= 分支等价 <），contentA/contentB 与 id 同步交换（同源对象，不错配）；threshold 过滤、相似度
+>   降序排序、limit 截断均未触碰（输出集合与语义不变，仅 id 顺序规范化）
+> - 测试：store.test.ts 补 1 用例（同秒批量插入 15 条近似记忆，断言所有 pair idA < idB 恒成立——
+>   乱序发生时能捕获旧实现违反契约，修复后恒通过）
+> - 文档：README Changelog v0.6.141 + package.json/package-lock.json 0.6.140 → 0.6.141
+> - **验证**：npx tsc 0 错误（含 dist 编译）；PATH=/usr/bin:$PATH npx vitest run 全量 78 文件
+>   1217/1217 全绿（基线 1216 + 1；store 56 + server 78 专项通过）；**零 agent.ts 改动**；零 push、
+>   零敏感信息；自安装完成：installed 0.6.141 = repo 0.6.141
+> - **flare 验收结论：✅ 通过**——flare 独立运行 git log -1（5433809）/git show 审查完整 diff
+>   （5 文件 +37/-7）、npx tsc 0 错误、PATH=/usr/bin:$PATH npx vitest run 全量 78 文件 1217/1217
+>   全绿；逐项核对 idA < idB 恒成立（<= 分支对唯一自增 id 等价 <）、内容与 id 同步交换（contentA
+>   始终对应较小 id，无错配）、同秒乱序场景新用例确能触发乱序路径捕获旧实现违规、threshold/limit/
+>   降序排序无其他行为变化、git diff HEAD~1 HEAD -- src/core/agent.ts 0 行、diff 敏感扫描无 api
+>   key/密码/token 明文；结论「通过验收 ✅」；非阻塞备注：getAllMemories SQL 未加 id DESC 次级
+>   排序，所有调用方依赖排序稳定性——本次 pair 交换在 findSimilarMemories 层规避，未来可统一 SQL
+>   （改进项，不影响本次）；全程零修改零 commit
+> - **下一步候选**：① 【P1】prompt caching 基建深化：命中片段占比/未命中诊断深化；② CLI/server
+>   确认门接入完整化（confirm 门策略检查现有覆盖面）；③ MCP 增强（resources 订阅/采样等协议面）；
+>   ④ 路由决策可视化深化已落地（批量+stdin），可考虑 route 能力标签/统计；⑤ 分层上下文（需评估
+>   run 循环外异步，铁律暂缓）
