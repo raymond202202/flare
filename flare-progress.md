@@ -1,5 +1,9 @@
 # Flare 引擎迭代进度（夜间调研 agent）
 
+> **【✅ 第一百四十轮小步】P189 chore：package-lock.json 版本字段同步 0.6.133（flare 验收提示的历史遗留）**：
+> commit `4214568`，纯元数据零 src 改动、tsc 0 错误、1174/1174 全绿、版本保持 0.6.133（详情见下方 P189 条目）。
+> **【✅ 第一百三十九轮完成】P188 (v0.6.133) messages --help 描述同步归档标记能力（文档对称）**：
+> commit `c30c1d0`，tsc 0 错误、1174/1174 全绿、零 agent.ts 改动、已自安装（详情见下方 P188 条目）。
 > **【✅ 第一百三十八轮小步】P187 测试稳定性修复收官：server-context-trim/server-tool-output-policy 注入 mock LLM 根治真实调用慢源**：
 > commit `8f9e82d`，纯测试层零 src 改动、tsc 0 错误、1174/1174 全绿、无版本变化（详情见下方 P187 条目）。
 > **【✅ 第一百三十七轮小步】P186 测试稳定性修复：server.test.ts 注入 mock LLM 服务器根治 chat 真实调用慢源**：
@@ -230,6 +234,47 @@
 >    terminal 退出码（v0.6.33）✓ / CLI 归档命令（v0.6.32）✓ / 归档 API（v0.6.31）✓ /
 >    工具输出治理（v0.6.30）✓ / prompt caching P0（v0.6.29）✓ / MCP 动态资源提供器（v0.6.28）✓ /
 >    confirm 描述（v0.6.27）✓
+
+---
+
+### 2026-08-15 第一百四十轮小步（P189，chore）——package-lock.json 版本字段同步 0.6.133
+
+> **P189 完成**（commit `4214568`）：package-lock.json 顶层与 `packages[""]` 的 `version` 字段从历史
+> 遗留的 `0.3.0` 同步为 `0.6.133`（与 package.json 一致）——flare 在 P188 验收时附带发现的
+> 「package-lock.json 顶层 version 停留在 0.3.0」历史遗留问题，本轮顺手修复（纯元数据，零逻辑改动）。
+> - **实现**（package-lock.json +2/-2）：仅两处 version 字段 0.3.0 → 0.6.133；依赖版本/lockfile 结构
+>   逐字节不动（node JSON.parse 校验合法）
+> - **验证**：tsc 0 错误；全量 1174/1174 全绿（76 文件）；纯元数据零 src 改动、零 agent.ts 改动；
+>   版本保持 0.6.133（无新版本号）；零 push、零敏感信息；dist 未动无需自安装
+> - **flare 验收通过**：独立运行 tsc 0 错误 + 全量 76 文件/1174 测试全绿 + 工作区干净；逐项核验
+>   （仅 1 文件 +2/-2、版本与 package.json 一致 0.6.133、JSON 合法、依赖版本与父提交逐字节结构相同
+>   未被触碰）；结论「✅ 验收通过，纯粹安全的元数据同步」
+> - **下一步候选**：① 【P1】分层上下文（Layer 1 异步滚动摘要——需改 Agent.run 核心循环，违反铁律跳过并记录理由）；
+>   ② 其他安全的外围增强（测试稳定性清扫——全部真实调用类测试均已 mock 化收官（P181/P182/P186/P187）；
+>   MCP 工具集完善、确认门接入完整化已收官；文档对称——USAGE.md 交互命令表（P184）、token 架构缓存
+>   写入观测（P185）、messages --help 归档标记（P188）已补齐）——prompt caching 基建观测面（命中/写入/节省）
+>   在 usage/cache-check/--json/server 协议/README/USAGE/host-protocol/flare-token-architecture 全口径闭环
+
+---
+
+### 2026-08-15 第一百三十九轮完成（P188，v0.6.133）——messages --help 描述同步归档标记能力
+
+> **P188 完成**（commit `c30c1d0`）：`flare messages --help` 命令 description 补「已归档会话文本模式
+> 标题带（已归档）标记，v0.6.130」——P176 装机后 README 命令表已同步该能力，唯独 CLI `--help`
+> 描述仍停留在旧文案（v0.6.84/v0.6.107），帮助面与文档不对称；本轮补齐（纯展示层 description 文本，
+> 零逻辑改动）。
+> - **实现**（3 文件 +9/-2）：src/cli/index.ts messages description 补归档标记说明；
+>   package.json 0.6.132 → 0.6.133；README Changelog 新增 v0.6.133 条目
+> - **验证**：tsc 0 错误；全量 1174/1174 全绿（76 文件）；零 agent.ts 改动；build 成功 +
+>   自安装（~/.flare/install dist + package.json 同步，`flare version` → v0.6.133、`messages --help`
+>   新描述生效）；零 push、零敏感信息
+> - **flare 验收通过**：独立运行 tsc 0 错误 + 全量 76 文件/1174 测试全绿 + 工作区干净；逐项核验
+>   （仅 3 文件、agent.ts 零触碰、版本经 pkg.version 读取不硬编码自动生效、dist 为未跟踪构建产物不参与
+>   提交合理、无敏感信息）；结论「✅ 全部通过」；附带发现 package-lock.json 版本历史遗留（0.3.0，
+>   已由 P189 修复）
+> - **下一步候选**：① 【P1】分层上下文（Layer 1 异步滚动摘要——需改 Agent.run 核心循环，违反铁律跳过并记录理由）；
+>   ② 其他安全的外围增强（文档对称——帮助面与 README 命令表逐命令核对可继续；测试稳定性已收官）——
+>   prompt caching 基建观测面（命中/写入/节省）全口径闭环
 
 ---
 
