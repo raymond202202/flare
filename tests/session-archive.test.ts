@@ -11,6 +11,7 @@ import { spawn, type ChildProcess } from 'node:child_process'
 import { createInterface, type Interface } from 'node:readline'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
+import type { Server } from 'node:http'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const CLI = path.join(__dirname, '..', 'dist', 'cli', 'index.js')
@@ -114,6 +115,10 @@ let rl: Interface
 let nextId = 0
 let srvTempDir: string
 
+/** mock LLM HTTP 服务器（OpenAI 兼容）：任意 POST /v1/chat/completions → 固定回复，快速稳定（P201，与 P181/P182/P186/P187 同款） */
+let mockLlm: Server | undefined
+let mockLlmUrl = ''
+
 function request(msg: any, expectTypes: string[], timeout = 15000): Promise<any[]> {
   return new Promise((resolve, reject) => {
     const msgs: any[] = []
@@ -136,8 +141,42 @@ function request(msg: any, expectTypes: string[], timeout = 15000): Promise<any[
 
 beforeAll(async () => {
   srvTempDir = mkdtempSync(path.join(tmpdir(), 'flare-archive-srv-'))
+  // P201：mock LLM 服务器（起在随机端口；与 cli-chat-session.test.ts P181 / server-default-params.test.ts
+  // P182 / server.test.ts P186 / server-context-trim·server-tool-output-policy P187 同款）——根治本文件
+  // chat e2e 真实调用偶发慢源（无 key fallback 本地模型 / ~/.flare/.env 注入真实 key 走远端网络）
+  const http = await import('node:http')
+  mockLlm = http.createServer((req, res) => {
+    if (req.method === 'POST' && req.url?.includes('/chat/completions')) {
+      req.resume()
+      res.setHeader('content-type', 'application/json')
+      res.end(JSON.stringify({
+        id: 'mock-chat-1',
+        object: 'chat.completion',
+        created: 1700000000,
+        model: 'mock-model',
+        choices: [{
+          index: 0,
+          message: { role: 'assistant', content: 'mock 回复（P201 测试稳定性：不走真实模型）' },
+          finish_reason: 'stop',
+        }],
+        usage: { prompt_tokens: 12, completion_tokens: 8, total_tokens: 20 },
+      }))
+      return
+    }
+    res.statusCode = 404
+    res.end('not found')
+  })
+  await new Promise<void>((resolve) => mockLlm!.listen(0, '127.0.0.1', resolve))
+  const addr = mockLlm!.address()
+  mockLlmUrl = `http://127.0.0.1:${typeof addr === 'object' && addr ? addr.port : 0}/v1`
+
   const env: Record<string, string> = { ...process.env } as Record<string, string>
   delete env.DEEPSEEK_API_KEY
+  delete env.OPENAI_API_KEY
+  // P201：显式注入 mock 端点/模型（config 构造时 process.env 优先于 dotenv，测试子进程不继承真实凭据）
+  env.LLM_BASE_URL = mockLlmUrl
+  env.LLM_API_KEY = 'mock-key'
+  env.DEFAULT_MODEL = 'mock-model'
   child = spawn(process.execPath, [CLI, 'server', '--storage', path.join(srvTempDir, 'test.db')], { env, stdio: ['pipe', 'pipe', 'pipe'] })
   rl = createInterface({ input: child.stdout! })
   // 等待 server 就绪
@@ -147,6 +186,7 @@ beforeAll(async () => {
 afterAll(async () => {
   child.kill()
   rl.close()
+  mockLlm?.close()
   rmSync(srvTempDir, { recursive: true, force: true })
 })
 
@@ -191,12 +231,10 @@ describe('server 协议 end_session / restore_session / list_archived_sessions�
   })
 
   it('end_session 后再次 chat 可重建 Agent 正常对话', async () => {
-    // 归档后销毁缓存 Agent，chat 应重建（不报错；无 API key 场景走 error 流程而非崩溃）
-    // 注意：子进程 config.ts 会重新加载 ~/.flare/.env（dotenv），可能注入真实 key 走远端 API，
-    // 远端网络慢时超过 vitest 默认 5s —— 显式放宽该测试超时（与 server.test.ts chat 测试同模式）
+    // 归档后销毁缓存 Agent，chat 应重建（不报错；P201 注入 mock LLM 后生成必然成功 → 稳定 done）
     await request({ id: ++nextId, type: 'create_session', sessionId: 'arch3', title: '归档会话C' }, ['ok'])
     await request({ id: ++nextId, type: 'end_session', sessionId: 'arch3' }, ['ok'])
-    const chat = await request({ id: ++nextId, type: 'chat', sessionId: 'arch3', message: '还在吗' }, ['done', 'error'], 20000)
-    expect(['done', 'error']).toContain(chat[chat.length - 1]?.type ?? chat[0]?.type)
-  }, 45000)
+    const chat = await request({ id: ++nextId, type: 'chat', sessionId: 'arch3', message: '还在吗' }, ['done'], 15000)
+    expect(chat[chat.length - 1]?.type).toBe('done')
+  }, 15000)
 })
