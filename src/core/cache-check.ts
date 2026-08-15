@@ -32,6 +32,9 @@ export interface CacheCheckResult {
   /** 构造的稳定 system 前缀字符数（v0.6.139：展示「预期命中内容片段」规模——cache-check 命中的就是
    *  两次调用逐字节一致的稳定前缀，宿主/CI 可据此理解命中片段构成） */
   prefixChars: number
+  /** 命中片段构成诊断（v0.6.142：基于末轮命中率生成——完整命中/部分命中/未命中的人类可读说明，
+   *  帮助理解「部分命中是预期行为」：未命中部分通常为每次变化的 user 消息尾部，不影响前缀缓存有效性） */
+  hitSegmentNote: string
   /** 第一次调用（cache miss 基准） */
   first: CacheCallUsage
   /** 第二次调用（前缀一致，期望命中） */
@@ -104,6 +107,16 @@ export async function runCacheCheck(llm: LLMProvider = createProvider(), opts: {
   const ratioOf = (u: CacheCallUsage): number | null =>
     u.promptTokens > 0 ? Math.round((u.cacheReadTokens / u.promptTokens) * 100) : null
 
+  /** 命中片段构成诊断（v0.6.142）：基于命中率给出人类可读说明——帮助理解「部分命中是预期行为」：
+   *  cache-check 的 prompt = 稳定 system 前缀 + 每次变化的 user 消息；服务端按前缀缓存，第二轮命中
+   *  的是稳定前缀部分，user 消息尾部每次不同不参与命中（命中率 <100% 属正常，不代表缓存失效） */
+  const segmentNoteOf = (ratio: number | null): string => {
+    if (ratio === null) return '命中率不可计算（prompt tokens 为 0 或调用失败）'
+    if (ratio === 100) return '完整命中：稳定前缀与本次 user 消息均被缓存命中'
+    if (ratio > 0) return '部分命中（预期）：命中的是稳定 system 前缀；未命中的 user 消息尾部每次变化，不影响前缀缓存有效性'
+    return '未命中：稳定前缀未建立或已过期（可间隔 <5min 重试）'
+  }
+
   // 逐轮调用：第 1 轮建立缓存（miss 基准），第 2..N 轮期望命中；任一轮失败 → ok:false 不抛
   const usages: CacheCallUsage[] = []
   let model = ''
@@ -118,6 +131,7 @@ export async function runCacheCheck(llm: LLMProvider = createProvider(), opts: {
         model,
         provider: detectProvider(model),
         prefixChars: system.length,
+        hitSegmentNote: segmentNoteOf(usages.length > 0 ? ratioOf(usages[usages.length - 1]) : null),
         first: usages[0] || zero(),
         second: zero(),
         rounds,
@@ -189,6 +203,7 @@ export async function runCacheCheck(llm: LLMProvider = createProvider(), opts: {
     model,
     provider: detectProvider(model),
     prefixChars: system.length,
+    hitSegmentNote: segmentNoteOf(ratioOf(last)),
     first,
     second: last,
     rounds,
@@ -219,6 +234,7 @@ export function cacheCheckToJson(r: CacheCheckResult): string {
       model: r.model,
       provider: r.provider,
       prefixChars: r.prefixChars,
+      hitSegmentNote: r.hitSegmentNote,
       hitTokens: r.hitTokens,
       hitRatio: r.hitRatio,
       runHitRatios: r.runHitRatios,

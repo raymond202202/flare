@@ -382,6 +382,19 @@ Interactive mode commands:
 
 ### Changelog / Release Notes
 
+## v0.6.142（2026-08-15）
+- ✨ **cache-check 命中片段构成诊断（prompt caching 基建深化）**：`CacheCheckResult` 新增
+  `hitSegmentNote`（基于末轮命中率的人类可读说明，四档：完整命中 / 部分命中（预期，稳定前缀命中、
+  user 消息尾部每次变化不参与）/ 未命中 / 命中率不可计算）——帮助理解「命中率 <100% 属正常」：
+  cache-check 的 prompt = 稳定 system 前缀 + 每次变化的 user 消息，服务端按前缀缓存，命中的是
+  稳定前缀部分；CLI 文本模式新增「命中片段:」行展示诊断，--json 同步透传（结构向后兼容）
+- 实现：src/core/cache-check.ts 结果与序列化补字段（成功/失败分支都赋值，失败路径 null → 不可计算）；
+  src/cli/index.ts cache-check 文本模式展示行（纯展示层）
+- 测试：cache-check.test.ts 补 1 用例（完整/部分/未命中/失败四档 + JSON 透传）+ 既有 JSON 断言更新
+- 文档：README Changelog 条目 + docs/flare-token-architecture.md 补诊断说明 + package.json/
+  package-lock.json 0.6.141 → 0.6.142
+- 纯外围增强：零 agent.ts 改动（Agent.run 核心循环零触碰）、零 push、零敏感信息
+
 ## v0.6.141（2026-08-15）
 - 🐛 **findSimilarMemories 相似对规范化 idA < idB（测试稳定性修复，flare 验收提示的偶发失败源）**：
   `getAllMemories()` 按 `created_at DESC`（秒级精度）排序，同秒插入多条记忆时返回顺序不稳定——
