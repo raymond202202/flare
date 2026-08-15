@@ -1,5 +1,11 @@
 # Flare 引擎迭代进度（夜间调研 agent）
 
+> **【✅ 第一百四十五轮完成】P194 推荐模型拉取脚本（混合模式方向候选#5，本地小模型路由五项候选全部落地）**：
+> commit `cfeabec`，新增 scripts/pull-recommended-models.sh（qwen3:1.7b / deepseek-r1:1.5b / qwen3:30b-a3b MoE
+> 推荐清单，白名单校验/--list/缺 ollama 友好提示）+ docs/multi-model.md 补推荐拉取章节，零 src 改动、tsc 0 错误、
+> 1206/1206 全绿、零 agent.ts 改动、无版本变化（详情见下方 P194 条目）。
+> **【✅ 第一百四十四轮完成】P193 (v0.6.137) ollama 模型发现增强——models 命令展示本地模型能力标签**：
+> commit `e8ecf74`，tsc 0 错误、1206/1206 全绿、零 agent.ts 改动、已自安装（详情见下方 P193 条目）。
 > **【✅ 第一百四十三轮完成】P192 (v0.6.136) usage 按 provider 拆分统计 + detectProvider 上移 core（混合模式成本收益评估）**：
 > commit `0213bc6`，tsc 0 错误、1200/1200 全绿、零 agent.ts 改动、已自安装（详情见下方 P192 条目）。
 > **【✅ 第一百四十二轮完成】P191 (v0.6.135) 任务复杂度路由接入面——CLI 单次命令 flare route（混合模式查询面）**：
@@ -5632,3 +5638,53 @@
 
 ---
 
+
+### 2026-08-15 第一百四十五轮完成（P194，推荐模型拉取脚本）——本地小模型路由五项候选全部落地
+
+> **P194 完成**（commit `cfeabec`）：新增 `scripts/pull-recommended-models.sh` 一键拉取官方推荐
+> 本地模型（混合模式方向候选#5，本地小模型路由五项候选全部落地）：
+> - 推荐清单（Ollama 命名，64GB 内存 + 4GB 显存友好）：`qwen3:1.7b` 轻量通用对话（简单问答/分类/
+>   抽取/摘要/翻译/格式化）、`deepseek-r1:1.5b` 轻量推理（DeepSeek-R1 蒸馏版）、`qwen3:30b-a3b`
+>   MoE 高性价比大模型（30B 总参/3B 激活，复杂文本理解，显存占用低）
+> - 用法：无参拉全部 / 指定模型（可多个，白名单校验后拉取）/ `--list` 查看清单不拉取（在
+>   has_ollama 检查前执行，未装 ollama 也能看清单）；未知模型报错 exit 1；缺 ollama 给安装指引 exit 1
+> - 安全：唯一外部输入 `"$@"` 全部经 RECOMMENDED 白名单精确匹配后才 `ollama pull`，无注入面；
+>   仅调用本地 ollama CLI，零网络凭据/零密钥；set -euo pipefail 严格模式
+> - 文档：docs/multi-model.md 混合模式章节补「推荐模型拉取」小节（推荐清单表 + 用法 + LOCAL_MODEL
+>   配置指引，拉取后 `flare route` 验证路由）
+> - **验证**：bash -n 通过、--list 实测输出正确、未知模型 exit 1 实测；npx tsc 0 错误；
+>   PATH=/usr/bin:$PATH npx vitest run 1206/1206 全绿（78 文件；首跑 1 偶发失败复跑全绿，与零 src
+>   改动无关——纯新增脚本+文档）；**零 src 改动**（无版本变化，与纯文档/纯测试先例一致）、
+>   零 agent.ts 改动、零 push、零敏感信息
+> - **flare 验收结论：✅ 通过**——flare 独立运行 git log -1（cfeabec）/git show 审查完整 diff
+>   （2 文件 +121）、bash -n 语法通过、PATH=/usr/bin:$PATH npx vitest run 全量 78 文件 1206/1206
+>   全绿；逐项核对 set -euo pipefail 严格模式、--list 分支在 has_ollama 前执行（未装 ollama 也能看
+>   清单）、白名单校验无 shell 注入面、零网络凭据、git diff HEAD~1 HEAD -- src/core/agent.ts 0 行、
+>   diff 敏感扫描无 api key/密码/token 明文（docs 中 *_API_KEY 均为环境变量名引用非实际值）、
+>   .env 权限 600 未被触碰、工作区干净；结论「验收通过，可以放心合入」；全程零修改零 commit
+> - **下一步候选**：① 【P1】prompt caching 基建深化（缓存写入观测已对称，可考虑 cache-check 命中
+>   率按 provider 拆分/命中内容片段展示，外围）；② CLI/server 确认门接入完整化（confirm 门策略
+>   检查现有覆盖面）；③ MCP 增强（resources 订阅/采样等协议面）；④ 路由决策可视化深化（route
+>   命令 stdin 批量）；⑤ 分层上下文（需评估 run 循环外异步，铁律暂缓）
+
+### 2026-08-15 第一百四十四轮完成（P193，v0.6.137）——ollama 模型发现增强：models 命令展示本地模型能力标签
+
+> **P193 完成**（commit `e8ecf74`，7 文件 +82/-9）：本地小模型路由候选 4「ollama 模型发现增强」——
+> models 命令当前展示模型名+大小，未标注能力（用户无法一眼判断哪个模型适合视觉/推理/嵌入任务）：
+> - `src/core/models.ts` 新增 `inferModelCapabilities(name)` 纯函数（零网络，小写化 + 正则）：
+>   含 vl/vision/llava → 视觉；r1/reasoner → 推理；embed/bge → 嵌入；coder/code → 代码；
+>   默认文本；空字符串兜底不抛错
+> - `src/cli/index.ts`：`flare models` 文本模式与交互 `/model list` 本地 Ollama 列表每行补能力标签
+>   （如 `qwen2.5vl:3b  [视觉]` / `qwen2.5:7b  [文本]`）；--json 与 server models 回包结构不变
+>   （能力标签为展示层推导，不加协议字段）
+> - `src/index.ts` 导出 detectProvider 收敛到 core/models.js 单一来源（server.ts re-export 保持兼容）
+> - 测试：models.test.ts 补 6 用例（视觉/推理/嵌入/代码/默认文本/vl 命名变体）
+> - 文档：README Changelog + package.json/package-lock.json 0.6.136 → 0.6.137
+> - **验证**：tsc 0 错误；1206/1206 全绿（78 文件，基线 1200 + 6）；**零 agent.ts 改动**；自安装
+>   installed 0.6.137 = repo 0.6.137；零 push、零敏感信息
+> - **flare 验收结论：✅ 通过**——flare 独立运行 git log -1（e8ecf74）/git show 审查完整 diff（7 文件
+>   +82/-9）、npx tsc 0 错误、PATH=/usr/bin:$PATH npx vitest run 全量 78 文件 1206/1206 全绿 + 单独
+>   复跑 models.test.ts 13 用例；逐项核对 inferModelCapabilities 空字符串兜底、正则边界（vl 后带
+>   边界符避免误匹配）、纯函数零网络零 IO、--json/server 回包结构不变、git diff HEAD~1 HEAD --
+>   src/core/agent.ts 0 行、diff 敏感扫描无 api key/密码/token 明文；结论「验收通过，可直接合并/
+>   发布」；全程零修改零 commit
