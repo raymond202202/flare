@@ -714,6 +714,21 @@ describe('MemoryStore.findSimilarMemories（v0.6.121 记忆去重检测面）', 
     expect(pairs[0].similarity).toBe(1)
     expect(pairs[0].idA).not.toBe(pairs[0].idB)
   })
+  it('同秒批量插入乱序时 pair 恒满足 idA < idB（v0.6.141：created_at 秒级精度排序不稳定回归）', () => {
+    // getAllMemories 按 created_at DESC（秒级精度）：同秒插入多条近似记忆时返回顺序不稳定，
+    // mems[i].id 可能 > mems[j].id——findSimilarMemories 必须规范化交换保证契约（server.test.ts
+    // 偶发失败源，flare 验收提示）。本用例在乱序发生时能捕获旧实现违反契约（修复后恒通过）
+    const contents = ['批量同秒 用户偏好浅色主题', '批量同秒 用户偏好浅色主题，还喜欢极简风', '批量同秒 用户偏好浅色主题，喜欢极简风']
+    for (let round = 0; round < 5; round++) {
+      for (const c of contents) store.saveMemory(c, 'preference')
+    }
+    const pairs = store.findSimilarMemories()
+    expect(pairs.length).toBeGreaterThanOrEqual(1)
+    for (const p of pairs) {
+      // 契约：idA < idB（无论 getAllMemories 返回顺序如何）
+      expect(p.idA).toBeLessThan(p.idB)
+    }
+  })
   it('threshold 过滤：高于阈值才返回', () => {
     store.saveMemory('用户偏好浅色主题', 'note')
     store.saveMemory('用户偏好浅色主题，还喜欢极简风', 'note')
