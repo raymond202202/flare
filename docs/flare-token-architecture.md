@@ -119,5 +119,11 @@ Layer 3: 当前轮（最新输入）           ← 必留
   `flare cache-check` 文本模式每轮行补「写入 X tokens」（>0 才显示，插在命中率百分比之后、miss 基准
   标注之前），--json 的 runs[].cacheWriteTokens 早已存在——首轮 miss 建立缓存的输入量在文本/JSON/
   server 协议三层可观测，与命中/节省构成完整闭环
+- ✅ **provider 标注 + 预期命中片段规模（v0.6.139）**：`CacheCheckResult` 新增 `provider`
+  （detectProvider(model)：本地 ollama vs 线上 deepseek/openai/other）与 `prefixChars`（构造的稳定
+  system 前缀字符数——「预期命中内容片段」规模：cache-check 命中的就是两次调用逐字节一致的稳定前缀）；
+  CLI 文本模式模型行补 provider 标签（如 `deepseek-chat（线上 deepseek）`）、新增「预期命中片段」行，
+  本地 ollama 模型补语义提示（无服务端缓存计费，cache_read_tokens 通常为 0 属预期而非缓存故障，避免
+  混合模式下误报失败）；--json 同步透传两字段（结构向后兼容）
 - ⏳ 单次迭代 fire 的 prompt tokens 相比 v0.6.27 基线下降 ≥ 30%（P0-1 后测量；工具定义瘦身 P1 候选）
 - ✅ 全部改动 tsc 0 错 + 测试全绿（v0.6.29：630/630）
