@@ -93,8 +93,16 @@ flare chat --help
 | `/search <关键词>` | 搜索历史对话（跨会话） |
 | `/remember` | 保存一条记忆（如: /remember 用户喜欢浅色主题） |
 | `/forget` | 删除记忆（如: /forget 浅色主题，删除包含该关键词的记忆） |
-| `/sessions` | 查看历史会话 |
+| `/sessions [关键词]` | 查看最近会话；带关键词搜索会话（v0.6.44） |
 | `/usage` | 查看 token 用量（含缓存命中/写入/节省，v0.6.131 起缓存写入） |
+| `/context` | 查看当前会话上下文占用（消息数/估算 tokens；超预算提示 /trim，v0.6.46） |
+| `/trim [预算tokens]` | 智能裁剪上下文（v0.6.46：system 保底 + 最近消息 + 配对保护） |
+| `/archived` | 查看归档会话（`/archive` 归档的会话，v0.6.32） |
+| `/archive [会话ID]` | 归档会话（缺省当前会话；数据保留，`/restore` 可恢复） |
+| `/restore <会话ID>` | 恢复归档会话 |
+| `/mcp` | 查看 MCP 服务器状态；`/mcp connect/disconnect <name>` 连接/断开；`/mcp call <server> <tool> [JSON]` 调用外部工具；`/mcp resources/prompts/tools [name]` 查看已桥接资源/提示词/工具；`/mcp read/render/complete/log-level` 读取/渲染/补全/日志级别（v0.5.5 起） |
+| `/allow` | 查看已放行的确认工具（`/allow add <工具名> [session\|always]` 放行、`/allow revoke <工具名>` 撤销，v0.6.7/10） |
+| `/tools` | 查看当前 Agent 可用工具清单（含确认门标注 ⚠需确认 与来源，v0.6.11） |
 | `/clear` | 清屏 |
 
 ---
