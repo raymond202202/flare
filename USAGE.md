@@ -77,6 +77,7 @@ flare route "分析这段代码" --json      # 结构化输出 { tier, feature, 
 flare route "任务1" "任务2" ...        # 批量路由（v0.6.140）：逐条决策 + 汇总；--json 输出 { results: [...], localModel, mainModel }
 echo "把这句话翻译成英文" | flare route # stdin 管道读取（v0.6.140）：无位置参数时从管道/重定向读文本
 # v0.6.143：输出含分类命中特征能力标签（feature：代码特征/复杂特征词/长文本/简单特征词/默认）
+# v0.6.144：批量汇总含特征分布（文本「特征分布:」行；--json 批量含 summary: { total, tierCounts, featureCounts }）
 ```
 
 ### 查看帮助

@@ -3284,9 +3284,9 @@ program
   // v0.6.140：支持批量（多个位置参数逐个决策）+ stdin 读取（管道/重定向场景，如 echo "任务" | flare route）
   program
     .command('route')
-    .description('任务复杂度路由决策：简单任务 → 本地模型（省钱），复杂任务 → 主模型（保质量）；纯函数零调用（v0.6.135，--json 结构化输出；v0.6.140 起支持批量多参数与 stdin 读取；v0.6.143 起输出分类命中特征能力标签）')
+    .description('任务复杂度路由决策：简单任务 → 本地模型（省钱），复杂任务 → 主模型（保质量）；纯函数零调用（v0.6.135，--json 结构化输出；v0.6.140 起支持批量多参数与 stdin 读取；v0.6.143 起输出分类命中特征能力标签；v0.6.144 起批量汇总含特征分布统计）')
     .argument('[text...]', '任务文本（可多个：批量逐个决策；未提供则尝试从 stdin 读取（管道/重定向），仍无内容则显示用法）')
-    .option('-j, --json', 'JSON 结构化输出（单任务 { tier, feature, model, provider, reason, localModel, mainModel }；批量/多任务 { results: [...], localModel, mainModel }）')
+    .option('-j, --json', 'JSON 结构化输出（单任务 { tier, feature, model, provider, reason, localModel, mainModel }；批量/多任务 { results: [...], summary: { total, tierCounts, featureCounts }, localModel, mainModel }）')
     .action((texts: string[] | undefined, options: { json?: boolean }) => {
       const runOne = (text: string) => {
         const r = routeTaskModel(text)
@@ -3328,8 +3328,16 @@ program
           const d = decisions[0]
           console.log(JSON.stringify({ tier: d.tier, feature: d.feature, model: d.model, provider: d.provider, reason: d.reason, localModel: d.localModel, mainModel: d.mainModel }, null, 2))
         } else {
+          // v0.6.144：批量 --json 补 summary（tierCounts + featureCounts 分组统计，程序化消费）
+          const tierCounts: Record<string, number> = {}
+          const featureCounts: Record<string, number> = {}
+          for (const d of decisions) {
+            tierCounts[d.tier] = (tierCounts[d.tier] || 0) + 1
+            featureCounts[d.feature] = (featureCounts[d.feature] || 0) + 1
+          }
           console.log(JSON.stringify({
             results: decisions.map((d) => ({ task: d.text, tier: d.tier, feature: d.feature, model: d.model, provider: d.provider, reason: d.reason })),
+            summary: { total: decisions.length, tierCounts, featureCounts },
             localModel: decisions[0].localModel,
             mainModel: decisions[0].mainModel,
           }, null, 2))
@@ -3347,6 +3355,11 @@ program
       })
       const simple = decisions.filter((d) => d.tier === 'simple').length
       console.log(chalk.gray(`  汇总: 共 ${decisions.length} 个任务 · 简单 ${simple} · 复杂 ${decisions.length - simple}`))
+      // v0.6.144：特征分布（按分类命中能力标签分组统计，理解任务构成）
+      const featCounts = new Map<string, number>()
+      for (const d of decisions) featCounts.set(d.feature, (featCounts.get(d.feature) || 0) + 1)
+      const featLine = [...featCounts.entries()].map(([f, n]) => `${f} ${n}`).join(' · ')
+      console.log(chalk.gray(`  特征分布: ${featLine}`))
     })
 
   // 健康检查单次命令（v0.6.95）：与 server ping 对称（只读，不依赖任何初始化）
