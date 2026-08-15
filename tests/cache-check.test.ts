@@ -172,6 +172,7 @@ describe('runCacheCheck（v0.6.45）', () => {
     expect(parsed.model).toBe('deepseek-chat')
     expect(parsed.provider).toBe('deepseek')
     expect(parsed.prefixChars).toBeGreaterThan(500)
+    expect(parsed.hitSegmentNote).toContain('部分命中')
     expect(parsed.hitTokens).toBe(650)
     expect(parsed.detail).toContain('命中缓存 650 tokens')
     expect(parsed.savedUsd).toBeGreaterThan(0)
@@ -415,5 +416,36 @@ describe('runCacheCheck（v0.6.45）', () => {
       { model: 'unknown-model', usage: { prompt_tokens: 800, completion_tokens: 10, prompt_cache_hit_tokens: 600 } },
     ]).llm)
     expect(ot.provider).toBe('other')
+  })
+
+  it('命中片段构成诊断（v0.6.142）：完整命中/部分命中/未命中三档说明', async () => {
+    // 完整命中：命中 = prompt 全部（100%）
+    const full = await runCacheCheck(makeFake([
+      { model: 'deepseek-chat', usage: { prompt_tokens: 800, completion_tokens: 10, prompt_cache_hit_tokens: 0 } },
+      { model: 'deepseek-chat', usage: { prompt_tokens: 800, completion_tokens: 10, prompt_cache_hit_tokens: 800 } },
+    ]).llm)
+    expect(full.hitSegmentNote).toContain('完整命中')
+    // 部分命中（预期）：命中稳定前缀，user 尾部未命中
+    const partial = await runCacheCheck(makeFake([
+      { model: 'deepseek-chat', usage: { prompt_tokens: 800, completion_tokens: 10, prompt_cache_hit_tokens: 0 } },
+      { model: 'deepseek-chat', usage: { prompt_tokens: 800, completion_tokens: 10, prompt_cache_hit_tokens: 650 } },
+    ]).llm)
+    expect(partial.hitSegmentNote).toContain('部分命中')
+    expect(partial.hitSegmentNote).toContain('user 消息尾部')
+    // 未命中：命中 0
+    const miss = await runCacheCheck(makeFake([
+      { model: 'deepseek-chat', usage: { prompt_tokens: 800, completion_tokens: 10, prompt_cache_hit_tokens: 0 } },
+      { model: 'deepseek-chat', usage: { prompt_tokens: 800, completion_tokens: 10, prompt_cache_hit_tokens: 0 } },
+    ]).llm)
+    expect(miss.hitSegmentNote).toContain('未命中')
+    // 失败路径（第一次调用失败 → 命中率不可计算）
+    const fail = await runCacheCheck(makeFake([
+      { error: new Error('401 api key 无效') },
+      { model: 'deepseek-chat', usage: {} },
+    ]).llm)
+    expect(fail.hitSegmentNote).toContain('不可计算')
+    // JSON 透传
+    const parsed = JSON.parse(cacheCheckToJson(partial))
+    expect(parsed.hitSegmentNote).toBe(partial.hitSegmentNote)
   })
 })
