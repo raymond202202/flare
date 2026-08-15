@@ -12,6 +12,7 @@ import { Agent, createProvider, getMemoryStore, config, tools, McpManager, estim
 import chalk from 'chalk'
 import { execSync } from 'child_process'
 import { createRequire } from 'module'
+import { readFileSync } from 'node:fs'
 import { createInterface } from 'node:readline'
 import { pathToFileURL } from 'node:url'
 import { LineInput } from './line-input.js'
@@ -3278,29 +3279,71 @@ program
 
   // 任务复杂度路由单次命令（v0.6.135）：混合模式本地小模型路由的查询面——
   // 纯函数决策（classifyTaskComplexity/routeTaskModel），不触发生成、不创建会话（与 server models 同级只读）
+  // v0.6.140：支持批量（多个位置参数逐个决策）+ stdin 读取（管道/重定向场景，如 echo "任务" | flare route）
   program
     .command('route')
-    .description('任务复杂度路由决策：简单任务 → 本地模型（省钱），复杂任务 → 主模型（保质量）；纯函数零调用（v0.6.135，--json 结构化输出）')
-    .argument('[text]', '任务文本（未提供则显示用法）')
-    .option('-j, --json', 'JSON 结构化输出（{ tier, model, provider, reason, localModel, mainModel }）')
-    .action((text: string | undefined, options: { json?: boolean }) => {
-      if (!text || !text.trim()) {
+    .description('任务复杂度路由决策：简单任务 → 本地模型（省钱），复杂任务 → 主模型（保质量）；纯函数零调用（v0.6.135，--json 结构化输出；v0.6.140 起支持批量多参数与 stdin 读取）')
+    .argument('[text...]', '任务文本（可多个：批量逐个决策；未提供则尝试从 stdin 读取（管道/重定向），仍无内容则显示用法）')
+    .option('-j, --json', 'JSON 结构化输出（单任务 { tier, model, provider, reason, localModel, mainModel }；批量/多任务 { results: [...], localModel, mainModel }）')
+    .action((texts: string[] | undefined, options: { json?: boolean }) => {
+      const runOne = (text: string) => {
+        const r = routeTaskModel(text)
+        const localModel = (config.get('LOCAL_MODEL') || '').trim() || null
+        const mainModel = (config.get('DEFAULT_MODEL') || 'deepseek-chat').trim()
+        return { text, ...r, localModel, mainModel }
+      }
+      const printOne = (d: ReturnType<typeof runOne>) => {
+        const tierLabel = d.tier === 'simple' ? chalk.green('简单任务') : chalk.yellow('复杂任务')
+        console.log(`${tierLabel} → ${chalk.cyan(d.model)}（${d.provider}）`)
+        console.log(chalk.gray(`  ${d.reason}`))
+        console.log(chalk.gray(`  本地模型: ${d.localModel || '未配置'} · 主模型: ${d.mainModel}`))
+      }
+      const printUsage = () => {
         console.error(chalk.yellow('用法: flare route "<任务文本>"   例: flare route "把这句话翻译成英文"'))
         console.error(chalk.gray('  简单任务（分类/抽取/摘要/翻译/格式化/短问答）→ 本地模型；复杂任务（推理/长代码/创作）→ 主模型'))
+        console.error(chalk.gray('  批量: flare route "任务1" "任务2" ...   或管道: echo "任务文本" | flare route'))
+      }
+      const tasks: string[] = (texts || []).map((t) => (t || '').trim()).filter((t) => t.length > 0)
+      // v0.6.140：无位置参数 → 尝试从 stdin 读取（仅非 TTY 管道/重定向场景；终端交互不阻塞等待）
+      if (tasks.length === 0 && !process.stdin.isTTY) {
+        try {
+          const input = readFileSync(0, 'utf8').trim()
+          if (input) tasks.push(input)
+        } catch {
+          // stdin 读取失败（非管道）→ 走用法提示
+        }
+      }
+      if (tasks.length === 0) {
+        printUsage()
         process.exitCode = 1
         return
       }
-      const r = routeTaskModel(text)
-      const localModel = (config.get('LOCAL_MODEL') || '').trim() || null
-      const mainModel = (config.get('DEFAULT_MODEL') || 'deepseek-chat').trim()
+      const decisions = tasks.map(runOne)
       if (options.json) {
-        console.log(JSON.stringify({ ...r, localModel, mainModel }, null, 2))
+        // 单任务保持 v0.6.135 原结构（向后兼容宿主/脚本消费）；多任务批量输出 { results } 数组
+        if (decisions.length === 1) {
+          const d = decisions[0]
+          console.log(JSON.stringify({ tier: d.tier, model: d.model, provider: d.provider, reason: d.reason, localModel: d.localModel, mainModel: d.mainModel }, null, 2))
+        } else {
+          console.log(JSON.stringify({
+            results: decisions.map((d) => ({ task: d.text, tier: d.tier, model: d.model, provider: d.provider, reason: d.reason })),
+            localModel: decisions[0].localModel,
+            mainModel: decisions[0].mainModel,
+          }, null, 2))
+        }
         return
       }
-      const tierLabel = r.tier === 'simple' ? chalk.green('简单任务') : chalk.yellow('复杂任务')
-      console.log(`${tierLabel} → ${chalk.cyan(r.model)}（${r.provider}）`)
-      console.log(chalk.gray(`  ${r.reason}`))
-      console.log(chalk.gray(`  本地模型: ${localModel || '未配置'} · 主模型: ${mainModel}`))
+      // 文本模式：单任务沿用 v0.6.135 原输出；批量带序号 + 汇总
+      if (decisions.length === 1) {
+        printOne(decisions[0])
+        return
+      }
+      decisions.forEach((d, i) => {
+        console.log(`[${i + 1}/${decisions.length}] ${d.text.slice(0, 60)}${d.text.length > 60 ? '…' : ''}`)
+        printOne(d)
+      })
+      const simple = decisions.filter((d) => d.tier === 'simple').length
+      console.log(chalk.gray(`  汇总: 共 ${decisions.length} 个任务 · 简单 ${simple} · 复杂 ${decisions.length - simple}`))
     })
 
   // 健康检查单次命令（v0.6.95）：与 server ping 对称（只读，不依赖任何初始化）

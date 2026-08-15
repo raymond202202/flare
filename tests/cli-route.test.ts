@@ -25,7 +25,7 @@ afterEach(() => {
   for (const c of children.splice(0)) c.kill()
   rmSync(dir, { recursive: true, force: true })
 })
-function runCli(args: string[], envOverrides: Record<string, string | undefined> = {}): Promise<{ code: number | null; stdout: string; stderr: string }> {
+function runCli(args: string[], envOverrides: Record<string, string | undefined> = {}, input?: string): Promise<{ code: number | null; stdout: string; stderr: string }> {
   return new Promise((resolve) => {
     const child = spawn(process.execPath, [CLI, ...args], {
       env: { ...process.env, FLARE_HOME: dir, ...envOverrides },
@@ -36,6 +36,10 @@ function runCli(args: string[], envOverrides: Record<string, string | undefined>
     child.stdout.on('data', (d) => (stdout += d))
     child.stderr.on('data', (d) => (stderr += d))
     child.on('close', (code) => resolve({ code, stdout, stderr }))
+    if (input !== undefined) {
+      child.stdin.write(input)
+      child.stdin.end()
+    }
   })
 }
 
@@ -95,14 +99,14 @@ describe('flare route', () => {
   }, 20000)
 
   it('缺参数：用法提示 + exit 1（不崩溃）', async () => {
-    const { code, stdout, stderr } = await runCli(['route'])
+    const { code, stdout, stderr } = await runCli(['route'], {}, '')
     expect(code).toBe(1)
     expect(stderr).toContain('用法')
     expect(stdout).toBe('')
   }, 20000)
 
   it('空白参数：用法提示 + exit 1', async () => {
-    const { code, stderr } = await runCli(['route', '   '])
+    const { code, stderr } = await runCli(['route', '   '], {}, '')
     expect(code).toBe(1)
     expect(stderr).toContain('用法')
   }, 20000)
@@ -112,5 +116,62 @@ describe('flare route', () => {
     expect(code).toBe(0)
     const parsed = JSON.parse(stdout)
     expect(parsed.tier).toBe('complex')
+  }, 20000)
+
+  it('批量多参数（v0.6.140）：文本模式逐条输出 + 汇总行', async () => {
+    const { code, stdout } = await runCli(['route', SIMPLE_TEXT, COMPLEX_TEXT], { LOCAL_MODEL: 'qwen2.5:7b' })
+    expect(code).toBe(0)
+    // 两条任务都出现（含序号前缀）
+    expect(stdout).toContain('[1/2]')
+    expect(stdout).toContain('[2/2]')
+    expect(stdout).toContain('简单任务')
+    expect(stdout).toContain('复杂任务')
+    // 汇总行：共 2 个任务 · 简单 1 · 复杂 1
+    expect(stdout).toContain('汇总: 共 2 个任务 · 简单 1 · 复杂 1')
+  }, 20000)
+
+  it('批量多参数（v0.6.140）：--json 输出 { results: [...] } 数组 + 公共模型字段', async () => {
+    const { code, stdout } = await runCli(['route', SIMPLE_TEXT, COMPLEX_TEXT, '--json'], { LOCAL_MODEL: 'qwen2.5:7b' })
+    expect(code).toBe(0)
+    expect(stdout).not.toMatch(/\u001b\[/)
+    const parsed = JSON.parse(stdout)
+    expect(Array.isArray(parsed.results)).toBe(true)
+    expect(parsed.results).toHaveLength(2)
+    expect(parsed.results[0]).toMatchObject({ tier: 'simple', model: 'qwen2.5:7b', provider: 'ollama' })
+    expect(parsed.results[1]).toMatchObject({ tier: 'complex', model: 'deepseek-chat', provider: 'deepseek' })
+    // 每个结果带 task 原文
+    expect(parsed.results[0].task).toBe(SIMPLE_TEXT)
+    expect(parsed.results[1].task).toBe(COMPLEX_TEXT)
+    expect(parsed.localModel).toBe('qwen2.5:7b')
+    expect(parsed.mainModel).toBe('deepseek-chat')
+  }, 20000)
+
+  it('stdin 管道读取（v0.6.140）：无位置参数 + stdin 文本 → 按整体任务决策（echo "任务" | flare route）', async () => {
+    const { code, stdout } = await runCli(['route'], { LOCAL_MODEL: 'qwen2.5:7b' }, SIMPLE_TEXT)
+    expect(code).toBe(0)
+    expect(stdout).toContain('简单任务')
+    expect(stdout).toContain('qwen2.5:7b')
+    // 单任务 stdin 走原单任务结构（--json 保持对象而非 results 数组）
+    const j = await runCli(['route', '--json'], { LOCAL_MODEL: 'qwen2.5:7b' }, COMPLEX_TEXT)
+    expect(j.code).toBe(0)
+    const parsed = JSON.parse(j.stdout)
+    expect(parsed.results).toBeUndefined()
+    expect(parsed.tier).toBe('complex')
+    expect(parsed.model).toBe('deepseek-chat')
+  }, 20000)
+
+  it('stdin 空内容（v0.6.140）：无位置参数 + stdin 空白 → 用法提示 + exit 1（不崩溃）', async () => {
+    const { code, stderr } = await runCli(['route'], {}, '   \n  ')
+    expect(code).toBe(1)
+    expect(stderr).toContain('用法')
+  }, 20000)
+
+  it('批量含空白参数（v0.6.140）：空白位置参数被过滤，剩余任务正常决策', async () => {
+    const { code, stdout } = await runCli(['route', '   ', SIMPLE_TEXT], { LOCAL_MODEL: 'qwen2.5:7b' })
+    expect(code).toBe(0)
+    // 空白过滤后剩 1 个任务 → 走单任务输出（无序号/汇总行）
+    expect(stdout).not.toContain('[1/')
+    expect(stdout).toContain('简单任务')
+    expect(stdout).toContain('qwen2.5:7b')
   }, 20000)
 })

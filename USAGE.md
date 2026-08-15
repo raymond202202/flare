@@ -74,6 +74,8 @@ flare create-session <会话ID> "网络调试"
 # 任务复杂度路由决策（v0.6.135）：简单任务 → 本地模型省钱，复杂任务 → 主模型保质量（纯函数零调用）
 flare route "把这句话翻译成英文"        # 文本输出决策
 flare route "分析这段代码" --json      # 结构化输出 { tier, model, provider, reason, localModel, mainModel }
+flare route "任务1" "任务2" ...        # 批量路由（v0.6.140）：逐条决策 + 汇总；--json 输出 { results: [...], localModel, mainModel }
+echo "把这句话翻译成英文" | flare route # stdin 管道读取（v0.6.140）：无位置参数时从管道/重定向读文本
 ```
 
 ### 查看帮助

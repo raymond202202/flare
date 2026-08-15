@@ -382,6 +382,23 @@ Interactive mode commands:
 
 ### Changelog / Release Notes
 
+## v0.6.140（2026-08-15）
+- ✨ **route 命令支持批量多参数 + stdin 管道读取（路由决策可视化深化，混合模式方向候选④）**：
+  单任务行为不变（文本/--json 输出与 v0.6.135 完全一致，向后兼容）；新增两个批量入口——
+  `flare route "任务1" "任务2" ...`（多个位置参数逐个决策，文本模式带序号 + 汇总行
+  「共 N 个任务 · 简单 X · 复杂 Y」，--json 输出 `{ results: [{ task, tier, model, provider, reason }], localModel, mainModel }`）
+  与 `echo "任务文本" | flare route`（无位置参数且 stdin 非 TTY 时从管道/重定向读取整体文本决策；
+  终端交互不阻塞，仍无内容 → 用法提示 exit 1）
+- 实现：src/cli/index.ts route 命令 `.argument('[text...]')` variadic 改造 + stdin 读取分支
+  （`process.stdin.isTTY` 守卫 + `readFileSync(0)` 带 try/catch）；纯展示/入口层，routeTaskModel
+  核心零改动
+- 测试：cli-route.test.ts 补 4 用例（批量文本模式序号+汇总 / 批量 --json results 数组结构 /
+  stdin 管道读取单任务保持原结构 / stdin 空白用法提示）+ 更新 2 既有用例（缺参/空白参显式 end
+  stdin 以匹配管道 EOF 语义）+ 批量含空白参数过滤
+- 文档：README Changelog 条目 + USAGE.md 单次命令补批量与管道用法 + docs/multi-model.md 查询面
+  同步 + package.json/package-lock.json 0.6.139 → 0.6.140
+- 纯外围增强：零 agent.ts 改动（Agent.run 核心循环零触碰）、零 push、零敏感信息
+
 ## v0.6.139（2026-08-15）
 - ✨ **cache-check 补 provider 标注 + 预期命中片段规模（prompt caching 基建深化 + 混合模式观测面）**：
   `CacheCheckResult` 新增 `provider`（detectProvider(model)：本地 ollama vs 线上 deepseek/openai/other）
