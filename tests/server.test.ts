@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url'
 import path from 'node:path'
 import os from 'node:os'
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import type { Server } from 'node:http'
 import { DEFAULT_CONFIRM_TOOLS } from '../src/server.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
@@ -17,6 +18,10 @@ let child: ChildProcess
 let rl: Interface
 let nextId = 0
 let tempDir: string
+
+/** mock LLM HTTP 服务器（OpenAI 兼容）：任意 POST /v1/chat/completions → 固定回复，快速稳定（P186，与 P181/P182 同款） */
+let mockLlm: Server | undefined
+let mockLlmUrl = ''
 
 /** 协议事件类型（chat 流式收集用） */
 const CHAT_EVENTS = ['text', 'tool_call', 'tool_execute', 'tool_result', 'done', 'error', 'cancelled']
@@ -66,17 +71,51 @@ function request(msg: any, opts: RequestOpts = {}): Promise<any[]> {
 }
 
 beforeAll(async () => {
+  // P186：mock LLM 服务器（起在随机端口；与 cli-chat-session.test.ts P181 / server-default-params.test.ts P182 同款）——
+  // 根治 server.test.ts 主 server 的 chat 真实调用偶发慢源（无 key fallback 本地模型 / ~/.flare/.env 注入真实 key 走远端网络）
+  const http = await import('node:http')
+  mockLlm = http.createServer((req, res) => {
+    if (req.method === 'POST' && req.url?.includes('/chat/completions')) {
+      req.resume()
+      res.setHeader('content-type', 'application/json')
+      res.end(JSON.stringify({
+        id: 'mock-chat-1',
+        object: 'chat.completion',
+        created: 1700000000,
+        model: 'mock-model',
+        choices: [{
+          index: 0,
+          message: { role: 'assistant', content: 'mock 回复（P186 测试稳定性：不走真实模型）' },
+          finish_reason: 'stop',
+        }],
+        usage: { prompt_tokens: 12, completion_tokens: 8, total_tokens: 20 },
+      }))
+      return
+    }
+    res.statusCode = 404
+    res.end('not found')
+  })
+  await new Promise<void>((resolve) => mockLlm!.listen(0, '127.0.0.1', resolve))
+  const addr = mockLlm!.address()
+  mockLlmUrl = `http://127.0.0.1:${typeof addr === 'object' && addr ? addr.port : 0}/v1`
+
   // 隔离测试库：协议测试全用临时库（不污染 ~/.flare/flare.db），数据往返断言确定
   tempDir = mkdtempSync(path.join(os.tmpdir(), 'flare-server-test-'))
   // 不设 DEEPSEEK_API_KEY（真实"未配置"状态），验证协议错误路径
   const env: Record<string, string> = { ...process.env } as Record<string, string>
   delete env.DEEPSEEK_API_KEY
+  delete env.OPENAI_API_KEY
+  // P186：显式注入 mock 端点/模型（config 构造时 process.env 优先于 dotenv，测试子进程不继承真实凭据）
+  env.LLM_BASE_URL = mockLlmUrl
+  env.LLM_API_KEY = 'mock-key'
+  env.DEFAULT_MODEL = 'mock-model'
   child = spawn(process.execPath, [CLI, 'server', '--storage', path.join(tempDir, 'test.db')], { env, stdio: ['pipe', 'pipe', 'pipe'] })
   rl = createInterface({ input: child.stdout! })
 })
 
 afterAll(() => {
   child.kill()
+  mockLlm?.close()
   rmSync(tempDir, { recursive: true, force: true })
 })
 
@@ -108,20 +147,18 @@ describe('flare host server 协议', () => {
     expect(msgs[0].message).toContain('JSON 解析失败')
   })
 
-  it('chat（可能 fallback 本地模型）→ 协议流完整（事件 + 以 done/error 结束）', async () => {
-    // 环境无 DEEPSEEK_API_KEY 时，引擎可能 fallback 到本地 Ollama（用户机器有）→ 不断言具体错误
-    // 只验证协议：收到事件流且以 done / error 终止，不挂死
-    // 注意：子进程 config.ts 会重新加载 ~/.flare/.env（dotenv），可能注入真实 key 走远端 API，
-    // 远端网络慢时超过 vitest 默认 5s —— 显式放宽该测试超时（45s）
-    const msgs = await request({ type: 'chat', sessionId: 's-test', input: '你好' }, { collectAll: true, timeout: 45000 })
+  it('chat（mock LLM）→ 协议流完整（事件 + 以 done 结束）', async () => {
+    // P186：mock LLM 注入后生成稳定成功（done 而非 error）——不再依赖外部模型/网络，
+    // 不再受 ~/.flare/.env 真实 key 走远端网络的影响；断言从「done/error/cancelled 皆可」收紧为「稳定 done」
+    const msgs = await request({ type: 'chat', sessionId: 's-test', input: '你好' }, { collectAll: true, timeout: 15000 })
     expect(msgs.length).toBeGreaterThan(0)
     const last = msgs[msgs.length - 1]
-    expect(['done', 'error', 'cancelled'].includes(last.type)).toBe(true)
+    expect(last.type).toBe('done')
     // 事件类型合法
     for (const m of msgs) {
       expect(['text', 'tool_call', 'tool_execute', 'tool_result', 'done', 'error', 'cancelled'].includes(m.type)).toBe(true)
     }
-  }, 45000)
+  }, 15000)
 
   it('chat 带 model 字段（本地 Ollama 主模型）→ 协议流完整（模型选择不破坏流程）', async () => {
     // v0.5.2：chat 请求支持可选 model（如 qwen2.5:7b 本地 Ollama / deepseek-chat 远端）。
@@ -1164,18 +1201,18 @@ describe('flare host server 协议', () => {
   })
 
   it('chat 带合法 maxTokens/temperature → 协议流完整（采样参数透传不破坏流程）', async () => {
-    // 不断言具体错误（可能 fallback 本地 Ollama / 远端网络），只验证协议：参数被接受且事件流正常终止
+    // P186：mock LLM 注入后生成稳定成功（done）——断言从「done/error/cancelled 皆可」收紧为「稳定 done」
     const msgs = await request(
       { type: 'chat', sessionId: 's-param5', input: '你好', maxTokens: 512, temperature: 0.5 },
-      { collectAll: true, timeout: 45000 }
+      { collectAll: true, timeout: 15000 }
     )
     expect(msgs.length).toBeGreaterThan(0)
     const last = msgs[msgs.length - 1]
-    expect(['done', 'error', 'cancelled'].includes(last.type)).toBe(true)
+    expect(last.type).toBe('done')
     for (const m of msgs) {
       expect(['text', 'tool_call', 'tool_execute', 'tool_result', 'done', 'error', 'cancelled'].includes(m.type)).toBe(true)
     }
-  }, 45000)
+  }, 15000)
 
   it('get_config → config 响应（服务器运行配置，v0.6.18 只读不触发生成）', async () => {
     const msgs = await request({ type: 'get_config' }, { expect: ['config'] })
