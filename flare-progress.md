@@ -1,5 +1,7 @@
 # Flare 引擎迭代进度（夜间调研 agent）
 
+> **【✅ 第一百四十七轮小步】P196 (纯文档) host-protocol/USAGE 同步 usage perProvider 字段与按提供方缓存观测**：
+> commit `2f0fc4c`，纯文档零 src 改动、tsc 0 错误、无版本变化（详情见下方 P196 条目）。
 > **【✅ 第一百四十六轮完成】P195 (v0.6.138) usage 按提供方缓存观测深化——provider 行补缓存命中/写入/节省子行（prompt caching 基建深化 + 混合模式成本收益）**：
 > commit `fa08d2b`，tsc 0 错误、1209/1209 全绿、零 agent.ts 改动、已自安装（详情见下方 P195 条目）。
 > **【✅ 第一百四十五轮完成】P194 推荐模型拉取脚本（混合模式方向候选#5，本地小模型路由五项候选全部落地）**：
@@ -5717,6 +5719,29 @@
 >   providerCacheLines 与 store groupByProvider 字段完全对齐、cacheRead/cacheWrite 为 0 时
 >   自动省略子行（本地 ollama 场景测试覆盖）、三处调用点统一复用、缩进层级视觉合理
 >   （provider 子行 6 空格 < perModel 4）；结论「全部通过，成功完成状态」；全程零修改零 commit
+> - **下一步候选**：① 【P1】prompt caching 基建深化：cache-check 命中率按 provider 拆分/
+>   命中内容片段展示；② CLI/server 确认门接入完整化（confirm 门策略检查现有覆盖面）；
+>   ③ MCP 增强（resources 订阅/采样等协议面）；④ 路由决策可视化深化（route 命令 stdin 批量）；
+>   ⑤ 分层上下文（需评估 run 循环外异步，铁律暂缓）
+
+### 2026-08-15 第一百四十七轮小步（P196，纯文档）——host-protocol/USAGE 同步 usage perProvider 字段
+
+> **P196 完成**（commit `2f0fc4c`，2 文件 +6/-3）：文档对称——P192 给 store 加了 perProvider
+> 字段、P195 给「按提供方:」区块加了缓存子行，但 host-protocol.md 的 get_usage/session_usage
+> 响应示例与 USAGE.md 的 /usage 行未同步：
+> - docs/host-protocol.md get_usage 响应示例补 perProvider 字段（deepseek/ollama 两行示例，含
+>   cacheReadTokens/cacheWriteTokens/cacheSavedUsd）+ 字段说明条目（v0.6.136：detectProvider
+>   推断 provider / 按 totalTokens 降序 / 纯内存归并无额外查询；v0.6.138 起 CLI 文本模式按提供方
+>   区块缓存命中/写入子行，--json 与 server 回包字段不变）
+> - docs/host-protocol.md session_usage 响应示例同步补 perProvider + 说明条目（与 get_usage
+>   同口径）
+> - USAGE.md `/usage` 行补 v0.6.136 按提供方拆分 + v0.6.138 按提供方区块缓存命中/写入子行
+> - **验证**：npx tsc 0 错误（纯文档零 src 改动）；无版本变化（与纯文档先例一致）；零 agent.ts
+>   改动、零 push、零敏感信息
+> - **flare 验收结论：✅ 通过**——flare 独立运行 git log -1（2f0fc4c）/git show 审查：perProvider
+>   字段/排序/语义与 store groupByProvider 实际返回一致（字段名/降序/纯内存归并核对）、改动仅
+>   docs 两文件零 src、未触碰 agent.ts、diff 敏感扫描无 api key/密码/token 明文（命中 token 均为
+>   用量业务字段非凭据）；结论「通过（放行，无需修改），文档对称性同步方向正确」；全程零修改零 commit
 > - **下一步候选**：① 【P1】prompt caching 基建深化：cache-check 命中率按 provider 拆分/
 >   命中内容片段展示；② CLI/server 确认门接入完整化（confirm 门策略检查现有覆盖面）；
 >   ③ MCP 增强（resources 订阅/采样等协议面）；④ 路由决策可视化深化（route 命令 stdin 批量）；
