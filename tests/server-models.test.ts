@@ -61,14 +61,17 @@ describe('detectProvider（模型名 → provider 类型推断）', () => {
 // config 是模块级单例（从 env 加载）：测试修改后恢复原值，避免污染其他测试
 const savedMain = config.get('DEFAULT_MODEL') || 'deepseek-chat'
 const savedVision = config.get('VISION_MODEL') || ''
+const savedLocal = config.get('LOCAL_MODEL') || ''
 afterEach(() => {
   config.set('DEFAULT_MODEL', savedMain)
   config.set('VISION_MODEL', savedVision)
+  config.set('LOCAL_MODEL', savedLocal)
 })
 
 describe('collectModelInfo（模型信息收集，mock fetch）', () => {
   it('Ollama 可达：configured 主模型解析 + 模型列表解析（名称/大小/时间）', async () => {
     config.set('VISION_MODEL', '') // 显式清除：断言"未配置 → null"，不受本机 ~/.flare/.env 影响
+    config.set('LOCAL_MODEL', '') // 同上：本地路由模型未配置 → null
     const r = await collectModelInfo(mockFetch('ok'))
     expect(r.configured.main.model).toBe(savedMain)
     expect(r.configured.main.baseURL).toBeTruthy()
@@ -76,6 +79,8 @@ describe('collectModelInfo（模型信息收集，mock fetch）', () => {
     expect(typeof r.configured.main.hasApiKey).toBe('boolean')
     // 视觉模型未配置 → null
     expect(r.configured.vision).toBeNull()
+    // 本地路由模型未配置 → null（v0.6.134 混合模式）
+    expect(r.configured.local).toBeNull()
     expect(r.ollama.ok).toBe(true)
     expect(r.ollama.models).toHaveLength(2)
     expect(r.ollama.models[0]).toEqual({
@@ -83,6 +88,18 @@ describe('collectModelInfo（模型信息收集，mock fetch）', () => {
       size: 4_700_000_000,
       modifiedAt: '2026-08-01T00:00:00Z',
     })
+  })
+
+  it('本地路由模型已配置：configured.local 返回端点信息（ollama provider + 本地端点）', async () => {
+    config.set('LOCAL_MODEL', 'qwen2.5:7b')
+    const r = await collectModelInfo(mockFetch('ok'))
+    expect(r.configured.local).not.toBeNull()
+    expect(r.configured.local!.model).toBe('qwen2.5:7b')
+    expect(r.configured.local!.provider).toBe('ollama')
+    expect(r.configured.local!.baseURL).toContain('localhost:11434')
+    expect(r.configured.local!.hasApiKey).toBe(true)
+    // 主/视觉模型不受影响
+    expect(r.configured.main.model).toBe(savedMain)
   })
 
   it('视觉模型已配置：vision 返回端点信息（ollama provider + 本地端点 + apiKey 占位）', async () => {

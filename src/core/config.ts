@@ -44,6 +44,12 @@ class Config {
     this.store.set('VISION_MODEL', process.env.VISION_MODEL || '')
     this.store.set('VISION_BASE_URL', process.env.VISION_BASE_URL || '')
     this.store.set('VISION_API_KEY', process.env.VISION_API_KEY || '')
+    // 本地路由模型（v0.6.134 混合模式）：简单任务走本地小模型（省钱/隐私/离线）——
+    // LOCAL_MODEL 为 Ollama 命名（如 qwen2.5:7b，含 ':' 自动走本地端点）；
+    // LOCAL_BASE_URL / LOCAL_API_KEY 可覆盖默认 Ollama 端点（http://localhost:11434/v1，apiKey 'ollama'）
+    this.store.set('LOCAL_MODEL', process.env.LOCAL_MODEL || '')
+    this.store.set('LOCAL_BASE_URL', process.env.LOCAL_BASE_URL || '')
+    this.store.set('LOCAL_API_KEY', process.env.LOCAL_API_KEY || '')
     this.store.set('FLARE_HOME', flareHome)
   }
 
