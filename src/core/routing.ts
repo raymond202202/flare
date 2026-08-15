@@ -50,13 +50,30 @@ function hasCode(text: string): boolean {
  * 5. 默认：短文本无特征 → simple（简单问答/闲聊）
  */
 export function classifyTaskComplexity(text: string): TaskComplexity {
+  return classifyTaskDetail(text).tier
+}
+
+/** 分类结果（含命中特征能力标签，v0.6.143） */
+export interface TaskClassification {
+  tier: TaskComplexity
+  /** 命中的分类依据（人类可读能力标签：代码特征 / 复杂特征词 / 长文本 / 简单特征词 / 默认） */
+  feature: string
+}
+
+/**
+ * 任务复杂度分类（含命中特征说明，v0.6.143）。
+ *
+ * 判定顺序与 classifyTaskComplexity 完全一致（同一规则集），额外返回命中的能力标签，
+ * 供 CLI route 展示「为什么这样路由」（宿主可据此做统计/审计）。
+ */
+export function classifyTaskDetail(text: string): TaskClassification {
   const t = (text || '').trim()
-  if (!t) return 'simple'
-  if (hasCode(t)) return 'complex'
-  if (COMPLEX_HINTS.some((h) => t.includes(h))) return 'complex'
-  if (t.length > 300) return 'complex'
-  if (SIMPLE_HINTS.some((h) => t.includes(h))) return 'simple'
-  return 'simple'
+  if (!t) return { tier: 'simple', feature: '空文本默认简单' }
+  if (hasCode(t)) return { tier: 'complex', feature: '代码特征（长代码/代码任务）' }
+  if (COMPLEX_HINTS.some((h) => t.includes(h))) return { tier: 'complex', feature: '复杂特征词（分析/推理/创作/算法等）' }
+  if (t.length > 300) return { tier: 'complex', feature: '长文本（>300 字符，需上下文理解）' }
+  if (SIMPLE_HINTS.some((h) => t.includes(h))) return { tier: 'simple', feature: '简单特征词（分类/抽取/摘要/翻译/格式化等）' }
+  return { tier: 'simple', feature: '短文本默认简单（问答/闲聊）' }
 }
 
 /** 路由决策结果 */
@@ -68,6 +85,8 @@ export interface RouteTaskResult {
   provider: 'ollama' | 'deepseek' | 'openai' | 'other'
   /** 决策原因（人类可读，CLI 展示用） */
   reason: string
+  /** 分类命中特征能力标签（v0.6.143：如「代码特征」「复杂特征词」「简单特征词」） */
+  feature: string
 }
 
 /**
@@ -83,7 +102,7 @@ export function routeTaskModel(
   text: string,
   opts: { localModel?: string; mainModel?: string } = {}
 ): RouteTaskResult {
-  const tier = classifyTaskComplexity(text)
+  const { tier, feature } = classifyTaskDetail(text)
   const localModel = (opts.localModel || config.get('LOCAL_MODEL') || '').trim()
   const mainModel = (opts.mainModel || config.get('DEFAULT_MODEL') || 'deepseek-chat').trim()
 
@@ -96,6 +115,7 @@ export function routeTaskModel(
       reason: localModel
         ? '简单任务 → 本地模型（省钱/隐私/离线）'
         : '简单任务 → 未配置 LOCAL_MODEL，回退主模型',
+      feature,
     }
   }
   return {
@@ -103,5 +123,6 @@ export function routeTaskModel(
     model: mainModel,
     provider: detectProvider(mainModel),
     reason: '复杂任务 → 线上主模型（保质量）',
+    feature,
   }
 }

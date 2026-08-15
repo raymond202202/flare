@@ -128,6 +128,9 @@ LOCAL_MODEL=qwen2.5:7b        # 本地路由模型（Ollama 命名，含 ':' 自
 - `flare route "任务1" "任务2" ...`（v0.6.140）：批量路由——逐条决策 + 汇总行；`--json` 输出
   `{ results: [{ task, tier, model, provider, reason }], localModel, mainModel }`
 - `echo "任务文本" | flare route`（v0.6.140）：无位置参数时从 stdin（管道/重定向）读取整体文本决策
+- 分类命中特征能力标签（v0.6.143）：`route` 文本模式新增「特征:」行、`--json` 单任务与批量
+  `results[].feature` 字段——展示命中依据（代码特征 / 复杂特征词 / 长文本 / 简单特征词 / 默认），
+  宿主可据此做路由统计/审计
 
 ### 宿主集成（代码里）
 
