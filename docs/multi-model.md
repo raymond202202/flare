@@ -136,6 +136,27 @@ const r = routeTaskModel('把这句话翻译成英文：你好')
 // 按 r.model 创建 provider 即可（createProvider({ model: r.model })）
 ```
 
+### 推荐模型拉取（scripts/pull-recommended-models.sh，P194）
+
+混合模式建议按需拉取轻量本地模型（64GB 内存 + 4GB 显存友好），官方推荐清单：
+
+| 模型（Ollama 命名） | 用途 | 说明 |
+|---|---|---|
+| `qwen3:1.7b` | 轻量通用对话 | 简单问答/分类/抽取/摘要/翻译/格式化，快且省 |
+| `deepseek-r1:1.5b` | 轻量推理 | DeepSeek-R1 蒸馏版，简单逻辑/解释 |
+| `qwen3:30b-a3b` | MoE 高性价比大模型 | 30B 总参/3B 激活（MoE），复杂文本理解，显存占用低 |
+
+一键拉取脚本（仅调用本地 ollama CLI，零凭据）：
+
+```bash
+scripts/pull-recommended-models.sh             # 拉取全部推荐模型
+scripts/pull-recommended-models.sh qwen3:1.7b  # 只拉取指定模型（可多个）
+scripts/pull-recommended-models.sh --list      # 查看推荐清单（不拉取）
+```
+
+拉取后在 `~/.flare/.env` 配置 `LOCAL_MODEL=qwen3:1.7b`（或按需换），
+再用 `flare route "<任务文本>"` 验证简单任务是否路由到本地模型。
+
 ## 常见问题
 
 - **Ollama 没启动**：`/model qwen2.5:7b` 后对话报连接错误 → 先 `ollama serve` 并 `ollama pull qwen2.5:7b`
