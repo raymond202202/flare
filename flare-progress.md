@@ -1,5 +1,7 @@
 # Flare 引擎迭代进度（夜间调研 agent）
 
+> **【✅ 第一百四十三轮完成】P192 (v0.6.136) usage 按 provider 拆分统计 + detectProvider 上移 core（混合模式成本收益评估）**：
+> commit `0213bc6`，tsc 0 错误、1200/1200 全绿、零 agent.ts 改动、已自安装（详情见下方 P192 条目）。
 > **【✅ 第一百四十二轮完成】P191 (v0.6.135) 任务复杂度路由接入面——CLI 单次命令 flare route（混合模式查询面）**：
 > commit `0e764a1`，tsc 0 错误、1195/1195 全绿、零 agent.ts 改动、已自安装（详情见下方 P191 条目）。
 > **【✅ 第一百四十一轮完成】P190 (v0.6.134) 本地小模型路由起步——任务复杂度路由纯函数 + LOCAL_MODEL 配置查询面（混合模式方向，用户最新拍板最高优先级）**：
@@ -5569,6 +5571,64 @@
   内部已调用），避免未使用导入；③ 单次命令测试沿用 cli-ping 模板（runCli + FLARE_HOME 临时
   目录 + env 覆盖 LOCAL_MODEL），8 用例覆盖文本/json/回退/边界；④ 每轮自安装后必须冒烟新命令
   （安装版 route 简单/复杂两场景实测通过）
+
+---
+
+### 2026-08-15 第一百四十三轮完成（P192 v0.6.136）——usage 按 provider 拆分统计 + detectProvider 上移 core（混合模式成本收益评估）（装机完成，自循环）
+
+> **P192 完成**（commit `0213bc6`）：本地小模型路由方向的**成本收益观测面**——usage 统计按
+> provider 拆分（本地 vs 线上），同时**消除 P190 flare 验收提示的技术债**（providerOf 副本）。
+> - **实现**：
+>   - `src/core/models.ts`：`detectProvider` 从 server.ts 上移（v0.6.9 起在 server.ts，现供
+>     store/routing 复用；模型名 → ollama/deepseek/openai/other，规则不变）
+>   - `src/server.ts`：import + re-export `detectProvider`（对外 API 与 index.ts 导出链不变，
+>     无循环依赖——models.ts 零依赖，store 引它不引 server）
+>   - `src/core/routing.ts`：删除 `providerOf` 副本，改用 `detectProvider`（消除 P190 flare
+>     验收提示的「后续新增 provider 需两处同步维护」技术债）
+>   - `src/memory/store.ts`：新私有 `groupByProvider`（按 detectProvider 把已聚合的 perModel
+>     归并为 provider 组：本地 ollama vs 线上 deepseek/openai/other，含 calls/token 分解，
+>     纯内存归并无额外查询、无 schema 变更）；`getUsageStats`/`getSessionUsage` 返回新增
+>     `perProvider`（按 totalTokens 降序；unknown → other 归线上）
+>   - `src/cli/index.ts`：交互 `/usage` 与单次 `flare usage`（全局 + --session 分支）文本模式
+>     补「按提供方:」区块（`本地 ollama: X tokens（N 次调用）` / `线上 deepseek: ...`）；
+>     --json 与 server get_usage/session_usage 直接透传 store 对象自动带 perProvider
+> - **测试**（+5）：store.test.ts +2（全局 perProvider 拆分 + 汇总与 perModel 一致 / 单会话对称）；
+>   cli-usage.test.ts +2（全局按提供方 / --session 同口径）；prompt-caching.test.ts +1
+>   （交互 /usage 按提供方）
+> - 文档：README Changelog v0.6.136 + package.json/package-lock.json 0.6.135 → 0.6.136
+> - **1200/1200 全绿**（基线 1195 + 5；78 文件；store 55/55 + cli-usage 17/17 + prompt-caching
+>   20/20 + server-models 11/11 + routing 11/11 专项通过；全量首跑即绿），tsc 0 错误（含 dist
+>   编译），**零 agent.ts 改动**，零 push、零敏感信息（diff 敏感扫描仅 token 用量字样/模型名，
+>   无实际密钥明文）；自安装完成：installed 0.6.136 = repo 0.6.136（安装版冒烟：临时库预置
+>   deepseek-chat + qwen2.5:7b 两条记录，`flare usage` 输出「本地 ollama: 280 / 线上 deepseek:
+>   150」正确拆分）；真实 ~/.flare 零污染（冒烟均用 FLARE_HOME 临时目录）
+> - **下一步候选**：① ollama 模型发现增强（models 命令展示本地模型能力标签：如 qwen2.5vl →
+>   视觉 / deepseek-r1 → 推理 / qwen2.5 → 文本，按模型名规则推导，外围）；② 推荐模型拉取脚本
+>   （docs 记录建议拉取 qwen3-1.7b / deepseek-r1-distill-1.5b / qwen3-30b-a3b）；③ 路由决策
+>   可视化深化（route 命令支持从 stdin 读文本 / 批量）；④ 【P1】分层上下文（需评估 run 循环外
+>   异步，铁律暂缓）
+> - **flare 验收结论：✅ 通过**——flare 独立运行 git log -1（0213bc6）/git show 审查完整 diff
+>   （11 文件 +176/-21）、npx tsc 0 错误、PATH=/usr/bin:$PATH npx vitest run 全量 78 文件
+>   1200/1200 全绿；逐项核对 detectProvider 上移后 server re-export 对外 API 不变、无新增循环
+>   依赖（models.ts 零依赖）、routing 复用后行为一致（现有测试覆盖）、groupByProvider 纯内存
+>   归并（sumTokens === stats.totalTokens 校验一致）、unknown → other 归线上、--session 过滤
+>   分支、json/text 双模式、perProvider 无需显式声明类型由 TS 推断、CLI 用 Array.isArray 防御
+>   fallback 对象无该字段；全程零修改零 commit；结论与实况完全一致（验收指令经文件读入规避
+>   confusable 误报，P148 先例）；结尾 flare 提示「已达到最大迭代次数(30)」为会话长度上限
+>   自动停止，非验收结论（逐项核查均 ✅ 且明示「可放心合并」）
+
+**引导过程记录（引导 agent 视角，实现+验收直接完成）**：
+- 本轮实现由引导 agent 直接完成（「调研→执行→flare 验收」新范式，验收环节交给 flare）
+- 调研选定 P192：本地小模型路由方向候选③「usage 按 provider 拆分统计」——store 已落 model
+  字段，按 detectProvider 分组即可（外围零 agent.ts）；顺带消除 P190 验收提示的 providerOf
+  副本技术债（detectProvider 上移 core 一处定义三处复用）
+- **教训**：① 上移共享函数时 server.ts 用「import + re-export」双写保持对外 API 不变（index.ts
+  的 `export { detectProvider } from './server.js'` 导出链无需改动），且 models.ts 零依赖
+  避免循环；② patch 大块代码时注意缩进——首次插入 groupByProvider 时旧块缩进错乱（3 空格），
+  需重读文件精确修正；③ store 新增返回字段无需显式类型声明（TS 推断），CLI 消费侧用
+  Array.isArray 防御 fallback 对象；④ 验收输出出现「已达到最大迭代次数」是 flare 会话长度
+  上限（30 轮）自动停止，需区分「验收结论」与「运行上限」——逐项核查 ✅ 且明示可合并即视为
+  通过
 
 ---
 
