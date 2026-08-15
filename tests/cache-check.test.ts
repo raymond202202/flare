@@ -39,6 +39,7 @@ describe('runCacheCheck（v0.6.45）', () => {
     const r = await runCacheCheck(llm)
     expect(r.ok).toBe(true)
     expect(r.model).toBe('deepseek-chat')
+    expect(r.provider).toBe('deepseek')
     expect(r.first.cacheReadTokens).toBe(0)
     expect(r.second.cacheReadTokens).toBe(650)
     expect(r.hitTokens).toBe(650)
@@ -60,6 +61,7 @@ describe('runCacheCheck（v0.6.45）', () => {
     const r = await runCacheCheck(llm)
     expect(r.ok).toBe(true)
     expect(r.second.cacheReadTokens).toBe(700)
+    expect(r.provider).toBe('openai')
   })
 
   it('第二轮未命中（cache_read_tokens=0）→ ok:false + detail 说明外部因素', async () => {
@@ -113,6 +115,7 @@ describe('runCacheCheck（v0.6.45）', () => {
     const r = await runCacheCheck(llm)
     expect(r.ok).toBe(true)
     expect(r.savedUsd).toBeNull()
+    expect(r.provider).toBe('ollama')
   })
 
   it('多轮验收 savedUsd 累加所有命中轮（v0.6.75：修复此前只算最后一轮）', async () => {
@@ -167,6 +170,8 @@ describe('runCacheCheck（v0.6.45）', () => {
     const parsed = JSON.parse(json)
     expect(parsed.ok).toBe(true)
     expect(parsed.model).toBe('deepseek-chat')
+    expect(parsed.provider).toBe('deepseek')
+    expect(parsed.prefixChars).toBeGreaterThan(500)
     expect(parsed.hitTokens).toBe(650)
     expect(parsed.detail).toContain('命中缓存 650 tokens')
     expect(parsed.savedUsd).toBeGreaterThan(0)
@@ -246,6 +251,7 @@ describe('runCacheCheck（v0.6.45）', () => {
     expect(parsed.ok).toBe(false)
     expect(parsed.detail).toContain('第一次调用失败')
     expect(parsed.model).toBe('')
+    expect(parsed.provider).toBe('other')
     expect(parsed.hitTokens).toBe(0)
     expect(parsed.savedUsd).toBeNull()
   })
@@ -373,5 +379,41 @@ describe('runCacheCheck（v0.6.45）', () => {
     expect(fail2.ok).toBe(false)
     expect(fail2.hitRatio).toBe(0) // 最后成功轮为基准轮
     expect(fail2.runHitRatios).toEqual([0, null])
+  })
+
+  it('provider 标注（v0.6.139）：本地 ollama 模型 → provider ollama + prefixChars 稳定前缀规模', async () => {
+    // 混合模式观测面：本地模型无服务端缓存计费，命中 0 属预期（CLI 会给语义提示，不误报缓存故障）
+    const { llm } = makeFake([
+      { model: 'qwen2.5:7b', usage: { prompt_tokens: 800, completion_tokens: 10 } },
+      { model: 'qwen2.5:7b', usage: { prompt_tokens: 800, completion_tokens: 10 } },
+    ])
+    const r = await runCacheCheck(llm)
+    expect(r.provider).toBe('ollama')
+    // 稳定 system 前缀字符数（预期命中内容片段规模：两次调用逐字节一致的 system 前缀）
+    expect(r.prefixChars).toBeGreaterThan(500)
+    expect(r.prefixChars).toBeLessThan(5000)
+    // JSON 透传 provider/prefixChars（宿主/CI 可识别本地场景）
+    const parsed = JSON.parse(cacheCheckToJson(r))
+    expect(parsed.provider).toBe('ollama')
+    expect(parsed.prefixChars).toBe(r.prefixChars)
+  })
+
+  it('provider 标注（v0.6.139）：deepseek/openai 模型 → provider 正确（线上缓存计费场景）', async () => {
+    const ds = await runCacheCheck(makeFake([
+      { model: 'deepseek-reasoner', usage: { prompt_tokens: 800, completion_tokens: 10, prompt_cache_hit_tokens: 0 } },
+      { model: 'deepseek-reasoner', usage: { prompt_tokens: 800, completion_tokens: 10, prompt_cache_hit_tokens: 600 } },
+    ]).llm)
+    expect(ds.provider).toBe('deepseek')
+    const oa = await runCacheCheck(makeFake([
+      { model: 'gpt-4o', usage: { prompt_tokens: 800, completion_tokens: 10 } },
+      { model: 'gpt-4o', usage: { prompt_tokens: 800, completion_tokens: 10, prompt_tokens_details: { cached_tokens: 600 } } },
+    ]).llm)
+    expect(oa.provider).toBe('openai')
+    // 未知模型 → other（与 detectProvider 语义一致）
+    const ot = await runCacheCheck(makeFake([
+      { model: 'unknown-model', usage: { prompt_tokens: 800, completion_tokens: 10, prompt_cache_hit_tokens: 0 } },
+      { model: 'unknown-model', usage: { prompt_tokens: 800, completion_tokens: 10, prompt_cache_hit_tokens: 600 } },
+    ]).llm)
+    expect(ot.provider).toBe('other')
   })
 })

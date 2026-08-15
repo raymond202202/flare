@@ -186,7 +186,7 @@ cp .env.example ~/.flare/.env
 | `flare mcp complete <服务器> <提示词> <参数> [前缀]` | 请求 MCP 服务器提示词参数补全候选（--json 结构化输出（`{ server, prompt, argument, value?, values, total?, hasMore? }` 与 server mcp_complete 回包同构，空候选 `{ values: [] }` 合法 JSON exit 0）v0.6.114；v0.6.60） |
 | `flare mcp connect <服务器>` | 动态连接 MCP 服务器（stdio 或 HTTP transport；按名连接并打印摘要：transport/target/工具数/资源/模板/提示词 + [auth] 标记（不输出 token）；成功 exit 0、未配置/连接失败 exit 1；与 server mcp_connect、交互 /mcp connect 对称；单次命令进程内连接随进程退出释放；v0.6.120） |
 | `flare mcp disconnect <服务器>` | 动态断开 MCP 服务器（stdio 或 HTTP transport；已断开/未连接幂等 exit 0、未配置 exit 1；与 server mcp_disconnect、交互 /mcp disconnect 对称；v0.6.120） |
-| `flare cache-check [--model <模型>] [--json] [--rounds <N>]` | prompt caching 验收：连续两轮调用验证第二轮 cache_read_tokens > 0（v0.6.45；v0.6.48 起 --json 结构化输出供宿主/CI 消费；v0.6.54 起 --rounds 2~5 多轮连续命中验收；v0.6.75 起多轮 savedUsd 累加所有命中轮；v0.6.76 起 --json/输出含 runSavedUsd 每轮节省明细；v0.6.78 起基准轮命中带残留缓存诊断；v0.6.79 起每轮命中率百分比；v0.6.116 起 --json 含 hitRatio 末轮命中率与 runHitRatios 每轮命中率（与文本模式同口径四舍五入，promptTokens=0 或失败轮 null）；v0.6.132 起文本模式每轮含缓存写入（与 usage 观测面对称）） |
+| `flare cache-check [--model <模型>] [--json] [--rounds <N>]` | prompt caching 验收：连续两轮调用验证第二轮 cache_read_tokens > 0（v0.6.45；v0.6.48 起 --json 结构化输出供宿主/CI 消费；v0.6.54 起 --rounds 2~5 多轮连续命中验收；v0.6.75 起多轮 savedUsd 累加所有命中轮；v0.6.76 起 --json/输出含 runSavedUsd 每轮节省明细；v0.6.78 起基准轮命中带残留缓存诊断；v0.6.79 起每轮命中率百分比；v0.6.116 起 --json 含 hitRatio 末轮命中率与 runHitRatios 每轮命中率（与文本模式同口径四舍五入，promptTokens=0 或失败轮 null）；v0.6.132 起文本模式每轮含缓存写入（与 usage 观测面对称）；v0.6.139 起模型行带 provider 标注 + 预期命中片段规模，本地 ollama 模型提示无服务端缓存计费） |
 
 交互模式命令：
 
@@ -381,6 +381,21 @@ Interactive mode commands:
 | `/exit` | Exit |
 
 ### Changelog / Release Notes
+
+## v0.6.139（2026-08-15）
+- ✨ **cache-check 补 provider 标注 + 预期命中片段规模（prompt caching 基建深化 + 混合模式观测面）**：
+  `CacheCheckResult` 新增 `provider`（detectProvider(model)：本地 ollama vs 线上 deepseek/openai/other）
+  与 `prefixChars`（构造的稳定 system 前缀字符数——「预期命中内容片段」规模：cache-check 命中的就是
+  两次调用逐字节一致的稳定前缀）；CLI 文本模式模型行补 provider 标签（如 `deepseek-chat（线上 deepseek）`）、
+  新增「预期命中片段」行，**本地 ollama 模型补语义提示**（无服务端缓存计费，cache_read_tokens 通常为 0
+  属预期而非缓存故障，避免混合模式下误报失败）；--json 同步透传 provider/prefixChars（结构向后兼容，
+  新增字段不破坏既有宿主/CI 消费）
+- 实现：src/core/cache-check.ts 结果与序列化补两字段（复用 P192 上移的 detectProvider，models.ts 零依赖
+  无循环）；src/cli/index.ts cache-check 文本模式两行展示 + ollama 语义提示（纯展示层）
+- 测试：cache-check.test.ts 补 2 用例 + 既有断言更新（deepseek/openai/ollama/other 四 provider 标注、
+  prefixChars 范围、JSON 透传、失败路径 other）
+- 文档：README Changelog 条目 + package.json/package-lock.json 0.6.138 → 0.6.139
+- 纯外围增强：零 agent.ts 改动（Agent.run 核心循环零触碰）、零 push、零敏感信息
 
 ## v0.6.138（2026-08-15）
 - ✨ **usage 按提供方缓存观测深化（prompt caching 基建深化 + 混合模式成本收益）**：`按提供方:`

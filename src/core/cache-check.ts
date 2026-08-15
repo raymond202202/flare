@@ -13,6 +13,7 @@
  * 用 fake provider（不触网）。不读取/输出任何密钥。
  */
 import { createProvider, extractUsageCache, type LLMProvider, type LLMResponse } from './llm.js'
+import { detectProvider } from './models.js'
 
 /** 单次调用的用量快照 */
 export interface CacheCallUsage {
@@ -25,6 +26,12 @@ export interface CacheCallUsage {
 export interface CacheCheckResult {
   ok: boolean
   model: string
+  /** provider 类型（v0.6.139：detectProvider(model)——混合模式下区分线上 deepseek/openai 与本地 ollama，
+   *  宿主/CI 消费 --json 时可识别「本地模型无服务端缓存计费」场景，避免误读命中 0 为失败） */
+  provider: 'ollama' | 'deepseek' | 'openai' | 'other'
+  /** 构造的稳定 system 前缀字符数（v0.6.139：展示「预期命中内容片段」规模——cache-check 命中的就是
+   *  两次调用逐字节一致的稳定前缀，宿主/CI 可据此理解命中片段构成） */
+  prefixChars: number
   /** 第一次调用（cache miss 基准） */
   first: CacheCallUsage
   /** 第二次调用（前缀一致，期望命中） */
@@ -109,6 +116,8 @@ export async function runCacheCheck(llm: LLMProvider = createProvider(), opts: {
       return {
         ok: false,
         model,
+        provider: detectProvider(model),
+        prefixChars: system.length,
         first: usages[0] || zero(),
         second: zero(),
         rounds,
@@ -178,6 +187,8 @@ export async function runCacheCheck(llm: LLMProvider = createProvider(), opts: {
   return {
     ok,
     model,
+    provider: detectProvider(model),
+    prefixChars: system.length,
     first,
     second: last,
     rounds,
@@ -206,6 +217,8 @@ export function cacheCheckToJson(r: CacheCheckResult): string {
     {
       ok: r.ok,
       model: r.model,
+      provider: r.provider,
+      prefixChars: r.prefixChars,
       hitTokens: r.hitTokens,
       hitRatio: r.hitRatio,
       runHitRatios: r.runHitRatios,

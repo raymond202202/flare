@@ -2360,7 +2360,7 @@ program
     .command('cache-check')
     .description('prompt caching 验收：连续调用验证 cache_read_tokens > 0（v0.6.45，P0 验收自动化；v0.6.48 起 --json 结构化输出；v0.6.54 起 --rounds 多轮连续命中验收；v0.6.76 起 --json 含每轮节省明细；v0.6.132 起文本模式每轮含缓存写入）')
     .option('-m, --model <model>', '指定模型（缺省用默认路由；如 deepseek-chat）')
-    .option('-j, --json', 'JSON 结构化输出（宿主/CI 程序化消费：ok/model/hitTokens/hitRatio/runHitRatios/savedUsd/detail/rounds/runs/两轮用量；exit code 语义不变；v0.6.116 起含末轮与每轮命中率百分比）')
+    .option('-j, --json', 'JSON 结构化输出（宿主/CI 程序化消费：ok/model/provider/prefixChars/hitTokens/hitRatio/runHitRatios/savedUsd/detail/rounds/runs/两轮用量；exit code 语义不变；v0.6.116 起含末轮与每轮命中率百分比，v0.6.139 起含 provider 与预期命中片段规模）')
     .option('-r, --rounds <n>', '验收轮数（默认 2；2~5——第 1 轮为 miss 基准，第 2..N 轮全部命中才算 PASS，多轮更严格验证缓存稳定性）')
     .action(async (options: { model?: string; json?: boolean; rounds?: string }) => {
       // 真实调用走 ~/.flare/.env 配置的密钥（本地诊断；不输出任何密钥）
@@ -2386,7 +2386,16 @@ program
         process.exitCode = 1
         return
       }
-      console.log(`  模型: ${chalk.green(r.model)}`)
+      // v0.6.139：provider 标注（混合模式观测面——线上 deepseek/openai 有服务端缓存计费，本地 ollama 无）
+      const providerLabel: Record<string, string> = {
+        deepseek: '线上 deepseek',
+        openai: '线上 openai',
+        ollama: '本地 ollama',
+        other: '其他',
+      }
+      console.log(`  模型: ${chalk.green(r.model)}${chalk.gray(`（${providerLabel[r.provider] || r.provider}）`)}`)
+      // v0.6.139：预期命中内容片段规模（cache-check 命中的是两次调用逐字节一致的稳定 system 前缀）
+      console.log(`  预期命中片段: 稳定 system 前缀（约 ${r.prefixChars} 字符）`)
       r.runs.forEach((u, i) => {
         const label = i === 0 ? '第一轮' : `第${i + 1}轮`
         const note = i === 0 ? '（miss 基准）' : ''
@@ -2401,6 +2410,10 @@ program
       })
       if (r.savedUsd !== null) {
         console.log(chalk.gray(`  估算节省: $${r.savedUsd.toFixed(6)}（命中价 vs 未命中价）`))
+      }
+      // v0.6.139：本地 ollama 语义提示——无服务端缓存计费，命中 0 属预期而非缓存故障（避免混合模式误读）
+      if (r.provider === 'ollama') {
+        console.log(chalk.gray('  提示: 本地 ollama 模型无服务端缓存计费，cache_read_tokens 通常为 0 属预期；本验收面向线上 API 缓存'))
       }
       if (r.ok) {
         console.log(chalk.green(`\n✅ PASS: ${r.detail}`))
