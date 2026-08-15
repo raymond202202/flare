@@ -203,6 +203,20 @@ describe('CLI /usage 缓存显示（v0.6.29 P0）', () => {
     expect(out).toContain('线上 deepseek: 1,500 tokens（1 次调用）')
   })
 
+  it('按提供方拆分（v0.6.138）：交互 /usage provider 行补缓存命中/写入子行（与 perModel 对称）', async () => {
+    store.logUsage('s1', 1000, 500, 'deepseek-chat', { cacheReadTokens: 400, cacheWriteTokens: 600 })
+    store.logUsage('s1', 200, 100, 'qwen2.5:7b') // 本地无缓存 → 不显示子行
+    const lines: string[] = []
+    await handleSlashCommand('/usage', store, (s) => lines.push(s))
+    const out = lines.join('\n')
+    // 线上 deepseek：命中 400/1000=40% + 写入 600
+    expect(out).toContain('线上 deepseek: 1,500 tokens（1 次调用）')
+    expect(out).toContain('缓存命中: 400 tokens（40%）')
+    expect(out).toContain('缓存写入: 600 tokens')
+    // 本地 ollama 无缓存 → 只有主行
+    expect(out).toContain('本地 ollama: 300 tokens（1 次调用）')
+  })
+
   it('本会话行显示缓存命中（v0.6.49：sessionId 分支与总行/perModel 对称）', async () => {
     store.logUsage('s1', 1000, 500, 'deepseek-chat', { cacheReadTokens: 400 })
     store.logUsage('s2', 100, 50, 'deepseek-chat') // 另一个会话，不影响本会话统计
@@ -274,10 +288,12 @@ describe('CLI /usage 缓存显示（v0.6.29 P0）', () => {
     expect(out).toContain('缓存命中: 600 tokens（60%）（节省 $0.0001）')
     // 本会话 perModel 子行：同样带节省（缩进层级不同，内容一致）
     expect(out).toContain('缓存命中: 600 tokens（60%）（节省 $0.0001）')
-    // reasoner 无命中 → 带节省后缀的命中子行仅 2 个（总览 perModel + 本会话 perModel），
-    // 第三个「缓存命中:」是总览汇总行（不带节省后缀）
+    // reasoner 无命中 → 带节省后缀的 60% 命中子行仅 2 个（总览 perModel + 本会话 perModel）
     expect(out.match(/缓存命中: 600 tokens（60%）（节省 \$0\.0001）/g)).toHaveLength(2)
-    expect(out.match(/缓存命中:/g)).toHaveLength(3)
+    // v0.6.138：perProvider 子行（deepseek 组聚合 chat+reasoner → prompt 1200，命中率 50%，带节省）
+    expect(out.match(/缓存命中: 600 tokens（50%）（节省 \$0\.0001）/g)).toHaveLength(1)
+    // 「缓存命中:」共 4 处：总览汇总行（不带节省）+ 总览 perModel + 本会话 perModel + perProvider 子行
+    expect(out.match(/缓存命中:/g)).toHaveLength(4)
   })
 
   it('本会话 perModel 子行（v0.6.53：多模型本会话命中分布，与总览行对称）', async () => {

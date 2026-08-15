@@ -382,6 +382,19 @@ Interactive mode commands:
 
 ### Changelog / Release Notes
 
+## v0.6.138（2026-08-15）
+- ✨ **usage 按提供方缓存观测深化（prompt caching 基建深化 + 混合模式成本收益）**：`按提供方:`
+  区块（交互 `/usage` + 单次 `flare usage` 全局/--session 三处）provider 行补缓存命中/写入子行
+  （与 perModel 子行对称：命中 tokens（命中率%）+ 节省金额、写入 tokens）——混合模式下可见
+  本地 ollama 无缓存计费 vs 线上 deepseek 缓存节省，成本收益评估更完整
+- 实现：src/cli/index.ts 新增 `providerCacheLines(p)` 辅助函数（返回缩进行数组；无命中/写入 →
+  空数组行不变化），三处 perProvider 循环复用；store 层 groupByProvider 已聚合缓存字段（P192），
+  展示层补全即可，--json 与 server 回包结构不变
+- 测试：cli-usage.test.ts 补 2 用例（全局 provider 缓存子行 + --session 分支同口径）；
+  prompt-caching.test.ts 补 1 用例（交互 /usage provider 缓存子行）
+- 文档：README Changelog 条目 + package.json/package-lock.json 0.6.137 → 0.6.138
+- 纯外围增强：零 agent.ts 改动（Agent.run 核心循环零触碰）、零 push、零敏感信息
+
 ## v0.6.137（2026-08-15）
 - ✨ **ollama 模型发现增强：models 命令展示本地模型能力标签**：新 `inferModelCapabilities(name)`
   （src/core/models.ts 纯函数，零网络：含 vl/vision/llava → 视觉；r1/reasoner → 推理；

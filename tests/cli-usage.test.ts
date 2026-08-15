@@ -54,6 +54,19 @@ describe('flare usage', () => {
     expect(stdout).toContain('线上 deepseek: 150 tokens（1 次调用）')
     expect(stdout).toContain('本地 ollama: 280 tokens（1 次调用）')
   }, 20000)
+  it('按提供方拆分（v0.6.138）：provider 行补缓存命中/写入子行（与 perModel 对称）', async () => {
+    store.logUsage('sess-a', 200, 50, 'deepseek-chat', { cacheReadTokens: 100, cacheWriteTokens: 180 })
+    store.logUsage('sess-b', 200, 80, 'qwen2.5:7b') // 本地 ollama 无缓存字段 → 不显示子行
+    const { code, stdout } = await runCli(['usage'])
+    expect(code).toBe(0)
+    expect(stdout).toContain('按提供方:')
+    // 线上 deepseek：命中 100/200=50% + 写入 180
+    expect(stdout).toContain('线上 deepseek: 250 tokens（1 次调用）')
+    expect(stdout).toContain('缓存命中: 100 tokens（50%）')
+    expect(stdout).toContain('缓存写入: 180 tokens')
+    // 本地 ollama 无缓存 → 不显示子行
+    expect(stdout).toContain('本地 ollama: 280 tokens（1 次调用）')
+  }, 20000)
   it('按提供方拆分（v0.6.136）：--session 单会话分支同口径', async () => {
     store.logUsage('sess-a', 100, 50, 'deepseek-chat')
     store.logUsage('sess-b', 200, 80, 'qwen2.5:7b')
@@ -62,6 +75,15 @@ describe('flare usage', () => {
     expect(stdout).toContain('按提供方:')
     expect(stdout).toContain('线上 deepseek: 150 tokens（1 次调用）')
     expect(stdout).not.toContain('本地 ollama')
+  }, 20000)
+  it('按提供方拆分（v0.6.138）：--session 分支 provider 行补缓存命中/写入子行', async () => {
+    store.logUsage('sess-a', 200, 50, 'deepseek-chat', { cacheReadTokens: 100, cacheWriteTokens: 180 })
+    const { code, stdout } = await runCli(['usage', '--session', 'sess-a'])
+    expect(code).toBe(0)
+    expect(stdout).toContain('按提供方:')
+    expect(stdout).toContain('线上 deepseek: 250 tokens（1 次调用）')
+    expect(stdout).toContain('缓存命中: 100 tokens（50%）')
+    expect(stdout).toContain('缓存写入: 180 tokens')
   }, 20000)
   it('缓存命中显示：tokens 数与命中率百分比', async () => {
     store.logUsage('sess-a', 200, 50, 'deepseek-chat', { cacheReadTokens: 100 })
