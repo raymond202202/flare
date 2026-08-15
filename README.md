@@ -382,6 +382,17 @@ Interactive mode commands:
 
 ### Changelog / Release Notes
 
+## v0.6.141（2026-08-15）
+- 🐛 **findSimilarMemories 相似对规范化 idA < idB（测试稳定性修复，flare 验收提示的偶发失败源）**：
+  `getAllMemories()` 按 `created_at DESC`（秒级精度）排序，同秒插入多条记忆时返回顺序不稳定——
+  旧实现直接取 `mems[i].id / mems[j].id`，可能产生 `idA > idB` 的相似对，违反「每对 idA < idB」
+  契约（server.test.ts 共享库残留重复记忆时偶发失败）。修复：构造 pair 时按 id 比较交换
+  （`[a, b] = mems[i].id <= mems[j].id ? ... : ...`），保证契约恒成立，内容与 id 同步交换
+- 测试：store.test.ts 补 1 用例（同秒批量插入 15 条近似记忆，断言所有 pair idA < idB 恒成立——
+  乱序发生时能捕获旧实现违反契约，修复后恒通过）
+- 文档：README Changelog 条目 + package.json/package-lock.json 0.6.140 → 0.6.141
+- 纯外围修复：零 agent.ts 改动（Agent.run 核心循环零触碰）、零 push、零敏感信息
+
 ## v0.6.140（2026-08-15）
 - ✨ **route 命令支持批量多参数 + stdin 管道读取（路由决策可视化深化，混合模式方向候选④）**：
   单任务行为不变（文本/--json 输出与 v0.6.135 完全一致，向后兼容）；新增两个批量入口——

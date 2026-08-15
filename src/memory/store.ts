@@ -844,11 +844,15 @@ export class MemoryStore {
       for (let j = i + 1; j < mems.length; j++) {
         const similarity = trigramJaccard(mems[i].content, mems[j].content)
         if (similarity >= threshold) {
+          // 规范化 idA < idB（v0.6.141）：getAllMemories 按 created_at DESC（秒级精度）排序，
+          // 同秒插入多条记忆时顺序不稳定——mems[i].id 可能 > mems[j].id，导致 pair 违反
+          // 「每对 idA < idB」契约（server.test.ts 偶发失败源，flare 验收提示）。交换保证契约恒成立
+          const [a, b] = mems[i].id <= mems[j].id ? [mems[i], mems[j]] : [mems[j], mems[i]]
           pairs.push({
-            idA: mems[i].id,
-            idB: mems[j].id,
-            contentA: mems[i].content,
-            contentB: mems[j].content,
+            idA: a.id,
+            idB: b.id,
+            contentA: a.content,
+            contentB: b.content,
             similarity,
           })
         }
