@@ -23,31 +23,14 @@ const require = createRequire(import.meta.url)
 const pkg = require('../../package.json') as { version: string }
 
 /**
- * 交互模式启动会话解析（v0.6.145：聊天记录保留在窗口中；v0.6.146：优先恢复用户交互会话）
- * - newSession=true → 强制新建
- * - 否则优先恢复最近的「CLI 会话」标题会话（用户交互对话，跳过 cron/测试/单次查询会话）
- * - 无则兜底最近任意有消息会话；全空 → 新建「CLI 会话」
+ * 交互模式启动会话解析（v0.6.147：每次开启新建会话——用户明确需求）
+ * 用户需求：不要恢复历史会话；每次开新会话，会话内多轮对话保持上下文（Agent 复用天然满足）。
+ * 注：v0.6.145/146 曾实现"恢复最近会话"，用户澄清不需要（已撤销）。
  */
 export function resolveStartSession(
-  store: {
-    getRecentSessions: (limit?: number) => { id: string; title?: string }[]
-    getMessages: (sessionId: string) => { role: string; content: unknown }[]
-    createSession: (title: string) => string
-  },
-  opts: { newSession?: boolean } = {},
+  store: { createSession: (title: string) => string },
+  _opts: { newSession?: boolean } = {},
 ): string {
-  if (!opts.newSession) {
-    const recent = store.getRecentSessions(20)
-    // 优先：最近的用户交互会话（标题「CLI 会话」且有消息）——cron/测试/chat -q 的
-    // 会话标题不同（json-parse-t/单次查询 等），避免恢复错会话
-    for (const s of recent) {
-      if (s.title === 'CLI 会话' && store.getMessages(s.id).length > 0) return s.id
-    }
-    // 兜底：最近任意有消息会话（用户可能用过 chat -q 或旧标题）
-    for (const s of recent) {
-      if (store.getMessages(s.id).length > 0) return s.id
-    }
-  }
   return store.createSession('CLI 会话')
 }
 
@@ -105,6 +88,10 @@ async function startInteractive(opts: { contextSummarize?: boolean; newSession?:
     cfg.tools = wrapConfirmTools([...tools, ...mcpTools], gate, CLI_CONFIRM_TOOLS)
     // 上下文压缩摘要（v0.6.19）：--context-summarize 开启后裁剪把丢弃历史压缩成摘要（AI 保留话题连续性）
     if (opts.contextSummarize) cfg.contextSummarize = true
+    // v0.6.147：交互模式默认大上下文（200 条）+ 默认开摘要——修复长对话早期历史被 30 条默认裁剪丢弃
+    //（用户反馈"多轮对话看不到历史记录"；老版本无裁剪所以可以；超长对话由摘要兜底保留话题）
+    cfg.maxContextMessages = 200
+    if (cfg.contextSummarize === undefined) cfg.contextSummarize = true
     return new Agent(cfg)
   }
   let agent = makeAgent()
@@ -137,23 +124,6 @@ async function startInteractive(opts: { contextSummarize?: boolean; newSession?:
   let pendingText = ''   // Agent 草稿缓冲
   let exiting = false
   let paused = false     // 动画暂停（便于复制输出；暂停时只重绘输入行不清屏）
-
-  // v0.6.145：恢复最近会话时渲染历史消息（聊天记录保留在窗口中）
-  const restoredHistory = store.getMessages(sessionId)
-  if (restoredHistory.length > 0) {
-    for (const m of restoredHistory) {
-      if (m.role === 'user' && typeof m.content === 'string') {
-        agentOutput += O(`🔥 flare> ${m.content}`) + '\n\n'
-      } else if (m.role === 'assistant') {
-        const text = typeof m.content === 'string'
-          ? m.content
-          : Array.isArray(m.content)
-            ? m.content.filter((p: any) => p.type === 'text').map((p: any) => p.text).join('')
-            : ''
-        if (text.trim()) agentOutput += text.trim() + '\n\n'
-      }
-    }
-  }
 
   // ===== 渲染 =====
   const CONTENT_ROW = 6   // 内容区起始行（0 基）：banner 4 行 + 空行 + 提示语行
@@ -1545,9 +1515,10 @@ async function runQuery(query: string, maxIterations?: number, attachments?: str
   }
   // 单次查询同样尊重 /model 保存的主模型（settings main_model）
   const savedModel = store.getSetting('main_model') || undefined
+  // v0.6.147：--session 续聊同样大上下文 + 默认摘要（长会话早期历史不被 30 条默认裁剪丢弃）
   const agent = savedModel
-    ? new Agent({ sessionId: sid, maxIterations, llm: createProvider({ model: savedModel }) })
-    : new Agent({ sessionId: sid, maxIterations })
+    ? new Agent({ sessionId: sid, maxIterations, maxContextMessages: 200, contextSummarize: true, llm: createProvider({ model: savedModel }) })
+    : new Agent({ sessionId: sid, maxIterations, maxContextMessages: 200, contextSummarize: true })
 
   console.error(Y('⚡ Flare 思考中...'))
 
