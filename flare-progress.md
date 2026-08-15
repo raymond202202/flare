@@ -1,5 +1,7 @@
 # Flare 引擎迭代进度（夜间调研 agent）
 
+> **【✅ 第一百四十九轮完成】P198 (v0.6.140) route 命令支持批量多参数 + stdin 管道读取（路由决策可视化深化）**：
+> commit `22e6363`，tsc 0 错误、1216/1216 全绿、零 agent.ts 改动、已自安装（详情见下方 P198 条目）。
 > **【✅ 第一百四十八轮完成】P197 (v0.6.139) cache-check 补 provider 标注 + 预期命中片段规模（prompt caching 基建深化 + 混合模式观测面）**：
 > commit `647d45b`，tsc 0 错误、1211/1211 全绿、零 agent.ts 改动、已自安装（详情见下方 P197 条目）。
 > **【✅ 第一百四十七轮小步】P196 (纯文档) host-protocol/USAGE 同步 usage perProvider 字段与按提供方缓存观测**：
@@ -5789,3 +5791,40 @@
 >   （provider 标注+预期命中片段），可考虑命中片段占比/未命中诊断深化；② CLI/server 确认门接入
 >   完整化（confirm 门策略检查现有覆盖面）；③ MCP 增强（resources 订阅/采样等协议面）；
 >   ④ 路由决策可视化深化（route 命令 stdin 批量）；⑤ 分层上下文（需评估 run 循环外异步，铁律暂缓）
+
+---
+
+### 2026-08-15 第一百四十九轮完成（P198，v0.6.140）——route 命令支持批量多参数 + stdin 管道读取
+
+> **P198 完成**（commit `22e6363`，7 文件 +145/-19）：路由决策可视化深化（上轮下一步候选④）——
+> 混合模式查询面落地批量与管道入口：
+> - `src/cli/index.ts`：route 命令 `.argument('[text...]')` variadic 改造——`flare route "任务1"
+>   "任务2" ...` 批量逐个决策（文本模式带 `[1/N]` 序号 + 汇总行「共 N 个任务 · 简单 X · 复杂 Y」；
+>   --json 输出 `{ results: [{ task, tier, model, provider, reason }], localModel, mainModel }`）；
+>   **stdin 管道读取**——无位置参数且 `!process.stdin.isTTY` 时 `readFileSync(0)` 读整体文本决策
+>   （终端交互不阻塞；try/catch 兜底；空内容 → 用法提示 exit 1）；单任务行为不变（文本/--json 与
+>   v0.6.135 完全一致，向后兼容）；新增 import `readFileSync` from 'node:fs'
+> - routeTaskModel 核心零改动（纯入口/展示层）；空白位置参数 trim 过滤
+> - 测试：cli-route.test.ts 补 4 用例（批量文本模式序号+汇总 / 批量 --json results 数组结构 /
+>   stdin 管道读取单任务保持原结构 / stdin 空白用法提示）+ 更新 2 既有用例（缺参/空白参显式 end
+>   stdin 以匹配管道 EOF 语义，避免 readFileSync 阻塞）+ 批量含空白参数过滤——共 13 用例
+> - 文档：README Changelog v0.6.140 + USAGE.md 单次命令补批量与管道用法 + docs/multi-model.md
+>   查询面同步 + package.json/package-lock.json 0.6.139 → 0.6.140
+> - **验证**：npx tsc 0 错误（含 dist 编译）；PATH=/usr/bin:$PATH npx vitest run 全量 78 文件
+>   1216/1216 全绿（基线 1211 + 5；cli-route 专项 13/13）；**零 agent.ts 改动**；零 push、零敏感信息；
+>   自安装完成：installed 0.6.140 = repo 0.6.140（安装版冒烟：批量文本模式 [1/2]/[2/2] + 汇总行
+>   正确、`echo "任务" | flare route` stdin 管道读取正确、批量 --json results 数组含 task/tier/
+>   model/provider/reason 正确）；真实 ~/.flare 零污染（冒烟均用 FLARE_HOME 临时目录）
+> - **flare 验收结论：✅ 通过**——flare 独立运行 git log -1（22e6363）/git show 审查完整 diff
+>   （7 文件 +145/-19）、npx tsc 0 错误、PATH=/usr/bin:$PATH npx vitest run 全量 78 文件 1216/1216
+>   全绿 + cli-route 专项 13/13；逐项核对单任务输出保持 v0.6.135 原结构（向后兼容）、批量 --json
+>   results 数组、stdin isTTY 守卫避免终端阻塞、readFileSync try/catch 兜底、空白参数过滤、空内容
+>   用法提示 exit 1、git diff HEAD~1 HEAD -- src/core/agent.ts 0 行、diff 敏感扫描无 api key/密码/
+>   token 明文；结论「批准合入 ✅：实现简洁、向后兼容性良好、测试覆盖批量/stdin/空内容/空白过滤
+>   四条关键路径」；附带非阻塞提示：server.test.ts 的 idA < idB 断言在共享内存库残留重复记忆时偶发
+>   失败（idA === idB 自匹配），建议后续放宽 <= 或加去重（与本次改动无关，不阻塞合入）；全程零修改
+>   零 commit
+> - **下一步候选**：① 测试稳定性修复：server.test.ts idA < idB 断言放宽 <=（flare 验收提示的
+>   偶发失败源，P186/187 先例）；② 【P1】prompt caching 基建深化：命中片段占比/未命中诊断深化；
+>   ③ CLI/server 确认门接入完整化（confirm 门策略检查现有覆盖面）；④ MCP 增强（resources 订阅/
+>   采样等协议面）；⑤ 分层上下文（需评估 run 循环外异步，铁律暂缓）
