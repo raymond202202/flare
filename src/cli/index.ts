@@ -23,18 +23,30 @@ const require = createRequire(import.meta.url)
 const pkg = require('../../package.json') as { version: string }
 
 /**
- * 交互模式启动会话解析（v0.6.145：聊天记录保留在窗口中）
+ * 交互模式启动会话解析（v0.6.145：聊天记录保留在窗口中；v0.6.146：优先恢复用户交互会话）
  * - newSession=true → 强制新建
- * - 否则有未归档最近会话 → 恢复最近（Agent 构造自动加载历史，窗口渲染历史消息）
- * - 无会话 → 新建「CLI 会话」
+ * - 否则优先恢复最近的「CLI 会话」标题会话（用户交互对话，跳过 cron/测试/单次查询会话）
+ * - 无则兜底最近任意有消息会话；全空 → 新建「CLI 会话」
  */
 export function resolveStartSession(
-  store: { getRecentSessions: (limit?: number) => { id: string }[]; createSession: (title: string) => string },
+  store: {
+    getRecentSessions: (limit?: number) => { id: string; title?: string }[]
+    getMessages: (sessionId: string) => { role: string; content: unknown }[]
+    createSession: (title: string) => string
+  },
   opts: { newSession?: boolean } = {},
 ): string {
   if (!opts.newSession) {
-    const recent = store.getRecentSessions()
-    if (recent.length > 0) return recent[0].id
+    const recent = store.getRecentSessions(20)
+    // 优先：最近的用户交互会话（标题「CLI 会话」且有消息）——cron/测试/chat -q 的
+    // 会话标题不同（json-parse-t/单次查询 等），避免恢复错会话
+    for (const s of recent) {
+      if (s.title === 'CLI 会话' && store.getMessages(s.id).length > 0) return s.id
+    }
+    // 兜底：最近任意有消息会话（用户可能用过 chat -q 或旧标题）
+    for (const s of recent) {
+      if (store.getMessages(s.id).length > 0) return s.id
+    }
   }
   return store.createSession('CLI 会话')
 }
