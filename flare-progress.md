@@ -1,5 +1,7 @@
 # Flare 引擎迭代进度（夜间调研 agent）
 
+> **【✅ 第一百五十三轮完成】P202 (v0.6.143) route 分类命中特征能力标签 feature（混合模式路由决策可视化深化）**：
+> commit `90951a8`，tsc 0 错误、1224/1224 全绿、零 agent.ts 改动、已自安装（详情见下方 P202 条目）。
 > **【✅ 第一百五十二轮小步】P201 测试稳定性修复（session-archive.test.ts 注入 mock LLM 服务器根治 chat e2e 偶发超时源，flare P200 验收提示）**：
 > commit `4759472`，tsc 0 错误、1218/1218 全绿、纯测试层零 src 改动、无版本变化（详情见下方 P201 条目）。
 > **【✅ 第一百五十一轮完成】P200 (v0.6.142) cache-check 命中片段构成诊断 hitSegmentNote（prompt caching 基建深化）**：
@@ -5934,3 +5936,40 @@
 >   数值化）；② CLI/server 确认门接入完整化（confirm 门策略检查现有覆盖面）；③ MCP 增强
 >   （resources 订阅/采样等协议面）；④ 路由决策可视化深化已落地（批量+stdin），可考虑 route
 >   能力标签/统计；⑤ 分层上下文（需评估 run 循环外异步，铁律暂缓）
+
+---
+
+### 2026-08-15 第一百五十三轮完成（P202，v0.6.143）——route 分类命中特征能力标签 feature
+
+> **P202 完成**（commit `90951a8`，10 文件 +114/-24）：混合模式路由决策可视化深化（P198 批量+stdin
+> 后候选④「route 能力标签/统计」落地）——让路由决策「为什么这样路由」可解释、可审计：
+> - `src/core/routing.ts`：新增 `TaskClassification { tier, feature }` 接口与 `classifyTaskDetail(text)`
+>   纯函数——判定顺序与 `classifyTaskComplexity` 完全一致（同一规则集，代码特征 → 复杂特征词 →
+>   长文本 → 简单特征词 → 默认），额外返回命中的能力标签五档（代码特征（长代码/代码任务）/ 复杂
+>   特征词（分析/推理/创作/算法等）/ 长文本（>300 字符）/ 简单特征词（分类/抽取/摘要/翻译/格式化等）/
+>   短文本默认简单 + 空文本）；`classifyTaskComplexity` 重构为内部委托（规则集唯一，避免分叉）；
+>   `RouteTaskResult` 新增 `feature` 字段（simple/complex 两条路径都赋值）
+> - `src/cli/index.ts`：route 文本模式新增「特征:」行；`--json` 单任务与批量 `results[].feature`
+>   同步透传（单任务结构向后兼容——新增字段不破坏既有宿主/脚本消费；help 描述同步）
+> - `src/index.ts`：导出 `classifyTaskDetail` / `TaskClassification`
+> - 测试：routing.test.ts 补 7 用例（classifyTaskDetail 五档标签 + 空文本/默认 + 与
+>   classifyTaskComplexity 判定一致性 + routeTaskModel simple/complex feature 断言）；cli-route.test.ts
+>   更新 4 处断言（文本模式特征行 / --json 单任务 feature / 批量 results[].feature）——共 30 用例
+> - 文档：README Changelog v0.6.143 + USAGE.md 单次命令补 feature + docs/multi-model.md 查询面同步
+>   + package.json/package-lock.json 0.6.142 → 0.6.143
+> - **验证**：npx tsc 0 错误（含 dist 编译）；PATH=/usr/bin:$PATH npx vitest run 全量 78 文件
+>   **1224/1224 全绿**（基线 1218 + 6；routing 20 + cli-route 13 专项通过）；**零 agent.ts 改动**；
+>   零 push、零敏感信息；自安装完成：installed 0.6.143 = repo 0.6.143（安装版冒烟：route 文本模式
+>   「特征: 简单特征词（分类/抽取/摘要/翻译/格式化等）」正确显示；FLARE_HOME 临时目录零污染）
+> - **flare 验收结论：✅ 通过**——flare 独立运行 git log -1（90951a8）/git show 审查完整 diff
+>   （10 文件 +114/-24）、npx tsc 0 错误、全量 78 文件 1224/1224 全绿；逐项核对 classifyTaskDetail
+>   与 classifyTaskComplexity 同一规则集（判定顺序一致）、feature 五档标签覆盖（含空文本）、
+>   RouteTaskResult feature 两条路径均赋值、CLI --json 单任务与批量 results 透传、结构向后兼容
+>   （单任务保持原结构仅追加字段）、agent.ts 0 行、diff 敏感扫描无明文；结论「通过，设计良好：
+>   向后兼容、纯函数无副作用、单一职责（旧函数委托新函数规则集唯一避免分叉），可以放心发布」；
+>   全程零修改零 commit
+> - **下一步候选**：① 【P1】prompt caching 基建深化：命中片段占比数值化/未命中诊断（P200 文案
+>   已含「可间隔 <5min 重试」，可考虑按 provider 拆分命中率或占比百分比）；② CLI/server 确认门
+>   接入完整化（confirm 门策略检查现有覆盖面）；③ MCP 增强（resources 订阅/采样等协议面）；
+>   ④ 路由决策可视化可继续（route 批量统计按 feature 分组汇总）；⑤ 分层上下文（需评估 run
+>   循环外异步，铁律暂缓）
