@@ -382,6 +382,13 @@ Interactive mode commands:
 
 ### Changelog / Release Notes
 
+## v0.6.133（2026-08-15）
+- ✨ **`flare messages --help` 描述同步归档标记能力（文档对称小步）**：
+  `messages` 命令 description 补「已归档会话文本模式标题带（已归档）标记，v0.6.130」——P176 装机后
+  README 命令表已同步该能力，唯独 CLI `--help` 描述仍停留在旧文案（v0.6.84/v0.6.107），帮助面与
+  文档不对称；本版补齐（纯展示层 description 文本，零逻辑改动）
+- 纯 CLI 外围增强：零 agent.ts 改动（Agent.run 核心循环零触碰）、零 push、零敏感信息
+
 ## v0.6.132（2026-08-14）
 - ✨ **`flare cache-check` 文本模式每轮补「缓存写入」观测（prompt caching 基建深化，与 usage 观测面对称）**：
   cache-check 每轮用量快照 `CacheCallUsage` 早已采集 `cacheWriteTokens`（且 `--json` 结构化输出带

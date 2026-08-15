@@ -2606,7 +2606,7 @@ program
   // flare messages <sessionId>：查看指定会话的消息历史（v0.6.84；v0.6.107 支持 --json 结构化输出）
   program
     .command('messages <sessionId>')
-    .description('查看指定会话的消息历史（v0.6.84；--json 结构化输出，v0.6.107）')
+    .description('查看指定会话的消息历史（v0.6.84；--json 结构化输出，v0.6.107；已归档会话文本模式标题带（已归档）标记，v0.6.130）')
     .option('-n, --limit <n>', '显示 N 条消息（默认 50）')
     .option('-r, --recent', '从最新一条开始往回显示（长会话下默认取最早 N 条，加此参数可看最新内容，v0.6.84）')
     .option('-j, --json', 'JSON 结构化输出（v0.6.107，与 server get_messages 回包同构：{ sessionId, messages, ...(recent?{recent:true}:{}) }；宿主/脚本程序化消费）')
