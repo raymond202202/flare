@@ -1,5 +1,7 @@
 # Flare 引擎迭代进度（夜间调研 agent）
 
+> **【✅ 第一百三十八轮小步】P187 测试稳定性修复收官：server-context-trim/server-tool-output-policy 注入 mock LLM 根治真实调用慢源**：
+> commit `8f9e82d`，纯测试层零 src 改动、tsc 0 错误、1174/1174 全绿、无版本变化（详情见下方 P187 条目）。
 > **【✅ 第一百三十七轮小步】P186 测试稳定性修复：server.test.ts 注入 mock LLM 服务器根治 chat 真实调用慢源**：
 > commit `9b2db59`，纯测试层零 src 改动、tsc 0 错误、1174/1174 全绿、无版本变化（详情见下方 P186 条目）。
 > **【✅ 第一百三十六轮小步】P185 (纯文档) flare-token-architecture.md 补缓存写入观测**：
@@ -228,6 +230,41 @@
 >    terminal 退出码（v0.6.33）✓ / CLI 归档命令（v0.6.32）✓ / 归档 API（v0.6.31）✓ /
 >    工具输出治理（v0.6.30）✓ / prompt caching P0（v0.6.29）✓ / MCP 动态资源提供器（v0.6.28）✓ /
 >    confirm 描述（v0.6.27）✓
+
+---
+
+### 2026-08-15 第一百三十八轮小步（P187，测试稳定性修复收官）——server-context-trim/server-tool-output-policy 注入 mock LLM 根治真实调用慢源
+
+> **P187 完成**（commit `8f9e82d`）：`tests/server-context-trim.test.ts`（含 child2 两个 server 子进程）
+> 与 `tests/server-tool-output-policy.test.ts` 注入 **mock LLM HTTP 服务器**（OpenAI 兼容
+> `/v1/chat/completions`），根治这两个文件 chat 真实调用偶发慢源——**真实调用类测试 mock 化收官**
+> （cli-chat-session P181 + server-default-params P182 + server.test.ts P186 + 本轮两文件），
+> 纯测试层改动，零 src/agent.ts 改动、无版本变化（0.6.132 不变）。
+> - **背景**：P186 记录「全部真实调用类测试均已 mock 化」时遗漏了这两个 server 参数测试文件——它们
+>   同样 spawn `flare server` 走 chat 真实生成（无 key fallback 本地模型 / ~/.flare/.env 注入真实 key
+>   走远端网络，原用例注释显式放宽 45s）；P187 补齐收官，使 server 参数测试族（default-params/context-trim/
+>   tool-output-policy）与协议全集（server.test.ts）全部 mock 化
+> - **实现**（2 文件 +118/-32，纯测试层）：
+>   - 两文件 `beforeAll` 起 node:http mock LLM 服务器（仅 POST /chat/completions 返回固定 OpenAI 兼容
+>     JSON、其余 404、req.resume 防挂起、listen(0) 随机端口、afterAll mockLlm?.close()，与 P181/P182/P186 同款）；
+>     **server-context-trim 的 child2（内层 describe）复用模块级 mockLlmUrl**（文件级 afterAll 在所有
+>     describe 完成后才执行，child2 运行期 mock 存活，双 server 共享同一 mock）
+>   - 两文件 spawn env 显式注入 `LLM_BASE_URL`/`LLM_API_KEY='mock-key'`/`DEFAULT_MODEL='mock-model'` +
+>     `delete DEEPSEEK_API_KEY`/`delete OPENAI_API_KEY`（process.env 优先于 dotenv，不继承真实凭据）
+>   - 断言收紧（6 处）：生成用例从「done/error 皆可」收紧为「稳定 done」，vitest 超时 45000 → 15000ms；
+>     非法参数 error 用例（请求校验优先）不动（本就不触发生成）
+> - **验证**：tsc 0 错误；专项 2 文件 20/20 全绿（732ms）；全量 **1174/1174 全绿**（76 文件；首跑即绿）；
+>   纯测试层零 src 改动、零 agent.ts 改动、无版本变化（0.6.132 不变）、零 push、零敏感信息
+> - **flare 验收通过**：独立运行 tsc 0 错误 + 全量 76 文件/1174 测试全绿（18.46s）+ 聚焦两文件
+>   20/20 全绿；逐项核验（mock 注入 + key 删除隔离正确——delete 只影响 env 拷贝不影响宿主；双 server
+>   child 共享 mock 且文件级 afterAll 顺序正确；断言收紧符合 mock 稳定成功预期；diff 无真实凭据仅
+>   mock-key）；结论「✅ 提交完整可受理，教科书式同款方案收官」
+> - **下一步候选**：① 【P1】分层上下文（Layer 1 异步滚动摘要——需改 Agent.run 核心循环，违反铁律跳过并记录理由）；
+>   ② 其他安全的外围增强（测试稳定性清扫——**至此全部真实调用类测试均已 mock 化收官**
+>   （cli-chat-session P181 + server-default-params P182 + server.test.ts P186 + context-trim/tool-output-policy
+>   P187），剩余偶发源可继续观察；MCP 工具集完善、确认门接入完整化已收官；文档对称——USAGE.md 交互
+>   命令表（P184）与 token 架构缓存写入观测（P185）已补齐）——prompt caching 基建观测面（命中/写入/节省）
+>   在 usage/cache-check/--json/server 协议/README/USAGE/host-protocol/flare-token-architecture 全口径闭环
 
 ---
 
