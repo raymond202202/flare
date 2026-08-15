@@ -22,7 +22,24 @@ import { R, O, A, Y, D, createFlameState, updateFlame, renderFlameFrame, flameBr
 const require = createRequire(import.meta.url)
 const pkg = require('../../package.json') as { version: string }
 
-async function startInteractive(opts: { contextSummarize?: boolean } = {}) {
+/**
+ * 交互模式启动会话解析（v0.6.145：聊天记录保留在窗口中）
+ * - newSession=true → 强制新建
+ * - 否则有未归档最近会话 → 恢复最近（Agent 构造自动加载历史，窗口渲染历史消息）
+ * - 无会话 → 新建「CLI 会话」
+ */
+export function resolveStartSession(
+  store: { getRecentSessions: (limit?: number) => { id: string }[]; createSession: (title: string) => string },
+  opts: { newSession?: boolean } = {},
+): string {
+  if (!opts.newSession) {
+    const recent = store.getRecentSessions()
+    if (recent.length > 0) return recent[0].id
+  }
+  return store.createSession('CLI 会话')
+}
+
+async function startInteractive(opts: { contextSummarize?: boolean; newSession?: boolean } = {}) {
   // 非 TTY（管道/重定向输入）下无法交互，友好提示而不是崩溃
   if (!process.stdin.isTTY) {
     console.error(chalk.red('❌ 交互模式需要在终端中运行（当前输入不是终端）。'))
@@ -31,7 +48,9 @@ async function startInteractive(opts: { contextSummarize?: boolean } = {}) {
   }
 
   const store = getMemoryStore()
-  const sessionId = store.createSession('CLI 会话')
+  // v0.6.145：聊天记录保留在窗口中——启动自动恢复最近会话（Agent 构造加载历史 + 下方渲染历史消息）；
+  // --new 强制新建；无最近会话才新建「CLI 会话」
+  const sessionId = resolveStartSession(store, { newSession: !!opts.newSession })
   // MCP 管理器（v0.5.5）：~/.flare/mcp.json 配置外部 MCP 服务器，/mcp connect 注入工具
   const mcpManager = new McpManager()
   // 确认门（v0.6.7）：写回类工具（memory_save）执行前终端内确认——allow_session 会话记忆、
@@ -106,6 +125,23 @@ async function startInteractive(opts: { contextSummarize?: boolean } = {}) {
   let pendingText = ''   // Agent 草稿缓冲
   let exiting = false
   let paused = false     // 动画暂停（便于复制输出；暂停时只重绘输入行不清屏）
+
+  // v0.6.145：恢复最近会话时渲染历史消息（聊天记录保留在窗口中）
+  const restoredHistory = store.getMessages(sessionId)
+  if (restoredHistory.length > 0) {
+    for (const m of restoredHistory) {
+      if (m.role === 'user' && typeof m.content === 'string') {
+        agentOutput += O(`🔥 flare> ${m.content}`) + '\n\n'
+      } else if (m.role === 'assistant') {
+        const text = typeof m.content === 'string'
+          ? m.content
+          : Array.isArray(m.content)
+            ? m.content.filter((p: any) => p.type === 'text').map((p: any) => p.text).join('')
+            : ''
+        if (text.trim()) agentOutput += text.trim() + '\n\n'
+      }
+    }
+  }
 
   // ===== 渲染 =====
   const CONTENT_ROW = 6   // 内容区起始行（0 基）：banner 4 行 + 空行 + 提示语行
@@ -1564,13 +1600,14 @@ export function main() {
     .option('-i, --image <path>', '附带图片路径（可与 -q 一起用；也可在问题中直接写路径）')
     .option('-m, --max-iterations <n>', '最大工具调用迭代次数（默认30，上限50）')
     .option('-s, --session <sessionId>', '续聊已有会话（单次查询追加到该会话历史；缺省新建「单次查询」会话；会话不存在 exit 1 不触发生成；已归档会话续聊给黄色提示不拦截 v0.6.129；v0.6.128）')
+    .option('-n, --new', '强制新建会话（交互模式默认自动恢复最近会话，聊天记录保留在窗口中；v0.6.145）')
     .option('--context-summarize', '交互模式开启上下文压缩摘要（裁剪时把丢弃历史压缩成摘要消息，AI 保留话题连续性；v0.6.19）')
-    .action(async (options: { query?: string; image?: string; maxIterations?: string; session?: string; contextSummarize?: boolean }) => {
+    .action(async (options: { query?: string; image?: string; maxIterations?: string; session?: string; new?: boolean; contextSummarize?: boolean }) => {
       if (options.query) {
         const maxIter = options.maxIterations ? parseInt(options.maxIterations, 10) : undefined
         await runQuery(options.query, maxIter, options.image ? [options.image] : undefined, options.session)
       } else {
-        startInteractive({ contextSummarize: options.contextSummarize })
+        startInteractive({ contextSummarize: options.contextSummarize, newSession: !!options.new })
       }
     })
 
