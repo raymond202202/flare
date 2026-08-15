@@ -3284,9 +3284,9 @@ program
   // v0.6.140：支持批量（多个位置参数逐个决策）+ stdin 读取（管道/重定向场景，如 echo "任务" | flare route）
   program
     .command('route')
-    .description('任务复杂度路由决策：简单任务 → 本地模型（省钱），复杂任务 → 主模型（保质量）；纯函数零调用（v0.6.135，--json 结构化输出；v0.6.140 起支持批量多参数与 stdin 读取）')
+    .description('任务复杂度路由决策：简单任务 → 本地模型（省钱），复杂任务 → 主模型（保质量）；纯函数零调用（v0.6.135，--json 结构化输出；v0.6.140 起支持批量多参数与 stdin 读取；v0.6.143 起输出分类命中特征能力标签）')
     .argument('[text...]', '任务文本（可多个：批量逐个决策；未提供则尝试从 stdin 读取（管道/重定向），仍无内容则显示用法）')
-    .option('-j, --json', 'JSON 结构化输出（单任务 { tier, model, provider, reason, localModel, mainModel }；批量/多任务 { results: [...], localModel, mainModel }）')
+    .option('-j, --json', 'JSON 结构化输出（单任务 { tier, feature, model, provider, reason, localModel, mainModel }；批量/多任务 { results: [...], localModel, mainModel }）')
     .action((texts: string[] | undefined, options: { json?: boolean }) => {
       const runOne = (text: string) => {
         const r = routeTaskModel(text)
@@ -3297,6 +3297,7 @@ program
       const printOne = (d: ReturnType<typeof runOne>) => {
         const tierLabel = d.tier === 'simple' ? chalk.green('简单任务') : chalk.yellow('复杂任务')
         console.log(`${tierLabel} → ${chalk.cyan(d.model)}（${d.provider}）`)
+        console.log(chalk.gray(`  特征: ${d.feature}`))
         console.log(chalk.gray(`  ${d.reason}`))
         console.log(chalk.gray(`  本地模型: ${d.localModel || '未配置'} · 主模型: ${d.mainModel}`))
       }
@@ -3322,13 +3323,13 @@ program
       }
       const decisions = tasks.map(runOne)
       if (options.json) {
-        // 单任务保持 v0.6.135 原结构（向后兼容宿主/脚本消费）；多任务批量输出 { results } 数组
+        // 单任务保持 v0.6.135 原结构（向后兼容宿主/脚本消费；v0.6.143 起补 feature 字段）；多任务批量输出 { results } 数组
         if (decisions.length === 1) {
           const d = decisions[0]
-          console.log(JSON.stringify({ tier: d.tier, model: d.model, provider: d.provider, reason: d.reason, localModel: d.localModel, mainModel: d.mainModel }, null, 2))
+          console.log(JSON.stringify({ tier: d.tier, feature: d.feature, model: d.model, provider: d.provider, reason: d.reason, localModel: d.localModel, mainModel: d.mainModel }, null, 2))
         } else {
           console.log(JSON.stringify({
-            results: decisions.map((d) => ({ task: d.text, tier: d.tier, model: d.model, provider: d.provider, reason: d.reason })),
+            results: decisions.map((d) => ({ task: d.text, tier: d.tier, feature: d.feature, model: d.model, provider: d.provider, reason: d.reason })),
             localModel: decisions[0].localModel,
             mainModel: decisions[0].mainModel,
           }, null, 2))

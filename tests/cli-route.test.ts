@@ -47,24 +47,30 @@ const SIMPLE_TEXT = '把这句话翻译成英文：你好世界'
 const COMPLEX_TEXT = '分析一下这段代码的性能瓶颈'
 
 describe('flare route', () => {
-  it('简单任务：配置 LOCAL_MODEL → 文本模式输出本地模型 + ollama provider', async () => {
+  it('简单任务：配置 LOCAL_MODEL → 文本模式输出本地模型 + ollama provider + 特征标签', async () => {
     const { code, stdout } = await runCli(['route', SIMPLE_TEXT], { LOCAL_MODEL: 'qwen2.5:7b' })
     expect(code).toBe(0)
     expect(stdout).toContain('简单任务')
     expect(stdout).toContain('qwen2.5:7b')
     expect(stdout).toContain('ollama')
     expect(stdout).toContain('本地模型: qwen2.5:7b')
+    // v0.6.143：分类命中特征能力标签
+    expect(stdout).toContain('特征:')
+    expect(stdout).toContain('简单特征词')
   }, 20000)
 
-  it('复杂任务 → 文本模式输出主模型 + deepseek provider', async () => {
+  it('复杂任务 → 文本模式输出主模型 + deepseek provider + 特征标签', async () => {
     const { code, stdout } = await runCli(['route', COMPLEX_TEXT], { LOCAL_MODEL: 'qwen2.5:7b' })
     expect(code).toBe(0)
     expect(stdout).toContain('复杂任务')
     expect(stdout).toContain('deepseek-chat')
     expect(stdout).toContain('deepseek')
+    // v0.6.143：分类命中特征能力标签
+    expect(stdout).toContain('特征:')
+    expect(stdout).toContain('复杂特征词')
   }, 20000)
 
-  it('--json：结构化输出 { tier, model, provider, reason, localModel, mainModel }，纯 JSON 无 ANSI', async () => {
+  it('--json：结构化输出 { tier, feature, model, provider, reason, localModel, mainModel }，纯 JSON 无 ANSI', async () => {
     const { code, stdout } = await runCli(['route', SIMPLE_TEXT, '--json'], { LOCAL_MODEL: 'qwen2.5:7b' })
     expect(code).toBe(0)
     expect(stdout).not.toMatch(/\u001b\[/)
@@ -75,6 +81,8 @@ describe('flare route', () => {
     expect(typeof parsed.reason).toBe('string')
     expect(parsed.localModel).toBe('qwen2.5:7b')
     expect(parsed.mainModel).toBe('deepseek-chat')
+    // v0.6.143：分类命中特征能力标签
+    expect(parsed.feature).toContain('简单特征词')
   }, 20000)
 
   it('--json：复杂任务输出主模型（保质量）', async () => {
@@ -130,7 +138,7 @@ describe('flare route', () => {
     expect(stdout).toContain('汇总: 共 2 个任务 · 简单 1 · 复杂 1')
   }, 20000)
 
-  it('批量多参数（v0.6.140）：--json 输出 { results: [...] } 数组 + 公共模型字段', async () => {
+  it('批量多参数（v0.6.140）：--json 输出 { results: [...] } 数组 + 公共模型字段（v0.6.143 起含 feature）', async () => {
     const { code, stdout } = await runCli(['route', SIMPLE_TEXT, COMPLEX_TEXT, '--json'], { LOCAL_MODEL: 'qwen2.5:7b' })
     expect(code).toBe(0)
     expect(stdout).not.toMatch(/\u001b\[/)
@@ -139,9 +147,11 @@ describe('flare route', () => {
     expect(parsed.results).toHaveLength(2)
     expect(parsed.results[0]).toMatchObject({ tier: 'simple', model: 'qwen2.5:7b', provider: 'ollama' })
     expect(parsed.results[1]).toMatchObject({ tier: 'complex', model: 'deepseek-chat', provider: 'deepseek' })
-    // 每个结果带 task 原文
+    // 每个结果带 task 原文 + 特征标签
     expect(parsed.results[0].task).toBe(SIMPLE_TEXT)
     expect(parsed.results[1].task).toBe(COMPLEX_TEXT)
+    expect(parsed.results[0].feature).toContain('简单特征词')
+    expect(parsed.results[1].feature).toContain('复杂特征词')
     expect(parsed.localModel).toBe('qwen2.5:7b')
     expect(parsed.mainModel).toBe('deepseek-chat')
   }, 20000)

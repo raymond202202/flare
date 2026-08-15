@@ -382,6 +382,20 @@ Interactive mode commands:
 
 ### Changelog / Release Notes
 
+## v0.6.143（2026-08-15）
+- ✨ **route 分类命中特征能力标签（混合模式路由决策可视化深化）**：新增 `classifyTaskDetail(text)`
+  纯函数（与 `classifyTaskComplexity` 同一规则集，额外返回命中的能力标签）；`RouteTaskResult` 新增
+  `feature` 字段（代码特征 / 复杂特征词 / 长文本 / 简单特征词 / 默认）——`flare route` 文本模式新增
+  「特征:」行展示「为什么这样路由」，`--json` 单任务与批量 `results[].feature` 同步透传（结构向后
+  兼容，新增字段不破坏既有消费）；宿主可据此做路由统计/审计
+- 实现：src/core/routing.ts（classifyTaskDetail + feature 字段）、src/index.ts 导出、
+  src/cli/index.ts route 展示层（纯展示）
+- 测试：routing.test.ts 补 classifyTaskDetail 五档 + 判定一致性 + routeTaskModel feature 断言
+  （+7 用例）；cli-route.test.ts 补文本/JSON/批量 feature 断言（+0 用例，更新 4 处）
+- 文档：README Changelog 条目 + USAGE.md 单次命令补 feature + docs/multi-model.md 查询面同步 +
+  package.json/package-lock.json 0.6.142 → 0.6.143
+- 纯外围增强：零 agent.ts 改动（Agent.run 核心循环零触碰）、零 push、零敏感信息
+
 ## v0.6.142（2026-08-15）
 - ✨ **cache-check 命中片段构成诊断（prompt caching 基建深化）**：`CacheCheckResult` 新增
   `hitSegmentNote`（基于末轮命中率的人类可读说明，四档：完整命中 / 部分命中（预期，稳定前缀命中、

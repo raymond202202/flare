@@ -5,7 +5,7 @@
  * - routeTaskModel：简单任务 → 本地路由模型；复杂任务 → 主模型（纯决策，不发起调用）
  */
 import { describe, it, expect, afterEach } from 'vitest'
-import { classifyTaskComplexity, routeTaskModel } from '../src/core/routing.js'
+import { classifyTaskComplexity, classifyTaskDetail, routeTaskModel } from '../src/core/routing.js'
 import { config } from '../src/core/config.js'
 
 const savedLocal = config.get('LOCAL_MODEL') || ''
@@ -53,6 +53,44 @@ describe('classifyTaskComplexity（规则/启发式分类）', () => {
   })
 })
 
+describe('classifyTaskDetail（分类命中特征能力标签，v0.6.143）', () => {
+  it('代码特征 → complex + 代码特征标签', () => {
+    const r = classifyTaskDetail('帮我写一个函数：```\nfunction add(a, b) { return a + b }\n```')
+    expect(r.tier).toBe('complex')
+    expect(r.feature).toContain('代码特征')
+  })
+
+  it('复杂特征词 → complex + 复杂特征词标签', () => {
+    const r = classifyTaskDetail('分析一下这段代码的性能瓶颈')
+    expect(r.tier).toBe('complex')
+    expect(r.feature).toContain('复杂特征词')
+  })
+
+  it('长文本 → complex + 长文本标签', () => {
+    const r = classifyTaskDetail('这是一段很长的用户输入。'.repeat(40))
+    expect(r.tier).toBe('complex')
+    expect(r.feature).toContain('长文本')
+  })
+
+  it('简单特征词 → simple + 简单特征词标签', () => {
+    const r = classifyTaskDetail('把这句话翻译成英文：你好世界')
+    expect(r.tier).toBe('simple')
+    expect(r.feature).toContain('简单特征词')
+  })
+
+  it('空文本/默认短文本 → simple + 默认标签', () => {
+    expect(classifyTaskDetail('').feature).toContain('空文本')
+    expect(classifyTaskDetail('你好').feature).toContain('默认')
+  })
+
+  it('与 classifyTaskComplexity 判定一致（同一规则集）', () => {
+    const cases = ['你好', '把这句话翻译成英文', '分析代码', '写代码：const x = 1', '长文本'.repeat(200)]
+    for (const c of cases) {
+      expect(classifyTaskDetail(c).tier).toBe(classifyTaskComplexity(c))
+    }
+  })
+})
+
 describe('routeTaskModel（路由决策）', () => {
   it('简单任务 + 配置 LOCAL_MODEL → 本地模型（ollama provider）', () => {
     config.set('LOCAL_MODEL', 'qwen2.5:7b')
@@ -62,6 +100,7 @@ describe('routeTaskModel（路由决策）', () => {
     expect(r.model).toBe('qwen2.5:7b')
     expect(r.provider).toBe('ollama')
     expect(r.reason).toContain('本地')
+    expect(r.feature).toContain('简单特征词')
   })
 
   it('简单任务 + 未配置 LOCAL_MODEL → 回退主模型并注明', () => {
@@ -82,6 +121,7 @@ describe('routeTaskModel（路由决策）', () => {
     expect(r.model).toBe('deepseek-chat')
     expect(r.provider).toBe('deepseek')
     expect(r.reason).toContain('主模型')
+    expect(r.feature).toContain('复杂特征词')
   })
 
   it('显式 opts 覆盖 config（宿主可传入指定模型）', () => {
