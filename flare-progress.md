@@ -1,5 +1,9 @@
 # Flare 引擎迭代进度（夜间调研 agent）
 
+> **【✅ 第一百五十二轮小步】P201 测试稳定性修复（session-archive.test.ts 注入 mock LLM 服务器根治 chat e2e 偶发超时源，flare P200 验收提示）**：
+> commit `4759472`，tsc 0 错误、1218/1218 全绿、纯测试层零 src 改动、无版本变化（详情见下方 P201 条目）。
+> **【✅ 第一百五十一轮完成】P200 (v0.6.142) cache-check 命中片段构成诊断 hitSegmentNote（prompt caching 基建深化）**：
+> commit `f9f0301`，tsc 0 错误、1218/1218 全绿、零 agent.ts 改动、已自安装（详情见下方 P200 条目）。
 > **【✅ 第一百五十轮完成】P199 (v0.6.141) findSimilarMemories 相似对规范化 idA < idB（测试稳定性修复，flare 验收提示的偶发失败源）**：
 > commit `5433809`，tsc 0 错误、1217/1217 全绿、零 agent.ts 改动、已自安装（详情见下方 P199 条目）。
 > **【✅ 第一百四十九轮完成】P198 (v0.6.140) route 命令支持批量多参数 + stdin 管道读取（路由决策可视化深化）**：
@@ -5863,3 +5867,70 @@
 >   确认门接入完整化（confirm 门策略检查现有覆盖面）；③ MCP 增强（resources 订阅/采样等协议面）；
 >   ④ 路由决策可视化深化已落地（批量+stdin），可考虑 route 能力标签/统计；⑤ 分层上下文（需评估
 >   run 循环外异步，铁律暂缓）
+
+---
+
+### 2026-08-15 第一百五十一轮完成（P200，v0.6.142）——cache-check 命中片段构成诊断 hitSegmentNote
+
+> **P200 完成**（commit `f9f0301`，7 文件 +72/-4）：prompt caching 基建深化（上轮下一步候选①
+> 「命中片段占比/未命中诊断深化」落地）——帮助理解「命中率 <100% 属正常」：
+> - `src/core/cache-check.ts`：`CacheCheckResult` 新增 `hitSegmentNote`（基于末轮命中率的人类可读
+>   四档说明：完整命中 / 部分命中（预期，稳定前缀命中、user 消息尾部每次变化不参与）/ 未命中 /
+>   命中率不可计算）——cache-check 的 prompt = 稳定 system 前缀 + 每次变化的 user 消息，服务端按
+>   前缀缓存，命中的是稳定前缀部分，user 尾部每次不同不参与命中（命中率 <100% 不代表缓存失效）；
+>   成功/失败两条返回路径都赋值（失败路径 null → 不可计算）；`cacheCheckToJson` 同步透传（结构
+>   向后兼容）
+> - `src/cli/index.ts`：cache-check 文本模式新增「命中片段:」行（纯展示层）+ --json 帮助描述同步
+> - 测试：cache-check.test.ts 补 1 用例（完整/部分/未命中/失败四档 + JSON 透传）+ 既有 JSON 断言
+>   更新——共 25 用例
+> - 文档：README Changelog v0.6.142 + docs/flare-token-architecture.md 补诊断说明 + package.json/
+>   package-lock.json 0.6.141 → 0.6.142
+> - **验证**：npx tsc 0 错误（含 dist 编译）；PATH=/usr/bin:$PATH npx vitest run 全量 78 文件
+>   1218/1218 全绿（基线 1217 + 1；cache-check 专项 25/25）；**零 agent.ts 改动**；零 push、零敏感
+>   信息；自安装完成：installed 0.6.142 = repo 0.6.142（`flare version` → v0.6.142）
+> - **flare 验收结论：✅ 通过**——flare 独立运行 git log -1（f9f0301）/git show 审查完整 diff
+>   （7 文件 +72/-4）、npx tsc 0 错误、cache-check 专项 25/25；逐项核对 segmentNoteOf 四档判断
+>   顺序（null→不可计算 / 100→完整 / >0→部分 / 其余→未命中）、成功与失败两条返回路径均赋值
+>   （错误路径用末轮成功命中率兜底）、cacheCheckToJson 透传、CLI 纯展示层、git diff HEAD~1 HEAD --
+>   src/core/agent.ts 0 行、diff 敏感扫描无明文；结论「提交质量良好，可安全合入；唯一非全绿来自
+>   环境偶发（session-archive.test.ts chat e2e 全量并发下偶发超时，单独重跑通过，与本提交无因果，
+>   该提交零 agent.ts 改动不涉及 server 流程）」；全程零修改零 commit
+> - **下一步候选**：① 测试稳定性修复：session-archive.test.ts 的 chat e2e 真实调用注入 mock LLM
+>   服务器根治偶发超时源（flare 验收提示，P181/P182/P186/P187 先例）；② 【P1】prompt caching
+>   基建深化：命中片段占比/未命中诊断可继续深化（如建议重试间隔提示）；③ CLI/server 确认门接入
+>   完整化（confirm 门策略检查现有覆盖面）；④ MCP 增强（resources 订阅/采样等协议面）；
+>   ⑤ 分层上下文（需评估 run 循环外异步，铁律暂缓）
+
+---
+
+### 2026-08-15 第一百五十二轮小步（P201，测试稳定性修复）——session-archive.test.ts 注入 mock LLM 服务器根治 chat e2e 偶发超时源
+
+> **P201 完成**（commit `4759472`，1 文件 +44/-6，纯测试层）：flare P200 验收提示的偶发失败源
+> ——全量并发下 session-archive.test.ts 的 chat e2e 偶发超时（单独重跑通过，与本提交无关但为
+> 真实调用慢源）：该文件 beforeAll spawn `flare server` 时仅 `delete DEEPSEEK_API_KEY`，未注入
+> mock 端点——无 key fallback 本地模型 / 子进程 config 重载 ~/.flare/.env 注入真实 key 走远端
+> 网络（原用例注释显式放宽 45s）；P201 按 P181/P182/P186/P187 同款方案补齐收官（至此全部真实
+> 调用类测试均已 mock 化：cli-chat-session P181 + server-default-params P182 + server.test.ts
+> P186 + context-trim/tool-output-policy P187 + session-archive P201）
+> - **实现**（tests/session-archive.test.ts，纯测试层）：
+>   - beforeAll 起 node:http mock LLM 服务器（仅 POST /chat/completions 返回固定 OpenAI 兼容
+>     JSON、其余 404、req.resume 防挂起、listen(0) 随机端口、afterAll mockLlm?.close()，与
+>     P181/P182/P186/P187 同款）
+>   - spawn env 显式注入 `LLM_BASE_URL=mockLlmUrl`/`LLM_API_KEY='mock-key'`/
+>     `DEFAULT_MODEL='mock-model'` + `delete DEEPSEEK_API_KEY`/`delete OPENAI_API_KEY`
+>     （process.env 优先于 dotenv，测试子进程不继承真实凭据）
+>   - 断言收紧（1 处）：chat 用例从「done/error 皆可」收紧为「稳定 done」，vitest 超时
+>     45000 → 15000ms（mock 下生成必然成功，断言更明确而非弱化）
+> - **验证**：tsc 0 错误；专项 10/10 全绿（309ms）；全量 **1218/1218 全绿**（78 文件）；纯测试
+>   层零 src 改动、零 agent.ts 改动、无版本变化（0.6.142 不变）、零 push、零敏感信息（仅 mock-key）
+> - **flare 验收通过**：独立运行 tsc 0 错误 + 全量 78 文件/1218 测试全绿 + 专项 10/10（309ms，
+>   mock 根除远端网络慢源）；逐项核验（仅 1 文件改动、agent.ts 0 行、mock 注入正确性
+>   POST/404/resume/listen(0)/afterAll close、env 隔离 delete 两 key + 注入 mock 端点、
+>   断言收紧符合 mock 稳定成功预期、diff 无真实凭据仅 mock-key）；结论「✅ 验收通过，完全符合
+>   验收标准：测试层改动、根因定位准确、mock 注入与其他 P 系列架构一致、断言收紧而非弱化」；
+>   全程零修改零 commit
+> - **下一步候选**：① 【P1】prompt caching 基建深化：命中片段占比/未命中诊断可继续深化
+>   （如未命中时提示建议重试间隔——P200 文案已含「可间隔 <5min 重试」，可考虑命中片段占比
+>   数值化）；② CLI/server 确认门接入完整化（confirm 门策略检查现有覆盖面）；③ MCP 增强
+>   （resources 订阅/采样等协议面）；④ 路由决策可视化深化已落地（批量+stdin），可考虑 route
+>   能力标签/统计；⑤ 分层上下文（需评估 run 循环外异步，铁律暂缓）
