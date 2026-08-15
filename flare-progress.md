@@ -1,5 +1,7 @@
 # Flare 引擎迭代进度（夜间调研 agent）
 
+> **【✅ 第一百五十四轮完成】P203 (v0.6.144) route 批量汇总特征分布统计 summary（混合模式路由决策可视化深化）**：
+> commit `a1f40c2`，tsc 0 错误、1224/1224 全绿、零 agent.ts 改动、已自安装（详情见下方 P203 条目）。
 > **【✅ 第一百五十三轮完成】P202 (v0.6.143) route 分类命中特征能力标签 feature（混合模式路由决策可视化深化）**：
 > commit `90951a8`，tsc 0 错误、1224/1224 全绿、零 agent.ts 改动、已自安装（详情见下方 P202 条目）。
 > **【✅ 第一百五十二轮小步】P201 测试稳定性修复（session-archive.test.ts 注入 mock LLM 服务器根治 chat e2e 偶发超时源，flare P200 验收提示）**：
@@ -5973,3 +5975,35 @@
 >   接入完整化（confirm 门策略检查现有覆盖面）；③ MCP 增强（resources 订阅/采样等协议面）；
 >   ④ 路由决策可视化可继续（route 批量统计按 feature 分组汇总）；⑤ 分层上下文（需评估 run
 >   循环外异步，铁律暂缓）
+
+---
+
+### 2026-08-15 第一百五十四轮完成（P203，v0.6.144）——route 批量汇总特征分布统计 summary
+
+> **P203 完成**（commit `a1f40c2`，7 文件 +44/-7）：混合模式路由决策可视化深化（P202 feature
+> 标签的批量统计面落地）——批量路由汇总补任务构成统计：
+> - `src/cli/index.ts` route 批量展示层（纯展示/统计）：文本模式「汇总」行下新增「特征分布:」行
+>   ——按分类命中能力标签（feature）分组计数（Map 聚合，如
+>   `简单特征词（分类/抽取/摘要/翻译/格式化等） 1 · 复杂特征词（分析/推理/创作/算法等） 1`）；
+>   `--json` 批量输出新增 `summary: { total, tierCounts, featureCounts }` 字段——tier 与 feature
+>   双维度计数，程序化消费任务构成（仅批量分支新增，单任务结构不变向后兼容）
+> - 核心路由零改动：routeTaskModel/classifyTaskDetail/classifyTaskComplexity 均未触碰（routing.ts
+>   不在本次 diff）
+> - 测试：cli-route.test.ts 更新 2 处断言（文本模式特征分布行 + --json summary 分组统计）——共 13
+>   用例
+> - 文档：README Changelog v0.6.144 + USAGE.md 单次命令补 summary + docs/multi-model.md 查询面同步
+>   + package.json/package-lock.json 0.6.143 → 0.6.144
+> - **验证**：npx tsc 0 错误（含 dist 编译）；PATH=/usr/bin:$PATH npx vitest run 全量 78 文件
+>   **1224/1224 全绿**；**零 agent.ts 改动**；零 push、零敏感信息；自安装完成：installed 0.6.144 =
+>   repo 0.6.144（安装版冒烟：批量文本模式「特征分布: 简单特征词（...） 1 · 复杂特征词（...） 1」
+>   正确显示；FLARE_HOME 临时目录零污染）
+> - **flare 验收结论：✅ 通过**——flare 独立运行 git log -1（a1f40c2）/git show 审查完整 diff、
+>   npx tsc 0 错误、全量 78 文件 1224/1224 全绿；逐项核对（--json 批量分支双维度计数正确、仅批量
+>   分支新增 summary 单任务结构未变向后兼容、results/localModel/mainModel 原样保留、文本模式 Map
+>   分组计数位置正确、routing.ts 完全不在 diff 内、agent.ts 0 行、敏感扫描 0 匹配）；结论
+>   「审查通过，可合并：纯外围展示/统计增强，与描述每一条声明完全吻合」；全程零修改零 commit
+> - **下一步候选**：① 【P1】prompt caching 基建深化：命中片段占比数值化/未命中诊断（P200 文案
+>   已含「可间隔 <5min 重试」，可考虑按 provider 拆分命中率或占比百分比）；② CLI/server 确认门
+>   接入完整化（confirm 门策略检查现有覆盖面）；③ MCP 增强（resources 订阅/采样等协议面）；
+>   ④ 路由决策可视化已较完整（feature 标签 + 批量 summary），可考虑 route 统计持久化/按会话维度；
+>   ⑤ 分层上下文（需评估 run 循环外异步，铁律暂缓）
