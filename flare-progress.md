@@ -1,5 +1,7 @@
 # Flare 引擎迭代进度（夜间调研 agent）
 
+> **【✅ 第一百四十八轮完成】P197 (v0.6.139) cache-check 补 provider 标注 + 预期命中片段规模（prompt caching 基建深化 + 混合模式观测面）**：
+> commit `647d45b`，tsc 0 错误、1211/1211 全绿、零 agent.ts 改动、已自安装（详情见下方 P197 条目）。
 > **【✅ 第一百四十七轮小步】P196 (纯文档) host-protocol/USAGE 同步 usage perProvider 字段与按提供方缓存观测**：
 > commit `2f0fc4c`，纯文档零 src 改动、tsc 0 错误、无版本变化（详情见下方 P196 条目）。
 > **【✅ 第一百四十六轮完成】P195 (v0.6.138) usage 按提供方缓存观测深化——provider 行补缓存命中/写入/节省子行（prompt caching 基建深化 + 混合模式成本收益）**：
@@ -5746,3 +5748,44 @@
 >   命中内容片段展示；② CLI/server 确认门接入完整化（confirm 门策略检查现有覆盖面）；
 >   ③ MCP 增强（resources 订阅/采样等协议面）；④ 路由决策可视化深化（route 命令 stdin 批量）；
 >   ⑤ 分层上下文（需评估 run 循环外异步，铁律暂缓）
+
+---
+
+### 2026-08-15 第一百四十八轮完成（P197，v0.6.139）——cache-check 补 provider 标注 + 预期命中片段规模
+
+> **P197 完成**（commit `647d45b`，7 文件 +95/-6）：prompt caching 基建深化 + 混合模式观测面——
+> 上轮下一步候选①「cache-check 命中率按 provider 拆分/命中内容片段展示」落地：
+> - `src/core/cache-check.ts`：`CacheCheckResult` 新增 `provider`（detectProvider(model)：本地
+>   ollama vs 线上 deepseek/openai/other——复用 P192 上移 core 的 detectProvider，models.ts 零依赖
+>   无循环）与 `prefixChars`（构造的稳定 system 前缀字符数——「预期命中内容片段」规模：cache-check
+>   命中的就是两次调用逐字节一致的稳定前缀）；成功/失败两个返回分支都赋值；cacheCheckToJson 同步
+>   透传两字段（结构向后兼容，新增字段不破坏既有宿主/CI 消费）
+> - `src/cli/index.ts`：cache-check 文本模式模型行补 provider 标签（如 `deepseek-chat（线上
+>   deepseek）`/`qwen2.5:7b（本地 ollama）`）、新增「预期命中片段: 稳定 system 前缀（约 X 字符）」
+>   行、**本地 ollama 模型补语义提示**（「无服务端缓存计费，cache_read_tokens 通常为 0 属预期；
+>   本验收面向线上 API 缓存」——避免混合模式下本地模型命中 0 被误读为缓存故障）；--json 帮助描述
+>   同步字段清单
+> - 测试：cache-check.test.ts 补 2 用例（ollama 本地模型 provider+prefixChars+JSON 透传 /
+>   deepseek-reasoner·gpt-4o·unknown-model 三 provider 标注）+ 既有断言更新（首测 deepseek、
+>   OpenAI cached_tokens openai、无法定价 ollama、JSON 透传、失败路径 other）——共 24 用例
+> - 文档：README Changelog v0.6.139 + 命令表 cache-check 行补 v0.6.139 + docs/flare-token-architecture.md
+>   补 provider 标注条目 + package.json/package-lock.json 0.6.138 → 0.6.139
+> - **验证**：npx tsc 0 错误（含 dist 编译）；PATH=/usr/bin:$PATH npx vitest run 全量 78 文件
+>   1211/1211 全绿（基线 1209 + 2；cache-check 专项 24/24）；**零 agent.ts 改动**；零 push、零敏感信息；
+>   自安装完成：installed 0.6.139 = repo 0.6.139（安装版冒烟：FLARE_HOME 临时目录 + 真实本地
+>   ollama qwen2.5:7b 跑 cache-check——文本模式「模型: qwen2.5:7b（本地 ollama）」「预期命中片段:
+>   稳定 system 前缀（约 1875 字符）」+ ollama 语义提示正确；--json 输出 provider: ollama /
+>   prefixChars: 1875 正确透传，exit 1 为本地无服务端缓存命中的预期语义）；真实 ~/.flare 零污染
+>   （冒烟均用 FLARE_HOME 临时目录）
+> - **flare 验收结论：✅ 通过**——flare 独立运行 git log -1（647d45b）/git show 审查完整 diff
+>   （7 文件 +95/-6）、npx tsc 0 错误、PATH=/usr/bin:$PATH npx vitest run 全量 78 文件 1211/1211
+>   全绿；逐项核对成功/失败两条 return 路径 provider/prefixChars 均已赋值（diff 116-120 与 187-192
+>   行）、cacheCheckToJson 透传、providerLabel 四映射完整（deepseek/openai/ollama/other）、models.ts
+>   零 import 依赖无循环、git diff HEAD~1 HEAD -- src/core/agent.ts 0 行、diff 敏感扫描（sk-/api_key/
+>   password/secret/Bearer 模式）无明文；结论「通过（PASS）：功能完整、测试充分、边界处理到位、文档
+>   同步、核心零风险、无敏感信息，可以合并/验收通过」；唯一非阻塞建议 providerLabel 映射硬编码 CLI
+>   可考虑上移 core（当前定位清晰不构成阻塞）；全程零修改零 commit
+> - **下一步候选**：① 【P1】prompt caching 基建深化：cache-check 命中率按 provider 拆分已落地
+>   （provider 标注+预期命中片段），可考虑命中片段占比/未命中诊断深化；② CLI/server 确认门接入
+>   完整化（confirm 门策略检查现有覆盖面）；③ MCP 增强（resources 订阅/采样等协议面）；
+>   ④ 路由决策可视化深化（route 命令 stdin 批量）；⑤ 分层上下文（需评估 run 循环外异步，铁律暂缓）
