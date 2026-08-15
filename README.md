@@ -382,6 +382,18 @@ Interactive mode commands:
 
 ### Changelog / Release Notes
 
+## v0.6.135（2026-08-15）
+- ✨ **任务复杂度路由接入面：CLI 单次命令 `flare route "<任务文本>"`（混合模式本地小模型路由查询面）**：
+  P190 的纯函数路由决策（`routeTaskModel`）实操化——文本模式输出 `简单任务/复杂任务 → 模型（provider）` +
+  原因 + 本地/主模型（配置 `LOCAL_MODEL` 后简单任务指向本地模型省钱）；`--json`/`-j` 结构化输出
+  `{ tier, model, provider, reason, localModel, mainModel }`；缺/空参数给用法提示 + exit 1（不崩溃）。
+  **纯函数零调用**：不触发生成、不创建会话（与 server models 同级只读），不改 Agent.run 核心循环
+- 测试：新 tests/cli-route.test.ts 8 用例（简单→本地 / 复杂→主模型 / --json 结构 / 复杂 --json /
+  未配置 LOCAL_MODEL 回退主模型 + localModel null / 缺参用法 / 空白参用法 / -j 等价）
+- 文档：README Changelog 条目 + USAGE.md 单次命令补 route + multi-model.md 查询面补 CLI route +
+  package.json/package-lock.json 0.6.134 → 0.6.135
+- 纯外围增强：零 agent.ts 改动（Agent.run 核心循环零触碰）、零 push、零敏感信息
+
 ## v0.6.134（2026-08-15）
 - ✨ **本地小模型路由起步（混合模式方向，最高优先级）：任务复杂度路由纯函数 + 本地路由模型配置查询面**：
   新 `src/core/routing.ts` 提供 `classifyTaskComplexity`（规则/启发式任务复杂度分类：代码特征/复杂特征词/

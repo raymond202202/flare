@@ -70,6 +70,10 @@ flare chat -q "接着刚才的话题" --session <会话ID>
 
 # 显式创建会话（UPSERT 幂等——已存在则更新标题；v0.6.127）
 flare create-session <会话ID> "网络调试"
+
+# 任务复杂度路由决策（v0.6.135）：简单任务 → 本地模型省钱，复杂任务 → 主模型保质量（纯函数零调用）
+flare route "把这句话翻译成英文"        # 文本输出决策
+flare route "分析这段代码" --json      # 结构化输出 { tier, model, provider, reason, localModel, mainModel }
 ```
 
 ### 查看帮助
