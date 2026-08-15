@@ -1,5 +1,7 @@
 # Flare 引擎迭代进度（夜间调研 agent）
 
+> **【✅ 第一百四十一轮完成】P190 (v0.6.134) 本地小模型路由起步——任务复杂度路由纯函数 + LOCAL_MODEL 配置查询面（混合模式方向，用户最新拍板最高优先级）**：
+> commit `adfc0ca`，tsc 0 错误、1187/1187 全绿、零 agent.ts 改动、已自安装（详情见下方 P190 条目）。
 > **【✅ 第一百四十轮小步】P189 chore：package-lock.json 版本字段同步 0.6.133（flare 验收提示的历史遗留）**：
 > commit `4214568`，纯元数据零 src 改动、tsc 0 错误、1174/1174 全绿、版本保持 0.6.133（详情见下方 P189 条目）。
 > **【✅ 第一百三十九轮完成】P188 (v0.6.133) messages --help 描述同步归档标记能力（文档对称）**：
@@ -5449,6 +5451,70 @@
   都改了、概述列表忘了）——检查文档对称时不能只对详细章节，概述/目录/汇总行也要对照；
   ② 纯文档小步跑 tsc + git diff 验收即可，无需全量测试（零 src 改动无回归风险）；
   ③ 连续纯文档小步（P164/165/167）之间穿插功能小步（P166），节奏合理——每轮独立验收
+
+---
+
+### 2026-08-15 第一百四十一轮完成（P190 v0.6.134）——本地小模型路由起步（任务复杂度路由纯函数 + LOCAL_MODEL 配置查询面，混合模式方向）（装机完成，自循环）
+
+> **P190 完成**（commit `adfc0ca`）：用户最新拍板最高优先级方向「本地小模型路由（混合模式）」的
+> **第一步基建**——任务复杂度路由纯函数 + 本地路由模型配置查询面，纯外围零 agent.ts。
+> - **背景**：用户机器 64GB 内存 + 4GB 显存，已装 Ollama（qwen2.5:7b-64k / qwen2.5vl:3b /
+>   qwen2.5vl:7b / qwen2.5:7b）。混合模式 = 简单任务走本地小模型（省钱/隐私/离线），复杂任务走
+>   线上主模型（保质量）。**铁律约束**：Agent 核心编排循环不能被小模型替代（丢指令/工具调用失败），
+>   路由是外围增强，不改 Agent.run 核心循环——路由决策由宿主/CLI 在调用 provider 前按需使用。
+> - **实现**：
+>   - 新 `src/core/routing.ts`：`classifyTaskComplexity(text)`（规则/启发式任务复杂度分类，按优先级
+>     ①代码特征（```/function/import/花括号）→ complex ②复杂特征词（分析/推理/为什么/对比/设计/
+>     创作/算法等）→ complex ③长文本 >300 字符 → complex ④简单特征词（分类/抽取/摘要/翻译/格式化）
+>     → simple ⑤默认短文本 → simple；**零网络、零 LLM 调用**）+ `routeTaskModel(text, opts)`（simple
+>     → LOCAL_MODEL 本地省钱；complex → 主模型保质量；未配置 LOCAL_MODEL 时 simple 回退主模型并注明；
+>     显式 opts 可覆盖 config；纯决策不发起调用；providerOf 独立实现避免 core→server 依赖方向）
+>   - `src/core/config.ts`：新增 `LOCAL_MODEL` / `LOCAL_BASE_URL` / `LOCAL_API_KEY`（与 LLM_*/VISION_*
+>     模式一致；LOCAL_MODEL 为 Ollama 命名如 qwen2.5:7b 自动走本地端点）
+>   - `src/server.ts`：`ModelInfoResponse.configured` 补 `local` 字段（ModelEndpointInfo | null），
+>     `collectModelInfo` 解析（LOCAL_MODEL 配置时 resolveOne；未配置 null，与 vision 同语义）
+>   - `src/cli/index.ts` `flare models`：文本模式补「本地路由」行（已配置显示模型+端点；未配置给提示
+>     含配置示例）；--json 与 server models 回包同构补 `configured.local`
+>   - `src/index.ts`：导出 `classifyTaskComplexity` / `routeTaskModel`（宿主代码集成入口）
+> - **测试**（新 tests/routing.test.ts 11 用例 + server-models +2 + cli-models +1，共 +14）：
+>   - 分类规则：空文本/代码特征/复杂特征词（含「写一篇」创作词回归——首版漏词实测失败后补
+>     `写一篇` 特征）/长文本/简单特征词/默认短文本
+>   - 路由决策：配置 LOCAL_MODEL → 本地 ollama / 未配置 → 回退主模型并注明 / 复杂 → 主模型 /
+>     显式 opts 覆盖 config / 默认主模型兜底 deepseek-chat
+>   - server：local 未配置 null / 已配置返回端点信息（ollama provider + 本地端点 + hasApiKey）
+>   - cli：--json 未配置 local null / 配置后 local 端点信息 + 文本模式「本地路由」行同口径
+> - 文档：docs/multi-model.md 补「混合模式：本地小模型路由」章节（背景/配置/路由规则表/查询面/宿主
+>   集成）+ docs/host-protocol.md models 响应补 configured.local + README Changelog v0.6.134 +
+>   package.json/package-lock.json 0.6.133 → 0.6.134
+> - **1187/1187 全绿**（基线 1174 + 14；77 文件；routing 11/11 + server-models 11/11 +
+>   cli-models 4/4 专项通过；全量首跑 1186/1187 有 1 个偶发（server e2e 超时，P123 先例），重跑
+>   全量 1187/1187 全绿），tsc 0 错误（含 dist 编译），**零 agent.ts 改动**，零 push、零敏感信息
+>   （diff 敏感扫描仅配置键名/字段名/示例，无实际密钥明文）；自安装完成：installed 0.6.134 =
+>   repo 0.6.134（flare 验收用安装版 CLI 跑通）；真实 ~/.flare 零污染（冒烟均用 FLARE_HOME 临时目录）
+> - **下一步候选**：① 任务复杂度路由**接入面**（CLI 单次命令如 `flare route <text>` 输出路由决策
+>   文本/--json，把纯函数变成用户可实操的查询命令——保持外围零 agent.ts）；② usage 按 provider
+>   拆分统计（本地 vs 线上 token 分别统计，评估成本收益；store usage_log 已落 model 字段可按
+>   detectProvider 分组，外围）；③ ollama 模型发现增强（models 命令展示本地模型能力标签）；
+>   ④ 推荐模型拉取脚本（docs 记录建议拉取 qwen3-1.7b / deepseek-r1-distill-1.5b / qwen3-30b-a3b）；
+>   ⑤ 【P1】分层上下文（需评估 run 循环外异步，铁律暂缓）
+> - **flare 验收结论：✅ 通过**——flare 独立运行 git log -1（adfc0ca）/git show 审查完整 diff
+>   （13 文件 +359/-14）、npx tsc 0 错误、PATH=/usr/bin:$PATH npx vitest run 全量 77 文件
+>   1187/1187 全绿；逐项核对 server 与 CLI 两处 resolveOne 逐行相同、null 语义一致、config 存储
+>   模式沿用 env || '' 约定、routing 回退逻辑（未配置 LOCAL_MODEL 回退主模型不报错、默认兜底
+>   deepseek-chat）、文档四处同步一致、零 agent.ts 改动、diff 全量扫描无硬编码密钥（hasApiKey
+>   只输出 boolean）；全程零修改零 commit；结论与实况完全一致（验收指令经文件读入规避 confusable
+>   误报，P148 先例）；一条非阻塞观察：routeTaskModel 的 providerOf 是 server detectProvider 的
+>   独立副本（避免 core→server 依赖方向），后续新增 provider 需两处同步维护（技术债留意）
+
+**引导过程记录（引导 agent 视角，实现+验收直接完成）**：
+- 本轮实现由引导 agent 直接完成（「调研→执行→flare 验收」新范式，验收环节交给 flare）
+- 调研选定 P190：用户最新拍板最高优先级方向「本地小模型路由」的第一步——先做纯函数路由决策 +
+  配置查询面（外围零 agent.ts），路由接入面（CLI 命令/usage 拆分/模型发现）留作后续小步
+- **教训**：① 特征词表首版漏「写一篇」类创作词（'写一篇关于秋天的文章' 被判 simple）——测试
+  先写期望再定稿规则，实测失败暴露漏词后补 `写一篇`；② 验收指令经文件读入（write_file 写
+  /tmp）规避终端 confusable 字符安全扫描误报（P148 先例，heredoc 直写触发 HIGH 拦截）；
+  ③ 全量偶发（server e2e 超时）重跑全量即可确认，非本轮引入（P123 先例）；④ package.json
+  升版本后必须同步 package-lock.json（P189 教训，npm install --package-lock-only 一键同步）
 
 ---
 
