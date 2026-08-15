@@ -33,7 +33,7 @@ function request(msg: any, expectTypes: string[], timeout = 45000): Promise<any[
         const parsed = JSON.parse(line)
         if (expectTypes.includes(parsed.type)) {
           msgs.push(parsed)
-          if (expectTypes.some(t => ['done', 'error', 'cancelled'].includes(t)) && parsed.type === 'done' || parsed.type === 'error' || parsed.type === 'cancelled') {
+          if (['done', 'error', 'cancelled'].includes(parsed.type)) {
             cleanup()
             resolve(msgs)
           } else if (!expectTypes.some(t => ['done', 'error', 'cancelled'].includes(t))) {
