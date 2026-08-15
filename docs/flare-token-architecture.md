@@ -112,5 +112,12 @@ Layer 3: 当前轮（最新输入）           ← 必留
   按 perModel 逐模型估算；无法定价模型不计入）——store getUsageStats/getSessionUsage + server
   get_usage/session_usage 透传；CLI /usage 总览/本会话/perModel 行显示「缓存节省 $X」（>0 才显示）；
   /help 同步说明。宿主面板可显示「缓存已节省 $X」量化缓存价值
+- ✅ **缓存写入观测（v0.6.131~132）**：cache_write_tokens 自 P0（v0.6.29）起已落库，观测面补齐——
+  v0.6.131 起 `/usage` 与 `flare usage` 文本模式总览/perModel 行显示「缓存写入: X tokens」（>0 才显示，
+  零写入输出不变），store getUsageStats/getSessionUsage 的 perModel 分解补 `cacheWriteTokens` 字段
+  （--json 与 server get_usage/session_usage 自动透传，host-protocol.md 已同步）；v0.6.132 起
+  `flare cache-check` 文本模式每轮行补「写入 X tokens」（>0 才显示，插在命中率百分比之后、miss 基准
+  标注之前），--json 的 runs[].cacheWriteTokens 早已存在——首轮 miss 建立缓存的输入量在文本/JSON/
+  server 协议三层可观测，与命中/节省构成完整闭环
 - ⏳ 单次迭代 fire 的 prompt tokens 相比 v0.6.27 基线下降 ≥ 30%（P0-1 后测量；工具定义瘦身 P1 候选）
 - ✅ 全部改动 tsc 0 错 + 测试全绿（v0.6.29：630/630）
