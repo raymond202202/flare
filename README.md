@@ -382,6 +382,20 @@ Interactive mode commands:
 
 ### Changelog / Release Notes
 
+## v0.6.136（2026-08-15）
+- ✨ **usage 按 provider 拆分统计（混合模式成本收益评估）**：store `getUsageStats`/`getSessionUsage`
+  新增 `perProvider` 分解（按 `detectProvider` 把 perModel 归并为 provider 组：本地 ollama vs 线上
+  deepseek/openai/other，含 calls/token 分解，纯内存归并无额外查询）；CLI 交互 `/usage` 与单次
+  `flare usage`（全局 + --session 分支）文本模式补「按提供方:」区块（`本地 ollama: X tokens（N 次调用）`/
+  `线上 deepseek: ...`）；--json 与 server get_usage/session_usage 自动透传 perProvider 字段。
+  同时 **detectProvider 上移到 src/core/models.ts**（v0.6.9 起在 server.ts，现供 store/routing 复用，
+  server.ts re-export 保持对外 API 不变），routing.ts 的 providerOf 副本删除改为复用——消除 P190
+  flare 验收提示的技术债
+- 测试：store.test.ts 补 2 用例（全局 perProvider 拆分 + 汇总一致 / 单会话对称）；cli-usage.test.ts
+  补 2 用例（全局按提供方 / --session 同口径）；prompt-caching.test.ts 补 1 用例（交互 /usage 按提供方）
+- 文档：README Changelog 条目 + package.json/package-lock.json 0.6.135 → 0.6.136
+- 纯外围增强：零 agent.ts 改动（Agent.run 核心循环零触碰）、零 push、零敏感信息
+
 ## v0.6.135（2026-08-15）
 - ✨ **任务复杂度路由接入面：CLI 单次命令 `flare route "<任务文本>"`（混合模式本地小模型路由查询面）**：
   P190 的纯函数路由决策（`routeTaskModel`）实操化——文本模式输出 `简单任务/复杂任务 → 模型（provider）` +

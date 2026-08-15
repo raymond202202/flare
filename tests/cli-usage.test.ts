@@ -45,6 +45,24 @@ describe('flare usage', () => {
     expect(stdout).toContain('模型 deepseek-chat: 150 tokens（1 次调用）')
     expect(stdout).toContain('模型 deepseek-reasoner: 280 tokens（1 次调用）')
   }, 20000)
+  it('按提供方拆分（v0.6.136）：本地 ollama vs 线上 deepseek 分别统计', async () => {
+    store.logUsage('sess-a', 100, 50, 'deepseek-chat')
+    store.logUsage('sess-b', 200, 80, 'qwen2.5:7b') // 含 ':' → ollama（本地）
+    const { code, stdout } = await runCli(['usage'])
+    expect(code).toBe(0)
+    expect(stdout).toContain('按提供方:')
+    expect(stdout).toContain('线上 deepseek: 150 tokens（1 次调用）')
+    expect(stdout).toContain('本地 ollama: 280 tokens（1 次调用）')
+  }, 20000)
+  it('按提供方拆分（v0.6.136）：--session 单会话分支同口径', async () => {
+    store.logUsage('sess-a', 100, 50, 'deepseek-chat')
+    store.logUsage('sess-b', 200, 80, 'qwen2.5:7b')
+    const { code, stdout } = await runCli(['usage', '--session', 'sess-a'])
+    expect(code).toBe(0)
+    expect(stdout).toContain('按提供方:')
+    expect(stdout).toContain('线上 deepseek: 150 tokens（1 次调用）')
+    expect(stdout).not.toContain('本地 ollama')
+  }, 20000)
   it('缓存命中显示：tokens 数与命中率百分比', async () => {
     store.logUsage('sess-a', 200, 50, 'deepseek-chat', { cacheReadTokens: 100 })
     const { code, stdout } = await runCli(['usage'])

@@ -153,6 +153,42 @@ describe('MemoryStore', () => {
     expect(ds.totalTokens).toBe(430)
   })
 
+  it('用量按 provider 拆分（perProvider，v0.6.136：本地 ollama vs 线上 deepseek/other）', () => {
+    store.logUsage('s1', 100, 50, 'deepseek-chat')
+    store.logUsage('s1', 200, 80, 'qwen2.5:7b') // 含 ':' → ollama（本地）
+    store.logUsage('s2', 10, 5) // 无模型 → unknown → other（线上）
+
+    const stats = store.getUsageStats()
+    expect(Array.isArray(stats.perProvider)).toBe(true)
+    // deepseek(150) > ollama(280) > other(15)：按 totalTokens 降序
+    const providers = stats.perProvider.map((p: any) => p.provider)
+    expect(providers[0]).toBe('ollama')
+    expect(providers).toContain('deepseek')
+    expect(providers).toContain('other')
+    const local = stats.perProvider.find((p: any) => p.provider === 'ollama')!
+    expect(local.totalTokens).toBe(280)
+    expect(local.calls).toBe(1)
+    const remote = stats.perProvider.find((p: any) => p.provider === 'deepseek')!
+    expect(remote.totalTokens).toBe(150)
+    // 汇总与 perModel 一致：perProvider 只是重新归并
+    const sumTokens = stats.perProvider.reduce((s: number, p: any) => s + p.totalTokens, 0)
+    expect(sumTokens).toBe(stats.totalTokens)
+  })
+
+  it('单会话用量按 provider 拆分（getSessionUsage.perProvider 与全局对称）', () => {
+    store.logUsage('s1', 100, 50, 'deepseek-chat')
+    store.logUsage('s1', 200, 80, 'qwen2.5:7b')
+
+    const s1 = store.getSessionUsage('s1')
+    expect(Array.isArray(s1.perProvider)).toBe(true)
+    const local = s1.perProvider.find((p: any) => p.provider === 'ollama')!
+    expect(local.totalTokens).toBe(280)
+    expect(local.calls).toBe(1)
+    const remote = s1.perProvider.find((p: any) => p.provider === 'deepseek')!
+    expect(remote.totalTokens).toBe(150)
+    expect(remote.calls).toBe(1)
+  })
+
   it('单会话用量（getSessionUsage）：按 session_id 过滤汇总', () => {
     store.logUsage('s1', 100, 50, 'deepseek-chat')
     store.logUsage('s1', 200, 80, 'deepseek-chat')

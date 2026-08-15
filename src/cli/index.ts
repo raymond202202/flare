@@ -1352,6 +1352,15 @@ export async function handleSlashCommand(
             }
           }
         }
+        // v0.6.136：按 provider 拆分（本地 vs 线上——混合模式成本收益评估）
+        if (Array.isArray(usage.perProvider) && usage.perProvider.length > 0) {
+          output(`  ${chalk.gray('按提供方:')}`)
+          for (const p of usage.perProvider) {
+            const isLocal = p.provider === 'ollama'
+            const label = isLocal ? '本地' : '线上'
+            output(`    ${label} ${p.provider}: ${p.totalTokens.toLocaleString()} tokens（${p.calls} 次调用）`)
+          }
+        }
         // 当前会话用量（v0.6.17：getSessionUsage 按 session 过滤；未提供 sessionId 不显示）
         // v0.6.49：本会话行追加缓存命中（有命中才显示，与总行/perModel 行对称）
         // v0.6.53：本会话 perModel 分解子行（与总览 perModel 行对称——本会话多模型场景可见每个模型命中）
@@ -2718,6 +2727,15 @@ program
             }
           }
         }
+        // v0.6.136：按 provider 拆分（与全局 usage 同口径）
+        if (Array.isArray(u.perProvider) && u.perProvider.length > 0) {
+          console.log(' ' + chalk.gray('按提供方:'))
+          for (const p of u.perProvider) {
+            const isLocal = p.provider === 'ollama'
+            const label = isLocal ? '本地' : '线上'
+            console.log('   ' + label + ' ' + p.provider + ': ' + p.totalTokens.toLocaleString() + ' tokens（' + p.calls + ' 次调用）')
+          }
+        }
         return
       }
       const usage = store.getUsageStats()
@@ -2760,6 +2778,15 @@ program
           if (mWrite > 0) {
             console.log(' ' + chalk.gray('缓存写入:') + ' ' + mWrite.toLocaleString() + ' tokens')
           }
+        }
+      }
+      // v0.6.136：按 provider 拆分（本地 vs 线上——混合模式成本收益评估；与交互 /usage 同口径）
+      if (Array.isArray(usage.perProvider) && usage.perProvider.length > 0) {
+        console.log(' ' + chalk.gray('按提供方:'))
+        for (const p of usage.perProvider) {
+          const isLocal = p.provider === 'ollama'
+          const label = isLocal ? '本地' : '线上'
+          console.log('   ' + label + ' ' + p.provider + ': ' + p.totalTokens.toLocaleString() + ' tokens（' + p.calls + ' 次调用）')
         }
       }
     })
