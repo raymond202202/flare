@@ -2258,8 +2258,8 @@ program
       } catch { /* 无全局库（宿主环境）用默认 */ }
 
       // --json 结构化输出：与 server models 回包同构 { configured, ollama }
-      //（configured.main/vision 为 ModelEndpointInfo 同款：model/baseURL/hasApiKey/provider/可选 error；
-      //  vision 未配置 → null，与 server 语义一致；ollama 为 listOllamaModels 原始结果（不可达 ok:false 不崩）；
+      //（configured.main/vision/local 为 ModelEndpointInfo 同款：model/baseURL/hasApiKey/provider/可选 error；
+      //  vision/local 未配置 → null，与 server 语义一致；ollama 为 listOllamaModels 原始结果（不可达 ok:false 不崩）；
       //  只打印 JSON 不混彩色；文本模式与退出码语义一字不改）
       if (options.json) {
         const { detectProvider } = await import('../server.js')
@@ -2272,10 +2272,13 @@ program
           }
         }
         const visionModel = config.get('VISION_MODEL')
+        const localModel = config.get('LOCAL_MODEL')
         console.log(JSON.stringify({
           configured: {
             main: resolveOne(mainModel),
             vision: visionModel ? resolveOne(visionModel) : null,
+            // v0.6.134：本地路由模型（混合模式简单任务用；未配置 null，与 server 语义一致）
+            local: localModel ? resolveOne(localModel) : null,
           },
           ollama: await listOllamaModels(),
         }))
@@ -2291,6 +2294,14 @@ program
       const visionModel = config.get('VISION_MODEL') || 'qwen2.5vl:3b'
       const visionResolved = resolveProviderOptions({ model: visionModel })
       lines.push(`  视觉模型: ${chalk.green(visionModel)} → ${visionResolved.baseURL}`)
+      // 本地路由模型（v0.6.134 混合模式）：简单任务走本地小模型；未配置给提示（含配置示例）
+      const localModel = config.get('LOCAL_MODEL')
+      if (localModel) {
+        const localResolved = resolveProviderOptions({ model: localModel })
+        lines.push(`  本地路由: ${chalk.green(localModel)} → ${localResolved.baseURL}`)
+      } else {
+        lines.push(chalk.gray('  本地路由: 未配置（设 LOCAL_MODEL 如 qwen2.5:7b 后简单任务走本地省钱）'))
+      }
 
       // 本地 Ollama 已拉取模型（网络查询；不可达不报错）
       lines.push(chalk.cyan('🤖 本地 Ollama:'))

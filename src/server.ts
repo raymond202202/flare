@@ -200,6 +200,8 @@ export interface ModelInfoResponse {
     main: ModelEndpointInfo
     /** 视觉模型（未配置时 null） */
     vision: ModelEndpointInfo | null
+    /** 本地路由模型（v0.6.134 混合模式：LOCAL_MODEL 配置；未配置时 null） */
+    local: ModelEndpointInfo | null
   }
   ollama: OllamaModelsResult
 }
@@ -221,10 +223,13 @@ export async function collectModelInfo(fetchImpl: typeof fetch = fetch): Promise
     }
   }
   const visionModel = config.get('VISION_MODEL')
+  const localModel = config.get('LOCAL_MODEL')
   return {
     configured: {
       main: resolveOne(),
       vision: visionModel ? resolveOne(visionModel) : null,
+      // v0.6.134：本地路由模型（混合模式简单任务用；未配置 null，与 vision 同语义）
+      local: localModel ? resolveOne(localModel) : null,
     },
     ollama: await listOllamaModels(undefined, undefined, fetchImpl),
   }

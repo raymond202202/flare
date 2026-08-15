@@ -559,10 +559,11 @@ flare server --profile <expert-profile-file> --storage <db-path> [--mcp <mcp-con
 {"type":"models"}
 ```
 
-响应：`{"type":"models","configured":{"main":{"model":"deepseek-chat","baseURL":"https://api.deepseek.com/v1","hasApiKey":true,"provider":"deepseek"},"vision":null},"ollama":{"ok":true,"models":[{"name":"qwen2.5:7b","size":4700000000,"modifiedAt":"2026-08-01T00:00:00Z"}]}}`
+响应：`{"type":"models","configured":{"main":{"model":"deepseek-chat","baseURL":"https://api.deepseek.com/v1","hasApiKey":true,"provider":"deepseek"},"vision":null,"local":null},"ollama":{"ok":true,"models":[{"name":"qwen2.5:7b","size":4700000000,"modifiedAt":"2026-08-01T00:00:00Z"}]}}`
 
 - `configured.main`：当前主模型端点信息（`DEFAULT_MODEL` 解析）——`model` / `baseURL`（解析后端点）/ `hasApiKey`（密钥是否已配置）/ `provider`（`ollama` | `deepseek` | `openai` | `other`）
 - `configured.vision`：视觉模型（`VISION_MODEL` 配置；未配置为 `null`）
+- `configured.local`：本地路由模型（v0.6.134 混合模式，`LOCAL_MODEL` 配置；未配置为 `null`）——简单任务走本地小模型省钱，复杂任务走主模型保质量；路由决策为外围增强（`classifyTaskComplexity`/`routeTaskModel`，src/core/routing.ts），不改 Agent.run 核心循环
 - `ollama`：本地 Ollama 已拉取模型列表（复用 `listOllamaModels`）——宿主面板"可切换模型"数据源
 - 降级安全：Ollama 未启动/不可达 → `ollama.ok:false` + `error`（服务不崩、其余字段照常）；主模型为 Claude 系列（不支持）→ `configured.main.error` 明确报错，不抛异常
 - 只读查询：不触发生成、不创建会话

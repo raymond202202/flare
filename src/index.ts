@@ -159,6 +159,10 @@ export type {
   OllamaModelsResult,
 } from './core/models.js'
 
+// ===== 本地小模型路由（v0.6.134 混合模式）：任务复杂度分类 + 路由决策（纯函数，零网络）=====
+export { classifyTaskComplexity, routeTaskModel } from './core/routing.js'
+export type { TaskComplexity, RouteTaskResult } from './core/routing.js'
+
 // ===== 记忆系统 =====
 export { MemoryStore, getMemoryStore, serializeContent, deserializeContent, trigramJaccard } from './memory/store.js'
 export type { UsageExtra, SimilarMemoryPair } from './memory/store.js'

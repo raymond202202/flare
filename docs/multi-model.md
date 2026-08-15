@@ -80,13 +80,58 @@ const agent2 = new Agent({
 
 ## 与视觉模型的关系
 
-| | 主模型（文本对话） | 视觉模型（看图） |
-|---|---|---|
-| 配置 | `DEFAULT_MODEL` + `LLM_*`（可选） | `VISION_MODEL` + `VISION_BASE_URL` + `VISION_API_KEY` |
-| 切换 | `/model`（settings `main_model`） | `/vision`（settings `vision_model`） |
-| 默认 | deepseek-chat（远端） | qwen2.5vl:3b（本地 Ollama） |
+| | 主模型（文本对话） | 视觉模型（看图） | 本地路由模型（简单任务，v0.6.134） |
+|---|---|---|---|
+| 配置 | `DEFAULT_MODEL` + `LLM_*`（可选） | `VISION_MODEL` + `VISION_BASE_URL` + `VISION_API_KEY` | `LOCAL_MODEL` + `LOCAL_BASE_URL` + `LOCAL_API_KEY`（可选） |
+| 切换 | `/model`（settings `main_model`） | `/vision`（settings `vision_model`） | 改 `.env` 的 `LOCAL_MODEL` |
+| 默认 | deepseek-chat（远端） | qwen2.5vl:3b（本地 Ollama） | 未配置（不启用混合路由） |
 
-两者独立：看图自动走视觉模型（本地 VLM），普通对话走主模型；`/model` 只影响主模型。
+三者独立：看图自动走视觉模型（本地 VLM），普通对话走主模型；`/model` 只影响主模型。
+
+## 混合模式：本地小模型路由（v0.6.134）
+
+**背景**：用户机器 64GB 内存 + 4GB 显存，已装 Ollama（qwen2.5:7b 等）。混合模式 = 简单任务走本地小模型
+（省钱/隐私/离线），复杂任务走线上主模型（保质量）。**路由是外围增强，不改 Agent.run 核心循环**——
+编排循环不能被小模型替代（丢指令/工具调用失败），路由决策由宿主/CLI 在调用 provider 前按需使用。
+
+### 配置（~/.flare/.env）
+
+```bash
+LOCAL_MODEL=qwen2.5:7b        # 本地路由模型（Ollama 命名，含 ':' 自动走本地端点）
+# LOCAL_BASE_URL=http://localhost:11434/v1   # 可选：覆盖默认 Ollama 端点
+# LOCAL_API_KEY=ollama                        # 可选：覆盖默认 apiKey
+```
+
+### 路由规则（src/core/routing.ts，规则/启发式，零网络、零 LLM 调用）
+
+`classifyTaskComplexity(text)` 按优先级判断：
+
+| 优先级 | 特征 | 结论 |
+|---|---|---|
+| 1 | 代码特征（``` / function / import / 花括号等） | complex（长代码/代码任务） |
+| 2 | 复杂特征词（分析/推理/为什么/对比/设计/创作/算法等） | complex |
+| 3 | 长文本（> 300 字符） | complex（需上下文理解/推理） |
+| 4 | 简单特征词（分类/抽取/摘要/翻译/格式化等） | simple |
+| 5 | 默认短文本无特征 | simple（简单问答/闲聊） |
+
+`routeTaskModel(text)` → 决策结果：simple → 本地路由模型（`LOCAL_MODEL`）；complex → 主模型（`DEFAULT_MODEL`）。
+未配置 `LOCAL_MODEL` 时 simple 回退主模型并注明（不报错）。
+
+### 查询面
+
+- `flare models` 文本模式：`本地路由: <模型> → <端点>`（未配置给提示）
+- `flare models --json`：`configured.local` 字段（ModelEndpointInfo 同款；未配置 `null`，与 server models 回包同构）
+- server 协议 `models` 响应：`configured.local`（v0.6.134）
+
+### 宿主集成（代码里）
+
+```ts
+import { classifyTaskComplexity, routeTaskModel } from 'flare-agent'
+
+const r = routeTaskModel('把这句话翻译成英文：你好')
+// → { tier: 'simple', model: 'qwen2.5:7b', provider: 'ollama', reason: '简单任务 → 本地模型（省钱/隐私/离线）' }
+// 按 r.model 创建 provider 即可（createProvider({ model: r.model })）
+```
 
 ## 常见问题
 

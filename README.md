@@ -382,6 +382,21 @@ Interactive mode commands:
 
 ### Changelog / Release Notes
 
+## v0.6.134（2026-08-15）
+- ✨ **本地小模型路由起步（混合模式方向，最高优先级）：任务复杂度路由纯函数 + 本地路由模型配置查询面**：
+  新 `src/core/routing.ts` 提供 `classifyTaskComplexity`（规则/启发式任务复杂度分类：代码特征/复杂特征词/
+  长文本 → complex；简单特征词/短文本 → simple，**零网络、零 LLM 调用**）与 `routeTaskModel`（simple →
+  本地路由模型省钱，complex → 主模型保质量；纯决策不发起调用）。配置新增 `LOCAL_MODEL` / `LOCAL_BASE_URL` /
+  `LOCAL_API_KEY`（Ollama 命名如 qwen2.5:7b 自动走本地端点）。查询面三层对称：CLI `flare models` 文本模式
+  补「本地路由」行（未配置给提示）+ `--json` 与 server models 回包同构补 `configured.local`（未配置 null）；
+  server 协议 `models` 响应补 `configured.local`。**路由是外围增强，不改 Agent.run 核心循环**——编排循环
+  不能被小模型替代，路由决策由宿主/CLI 在调用 provider 前按需使用
+- 测试：新 tests/routing.test.ts（分类规则 6 类 + 路由决策 5 类）；server-models.test.ts 补 2 用例
+  （local 未配置 null / 已配置端点信息）；cli-models.test.ts 补 1 用例（--json 与文本模式 local 同口径）
+- 文档：docs/multi-model.md 补混合模式章节（背景/配置/路由规则表/查询面/宿主集成）+ host-protocol.md
+  models 响应补 configured.local + README Changelog 条目 + package.json 0.6.133 → 0.6.134
+- 纯外围增强：零 agent.ts 改动（Agent.run 核心循环零触碰）、零 push、零敏感信息
+
 ## v0.6.133（2026-08-15）
 - ✨ **`flare messages --help` 描述同步归档标记能力（文档对称小步）**：
   `messages` 命令 description 补「已归档会话文本模式标题带（已归档）标记，v0.6.130」——P176 装机后
