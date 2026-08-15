@@ -1,5 +1,7 @@
 # Flare 引擎迭代进度（夜间调研 agent）
 
+> **【✅ 第一百五十五轮小步】P204 (纯文档) README 命令表补 route 行 + cache-check 行补 v0.6.142 能力（文档对称收官）**：
+> commit `6ccd9ce`，纯文档零 src 改动、tsc 0 错误、1224/1224 全绿、无版本变化（详情见下方 P204 条目）。
 > **【✅ 第一百五十四轮完成】P203 (v0.6.144) route 批量汇总特征分布统计 summary（混合模式路由决策可视化深化）**：
 > commit `a1f40c2`，tsc 0 错误、1224/1224 全绿、零 agent.ts 改动、已自安装（详情见下方 P203 条目）。
 > **【✅ 第一百五十三轮完成】P202 (v0.6.143) route 分类命中特征能力标签 feature（混合模式路由决策可视化深化）**：
@@ -6007,3 +6009,25 @@
 >   接入完整化（confirm 门策略检查现有覆盖面）；③ MCP 增强（resources 订阅/采样等协议面）；
 >   ④ 路由决策可视化已较完整（feature 标签 + 批量 summary），可考虑 route 统计持久化/按会话维度；
 >   ⑤ 分层上下文（需评估 run 循环外异步，铁律暂缓）
+
+---
+
+### 2026-08-15 第一百五十五轮小步（P204，纯文档）——README 命令表补 route 行 + cache-check 行补 v0.6.142 能力
+
+> **P204 完成**（commit `6ccd9ce`，1 文件 +2/-1）：README 命令行摘要表文档对称收官——
+> ① P191 装机 `flare route`（v0.6.135）时仅 Changelog 有记录、命令表漏同步，本轮补行：完整
+> 描述单任务/批量 + --json 结构（单任务 `{ tier, feature, model, provider, reason, localModel,
+> mainModel }`；批量 `{ results, summary: { total, tierCounts, featureCounts }, localModel,
+> mainModel }`）与 v0.6.135/140/143/144 能力沿革；② cache-check 行补 v0.6.142 命中片段构成
+> 诊断 hitSegmentNote（P200 装机后命令表未同步，与 Changelog 条目对齐）
+> - **验证**：tsc 0 错误；全量 78 文件 1224/1224 全绿；纯文档零 src 改动、零 agent.ts 改动；
+>   无版本变化（0.6.144 不变）、零 push、零敏感信息；dist 未动无需自安装
+> - **flare 验收通过**：独立运行 tsc 0 错误 + 全量 78 文件/1224 测试全绿 + 实际 CLI 运行验证
+>   （route 单任务/批量/特征分布/stdin/--json 单任务/--json summary/feature 五档逐项真实执行，
+>   cache-check hitSegmentNote 成功失败分支赋值与 --json 透传核对）；结论「文档声称的所有功能
+>   都有真实代码实现并通过实际 CLI 运行验证，无需任何修改」；全程零修改零 commit
+> - **下一步候选**：① 【P1】prompt caching 基建深化：命中片段占比数值化/未命中诊断（P200 文案
+>   已含「可间隔 <5min 重试」，可考虑按 provider 拆分命中率或占比百分比）；② CLI/server 确认门
+>   接入完整化（confirm 门策略检查现有覆盖面）；③ MCP 增强（resources 订阅/采样等协议面）；
+>   ④ 路由决策可视化已较完整（feature 标签 + 批量 summary + 命令表文档），可考虑 route 统计
+>   持久化/按会话维度；⑤ 分层上下文（需评估 run 循环外异步，铁律暂缓）
