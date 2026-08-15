@@ -1,5 +1,7 @@
 # Flare 引擎迭代进度（夜间调研 agent）
 
+> **【✅ 第一百四十二轮完成】P191 (v0.6.135) 任务复杂度路由接入面——CLI 单次命令 flare route（混合模式查询面）**：
+> commit `0e764a1`，tsc 0 错误、1195/1195 全绿、零 agent.ts 改动、已自安装（详情见下方 P191 条目）。
 > **【✅ 第一百四十一轮完成】P190 (v0.6.134) 本地小模型路由起步——任务复杂度路由纯函数 + LOCAL_MODEL 配置查询面（混合模式方向，用户最新拍板最高优先级）**：
 > commit `adfc0ca`，tsc 0 错误、1187/1187 全绿、零 agent.ts 改动、已自安装（详情见下方 P190 条目）。
 > **【✅ 第一百四十轮小步】P189 chore：package-lock.json 版本字段同步 0.6.133（flare 验收提示的历史遗留）**：
@@ -5515,6 +5517,58 @@
   /tmp）规避终端 confusable 字符安全扫描误报（P148 先例，heredoc 直写触发 HIGH 拦截）；
   ③ 全量偶发（server e2e 超时）重跑全量即可确认，非本轮引入（P123 先例）；④ package.json
   升版本后必须同步 package-lock.json（P189 教训，npm install --package-lock-only 一键同步）
+
+---
+
+### 2026-08-15 第一百四十二轮完成（P191 v0.6.135）——任务复杂度路由接入面（CLI 单次命令 flare route，混合模式查询面）（装机完成，自循环）
+
+> **P191 完成**（commit `0e764a1`）：P190 纯函数路由决策的**实操化接入面**——CLI 单次命令
+> `flare route "<任务文本>"`，把 `classifyTaskComplexity`/`routeTaskModel` 变成用户/脚本可直接
+> 调用的查询命令，保持外围零 agent.ts。
+> - **实现**（src/cli/index.ts）：
+>   - 新 `route` 命令：`argument('[text]')` + `-j/--json`；文本模式输出
+>     `简单任务（绿）/复杂任务（黄） → 模型（provider）` + 原因（gray）+ `本地模型: X · 主模型: Y`
+>     （未配置 LOCAL_MODEL 显示「未配置」）；--json 输出 `{ tier, model, provider, reason,
+>     localModel, mainModel }`（localModel 未配置 → null，可编程消费）；缺/空参数 → 用法提示
+>     （含示例与规则说明）到 stderr + exit 1，不崩溃
+>   - **纯函数零调用**：routeTaskModel 只做规则决策（读 config，零网络、零 LLM 调用），
+>     命令不触发生成、不创建会话（与 server models 同级只读）
+> - **测试**（新 tests/cli-route.test.ts 8 用例）：简单→本地（配置 LOCAL_MODEL）/ 复杂→主模型 /
+>   --json 结构（tier/model/provider/reason/localModel/mainModel，纯 JSON 无 ANSI）/ 复杂 --json /
+>   未配置 LOCAL_MODEL 回退主模型 + localModel null + 文本注明未配置 / 缺参用法 exit 1 / 空白参
+>   用法 / -j 短选项等价
+> - 文档：README Changelog v0.6.135 + USAGE.md 单次查询补 route 示例 + docs/multi-model.md
+>   查询面补 CLI route + package.json/package-lock.json 0.6.134 → 0.6.135
+> - **1195/1195 全绿**（基线 1187 + 8；78 文件；cli-route 8/8 + routing 11/11 专项通过；全量
+>   首跑即绿），tsc 0 错误（含 dist 编译），**零 agent.ts 改动**（git diff HEAD~1 -- src/agent.ts
+>   0 行），零 push、零敏感信息（diff 敏感扫描仅 import 上下文函数名，无实际密钥明文）；
+>   自安装完成：installed 0.6.135 = repo 0.6.135（安装版冒烟：route 简单→qwen2.5:7b（ollama）
+>   文本 + route --json 复杂→deepseek-chat 结构均正确）；真实 ~/.flare 零污染（冒烟均用
+>   FLARE_HOME 临时目录）
+> - **下一步候选**：① usage 按 provider 拆分统计（本地 vs 线上 token 分别统计，评估成本收益；
+>   store usage_log 已落 model 字段可按 detectProvider 分组，外围）；② ollama 模型发现增强
+>   （models 命令展示本地模型能力标签）；③ 推荐模型拉取脚本（docs 记录建议拉取 qwen3-1.7b /
+>   deepseek-r1-distill-1.5b / qwen3-30b-a3b）；④ 路由决策可视化深化（route 命令支持从 stdin
+>   读文本 / 批量）；⑤ 【P1】分层上下文（需评估 run 循环外异步，铁律暂缓）
+> - **flare 验收结论：✅ 通过**——flare 独立运行 git log -1（0e764a1）/git show 审查完整 diff
+>   （7 文件 +166/-4）、npx tsc 0 错误、PATH=/usr/bin:$PATH npx vitest run 全量 78 文件
+>   1195/1195 全绿；逐项核对文本模式三级输出（简单绿/复杂黄/模型 cyan/原因 gray）、--json 六字段
+>   展开与需求一致、缺/空参数 exit 1 不崩溃、routeTaskModel 纯函数零调用（仅字符串匹配与比较）、
+>   simple 回退逻辑（未配置 LOCAL_MODEL 回退主模型 + reason 注明）、localModel null 语义（区分
+>   未配置与配置）、git diff HEAD~1 -- src/agent.ts 0 行、diff 全量扫描 sk-/api_key/token/
+>   password/secret/bearer 无命中；全程零修改零 commit；结论与实况完全一致（验收指令经文件读入
+>   规避 confusable 误报，P148 先例）
+
+**引导过程记录（引导 agent 视角，实现+验收直接完成）**：
+- 本轮实现由引导 agent 直接完成（「调研→执行→flare 验收」新范式，验收环节交给 flare）
+- 调研选定 P191：P190 下一步候选①「路由接入面」——CLI 单次命令把纯函数实操化，是混合模式
+  方向最直接的用户可感知价值，且纯外围零 agent.ts
+- **教训**：① 命令 action 里引用顶层已导入的 config 即可，无需自定义 require helper（首版
+  写了 requireRouting/requireConfig 未定义函数被 LSP 报错，改成直接用顶层 import 的
+  routeTaskModel/config）；② classifyTaskComplexity 在 CLI 层无需单独导入（routeTaskModel
+  内部已调用），避免未使用导入；③ 单次命令测试沿用 cli-ping 模板（runCli + FLARE_HOME 临时
+  目录 + env 覆盖 LOCAL_MODEL），8 用例覆盖文本/json/回退/边界；④ 每轮自安装后必须冒烟新命令
+  （安装版 route 简单/复杂两场景实测通过）
 
 ---
 
