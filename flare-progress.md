@@ -1,5 +1,7 @@
 # Flare 引擎迭代进度（夜间调研 agent）
 
+> **【✅ 第一百四十六轮完成】P195 (v0.6.138) usage 按提供方缓存观测深化——provider 行补缓存命中/写入/节省子行（prompt caching 基建深化 + 混合模式成本收益）**：
+> commit `fa08d2b`，tsc 0 错误、1209/1209 全绿、零 agent.ts 改动、已自安装（详情见下方 P195 条目）。
 > **【✅ 第一百四十五轮完成】P194 推荐模型拉取脚本（混合模式方向候选#5，本地小模型路由五项候选全部落地）**：
 > commit `cfeabec`，新增 scripts/pull-recommended-models.sh（qwen3:1.7b / deepseek-r1:1.5b / qwen3:30b-a3b MoE
 > 推荐清单，白名单校验/--list/缺 ollama 友好提示）+ docs/multi-model.md 补推荐拉取章节，零 src 改动、tsc 0 错误、
@@ -5688,3 +5690,34 @@
 >   边界符避免误匹配）、纯函数零网络零 IO、--json/server 回包结构不变、git diff HEAD~1 HEAD --
 >   src/core/agent.ts 0 行、diff 敏感扫描无 api key/密码/token 明文；结论「验收通过，可直接合并/
 >   发布」；全程零修改零 commit
+
+### 2026-08-15 第一百四十六轮完成（P195，v0.6.138）——usage 按提供方缓存观测深化
+
+> **P195 完成**（commit `fa08d2b`，6 文件 +84/-6）：prompt caching 基建深化 + 混合模式成本收益——
+> P192 perProvider 拆分已落地（store 层 groupByProvider 聚合缓存字段），但「按提供方:」展示层
+> 未显示缓存观测，混合模式下看不到本地（无缓存计费）vs 线上（缓存节省）差异：
+> - `src/cli/index.ts` 新增 `providerCacheLines(p)` 辅助函数（与 perModel 子行对称：命中
+>   tokens（命中率%）+ 节省金额、写入 tokens；无命中/写入 → 空数组行不变化；6 空格缩进）
+> - 三处「按提供方:」区块复用（交互 `/usage` + 单次 `flare usage` 全局/--session）：provider 行下
+>   补缓存观测子行；store 层无需改动（P192 已聚合 cacheReadTokens/cacheWriteTokens/cacheSavedUsd）
+> - --json 与 server 回包结构不变（纯展示层）；零网络、零额外查询
+> - 测试：cli-usage.test.ts 补 2 用例（全局 provider 缓存子行 + --session 分支同口径）；
+>   prompt-caching.test.ts 补 1 用例（交互 /usage provider 缓存子行）+ 更新 1 既有断言
+>   （perProvider 聚合后命中率按组内总 prompt 计算：deepseek-chat 600/1000=60% 但 deepseek 组
+>   含 reasoner → 600/1200=50%，断言从 60%×3 改为 60%×2 + 50%×1 + 命中行总数 4）
+> - 文档：README Changelog v0.6.138 + package.json/package-lock.json 0.6.137 → 0.6.138
+> - **验证**：npx tsc 0 错误；PATH=/usr/bin:$PATH npx vitest run 全量 78 文件 1209/1209 全绿
+>   （基线 1206 + 3）；**零 agent.ts 改动**；自安装完成：installed 0.6.138 = repo 0.6.138
+>   （冒烟：真实 ~/.flare 库 `flare usage` 输出「按提供方:」区块 线上 deepseek 行带
+>   「缓存命中: 9,605,652 tokens（56%）（节省 $0.0003）/ 缓存写入: 180 tokens」子行，
+>   本地 ollama 无缓存不显示子行）；零 push、零敏感信息
+> - **flare 验收结论：✅ 通过**——flare 独立运行 git log -1（fa08d2b）/git show 审查完整 diff
+>   （6 文件 +84/-6）、npx tsc 0 错误、PATH=/usr/bin:$PATH npx vitest run 全量 78 文件
+>   1209/1209 全绿 + 相关专项 40/40（prompt-caching 21 + cli-usage 19）；逐项核对
+>   providerCacheLines 与 store groupByProvider 字段完全对齐、cacheRead/cacheWrite 为 0 时
+>   自动省略子行（本地 ollama 场景测试覆盖）、三处调用点统一复用、缩进层级视觉合理
+>   （provider 子行 6 空格 < perModel 4）；结论「全部通过，成功完成状态」；全程零修改零 commit
+> - **下一步候选**：① 【P1】prompt caching 基建深化：cache-check 命中率按 provider 拆分/
+>   命中内容片段展示；② CLI/server 确认门接入完整化（confirm 门策略检查现有覆盖面）；
+>   ③ MCP 增强（resources 订阅/采样等协议面）；④ 路由决策可视化深化（route 命令 stdin 批量）；
+>   ⑤ 分层上下文（需评估 run 循环外异步，铁律暂缓）
