@@ -153,10 +153,13 @@ export {
   listOllamaModels,
   formatModelSize,
   OLLAMA_DEFAULT_BASE,
+  detectProvider,
+  inferModelCapabilities,
 } from './core/models.js'
 export type {
   OllamaModelInfo,
   OllamaModelsResult,
+  ModelCapability,
 } from './core/models.js'
 
 // ===== 本地小模型路由（v0.6.134 混合模式）：任务复杂度分类 + 路由决策（纯函数，零网络）=====
@@ -186,5 +189,6 @@ export type {
 export { memoryStoreKv } from './core/confirm.js'
 
 // ===== 宿主协议服务（Qt 等非 Node 宿主）=====
-export { startHostServer, wrapConfirmTools, DEFAULT_CONFIRM_TOOLS, collectModelInfo, detectProvider, describeTools, buildConfirmEvent } from './server.js'
+// v0.6.136：detectProvider 已从 core/models.js 直接导出（server.ts re-export 保持兼容，此处不再重复）
+export { startHostServer, wrapConfirmTools, DEFAULT_CONFIRM_TOOLS, collectModelInfo, describeTools, buildConfirmEvent } from './server.js'
 export type { HostServerOptions, ModelEndpointInfo, ModelInfoResponse, ToolMeta, ToolSourceSets, ConfirmEvent } from './server.js'
