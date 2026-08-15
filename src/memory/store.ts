@@ -10,6 +10,7 @@ import { join, dirname } from 'path'
 import { existsSync, mkdirSync } from 'fs'
 import { config } from '../core/config.js'
 import { Message, estimateCostUsd } from '../core/llm.js'
+import { detectProvider } from '../core/models.js'
 
 const DB_PATH = join(config.flareHome, 'flare.db')
 
@@ -633,6 +634,46 @@ export class MemoryStore {
     return Math.round(saved * 1e6) / 1e6
   }
 
+  /**
+   * 按 provider 聚合 perModel 分解（v0.6.136，方向② usage 按 provider 拆分统计）：
+   * 本地（ollama）vs 线上（deepseek/openai/other）token 分别统计——混合模式成本收益评估。
+   * 纯函数：perModel 已按模型聚合，此处按 detectProvider 再归并（无网络、无额外查询）。
+   */
+  private groupByProvider(perModel: { model: string; calls: number; promptTokens: number; completionTokens: number; cacheReadTokens: number; cacheWriteTokens: number; totalTokens: number; cacheSavedUsd: number }[]) {
+    const map = new Map<string, {
+      provider: string
+      calls: number
+      promptTokens: number
+      completionTokens: number
+      cacheReadTokens: number
+      cacheWriteTokens: number
+      totalTokens: number
+      cacheSavedUsd: number
+    }>()
+    for (const m of perModel) {
+      const p = detectProvider(m.model)
+      const g = map.get(p) || {
+        provider: p,
+        calls: 0,
+        promptTokens: 0,
+        completionTokens: 0,
+        cacheReadTokens: 0,
+        cacheWriteTokens: 0,
+        totalTokens: 0,
+        cacheSavedUsd: 0,
+      }
+      g.calls += m.calls
+      g.promptTokens += m.promptTokens
+      g.completionTokens += m.completionTokens
+      g.cacheReadTokens += m.cacheReadTokens
+      g.cacheWriteTokens += m.cacheWriteTokens
+      g.totalTokens += m.totalTokens
+      g.cacheSavedUsd = Math.round((g.cacheSavedUsd + m.cacheSavedUsd) * 1e6) / 1e6
+      map.set(p, g)
+    }
+    return [...map.values()].sort((a, b) => b.totalTokens - a.totalTokens)
+  }
+
   /** 汇总 token 用量（v0.6.18 起含 perModel 按模型分解；v0.6.29 起含缓存/成本汇总；v0.6.64 起含缓存节省估算） */
   getUsageStats() {
     const row = this.db.prepare(
@@ -680,6 +721,8 @@ export class MemoryStore {
       totalTokens: row.promptTokens + row.completionTokens,
       sessionCount: row.sessionCount,
       perModel,
+      // v0.6.136：按 provider 拆分（本地 ollama vs 线上 deepseek/openai/other——混合模式成本收益评估）
+      perProvider: this.groupByProvider(perModel),
     }
   }
 
@@ -733,6 +776,8 @@ export class MemoryStore {
       totalTokens: row.promptTokens + row.completionTokens,
       callCount: row.callCount,
       perModel,
+      // v0.6.136：按 provider 拆分（与 getUsageStats.perProvider 对称）
+      perProvider: this.groupByProvider(perModel),
     }
   }
 

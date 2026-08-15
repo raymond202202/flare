@@ -43,6 +43,10 @@ import {
   type ToolOutputPolicy,
 } from './index.js'
 
+// v0.6.136：detectProvider 上移到 core/models.ts（供 store/routing 复用，消除副本）；此处导入 + re-export 保持对外 API 不变
+import { detectProvider } from './core/models.js'
+export { detectProvider } from './core/models.js'
+
 // 从 package.json 读取引擎版本（不硬编码；宿主 version 协商用）
 // 注意：编译产物 dist/server.js 位于 dist/ 下，package.json 在项目根（../package.json）
 const require = createRequire(import.meta.url)
@@ -173,15 +177,10 @@ export function buildConfirmEvent(
 }
 
 /**
- * 推断模型 provider 类型（v0.6.9，纯函数可单测）：模型名 → ollama / deepseek / openai / other。
+ * 推断模型 provider 类型（v0.6.9；v0.6.136 起实现上移到 src/core/models.ts，此处 re-export 保持兼容）：
+ * 模型名 → ollama / deepseek / openai / other。
  * 与 resolveProviderOptions 的自动检测规则一致（含 ':' 的 Ollama 命名 / deepseek 系列 / gpt·o1·o3·chatgpt 系列）。
  */
-export function detectProvider(model: string): 'ollama' | 'deepseek' | 'openai' | 'other' {
-  if (model.includes(':')) return 'ollama'
-  if (model.includes('deepseek')) return 'deepseek'
-  if (model.includes('gpt') || model.includes('o1') || model.includes('o3') || model.includes('chatgpt')) return 'openai'
-  return 'other'
-}
 
 /** 单个模型的端点信息（models 响应 configured 项，v0.6.9） */
 export interface ModelEndpointInfo {

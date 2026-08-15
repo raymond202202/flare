@@ -192,6 +192,17 @@ describe('CLI /usage 缓存显示（v0.6.29 P0）', () => {
     expect(out).toContain('33%')
   })
 
+  it('按提供方拆分（v0.6.136）：本地 ollama vs 线上 deepseek 分别统计', async () => {
+    store.logUsage('s1', 1000, 500, 'deepseek-chat')
+    store.logUsage('s1', 200, 100, 'qwen2.5:7b') // 含 ':' → ollama（本地）
+    const lines: string[] = []
+    await handleSlashCommand('/usage', store, (s) => lines.push(s))
+    const out = lines.join('\n')
+    expect(out).toContain('按提供方:')
+    expect(out).toContain('本地 ollama: 300 tokens（1 次调用）')
+    expect(out).toContain('线上 deepseek: 1,500 tokens（1 次调用）')
+  })
+
   it('本会话行显示缓存命中（v0.6.49：sessionId 分支与总行/perModel 对称）', async () => {
     store.logUsage('s1', 1000, 500, 'deepseek-chat', { cacheReadTokens: 400 })
     store.logUsage('s2', 100, 50, 'deepseek-chat') // 另一个会话，不影响本会话统计

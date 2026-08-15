@@ -82,3 +82,15 @@ export function formatModelSize(bytes: number): string {
   }
   return `${n >= 100 ? Math.round(n) : n.toFixed(1)} ${units[i]}`
 }
+
+/**
+ * 推断模型 provider 类型（v0.6.9 起在 server.ts，v0.6.136 上移到 core 供 store/routing 复用）：
+ * 模型名 → ollama / deepseek / openai / other。
+ * 与 resolveProviderOptions 的自动检测规则一致（含 ':' 的 Ollama 命名 / deepseek 系列 / gpt·o1·o3·chatgpt 系列）。
+ */
+export function detectProvider(model: string): 'ollama' | 'deepseek' | 'openai' | 'other' {
+  if (model.includes(':')) return 'ollama'
+  if (model.includes('deepseek')) return 'deepseek'
+  if (model.includes('gpt') || model.includes('o1') || model.includes('o3') || model.includes('chatgpt')) return 'openai'
+  return 'other'
+}

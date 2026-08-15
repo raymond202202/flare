@@ -9,6 +9,7 @@
  */
 
 import { config } from './config.js'
+import { detectProvider } from './models.js'
 
 export type TaskComplexity = 'simple' | 'complex'
 
@@ -63,18 +64,10 @@ export interface RouteTaskResult {
   tier: TaskComplexity
   /** 应使用的模型名 */
   model: string
-  /** provider 推断（与 detectProvider 同规则：含 ':' → ollama / deepseek / openai / other） */
+  /** provider 推断（复用 core/models.ts detectProvider：含 ':' → ollama / deepseek / openai / other） */
   provider: 'ollama' | 'deepseek' | 'openai' | 'other'
   /** 决策原因（人类可读，CLI 展示用） */
   reason: string
-}
-
-/** provider 推断（与 src/server.ts detectProvider 同规则；独立实现避免 core → server 依赖方向） */
-function providerOf(model: string): 'ollama' | 'deepseek' | 'openai' | 'other' {
-  if (model.includes(':')) return 'ollama'
-  if (model.includes('deepseek')) return 'deepseek'
-  if (model.includes('gpt') || model.includes('o1') || model.includes('o3') || model.includes('chatgpt')) return 'openai'
-  return 'other'
 }
 
 /**
@@ -99,7 +92,7 @@ export function routeTaskModel(
     return {
       tier,
       model,
-      provider: providerOf(model),
+      provider: detectProvider(model),
       reason: localModel
         ? '简单任务 → 本地模型（省钱/隐私/离线）'
         : '简单任务 → 未配置 LOCAL_MODEL，回退主模型',
@@ -108,7 +101,7 @@ export function routeTaskModel(
   return {
     tier,
     model: mainModel,
-    provider: providerOf(mainModel),
+    provider: detectProvider(mainModel),
     reason: '复杂任务 → 线上主模型（保质量）',
   }
 }
