@@ -1,5 +1,7 @@
 # Flare 引擎迭代进度（夜间调研 agent）
 
+> **【✅ 第一百三十四轮小步】P183 测试层代码质量清理：统一 request 终结条件写法消除 &&/|| 优先级陷阱**：
+> commit `b81eb89`，纯测试层零 src 改动、tsc 0 错误、1174/1174 全绿、无版本变化（详情见下方 P183 条目）。
 > **【✅ 第一百三十三轮小步】P182 测试稳定性修复：server-default-params 注入 mock LLM 服务器根治偶发超时源**：
 > commit `27774d3`，纯测试层零 src 改动、tsc 0 错误、1174/1174 全绿、无版本变化（详情见下方 P182 条目）。
 > **【✅ 第一百三十二轮小步】P181 测试稳定性修复：cli-chat-session 注入 mock LLM 服务器根治偶发超时源**：
@@ -220,6 +222,38 @@
 >    terminal 退出码（v0.6.33）✓ / CLI 归档命令（v0.6.32）✓ / 归档 API（v0.6.31）✓ /
 >    工具输出治理（v0.6.30）✓ / prompt caching P0（v0.6.29）✓ / MCP 动态资源提供器（v0.6.28）✓ /
 >    confirm 描述（v0.6.27）✓
+
+---
+
+### 2026-08-15 第一百三十四轮小步（P183，测试层代码质量清理）——统一 request 终结条件写法消除 &&/|| 优先级陷阱
+
+> **P183 完成**（commit `b81eb89`）：统一 `server-default-params.test.ts` / `server-context-trim.test.ts`
+> 的 `request()` 助手**终结条件表达式**为简洁无歧义写法，消除 `&&`/`||` 优先级混用陷阱——flare 在
+> P182 验收时给出的非阻塞提示（「request() 第 46 行运算符优先级是改动前已存在逻辑，可留作后续小步」）
+> 的落地，纯测试层改动，零 src/agent.ts 改动、无版本变化（0.6.132 不变）。
+> - **背景**：仓库 3 个 server 测试文件的 request() 终结条件写法不一致——server-tool-output-policy.test.ts
+>   已是简洁正确版 `['done','error','cancelled'].includes(parsed.type)`，而 server-default-params.test.ts
+>   与 server-context-trim.test.ts 沿用了旧写法
+>   `expectTypes.some(t => [...].includes(t)) && parsed.type === 'done' || parsed.type === 'error' ||
+>   parsed.type === 'cancelled'`——因 `&&` 优先于 `||`，实际等价于 `(A && B) || C || D`，`error`/`cancelled`
+>   分支不受 A 约束，属历史遗留的可读性/歧义风险（虽有外层 `expectTypes.includes(parsed.type)` 守卫兜底
+>   行为未出错，但依赖隐式优先级极易在后续改动中踩坑）
+> - **实现**（2 文件各 1 行）：两处旧表达式统一为
+>   `if (['done', 'error', 'cancelled'].includes(parsed.type))`——外层 `expectTypes.includes(parsed.type)`
+>   已保证类型匹配，内层只需判断是否终结类型；与 server-tool-output-policy.test.ts 既有写法、
+>   server-context-trim.test.ts 的 request2（第 130 行）同口径，语义逐场景等价（含终结/不含终结的
+>   expectTypes、done/error/cancelled 到达序、timeout 分支全部比对无行为回归）
+> - **验证**：tsc 0 错误；专项 3 文件 24/24 全绿；全量 **1174/1174 全绿**（76 文件；首跑即绿）；
+>   纯测试层零 src 改动、零 agent.ts 改动、无版本变化（0.6.132 不变）、零 push、零敏感信息
+> - **flare 验收通过**：独立运行 tsc 0 错误 + 全量 76 文件/1174 全绿 + context-trim 11/default-params 4
+>   专项；逐项审查（新写法精确无歧义、逐场景行为等价无回归、timeout/cleanup 分支与 else if 未受影响、
+>   纯布尔逻辑化简零新安全面、P182 的 delete 真实 key + mock 注入未触碰、无任何凭据明文）；结论
+>   「✅ 准予通过（PASS）」
+> - **下一步候选**：① 【P1】分层上下文（Layer 1 异步滚动摘要——需改 Agent.run 核心循环，违反铁律跳过并记录理由）；
+>   ② 其他安全的外围增强（测试稳定性清扫——全部真实调用类测试均已 mock 化（cli-chat-session P181 +
+>   server-default-params P182），request 助手写法已统一（P183）；MCP 工具集完善、确认门接入完整化已收官）——
+>   prompt caching 基建观测面（命中/写入/节省）在 usage/cache-check/--json/server 协议/README/USAGE/
+>   host-protocol 全口径闭环
 
 ---
 
