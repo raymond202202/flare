@@ -687,14 +687,16 @@ export async function handleSlashCommand(
       output('  /model default - 回默认（.env 的 DEFAULT_MODEL）')
     } else if (arg === 'list') {
       // /model list 列出本地 Ollama 可用模型（v0.6.9）：Ollama 不可达友好提示，不崩
-      const { listOllamaModels, formatModelSize } = await import('../core/models.js')
+      // v0.6.137：每行补能力标签（inferModelCapabilities 按模型名推导，零网络）
+      const { listOllamaModels, formatModelSize, inferModelCapabilities } = await import('../core/models.js')
       const r = await listOllamaModels()
       if (r.ok && r.models.length > 0) {
         output(chalk.cyan(`\n🤖 当前主模型: ${current}`))
         output(chalk.gray('  本地 Ollama 可用模型:'))
         for (const m of r.models) {
           const isCur = m.name === current
-          output(`  ${isCur ? chalk.green('●') : chalk.gray('○')} ${m.name}${isCur ? chalk.gray('（当前）') : ''}  ${chalk.gray(formatModelSize(m.size))}`)
+          const caps = inferModelCapabilities(m.name).join('/')
+          output(`  ${isCur ? chalk.green('●') : chalk.gray('○')} ${m.name}${isCur ? chalk.gray('（当前）') : ''}  ${chalk.gray(formatModelSize(m.size))}  ${chalk.blue(`[${caps}]`)}`)
         }
         output(chalk.gray('  /model <模型名> 切换；远端模型（如 deepseek-chat）不在此列'))
       } else {
@@ -2256,7 +2258,7 @@ program
     .action(async (options: { json?: boolean }) => {
       const { config } = await import('../core/config.js')
       const { resolveProviderOptions } = await import('../core/llm.js')
-      const { listOllamaModels, formatModelSize } = await import('../core/models.js')
+      const { listOllamaModels, formatModelSize, inferModelCapabilities } = await import('../core/models.js')
 
       // 运行时 /model 切换的模型优先（settings 表）
       let mainModel = config.get('DEFAULT_MODEL') || 'gpt-4o'
@@ -2313,11 +2315,13 @@ program
       }
 
       // 本地 Ollama 已拉取模型（网络查询；不可达不报错）
+      // v0.6.137：每行补能力标签（inferModelCapabilities 按模型名推导，零网络）
       lines.push(chalk.cyan('🤖 本地 Ollama:'))
       const result = await listOllamaModels()
       if (result.ok && result.models.length > 0) {
         for (const m of result.models) {
-          lines.push(`  ${chalk.green(m.name)}  ${chalk.gray(formatModelSize(m.size))}`)
+          const caps = inferModelCapabilities(m.name).join('/')
+          lines.push(`  ${chalk.green(m.name)}  ${chalk.gray(formatModelSize(m.size))}  ${chalk.blue(`[${caps}]`)}`)
         }
       } else if (result.ok) {
         lines.push(chalk.gray('  已连接，但未拉取任何模型（ollama pull <模型名> 下载）'))

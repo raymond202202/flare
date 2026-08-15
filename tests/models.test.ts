@@ -9,7 +9,7 @@ import { describe, it, expect } from 'vitest'
 import { spawn } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
-import { listOllamaModels, formatModelSize, OLLAMA_DEFAULT_BASE } from '../src/core/models.js'
+import { listOllamaModels, formatModelSize, inferModelCapabilities, OLLAMA_DEFAULT_BASE } from '../src/core/models.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const CLI = path.join(__dirname, '..', 'dist', 'cli', 'index.js')
@@ -103,6 +103,36 @@ describe('formatModelSize', () => {
     expect(formatModelSize(512)).toBe('512 B')
     expect(formatModelSize(2048)).toBe('2.0 KB')
     expect(formatModelSize(4_700_000_000)).toBe('4.4 GB')
+  })
+})
+
+describe('inferModelCapabilities（v0.6.137 模型能力标签）', () => {
+  it('视觉模型（vl/vision/llava）→ 视觉', () => {
+    expect(inferModelCapabilities('qwen2.5vl:3b')).toContain('视觉')
+    expect(inferModelCapabilities('qwen2.5vl:7b')).toContain('视觉')
+    expect(inferModelCapabilities('llava:13b')).toContain('视觉')
+  })
+  it('推理模型（r1/reasoner）→ 推理', () => {
+    expect(inferModelCapabilities('deepseek-r1:7b')).toContain('推理')
+    expect(inferModelCapabilities('qwen3-reasoner:1.7b')).toContain('推理')
+  })
+  it('嵌入模型（embed/bge）→ 嵌入', () => {
+    expect(inferModelCapabilities('nomic-embed-text')).toContain('嵌入')
+    expect(inferModelCapabilities('bge-m3')).toContain('嵌入')
+  })
+  it('代码模型（coder/code）→ 代码', () => {
+    expect(inferModelCapabilities('qwen2.5-coder:7b')).toContain('代码')
+    expect(inferModelCapabilities('deepseek-coder:6.7b')).toContain('代码')
+  })
+  it('默认文本模型 → 文本', () => {
+    expect(inferModelCapabilities('qwen2.5:7b')).toEqual(['文本'])
+    expect(inferModelCapabilities('')).toEqual(['文本'])
+  })
+  it('视觉模型同时含视觉标签（qwen2.5vl 先视觉后默认文本以外的其他标签不受影响）', () => {
+    // qwen2.5vl 命中视觉；不命中其他 → 视觉单标签（不含默认文本，因已有标签）
+    const caps = inferModelCapabilities('qwen2.5vl:3b')
+    expect(caps).toContain('视觉')
+    expect(caps).not.toContain('文本')
   })
 })
 

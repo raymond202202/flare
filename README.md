@@ -382,6 +382,17 @@ Interactive mode commands:
 
 ### Changelog / Release Notes
 
+## v0.6.137（2026-08-15）
+- ✨ **ollama 模型发现增强：models 命令展示本地模型能力标签**：新 `inferModelCapabilities(name)`
+  （src/core/models.ts 纯函数，零网络：含 vl/vision/llava → 视觉；r1/reasoner → 推理；
+  embed/bge → 嵌入；coder/code → 代码；默认文本）；CLI `flare models` 文本模式与交互
+  `/model list` 的本地 Ollama 列表每行补能力标签（如 `qwen2.5vl:3b  [视觉]`、
+  `qwen2.5:7b  [文本]`）；--json 与 server models 回包结构不变（能力标签为展示层推导，不加协议字段）。
+  同时 index.ts 导出 detectProvider 收敛到 core/models.js 单一来源（server.ts re-export 保持兼容）
+- 测试：models.test.ts 补 6 用例（视觉/推理/嵌入/代码/默认文本/vl 命名变体）
+- 文档：README Changelog 条目 + package.json/package-lock.json 0.6.136 → 0.6.137
+- 纯外围增强：零 agent.ts 改动（Agent.run 核心循环零触碰）、零 push、零敏感信息
+
 ## v0.6.136（2026-08-15）
 - ✨ **usage 按 provider 拆分统计（混合模式成本收益评估）**：store `getUsageStats`/`getSessionUsage`
   新增 `perProvider` 分解（按 `detectProvider` 把 perModel 归并为 provider 组：本地 ollama vs 线上

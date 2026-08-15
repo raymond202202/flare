@@ -94,3 +94,27 @@ export function detectProvider(model: string): 'ollama' | 'deepseek' | 'openai' 
   if (model.includes('gpt') || model.includes('o1') || model.includes('o3') || model.includes('chatgpt')) return 'openai'
   return 'other'
 }
+
+/** 模型能力标签（v0.6.137，ollama 模型发现增强：models 命令展示本地模型能力） */
+export type ModelCapability = '文本' | '视觉' | '推理' | '嵌入' | '代码'
+
+/**
+ * 按模型名推断能力标签（v0.6.137，纯函数可单测，零网络）：
+ * - 含 vl / vision / llava → 视觉（多模态）
+ * - 含 r1 / reasoner / think → 推理
+ * - 含 embedding / nomic-embed / bge → 嵌入
+ * - 含 coder / code / deepseek-coder → 代码
+ * - 其余 → 文本（默认）
+ * 可返回多个标签（如 qwen2.5vl 视觉模型同时可做文本 → ['视觉', '文本'] 由调用方决定展示）。
+ */
+export function inferModelCapabilities(name: string): ModelCapability[] {
+  const n = (name || '').toLowerCase()
+  const caps: ModelCapability[] = []
+  // vl 匹配 qwen2.5vl:3b / qwen2-vl:7b（vl 后跟分隔符或结尾）；vision/llava 直接匹配
+  if (/vl([-_:]|$)|vision|llava/.test(n)) caps.push('视觉')
+  if (/r1|reasoner|think/.test(n)) caps.push('推理')
+  if (/embed|nomic-embed|bge/.test(n)) caps.push('嵌入')
+  if (/coder|code|deepseek-coder/.test(n)) caps.push('代码')
+  if (caps.length === 0) caps.push('文本')
+  return caps
+}
