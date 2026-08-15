@@ -1,5 +1,7 @@
 # Flare 引擎迭代进度（夜间调研 agent）
 
+> **【✅ 第一百三十六轮小步】P185 (纯文档) flare-token-architecture.md 补缓存写入观测**：
+> commit `7c672d1`，纯文档零 src 改动、tsc 0 错误、1174/1174 全绿、无版本变化（详情见下方 P185 条目）。
 > **【✅ 第一百三十五轮小步】P184 (纯文档) USAGE.md 交互命令表补全常用命令**：
 > commit `adb2069`，纯文档零 src 改动、tsc 0 错误、1174/1174 全绿、无版本变化（详情见下方 P184 条目）。
 > **【✅ 第一百三十四轮小步】P183 测试层代码质量清理：统一 request 终结条件写法消除 &&/|| 优先级陷阱**：
@@ -224,6 +226,33 @@
 >    terminal 退出码（v0.6.33）✓ / CLI 归档命令（v0.6.32）✓ / 归档 API（v0.6.31）✓ /
 >    工具输出治理（v0.6.30）✓ / prompt caching P0（v0.6.29）✓ / MCP 动态资源提供器（v0.6.28）✓ /
 >    confirm 描述（v0.6.27）✓
+
+---
+
+### 2026-08-15 第一百三十六轮小步（P185，纯文档）——flare-token-architecture.md 补缓存写入观测
+
+> **P185 完成**（commit `7c672d1`）：docs/flare-token-architecture.md「验收标准」补**缓存写入观测**
+> 条目——P177（v0.6.131 usage 缓存写入）与 P179（v0.6.132 cache-check 缓存写入）装机后，host-protocol.md
+> 已同步（P178）、README/USAGE 已同步（P177/P180），唯独 token 架构文档的验收标准停留在
+> 「命中/节省」两视角，未记录「写入」这第三视角（prompt caching 基建观测面文档闭环收尾）。
+> - **改动**（docs/flare-token-architecture.md +7 行）：「验收标准」补 ✅ 条目——cache_write_tokens
+>   自 P0（v0.6.29）起已落库；v0.6.131 起 /usage 与 flare usage 文本模式总览/perModel 行显示
+>   「缓存写入: X tokens」（>0 才显示）+ store perModel 分解补 cacheWriteTokens（--json/server 协议
+>   自动透传）；v0.6.132 起 cache-check 文本模式每轮行补「写入 X tokens」（--json runs[].cacheWriteTokens
+>   早已存在）——首轮 miss 建立缓存的输入量在文本/JSON/server 协议三层可观测，与命中/节省构成完整闭环
+> - **验证**：tsc 0 错误；全量 1174/1174 全绿（76 文件）；纯文档零 src 改动、零 agent.ts 改动；
+>   零 push、零敏感信息；无版本变化（0.6.132 不变，dist 未动，无需自安装）
+> - **flare 验收通过**：独立运行 tsc 0 错误 + 全量 76 文件/1174 测试全绿 + 工作树干净；逐条对照代码
+>   位置核验文档 claim（usage 文本模式写入行 src/cli/index.ts:2685-2689、perModel 子行 :2703-2706、
+>   /usage 交互 :1329/1348/1372-1374/1389-1391、store perModel cacheWriteTokens store.ts:643/655/666-679
+>   与 693/706/718-729、>0 守卫、cache-check --json runs[].cacheWriteTokens cache-check.ts:22/90、
+>   cache-check 文本模式写入行 cli/index.ts:2348-2353、host-protocol.md 已同步）全部一致；结论「✅ 通过」
+> - **下一步候选**：① 【P1】分层上下文（Layer 1 异步滚动摘要——需改 Agent.run 核心循环，违反铁律跳过并记录理由）；
+>   ② 其他安全的外围增强（测试稳定性清扫——全部真实调用类测试均已 mock 化（P181/P182）、request 助手
+>   写法已统一（P183）；MCP 工具集完善、确认门接入完整化已收官；文档对称——USAGE.md 交互命令表（P184）
+>   与 token 架构缓存写入观测（P185）已补齐，其余文档对称性可继续检查）——prompt caching 基建观测面
+>   （命中/写入/节省）在 usage/cache-check/--json/server 协议/README/USAGE/host-protocol/
+>   flare-token-architecture 全口径闭环
 
 ---
 
