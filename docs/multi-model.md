@@ -122,6 +122,9 @@ LOCAL_MODEL=qwen2.5:7b        # 本地路由模型（Ollama 命名，含 ':' 自
 - `flare models` 文本模式：`本地路由: <模型> → <端点>`（未配置给提示）
 - `flare models --json`：`configured.local` 字段（ModelEndpointInfo 同款；未配置 `null`，与 server models 回包同构）
 - server 协议 `models` 响应：`configured.local`（v0.6.134）
+- `flare route "<任务文本>"`（v0.6.135）：任务复杂度路由决策单次命令——文本输出
+  `简单任务/复杂任务 → 模型（provider）` + 原因 + 本地/主模型；`--json` 结构化输出
+  `{ tier, model, provider, reason, localModel, mainModel }`（纯函数零调用，不触发生成）
 
 ### 宿主集成（代码里）
 

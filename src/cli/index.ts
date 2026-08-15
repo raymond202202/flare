@@ -8,7 +8,7 @@
  */
 
 import { Command } from 'commander'
-import { Agent, createProvider, getMemoryStore, config, tools, McpManager, estimateMessagesTokens, suggestTrim, ConfirmationGate, memoryStoreKv, wrapConfirmTools, describeTools, validateToolOutputPolicy, mcpContentToText, type AgentConfig, type McpServerStatus, type ConfirmDecision, type McpResourceRef, type McpResourceTemplateRef, type McpPromptRef, type McpResourceContents, type McpPromptResult, type McpCompletionResult, type McpCallResult, type McpToolRef, type ToolOutputPolicy } from '../index.js'
+import { Agent, createProvider, getMemoryStore, config, tools, McpManager, estimateMessagesTokens, suggestTrim, ConfirmationGate, memoryStoreKv, wrapConfirmTools, describeTools, validateToolOutputPolicy, mcpContentToText, routeTaskModel, type AgentConfig, type McpServerStatus, type ConfirmDecision, type McpResourceRef, type McpResourceTemplateRef, type McpPromptRef, type McpResourceContents, type McpPromptResult, type McpCompletionResult, type McpCallResult, type McpToolRef, type ToolOutputPolicy } from '../index.js'
 import chalk from 'chalk'
 import { execSync } from 'child_process'
 import { createRequire } from 'module'
@@ -3203,6 +3203,33 @@ program
       })
       confirmGate.revoke(name)
       console.log(chalk.green('已撤销 ') + chalk.cyan(name) + chalk.gray(' 的放行（已恢复每次确认）；flare confirm-status 查看放行状态'))
+    })
+
+  // 任务复杂度路由单次命令（v0.6.135）：混合模式本地小模型路由的查询面——
+  // 纯函数决策（classifyTaskComplexity/routeTaskModel），不触发生成、不创建会话（与 server models 同级只读）
+  program
+    .command('route')
+    .description('任务复杂度路由决策：简单任务 → 本地模型（省钱），复杂任务 → 主模型（保质量）；纯函数零调用（v0.6.135，--json 结构化输出）')
+    .argument('[text]', '任务文本（未提供则显示用法）')
+    .option('-j, --json', 'JSON 结构化输出（{ tier, model, provider, reason, localModel, mainModel }）')
+    .action((text: string | undefined, options: { json?: boolean }) => {
+      if (!text || !text.trim()) {
+        console.error(chalk.yellow('用法: flare route "<任务文本>"   例: flare route "把这句话翻译成英文"'))
+        console.error(chalk.gray('  简单任务（分类/抽取/摘要/翻译/格式化/短问答）→ 本地模型；复杂任务（推理/长代码/创作）→ 主模型'))
+        process.exitCode = 1
+        return
+      }
+      const r = routeTaskModel(text)
+      const localModel = (config.get('LOCAL_MODEL') || '').trim() || null
+      const mainModel = (config.get('DEFAULT_MODEL') || 'deepseek-chat').trim()
+      if (options.json) {
+        console.log(JSON.stringify({ ...r, localModel, mainModel }, null, 2))
+        return
+      }
+      const tierLabel = r.tier === 'simple' ? chalk.green('简单任务') : chalk.yellow('复杂任务')
+      console.log(`${tierLabel} → ${chalk.cyan(r.model)}（${r.provider}）`)
+      console.log(chalk.gray(`  ${r.reason}`))
+      console.log(chalk.gray(`  本地模型: ${localModel || '未配置'} · 主模型: ${mainModel}`))
     })
 
   // 健康检查单次命令（v0.6.95）：与 server ping 对称（只读，不依赖任何初始化）
