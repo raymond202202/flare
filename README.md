@@ -382,6 +382,18 @@ Interactive mode commands:
 
 ### Changelog / Release Notes
 
+## v0.6.144（2026-08-15）
+- ✨ **route 批量汇总特征分布统计（混合模式路由决策可视化深化）**：批量路由汇总补任务构成统计——
+  文本模式「汇总」行下新增「特征分布:」行（按分类命中能力标签分组计数，如
+  `简单特征词（分类/抽取/摘要/翻译/格式化等） 1 · 复杂特征词（分析/推理/创作/算法等） 1`）；
+  `--json` 批量输出新增 `summary: { total, tierCounts, featureCounts }` 字段（程序化消费任务
+  构成，结构向后兼容——新增字段不破坏既有消费）
+- 实现：src/cli/index.ts route 批量展示层（纯展示/统计，核心路由零改动）
+- 测试：cli-route.test.ts 更新 2 处断言（文本模式特征分布行 + --json summary 分组统计）
+- 文档：README Changelog 条目 + USAGE.md 单次命令补 summary + docs/multi-model.md 查询面同步 +
+  package.json/package-lock.json 0.6.143 → 0.6.144
+- 纯外围增强：零 agent.ts 改动（Agent.run 核心循环零触碰）、零 push、零敏感信息
+
 ## v0.6.143（2026-08-15）
 - ✨ **route 分类命中特征能力标签（混合模式路由决策可视化深化）**：新增 `classifyTaskDetail(text)`
   纯函数（与 `classifyTaskComplexity` 同一规则集，额外返回命中的能力标签）；`RouteTaskResult` 新增

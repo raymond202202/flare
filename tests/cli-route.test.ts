@@ -126,7 +126,7 @@ describe('flare route', () => {
     expect(parsed.tier).toBe('complex')
   }, 20000)
 
-  it('批量多参数（v0.6.140）：文本模式逐条输出 + 汇总行', async () => {
+  it('批量多参数（v0.6.140）：文本模式逐条输出 + 汇总行（v0.6.144 起含特征分布）', async () => {
     const { code, stdout } = await runCli(['route', SIMPLE_TEXT, COMPLEX_TEXT], { LOCAL_MODEL: 'qwen2.5:7b' })
     expect(code).toBe(0)
     // 两条任务都出现（含序号前缀）
@@ -136,9 +136,13 @@ describe('flare route', () => {
     expect(stdout).toContain('复杂任务')
     // 汇总行：共 2 个任务 · 简单 1 · 复杂 1
     expect(stdout).toContain('汇总: 共 2 个任务 · 简单 1 · 复杂 1')
+    // v0.6.144：特征分布（简单特征词 1 · 复杂特征词 1）
+    expect(stdout).toContain('特征分布:')
+    expect(stdout).toContain('简单特征词（分类/抽取/摘要/翻译/格式化等） 1')
+    expect(stdout).toContain('复杂特征词（分析/推理/创作/算法等） 1')
   }, 20000)
 
-  it('批量多参数（v0.6.140）：--json 输出 { results: [...] } 数组 + 公共模型字段（v0.6.143 起含 feature）', async () => {
+  it('批量多参数（v0.6.140）：--json 输出 { results: [...] } 数组 + summary 分组统计（v0.6.144）', async () => {
     const { code, stdout } = await runCli(['route', SIMPLE_TEXT, COMPLEX_TEXT, '--json'], { LOCAL_MODEL: 'qwen2.5:7b' })
     expect(code).toBe(0)
     expect(stdout).not.toMatch(/\u001b\[/)
@@ -152,6 +156,10 @@ describe('flare route', () => {
     expect(parsed.results[1].task).toBe(COMPLEX_TEXT)
     expect(parsed.results[0].feature).toContain('简单特征词')
     expect(parsed.results[1].feature).toContain('复杂特征词')
+    // v0.6.144：summary 分组统计
+    expect(parsed.summary).toMatchObject({ total: 2, tierCounts: { simple: 1, complex: 1 } })
+    expect(parsed.summary.featureCounts['简单特征词（分类/抽取/摘要/翻译/格式化等）']).toBe(1)
+    expect(parsed.summary.featureCounts['复杂特征词（分析/推理/创作/算法等）']).toBe(1)
     expect(parsed.localModel).toBe('qwen2.5:7b')
     expect(parsed.mainModel).toBe('deepseek-chat')
   }, 20000)
