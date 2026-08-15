@@ -605,6 +605,27 @@ function formatSessionTime(updatedAt: string, now = new Date()): string {
   }
 }
 
+/**
+ * provider 行缓存观测子行（v0.6.138：与 perModel 子行对称——「按提供方:」区块补缓存命中/写入/
+ * 节省，混合模式成本收益评估可见本地 ollama 无缓存计费 vs 线上 deepseek 缓存节省）。
+ * 返回带 6 空格缩进的行数组（调用方逐行 output/console.log）；无命中/写入 → 空数组（行不变化）。
+ */
+function providerCacheLines(p: { promptTokens?: number; cacheReadTokens?: number; cacheWriteTokens?: number; cacheSavedUsd?: number }): string[] {
+  const lines: string[] = []
+  const hit = p.cacheReadTokens || 0
+  if (hit > 0) {
+    const rate = p.promptTokens && p.promptTokens > 0 ? Math.round((hit / p.promptTokens) * 100) : 0
+    const saved = typeof p.cacheSavedUsd === 'number' ? p.cacheSavedUsd : 0
+    const savedSuffix = saved > 0 ? `（节省 $${saved.toFixed(4)}）` : ''
+    lines.push(`      ${chalk.gray('缓存命中:')} ${hit.toLocaleString()} tokens（${rate}%）${savedSuffix}`)
+  }
+  const write = p.cacheWriteTokens || 0
+  if (write > 0) {
+    lines.push(`      ${chalk.gray('缓存写入:')} ${write.toLocaleString()} tokens`)
+  }
+  return lines
+}
+
 export async function handleSlashCommand(
   cmd: string,
   store: ReturnType<typeof getMemoryStore>,
@@ -1355,12 +1376,14 @@ export async function handleSlashCommand(
           }
         }
         // v0.6.136：按 provider 拆分（本地 vs 线上——混合模式成本收益评估）
+        // v0.6.138：provider 行补缓存观测子行（与 perModel 子行对称）
         if (Array.isArray(usage.perProvider) && usage.perProvider.length > 0) {
           output(`  ${chalk.gray('按提供方:')}`)
           for (const p of usage.perProvider) {
             const isLocal = p.provider === 'ollama'
             const label = isLocal ? '本地' : '线上'
             output(`    ${label} ${p.provider}: ${p.totalTokens.toLocaleString()} tokens（${p.calls} 次调用）`)
+            for (const line of providerCacheLines(p)) output(line)
           }
         }
         // 当前会话用量（v0.6.17：getSessionUsage 按 session 过滤；未提供 sessionId 不显示）
@@ -2732,12 +2755,14 @@ program
           }
         }
         // v0.6.136：按 provider 拆分（与全局 usage 同口径）
+        // v0.6.138：provider 行补缓存观测子行（与 perModel 子行对称）
         if (Array.isArray(u.perProvider) && u.perProvider.length > 0) {
           console.log(' ' + chalk.gray('按提供方:'))
           for (const p of u.perProvider) {
             const isLocal = p.provider === 'ollama'
             const label = isLocal ? '本地' : '线上'
             console.log('   ' + label + ' ' + p.provider + ': ' + p.totalTokens.toLocaleString() + ' tokens（' + p.calls + ' 次调用）')
+            for (const line of providerCacheLines(p)) console.log(line)
           }
         }
         return
@@ -2785,12 +2810,14 @@ program
         }
       }
       // v0.6.136：按 provider 拆分（本地 vs 线上——混合模式成本收益评估；与交互 /usage 同口径）
+      // v0.6.138：provider 行补缓存观测子行（与 perModel 子行对称）
       if (Array.isArray(usage.perProvider) && usage.perProvider.length > 0) {
         console.log(' ' + chalk.gray('按提供方:'))
         for (const p of usage.perProvider) {
           const isLocal = p.provider === 'ollama'
           const label = isLocal ? '本地' : '线上'
           console.log('   ' + label + ' ' + p.provider + ': ' + p.totalTokens.toLocaleString() + ' tokens（' + p.calls + ' 次调用）')
+          for (const line of providerCacheLines(p)) console.log(line)
         }
       }
     })
