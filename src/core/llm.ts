@@ -159,7 +159,18 @@ export function parseAttachments(input: string): ParsedInput {
     return match
   })
 
-  return { text: text.replace(/\s+/g, ' ').trim(), attachments }
+  // 保留换行与行首缩进（多行粘贴的代码/段落要原样送达模型），
+  // 只收拾行内多余空格、行尾空白与整体首尾空行。
+  const cleaned = text
+    .split('\n')
+    .map(line => {
+      const indent = (line.match(/^[ \t]*/) || [''])[0]
+      const rest = line.slice(indent.length).replace(/[ \t]{2,}/g, ' ').replace(/[ \t]+$/, '')
+      return indent + rest
+    })
+    .join('\n')
+    .trim()
+  return { text: cleaned, attachments }
 }
 
 export interface ToolCall {

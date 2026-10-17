@@ -16,9 +16,18 @@
  *   - 帧模式（frameMode）：按键只更新状态 + 回调，由外部渲染循环统一重绘
  */
 import chalk from 'chalk'
+import { StringDecoder } from 'string_decoder'
 
 /** IME 防抖窗口：Enter 后等待输入法提交中文字符的毫秒数 */
 const ENTER_DEBOUNCE_MS = 200
+
+/** 终端 bracketed paste 模式开关（DECSET/DECRST 2004） */
+const BRACKET_PASTE_ON = '\u001b[?2004h'
+const BRACKET_PASTE_OFF = '\u001b[?2004l'
+/** 粘贴内容的起止标记（终端在 2004 模式下自动包裹） */
+const PASTE_START = '\u001b[200~'
+const PASTE_END = '\u001b[201~'
+
 
 /** 字符显示宽度（wcwidth 简化版，正确处理中文/emoji/ANSI） */
 export function charWidth(ch: string): number {
@@ -54,6 +63,24 @@ export function stringWidth(s: string): number {
 
 const HISTORY_MAX = 100
 
+/**
+ * 把 buffer 转成"单行可见形式"：换行显示为 ↵，制表符展开成 4 个空格。
+ * 用于渲染和宽度计算，保证光标定位与实际显示宽度一致（buffer 原文仍保留 \n \t）。
+ */
+export function displayOf(s: string): string {
+  return s.replace(/\n/g, '\u21b5').replace(/\t/g, '    ')
+}
+
+/** 粘贴内容末尾若是 PASTE_END 的前缀（跨 chunk 被切断），返回需要保留的字符数 */
+function pasteEndPrefixLen(s: string): number {
+  const max = Math.min(PASTE_END.length - 1, s.length)
+  for (let n = max; n > 0; n--) {
+    if (s.endsWith(PASTE_END.slice(0, n))) return n
+  }
+  return 0
+}
+
+
 export class LineInput {
   private prompt: string
   private buffer = ''
@@ -65,6 +92,11 @@ export class LineInput {
   private escapeBuf = ''
   private onData: ((chunk: Buffer) => void) | null = null
   private paused = false
+  /** 粘贴态：收到 PASTE_START 后置真，内容先累积到 pasteBuf，收到 PASTE_END 一次性插入 */
+  private pasteMode = false
+  private pasteBuf = ''
+  /** 流式 UTF-8 解码器：跨 chunk 切断的多字节字符不会变成 U+FFFD */
+  private decoder: StringDecoder | null = null
   /** 帧模式：按键只更新状态，不直接写终端，通过 onChange 通知外部重绘 */
   private frameMode = false
   private onChange: (() => void) | null = null
@@ -90,14 +122,44 @@ export class LineInput {
       this.lastDrawnBuffer = ''
       this.inEscape = false
       this.escapeBuf = ''
+      this.pasteMode = false
+      this.pasteBuf = ''
+      this.decoder = new StringDecoder('utf8')
       this.historyIndex = this.history.length   // 从最新位置开始
       this.drawPrompt()
+      // 开启 bracketed paste：终端把粘贴内容用 \x1b[200~ … \x1b[201~ 包裹，
+      // 于是内容里的换行不会被误判成"用户按了回车"
+      process.stdout.write(BRACKET_PASTE_ON)
 
-      this.onData = (chunk: Buffer) => {
-        const s = chunk.toString('utf8')
-        for (const ch of s) {
-          // 在转义序列中：直到字母或 ~ 结束（\x1b[A 方向键、\x1b[1~ Home 等）
+      let pending = ''
+
+      /** 消费输入队列：粘贴态批量累积，普通态逐字符走编辑逻辑 */
+      const consume = () => {
+        while (pending.length > 0) {
+          // ---- 粘贴态：只找结束标记，整段文本一次插入（不逐字符重绘）----
+          if (this.pasteMode) {
+            const end = pending.indexOf(PASTE_END)
+            if (end < 0) {
+              // 未到结束标记：全部吞进 pasteBuf，只保留可能是 PASTE_END 前缀的尾巴
+              const keep = pasteEndPrefixLen(pending)
+              this.pasteBuf += pending.slice(0, pending.length - keep)
+              pending = pending.slice(pending.length - keep)
+              return
+            }
+            this.pasteBuf += pending.slice(0, end)
+            pending = pending.slice(end + PASTE_END.length)
+            this.pasteMode = false
+            const text = this.pasteBuf
+            this.pasteBuf = ''
+            if (text) this.insertText(text)
+            continue
+          }
+
+          const ch = pending[0]
+
+          // 在转义序列中：直到字母或 ~ 结束（\x1b[A 方向键、\x1b[200~ 粘贴标记等）
           if (this.inEscape) {
+            pending = pending.slice(1)
             this.escapeBuf += ch
             if (/[a-zA-Z~]/.test(ch)) {
               const seq = this.escapeBuf
@@ -109,17 +171,29 @@ export class LineInput {
           }
           // 遇到 ESC 开头：进入转义序列
           if (ch === '\u001b') {
+            pending = pending.slice(1)
             this.inEscape = true
             this.escapeBuf = '\u001b'
             continue
           }
           // 回车/换行：提交（IME 防抖：Enter 可能是 fcitx5 确认候选，延迟提交等待输入法后续字符）
           if (ch === '\r' || ch === '\n') {
+            const rest = pending.slice(1)
+            // 兜底：不支持 bracketed paste 的终端（部分 IDE 内嵌终端、老 ssh 客户端）
+            // 会把整段粘贴塞进同一个 chunk。换行后还有可见字符 → 这是粘贴不是提交，
+            // 整段（含换行）当文本插入，绝不丢弃。
+            if (rest.length > 0 && /[^\r\n]/.test(rest)) {
+              pending = ''
+              this.insertText(ch + rest)
+              continue
+            }
+            pending = ''
             this.handleEnterSubmit(resolve)
             return
           }
           // Ctrl+C：退出
           if (ch === '\u0003') {
+            pending = ''
             process.stdout.write('\n')
             this.cleanup()
             resolve('\u0003')
@@ -127,14 +201,30 @@ export class LineInput {
           }
           // 退格：删除光标前的字符
           if (ch === '\u007f' || ch === '\u0008') {
+            pending = pending.slice(1)
             this.backspace()
             continue
           }
+          // 制表符：保留（粘贴代码的缩进），渲染时展开为 4 空格
+          if (ch === '\t') {
+            pending = pending.slice(1)
+            this.insertChar('\t')
+            continue
+          }
           // 其他控制字符：忽略
-          if (ch.charCodeAt(0) < 32) continue
+          if (ch.charCodeAt(0) < 32) {
+            pending = pending.slice(1)
+            continue
+          }
           // 可打印字符（含中文/emoji）：在光标处插入
+          pending = pending.slice(1)
           this.insertChar(ch)
         }
+      }
+
+      this.onData = (chunk: Buffer) => {
+        pending += this.decoder ? this.decoder.write(chunk) : chunk.toString('utf8')
+        consume()
       }
 
       // 进入 raw mode（关闭行缓冲和回显，逐字符接收）
@@ -148,6 +238,10 @@ export class LineInput {
   /** 暂停输入（Agent 运行期间调用，停止收集用户输入） */
   pause() {
     this.paused = true
+    // 关闭 bracketed paste：Agent 运行期间没有解析器，不能让粘贴内容被 200~/201~ 包裹
+    process.stdout.write(BRACKET_PASTE_OFF)
+    this.pasteMode = false
+    this.pasteBuf = ''
     if (this.onData) {
       process.stdin.removeListener('data', this.onData)
     }
@@ -214,6 +308,11 @@ export class LineInput {
       this.enterTimer = null
     }
     this.enterPending = false
+    this.pasteMode = false
+    this.pasteBuf = ''
+    this.decoder = null
+    // 关闭 bracketed paste，把终端模式还给 shell
+    process.stdout.write(BRACKET_PASTE_OFF)
     if (this.onData) {
       process.stdin.removeListener('data', this.onData)
       this.onData = null
@@ -261,6 +360,13 @@ export class LineInput {
           this.afterCursorMove()
         }
         break
+      case PASTE_START: // 粘贴开始：后续内容整体累积，不当按键处理
+        this.pasteMode = true
+        this.pasteBuf = ''
+        break
+      case PASTE_END: // 粘贴结束（正常在粘贴态内被识别，这里兜底）
+        this.pasteMode = false
+        break
       // 其他序列（Home/End/Delete 等）：暂时忽略
     }
   }
@@ -286,19 +392,45 @@ export class LineInput {
     this.redraw()
   }
 
+  /** 重置 IME 防抖计时器（有新内容到达时调用：说明输入法还在提交后续字符） */
+  private resetEnterTimer() {
+    if (!this.enterPending || !this.enterTimer) return
+    clearTimeout(this.enterTimer)
+    this.enterTimer = setTimeout(() => {
+      this.enterTimer = null
+      this.enterPending = false
+      const r = this.pendingResolve
+      this.pendingResolve = null
+      if (r) this.submitLine(r)
+    }, ENTER_DEBOUNCE_MS)
+  }
+
+  /**
+   * 批量插入文本（粘贴用）：\r\n 归一化为 \n，整段一次拼进 buffer，只重绘一次。
+   * 粘贴不卡的关键——逐字符插入会每个字符触发一次整屏重绘。
+   */
+  private insertText(raw: string) {
+    // 剥掉粘贴内容里夹带的 ANSI 颜色码（从终端彩色输出复制时会带上）
+    const text = raw
+      .replace(/\u001b\[[0-9;?]*[a-zA-Z]/g, '')
+      .replace(/\r\n/g, '\n')
+      .replace(/\r/g, '\n')
+    if (!text) return
+    this.resetEnterTimer()
+    this.buffer = this.buffer.slice(0, this.cursor) + text + this.buffer.slice(this.cursor)
+    this.cursor += text.length
+    this.lastDrawnBuffer = this.buffer
+    if (this.frameMode) {
+      this.onChange?.()
+      return
+    }
+    this.redraw()
+  }
+
   /** 在光标处插入字符 */
   private insertChar(ch: string) {
     // IME 防抖：pending 期间有字符到达 → 重置计时器（输入法还在提交，等待完整内容）
-    if (this.enterPending && this.enterTimer) {
-      clearTimeout(this.enterTimer)
-      this.enterTimer = setTimeout(() => {
-        this.enterTimer = null
-        this.enterPending = false
-        const r = this.pendingResolve
-        this.pendingResolve = null
-        if (r) this.submitLine(r)
-      }, ENTER_DEBOUNCE_MS)
-    }
+    this.resetEnterTimer()
     if (this.frameMode) {
       this.buffer = this.buffer.slice(0, this.cursor) + ch + this.buffer.slice(this.cursor)
       this.cursor += ch.length
@@ -311,7 +443,7 @@ export class LineInput {
       this.buffer += ch
       this.cursor = this.buffer.length
       this.lastDrawnBuffer = this.buffer
-      process.stdout.write(ch)
+      process.stdout.write(displayOf(ch))
     } else {
       // 光标在中间：插入并重绘
       this.buffer = this.buffer.slice(0, this.cursor) + ch + this.buffer.slice(this.cursor)
@@ -353,7 +485,7 @@ export class LineInput {
    */
   private redraw() {
     const cols = process.stdout.columns || 80
-    const oldWidth = stringWidth(this.prompt) + stringWidth(this.lastDrawnBuffer)
+    const oldWidth = stringWidth(this.prompt) + stringWidth(displayOf(this.lastDrawnBuffer))
     const oldRows = Math.max(1, Math.ceil(oldWidth / cols))
 
     // 光标上移到旧输入区顶部
@@ -363,7 +495,7 @@ export class LineInput {
     // 回行首 + 清除光标到屏幕末尾（清掉旧输入区全部内容）
     process.stdout.write('\r\x1b[J')
     // 重画
-    process.stdout.write(this.prompt + this.buffer)
+    process.stdout.write(this.prompt + displayOf(this.buffer))
     this.lastDrawnBuffer = this.buffer
     // 光标绝对定位到 cursor 显示位置
     this.positionCursor()
@@ -372,7 +504,7 @@ export class LineInput {
   /** 光标绝对定位（\x1b[row;colH，1 基）——跨行可靠 */
   private positionCursor() {
     const cols = process.stdout.columns || 80
-    const prefixWidth = stringWidth(this.prompt) + stringWidth(this.buffer.slice(0, this.cursor))
+    const prefixWidth = stringWidth(this.prompt) + stringWidth(displayOf(this.buffer.slice(0, this.cursor)))
     const row = Math.floor(prefixWidth / cols) + 1
     const col = (prefixWidth % cols) + 1
     process.stdout.write(`\x1b[${row};${col}H`)
@@ -388,7 +520,9 @@ export class LineInput {
   /** 渲染输入行（prompt 呼吸色 + buffer），供帧渲染拼装 */
   renderLine(promptColorHex: string): string {
     const prompt = chalk.hex(promptColorHex)('🔥 flare> ')
-    return prompt + this.buffer
+    // 多行内容用 ↵ 代替换行，制表符展开：保证输入区恒为一行，不撑破 frame 布局
+    const shown = displayOf(this.buffer).replace(/\u21b5/g, chalk.dim('\u21b5'))
+    return prompt + shown
   }
 
   /**
@@ -397,7 +531,7 @@ export class LineInput {
    */
   positionCursorAt(baseRow: number, baseCol: number) {
     const cols = process.stdout.columns || 80
-    const prefixWidth = stringWidth(this.prompt) + stringWidth(this.buffer.slice(0, this.cursor))
+    const prefixWidth = stringWidth(this.prompt) + stringWidth(displayOf(this.buffer.slice(0, this.cursor)))
     const row = baseRow + Math.floor(prefixWidth / cols)
     const col = baseCol + (prefixWidth % cols)
     process.stdout.write(`\x1b[${row + 1};${col + 1}H`)
