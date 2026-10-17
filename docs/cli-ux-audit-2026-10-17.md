@@ -2,9 +2,16 @@
 
 审计方式：读源码 + 真实 PTY（python pty.fork）驱动已安装的 0.6.147 二进制实测，非推测。
 
-复现脚本：
-- `tests/manual/pty-paste-regression.py` —— 多行粘贴完整性
-- `tests/manual/pty-height-check.py` —— 内容超高时输入行定位
+复现脚本（都在临时 FLARE_HOME 里跑，不碰真实会话库，结束自动清理）：
+
+```bash
+python3 tests/manual/pty_paste_verify.py bracketed   # 10 行粘贴完整性（bracketed / legacy）
+python3 tests/manual/pty_paste_e2e.py                # 粘贴+提交后从会话库读回逐字核对
+FLARE_BIN=flare python3 tests/manual/pty_paste_e2e.py  # 同样验证已安装的生产二进制
+```
+
+缺陷 3/4（输入框跑出屏幕、无 SIGWINCH）本轮未修，复现时需要把 pty 窗口设成 24x80
+后发 `/help`（约 50 行输出），观察光标绝对定位 row 是否超过 24。
 
 ---
 
