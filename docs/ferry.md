@@ -28,7 +28,7 @@ src/tools/ferry-core/
   data.generated.ts  # 127 命令 / 245 写法 / 21 惯用法 / 24 语法 / 22 坑（由脚本生成）
 ```
 
-结果：`npm i flare-agent` → 装完即有 ferry 能力；内嵌 flare 的应用 → 自动内嵌 ferry。零子进程、零 Python、离线可用。
+结果：任何引用 flare-agent 的应用（GitHub tarball + `build:flare`，或未来的 npm 包）都自带 ferry 能力；内嵌 flare 的应用 → 自动内嵌 ferry。零子进程、零 Python、离线可用——`ferry-core` 三个 `.js` 文件拷到空目录、`env -i` 下也能跑通。
 
 ## 数据从哪来、怎么更新
 
