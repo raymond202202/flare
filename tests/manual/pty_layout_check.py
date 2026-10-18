@@ -325,6 +325,19 @@ def main():
               f"CSI 2J {clear_before} -> {s.vt.clear_count}")
         input_ok(s.vt, "F")
 
+        print("\n[G] 提交时回显不重复（回归：提交不能自己写换行）")
+        # 先打一半、删掉、再打完整 —— 旧实现在提交瞬间会直接往 stdout 写 \n，
+        # 渲染器的影子行号就此失配，下一帧擦错行，屏幕上留下两条 flare> 回显。
+        s.send("ZEB", 0.4)
+        s.send("\x7f" * 3, 0.4)
+        s.send("ZEBRA42TEST", 0.6)
+        s.send("\r", 1.6)
+        rows = [s.vt.line(i) for i in range(s.vt.rows)] + list(s.vt.scrollback)
+        # 只看「带 prompt 的回显行」：agent 回答里引用用户输入是正常的，不算重复
+        echo_rows = [r for r in rows if "ZEBRA42TEST" in r and "flare>" in r]
+        check("G: 带 prompt 的回显只出现一次", len(echo_rows) == 1,
+              f"{len(echo_rows)} 行: {[r[-30:] for r in echo_rows]}")
+
         print("\n[E] 清屏序列计数")
         check("E: 只在启动清屏一次", s.vt.clear_count == 1, f"CSI 2J 次数={s.vt.clear_count}")
     finally:

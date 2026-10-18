@@ -294,9 +294,11 @@ export class LineInput {
     }, ENTER_DEBOUNCE_MS)
   }
 
-  /** 真正提交：输出换行 + 存历史 + 清理 + resolve */
+  /** 真正提交：存历史 + 清理 + resolve */
   private submitLine(resolve: (v: string) => void) {
-    process.stdout.write('\n')
+    // 帧模式下不能自己写换行：渲染器用「影子行号」跟踪光标，外部偷偷 \n 会让它
+    // 以为光标还在上一行，下一帧擦错行 → 旧输入行残留在屏上，回显另起一行成两遍。
+    if (!this.frameMode) process.stdout.write('\n')
     this.saveHistory()
     this.cleanup()
     resolve(this.buffer)
@@ -324,6 +326,7 @@ export class LineInput {
 
   private drawPrompt() {
     this.lastDrawnBuffer = ''
+    if (this.frameMode) return // 帧模式：prompt 由渲染循环统一画，这里写会画重
     process.stdout.write(this.prompt)
   }
 
@@ -523,18 +526,6 @@ export class LineInput {
     // 多行内容用 ↵ 代替换行，制表符展开：保证输入区恒为一行，不撑破 frame 布局
     const shown = displayOf(this.buffer).replace(/\u21b5/g, chalk.dim('\u21b5'))
     return prompt + shown
-  }
-
-  /**
-   * 光标绝对定位（帧渲染后调用）。
-   * baseRow/baseCol 是输入行起始位置（0 基），光标按显示宽度定位。
-   */
-  positionCursorAt(baseRow: number, baseCol: number) {
-    const cols = process.stdout.columns || 80
-    const prefixWidth = stringWidth(this.prompt) + stringWidth(displayOf(this.buffer.slice(0, this.cursor)))
-    const row = baseRow + Math.floor(prefixWidth / cols)
-    const col = baseCol + (prefixWidth % cols)
-    process.stdout.write(`\x1b[${row + 1};${col + 1}H`)
   }
 
   /**
