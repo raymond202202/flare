@@ -16,7 +16,7 @@ import { readFileSync } from 'node:fs'
 import { createInterface } from 'node:readline'
 import { pathToFileURL } from 'node:url'
 import { LineInput } from './line-input.js'
-import { composeFrame, createRenderState } from './render.js'
+import { composeFrame, createRenderState, contentEndRow } from './render.js'
 import { R, O, A, Y, D, createFlameState, renderFlameFrame, flameBreathColor, breathTimeMs } from './flame-banner.js'
 
 // 从 package.json 读取版本号（不要硬编码，否则 --version 会过期）
@@ -203,12 +203,39 @@ async function startInteractive(opts: { contextSummarize?: boolean; newSession?:
     renderTimer = null
   }
 
-  // 窗口大小变化：终端重排后我们的行号模型失效。CSI 999B 会被终端 clamp 到屏底，
-  // 从底部擦到屏末只清掉输入区，上方已滚出的内容（含 scrollback）完好无损。
+  // 窗口大小变化：终端重排后我们的行号模型失效。做法是「跳底清掉屏末 → 按新宽度
+  // 重算内容末尾 → 把光标移回去」，这样输入区重新贴在内容下面；直接跳到屏底会让
+  // 内容少时输入行被甩到窗口最下面，中间空一大片。
   const onResize = () => {
     const rows = process.stdout.rows || 24
+    const cols = process.stdout.columns || 80
+    const oldInputRows = renderState.inputRows
+    // 跳底：清掉旧输入区的末行（终端会 clamp 到屏底）
     process.stdout.write('\x1b[999B\r\x1b[0J')
-    renderState = { ...renderState, curRow: rows - 1, inputRows: 0, lastInputLine: '' }
+    // 旧输入区若折行成多行，再上移回它的首行擦一次，避免重排留下残影
+    const back = Math.min(Math.max(0, oldInputRows - 1), Math.max(0, rows - 1))
+    if (back > 0) process.stdout.write(`\x1b[${back}A\r\x1b[0J`)
+
+    const end = contentEndRow(
+      renderFlameFrame(flame, Date.now() / 1000),
+      '输入 /help 查看命令，/exit 退出',
+      agentOutput,
+      { cols, rows },
+    )
+    const up = Math.max(0, rows - 1 - back - end.row)
+    if (up > 0) process.stdout.write(`\x1b[${up}A`)
+    // 从内容末尾擦到屏末，清掉重排后可能残留的旧输入行
+    process.stdout.write('\r\x1b[0J')
+
+    renderState = {
+      ...renderState,
+      curRow: end.row,
+      inputRows: 0,
+      lastInputLine: '',
+      cursorRow: 0,
+      contentRow: end.row,
+      contentAtLineStart: end.atLineStart,
+    }
     renderFrame()
   }
   process.stdout.on('resize', onResize)

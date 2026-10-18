@@ -228,15 +228,32 @@ def check(name, ok, detail=""):
     print(("  PASS  " if ok else "  FAIL  ") + name + (("   " + detail) if detail else ""))
 
 
-def bottom_ok(vt, label):
-    """输入框贴底：光标在最后一行，且最后一行非空并含 prompt 特征。"""
-    last = vt.line(vt.rows - 1)
-    cursor_ok = vt.r == vt.rows - 1
-    # prompt 形如 "🔥 flare> " 或 "> "；只要最后一个非空行是光标行即可
-    populated = last.strip() != ""
-    check(f"{label}: 光标在最后一行", cursor_ok, f"cursor.r={vt.r} rows={vt.rows}")
-    check(f"{label}: 最后一行是输入行", populated, repr(last[-40:]))
+def input_row_index(vt):
+    """屏幕上最后一个非空行的行号（-1 = 全空）。输入区紧跟内容末尾，不再固定贴底。"""
+    for i in range(vt.rows - 1, -1, -1):
+        if vt.line(i).strip():
+            return i
+    return -1
+
+
+def input_ok(vt, label):
+    """输入行是屏幕上最后一个非空行，且光标就停在它上面。"""
+    idx = input_row_index(vt)
+    cursor_ok = vt.r == idx and idx >= 0
+    populated = idx >= 0 and vt.line(idx).strip() != ""
+    check(f"{label}: 光标在最后一个非空行（输入行）", cursor_ok,
+          f"cursor.r={vt.r} last={idx}")
+    check(f"{label}: 输入行非空", populated, repr(vt.line(idx)[-40:] if idx >= 0 else ""))
     return cursor_ok and populated
+
+
+def no_residue(vt, label):
+    """输入行下方到屏底必须全空：重排/擦除留下旧输入行会在这里露出来。"""
+    idx = input_row_index(vt)
+    below = [vt.line(i) for i in range(idx + 1, vt.rows)]
+    leftovers = [x for x in below if x]
+    check(f"{label}: 输入行下方无残影", not leftovers, repr(leftovers[:2]))
+    return not leftovers
 
 
 def main():
@@ -251,14 +268,19 @@ def main():
     try:
         s.drain(12.0)  # tsx 编译 + banner
         print("\n[A] 启动后")
-        bottom_ok(s.vt, "A")
+        input_ok(s.vt, "A")
+        row_a = input_row_index(s.vt)
+        check("A: 输入行紧跟 banner（不留大片空白）", 0 <= row_a <= 6, f"输入行在第 {row_a} 行")
+        check("A: 启动没有补空行进 scrollback", len(s.vt.scrollback) == 0,
+              f"scrollback={len(s.vt.scrollback)}")
 
         print("\n[B] /help 大量输出后")
         before_sb = len(s.vt.scrollback)
         s.send("/help\r", 2.5)
         check("B: 输出触发过滚屏", len(s.vt.scrollback) > before_sb,
               f"scrollback {before_sb} -> {len(s.vt.scrollback)}")
-        bottom_ok(s.vt, "B")
+        input_ok(s.vt, "B")
+        check("B: 内容超出屏幕后输入行贴底", s.vt.r == s.vt.rows - 1, f"cursor.r={s.vt.r}")
         screen_now = flat(s.vt)
         check("B: 内容仍在屏幕上（未被清掉）",
               ("/exit" in screen_now) or ("help" in screen_now.lower()) or ("命令" in screen_now),
@@ -266,10 +288,12 @@ def main():
 
         print("\n[C] 缩小窗口 60x20")
         s.resize(60, 20)
-        bottom_ok(s.vt, "C-small")
+        input_ok(s.vt, "C-small")
+        no_residue(s.vt, "C-small")
         print("\n[C2] 放大窗口 120x40")
         s.resize(120, 40)
-        bottom_ok(s.vt, "C-large")
+        input_ok(s.vt, "C-large")
+        no_residue(s.vt, "C-large")
 
         print("\n[D] 一次性粘贴 10 行")
         lines = [f"PASTELINE-{i}-ABCDEFG" for i in range(1, 11)]
@@ -281,7 +305,8 @@ def main():
         missing = [i for i in range(1, 11) if f"PASTELINE-{i}-" not in joined]
         check("D: 10 行全部送达（屏幕或 scrollback）", not missing, f"缺 {missing}")
         check("D: 未卡死", dt < 6.0, f"{dt:.2f}s")
-        bottom_ok(s.vt, "D")
+        input_ok(s.vt, "D")
+        no_residue(s.vt, "D")
 
         print("\n[F] 真实 agent 回答（流式输出路径）")
         # 期望值由脚本算，不靠心算；问句里不含答案，避免和用户输入混在一起
@@ -298,7 +323,7 @@ def main():
         check("F: 回答已显示", expect in flat(s.vt), f"期望 {expect}")
         check("F: 回答期间没有再全屏清屏", s.vt.clear_count == clear_before,
               f"CSI 2J {clear_before} -> {s.vt.clear_count}")
-        bottom_ok(s.vt, "F")
+        input_ok(s.vt, "F")
 
         print("\n[E] 清屏序列计数")
         check("E: 只在启动清屏一次", s.vt.clear_count == 1, f"CSI 2J 次数={s.vt.clear_count}")

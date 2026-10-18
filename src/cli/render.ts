@@ -3,12 +3,14 @@
  *
  * 三条不变量：
  *   I1 内容只追加，不重绘 —— 回答/工具输出一旦写屏就进 scrollback，可向上翻、可选中复制
- *   I2 输入区永远贴屏幕底部 —— 内容变长靠屏幕整体上滚，输入框不移动、不消失
+ *   I2 输入区紧跟内容末尾、永不掉出屏幕 —— 内容少时紧贴最后一行内容下方（不留大片空白），
+ *      内容长到屏幕装不下时整体上滚，输入区停在屏幕底部（相机跟随）
  *   I3 除启动外不再发 \x1b[2J —— 全屏清屏是「输出放大 730 倍」和「输入框跑到 row 49」的共同根因
  *
  * 实现要点：渲染器自己维护「光标当前屏幕行」（curRow），因为每次写屏都经过它，
  * 终端宽度已知，行号可以离线推算。有了 curRow 就能把输入区精确停在最后 rows-inputRows 行，
  * 而不需要任何绝对定位序列 \x1b[row;colH —— 那种序列正是「改窗口就错位」的根因。
+ * 输入区的行号是「内容末尾下一行」，不是「屏幕底部」：后者会在内容少时补出几十个空行。
  *
  * 光标位置有两个真相：curRow（屏幕行）与 cursorRow（输入区内相对行）。
  * 后者必须有：输入折行时最后一帧结束时光标被相对定位到输入区第一行，
@@ -57,6 +59,10 @@ export interface RenderState {
   curRow: number
   /** 光标在输入区内的相对行（0 基；无输入行时为 0） */
   cursorRow: number
+  /** 内容末尾光标所在的屏幕行（下一段内容从这里开始写） */
+  contentRow: number
+  /** 内容末尾光标是否已在行首（上一段以换行结束，不要再多空一行） */
+  contentAtLineStart: boolean
 }
 
 export interface FramePlan {
@@ -73,6 +79,8 @@ export function createRenderState(): RenderState {
     lastInputLine: '',
     curRow: 0,
     cursorRow: 0,
+    contentRow: 0,
+    contentAtLineStart: true,
   }
 }
 
@@ -123,12 +131,44 @@ function stablePrefix(text: string): string {
 }
 
 /**
- * 编译一帧。帧结构（自上而下）：[scrollback 内容] → 底部输入区
+ * 首帧头部（banner + 提示语）。banner 前空一行，看起来不贴窗口上沿。
+ */
+function headText(banner: string, hint: string): string {
+  let head = ''
+  if (banner) head += '\r\n' + crlf(banner) + '\r\n'
+  if (hint) head += crlf(hint) + '\r\n'
+  return head
+}
+
+/**
+ * 内容（banner + 提示语 + 已提交输出）在给定布局下末尾所在的屏幕行（触底饱和）。
+ *
+ * 用于改窗口后重算布局：内容从第 0 行开始，按新宽度重新折行推算末尾行，
+ * 输入区就能重新贴到内容下面，而不是被甩到屏幕底部留一片空白。
+ * 内容已超出屏幕时 advance 饱和到 rows-1，与「贴底」一致。
+ */
+export function contentEndRow(
+  banner: string,
+  hint: string,
+  agentOutput: string,
+  layout: Layout,
+): { row: number; atLineStart: boolean } {
+  const cols = Math.max(1, layout.cols || 80)
+  const rows = Math.max(1, layout.rows || 24)
+  const head = headText(banner, hint)
+  const committed = stablePrefix(agentOutput)
+  const row = advance(advance(0, head, cols, rows), committed, cols, rows)
+  const tail = committed || head
+  return { row, atLineStart: tail === '' || tail.endsWith('\n') }
+}
+
+/**
+ * 编译一帧。帧结构（自上而下）：[scrollback 内容] → 输入区（紧跟内容末尾）
  *
  * 1. 擦除上一帧输入区（按 cursorRow 上移到输入区首行 + 擦到屏末），只擦输入区，不动内容
  * 2. 首帧：清屏一次 + banner + 提示语
  * 3. 追加内容增量（内容写高了终端自己上滚，滚出的行进 scrollback）
- * 4. 用换行把光标送到 rows-inputRows 行，写输入行，相对定位光标
+ * 4. 把输入区放到内容末尾下一行（内容超出屏幕时靠滚屏贴在屏底），写输入行，相对定位光标
  */
 export function composeFrame(state: RenderState, f: FrameInput, layout: Layout): FramePlan {
   const cols = Math.max(1, layout.cols || 80)
@@ -167,30 +207,43 @@ export function composeFrame(state: RenderState, f: FrameInput, layout: Layout):
     next.cursorRow = 0
   }
 
+  let contentRow = state.contentRow
+  let contentAtLineStart = state.contentAtLineStart
+
   // 2. 首帧：清一次屏 + 静态 banner + 提示语（I3：此后永不清屏）
   if (!state.bannerDone) {
     writes += '\x1b[2J\x1b[H'
-    let head = ''
-    if (f.banner) head += '\r\n' + crlf(f.banner) + '\r\n'
-    if (f.hint) head += crlf(f.hint) + '\r\n'
+    const head = headText(f.banner, f.hint)
     writes += head
-    next.curRow = advance(0, head, cols, rows)
+    contentRow = advance(0, head, cols, rows)
+    contentAtLineStart = head.endsWith('\n')
+    next.curRow = contentRow
     next.bannerDone = true
   }
 
   // 3. 追加内容增量（I1：只追加；写高了终端自动上滚，滚出的行进 scrollback）
   if (delta) {
     writes += crlf(delta)
-    next.curRow = advance(next.curRow, delta, cols, rows)
+    contentRow = advance(contentRow, delta, cols, rows)
+    contentAtLineStart = delta.endsWith('\n')
+    next.curRow = contentRow
   }
   next.lastCommitted = committed
+  next.contentRow = contentRow
+  next.contentAtLineStart = contentAtLineStart
 
-  // 4. 把输入区停到屏幕最后 inputRows 行（I2），再写输入行
+  // 4. 输入区紧跟内容末尾（I2），再写输入行
+  //    内容少时紧贴最后一行内容下方 —— 不要为了"贴底"补几十个空行（那些空行会脏 scrollback，
+  //    而且屏幕上会出现一大片空白）；内容长到屏幕装不下时整体上滚，输入区停在屏幕底部，
+  //    输入行永远不会掉出屏幕。即相机跟随：输入行在屏幕里向下走，走到屏底才开始滚。
   if (drawInput) {
-    const targetFirst = Math.max(0, rows - inputRowsTarget)
+    const roomBelow = rows - inputRowsTarget
+    // 内容末尾若已停在行首（上段以换行结束），就地写输入行；否则下移一行
+    const desired = contentAtLineStart ? contentRow : contentRow + 1
+    const targetFirst = Math.max(0, Math.min(desired, roomBelow))
     const gap = targetFirst - next.curRow
     if (gap > 0) {
-      // 内容还没填满屏幕：向下补空行到底部，不触发滚屏
+      // 光标停在内容末尾，下移 gap 行到输入区首行（不触发滚屏）
       writes += '\r\n'.repeat(gap)
       next.curRow = targetFirst
     } else if (gap < 0) {
