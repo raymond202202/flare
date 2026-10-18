@@ -283,6 +283,23 @@ def main():
         check("D: 未卡死", dt < 6.0, f"{dt:.2f}s")
         bottom_ok(s.vt, "D")
 
+        print("\n[F] 真实 agent 回答（流式输出路径）")
+        # 期望值由脚本算，不靠心算；问句里不含答案，避免和用户输入混在一起
+        a, b = 13, 17
+        expect = str(a * b)
+        clear_before = s.vt.clear_count
+        s.send(f"{a} 乘以 {b} 等于多少？只回数字\r", 0.5)
+        # 注意：agent 运行中 prompt 呼吸动画会持续写字节，不能用「安静」判定结束，
+        # 只等期望答案出现（最多 60s）。
+        deadline = time.time() + 60
+        while time.time() < deadline and expect not in flat(s.vt):
+            s.drain(0.5)
+        s.drain(1.0)
+        check("F: 回答已显示", expect in flat(s.vt), f"期望 {expect}")
+        check("F: 回答期间没有再全屏清屏", s.vt.clear_count == clear_before,
+              f"CSI 2J {clear_before} -> {s.vt.clear_count}")
+        bottom_ok(s.vt, "F")
+
         print("\n[E] 清屏序列计数")
         check("E: 只在启动清屏一次", s.vt.clear_count == 1, f"CSI 2J 次数={s.vt.clear_count}")
     finally:
