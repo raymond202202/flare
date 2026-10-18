@@ -6046,3 +6046,16 @@
 > - **验证**：`npx tsc` 0 错误；全量 **83 文件 / 1281 用例全绿**（含新增 `tests/ferry-tool.test.ts` 7 用例，真实调用本机 ferry）；MCP 工具计数断言同步 6→7、9→10（mcp-server / mcp-cli-server）。
 > - **文档**：新增 `docs/ferry.md`（工具签名 / 三态语义 / hosts 登记 / 限制）。
 > - **下一步候选**：① 真机 mac/win 在线后跑 `ferry drills --to macos|windows` 自证，按结果修映射；② ssh 端到端实测；③ 可选：unsupported 结果纳入确认门提示文案。
+
+---
+
+### 2026-10-18 集成（P207，v0.6.153）ferry 引擎内嵌：装 flare 即有 ferry
+
+> **P207 完成**：把 ferry 从"运行时外部依赖"改为"编译进包内的能力"。`translate_command` 不再 execFile 调用 ferry CLI，而是走 `src/tools/ferry-core/engine.ts`（从 ferry.py 移植）+ `data.generated.ts`（127 命令 / 245 写法 / 21 惯用法 / 24 语法 / 22 坑 / 33 断言）。动机：Pulse / StorySpire 内嵌 flare 后要跨平台分发，终端用户机器没有 ferry、也不一定有 Python。
+> - **数据链路**：事实源仍是 ferry 项目的 `data/*.jsonc`，单向同步 `node scripts/sync-ferry-data.mjs` → `data.generated.ts`（108KB，文件头记 sha256，运行时以 `FERRY_DATA_SHA` 暴露）。生成物入库：别人 clone 后 `npx tsc` 即可构建，不依赖本机存在 ferry 项目。
+> - **一致性**：`tests/fixtures/ferry-cases.json` 1262 条用例（127 命令 × 3 平台 + 全部惯用法 + 边界命令），由 Python 参考实现生成期望值；`tests/ferry-core.test.ts` 逐条比对 status/command/caveats。移植期靠 `scripts/ferry-parity.mjs` 把 33 处差异收敛到 0。
+> - **移植抓到的三个真 bug**：① Python `re.match` 行首锚定 ↔ TS `.test()` 任意位置，`s/old/new` 被当成 `/new` 开关导致 recipe 不命中（sed/realpath/go 全中招）；② Python `re.sub` 替换串要吃反斜杠转义，JS `replace` 不吃且需函数形式避免 `$&`；③ 惯用法 caveat 未按目标平台过滤（Python 侧同步修复）。
+> - **独立性验证**：移走 ferry CLI + `env -i PATH=/usr/bin:/bin` + `FERRY_BIN=` 空，调用安装后的 `~/.flare/install/dist/tools/index.js`，`sed -i` 翻译与 `chmod` unsupported 均正常 → 装 flare 必得 ferry，与宿主机装了什么无关。
+> - **验证**：`npx tsc` 0 错误；全量 **84 文件 / 1287 用例全绿**（新增 ferry-core 5 用例；ferry-tool 从"ferry 未装则跳过"改为不跳过、用临时 hosts.json 保证确定性）。
+> - **文档**：`docs/ferry.md` 重写（内嵌架构 / 数据同步 / 一致性 / 独立性证据 / 限制）。
+> - **下一步候选**：① Pulse / StorySpire 升级 flare 依赖到 v0.6.153 并回归；② Windows 真机跑 drills；③ 数据自动跟随（CI 里比对 ferry 上游 sha，漂移则提醒同步）。
