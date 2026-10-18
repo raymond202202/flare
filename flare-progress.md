@@ -6033,3 +6033,16 @@
 >   接入完整化（confirm 门策略检查现有覆盖面）；③ MCP 增强（resources 订阅/采样等协议面）；
 >   ④ 路由决策可视化已较完整（feature 标签 + 批量 summary + 命令表文档），可考虑 route 统计
 >   持久化/按会话维度；⑤ 分层上下文（需评估 run 循环外异步，铁律暂缓）
+
+---
+
+### 2026-10-18 集成（P206，v0.6.152）接入 ferry：工具 translate_command（跨平台命令翻译）
+
+> **P206 完成**：新增 `src/tools/ferry.ts` + 注册 `src/tools/index.ts`，flare 首次具备"给 macOS/Windows 写命令、或 ssh 到远端执行前先判定等价性"的能力。服务场景：本机 Linux 主控 → macOS 主机 / Windows 主机的跨设备任务。
+> - **为什么做成工具而不是写进 prompt**：等价性是事实问题。Linux→macOS 的坑不在命令名而在参数（`sed -i` 要加备份后缀、`date -d`/`stat -c`/`grep -P`/`sort -V` 不存在）；Linux→Windows 是数据模型差异（文本流→对象流），`ps aux | grep x` 直译成 `Get-Process | Select-String x` 语法合法语义全错。凭记忆写必翻车。
+> - **三态契约**：`equivalent` → success:true；`approximate` → success:true + caveats 必须转达；`unsupported` → success:false + "不要执行"，让模型换方案而不是硬跑一段错命令。
+> - **host 参数**：读 `~/.ferry/hosts.json`（与 `ferry ssh` 共用同一份登记），顺带返回可直接粘贴的 ssh 命令行；未知 host 且没给 target 时明确要求登记，不猜平台。
+> - **找 ferry**：FERRY_BIN → `~/.local/bin/ferry` → `~/.ferry/install/ferry.py`(python3) → PATH；找不到给安装提示，不静默失败。零新依赖。
+> - **验证**：`npx tsc` 0 错误；全量 **83 文件 / 1281 用例全绿**（含新增 `tests/ferry-tool.test.ts` 7 用例，真实调用本机 ferry）；MCP 工具计数断言同步 6→7、9→10（mcp-server / mcp-cli-server）。
+> - **文档**：新增 `docs/ferry.md`（工具签名 / 三态语义 / hosts 登记 / 限制）。
+> - **下一步候选**：① 真机 mac/win 在线后跑 `ferry drills --to macos|windows` 自证，按结果修映射；② ssh 端到端实测；③ 可选：unsupported 结果纳入确认门提示文案。

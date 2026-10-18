@@ -93,13 +93,13 @@ describe('MCPServer（stdio NDJSON JSON-RPC，零依赖）', () => {
     h.server.close()
   })
 
-  it('tools/list：默认暴露内置工具集（read_file 等 6 个，含 schema）', async () => {
+  it('tools/list：默认暴露内置工具集（read_file 等 7 个，含 schema）', async () => {
     const h = createHarness()
     h.send({ jsonrpc: '2.0', id: 2, method: 'tools/list', params: {} })
     await h.flush()
     const res = h.last()
     const names = res.result.tools.map((t: any) => t.name)
-    expect(names).toEqual(['read_file', 'write_file', 'search_files', 'terminal', 'memory_search', 'memory_save'])
+    expect(names).toEqual(['read_file', 'write_file', 'search_files', 'terminal', 'memory_search', 'memory_save', 'translate_command'])
     const readFile = res.result.tools.find((t: any) => t.name === 'read_file')
     expect(readFile.description).toContain('读取文件')
     expect(readFile.inputSchema).toHaveProperty('properties')
@@ -635,8 +635,9 @@ describe('MCPServer ↔ MCPClient 端到端互通（真实子进程 stdio）', (
       expect(init.capabilities).toHaveProperty('tools')
 
       const tools = await client.listTools()
-      expect(tools.length).toBe(6)
+      expect(tools.length).toBe(7)
       expect(tools.map((t) => t.name)).toContain('read_file')
+      expect(tools.map((t) => t.name)).toContain('translate_command')
 
       const ok = await client.callTool('read_file', { path: 'package.json' })
       expect(ok.isError).toBe(false)

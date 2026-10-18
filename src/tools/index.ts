@@ -10,6 +10,7 @@ import { execSync } from 'child_process'
 import { existsSync, readFileSync, writeFileSync, readdirSync, statSync, renameSync } from 'fs'
 import { resolve, join } from 'path'
 import { memorySearchTool, memorySaveTool } from './memory.js'
+import { ferryTranslateTool } from './ferry.js'
 
 export interface ToolResult {
   success: boolean
@@ -325,6 +326,8 @@ export const tools: Tool[] = [
   memorySearchTool,
   // 记忆保存（v0.5.4）：用户明确要求记住时落库
   memorySaveTool,
+  // 跨平台命令翻译（v0.6.152）：ssh 到 mac/win 前先翻译并判定等价性
+  ferryTranslateTool,
 ]
 
 /**

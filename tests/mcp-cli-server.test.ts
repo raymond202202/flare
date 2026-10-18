@@ -27,7 +27,7 @@ function spawnCli(args: string[], timeoutMs = 10000): MCPClient {
 }
 
 describe('CLI mcp-server 命令（MCP stdio 服务器）', () => {
-  it('flare mcp-server：默认暴露全部内置 6 工具，可握手/列工具/调用', async () => {
+  it('flare mcp-server：默认暴露全部内置 7 工具，可握手/列工具/调用', async () => {
     const client = spawnCli(['mcp-server'])
     try {
       const init = await client.initialize()
@@ -36,6 +36,7 @@ describe('CLI mcp-server 命令（MCP stdio 服务器）', () => {
       const tools = await client.listTools()
       expect(tools.map((t) => t.name)).toEqual([
         'read_file', 'write_file', 'search_files', 'terminal', 'memory_search', 'memory_save',
+        'translate_command',
       ])
 
       const ok = await client.callTool('read_file', { path: 'package.json' })
@@ -114,7 +115,7 @@ describe('CLI mcp-server 命令（MCP stdio 服务器）', () => {
       const resources = await client.listResources()
       expect(resources).toEqual([])
       const tools = await client.listTools()
-      expect(tools.length).toBe(6)
+      expect(tools.length).toBe(7)
     } finally {
       client.close()
     }
@@ -162,7 +163,7 @@ describe('CLI mcp-server 命令（MCP stdio 服务器）', () => {
       const prompts = await client.listPrompts()
       expect(prompts).toEqual([])
       const tools = await client.listTools()
-      expect(tools.length).toBe(6)
+      expect(tools.length).toBe(7)
     } finally {
       client.close()
     }
@@ -189,7 +190,7 @@ describe('CLI mcp-server 命令（MCP stdio 服务器）', () => {
       expect(names).toContain('add_numbers')
       expect(names).toContain('fail_tool')
       expect(names).toContain('read_file') // flare 自身工具照常
-      expect(names.length).toBe(9)
+      expect(names.length).toBe(10)
       // 调用外部工具：flare 代理转发到外部服务器（内容往返）
       const res = await client.callTool('add_numbers', { a: 2, b: 3 })
       expect(res.isError).toBe(false)
@@ -206,7 +207,7 @@ describe('CLI mcp-server 命令（MCP stdio 服务器）', () => {
     try {
       await client.initialize()
       const tools = await client.listTools()
-      expect(tools.length).toBe(6)
+      expect(tools.length).toBe(7)
       expect(tools.map((t) => t.name)).not.toContain('echo_text')
     } finally {
       client.close()
