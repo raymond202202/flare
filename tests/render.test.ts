@@ -20,6 +20,7 @@ import {
   RenderState,
 } from '../src/cli/render.js'
 import { stringWidth } from '../src/cli/line-input.js'
+import { breathTimeMs, flameBreathColor } from '../src/cli/flame-banner.js'
 
 const PROMPT = '🔥 flare> '
 const LAYOUT: Layout = { cols: 80, rows: 24 }
@@ -277,6 +278,56 @@ describe('空闲帧与运行态', () => {
     expect(all).toContain('答案在此')
     expect(all).not.toContain(PROMPT + '问题🔥') // 没有粘行
     expect(screen.line(LAYOUT.rows - 1)).toBe(PROMPT.trimEnd())
+  })
+})
+
+describe('窗口大小变化（S2）', () => {
+  it('resize 后跳到底部重画输入区，上方内容不被擦掉', () => {
+    const screen = new VtScreen(LAYOUT.cols, LAYOUT.rows)
+    const first = composeFrame(createRenderState(), mk({ agentOutput: 'A1\nA2\nA3\n' }), LAYOUT)
+    screen.write(first.writes)
+    // 复刻 index.ts 的 onResize：跳到底部（终端 clamp）+ 擦到屏末 + 行号模型归位
+    screen.write('\x1b[999B\r\x1b[0J')
+    const state: RenderState = { ...first.state, curRow: LAYOUT.rows - 1, inputRows: 0, lastInputLine: '' }
+    screen.write(composeFrame(state, mk({ agentOutput: 'A1\nA2\nA3\n' }), LAYOUT).writes)
+
+    expect(screen.line(LAYOUT.rows - 1)).toBe(PROMPT.trimEnd())
+    const all = screen.allLines().join('\n')
+    expect(all).toContain('A1')
+    expect(all).toContain('A3')
+  })
+
+  it('窄窗口里折行输入仍然贴底，resize 后内容不丢', () => {
+    const narrow: Layout = { cols: 40, rows: 12 }
+    const screen = new VtScreen(narrow.cols, narrow.rows)
+    // 先渲染一帧空输入（模拟 resize 前的稳定状态）
+    const first = composeFrame(createRenderState(), mk({ agentOutput: 'A1\nA2\n' }), narrow)
+    screen.write(first.writes)
+    // resize 事件：跳底 + 擦到屏末 + 行号模型归位
+    screen.write('\x1b[999B\r\x1b[0J')
+    const state: RenderState = { ...first.state, curRow: narrow.rows - 1, inputRows: 0, lastInputLine: '' }
+    // resize 后用户输入了 60 个字符（在 40 列下要折行）
+    const long = PROMPT + 'q'.repeat(60)
+    const rowsNeeded = displayRows(long, narrow.cols)
+    screen.write(
+      composeFrame(state, mk({ agentOutput: 'A1\nA2\n', inputLine: long, inputCursor: { row: 0, col: 0 } }), narrow).writes,
+    )
+    expect(screen.allLines().join('').split('q').length - 1).toBe(60)
+    // 折行占满的每一行都贴着屏幕底部
+    for (let i = 0; i < rowsNeeded; i++) {
+      expect(screen.line(narrow.rows - 1 - i)).not.toBe('')
+    }
+    expect(screen.allLines().join('\n')).toContain('A1')
+  })
+})
+
+describe('呼吸色量化（S2）', () => {
+  it('同一档位内颜色恒定，跨档才变化', () => {
+    expect(breathTimeMs(0)).toBe(breathTimeMs(100))
+    expect(flameBreathColor(breathTimeMs(0))).toBe(flameBreathColor(breathTimeMs(100)))
+    expect(breathTimeMs(0)).not.toBe(breathTimeMs(400))
+    // 量化后仍连续变化：相邻档颜色不同
+    expect(flameBreathColor(breathTimeMs(0))).not.toBe(flameBreathColor(breathTimeMs(400)))
   })
 })
 

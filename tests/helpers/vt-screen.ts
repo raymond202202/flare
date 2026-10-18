@@ -139,6 +139,26 @@ export class VtScreen {
     }
   }
 
+  /**
+   * 模拟终端 resize。真实终端会重排已显示内容，这里只做尺寸变化（不重排）——
+   * 本项目的 resize 处理不依赖旧内容布局（只跳到底部重画输入区），够用。
+   */
+  resize(cols: number, rows: number): void {
+    const next: string[][] = []
+    for (let r = 0; r < rows; r++) {
+      const src = this.grid[r]
+      const row = Array.from({ length: cols }, () => ' ')
+      if (src) for (let c = 0; c < Math.min(cols, this.cols); c++) row[c] = src[c]
+      next.push(row)
+    }
+    this.cols = cols
+    this.rows = rows
+    this.grid = next
+    this.cur.r = Math.min(this.cur.r, rows - 1)
+    this.cur.c = Math.min(this.cur.c, cols - 1)
+    this.pendingWrap = false
+  }
+
   private newline(): void {
     if (this.cur.r === this.rows - 1) {
       this.scrollback.push(this.line(0))

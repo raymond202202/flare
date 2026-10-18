@@ -17,7 +17,7 @@ import { createInterface } from 'node:readline'
 import { pathToFileURL } from 'node:url'
 import { LineInput } from './line-input.js'
 import { composeFrame, createRenderState } from './render.js'
-import { R, O, A, Y, D, createFlameState, updateFlame, renderFlameFrame, flameBreathColor } from './flame-banner.js'
+import { R, O, A, Y, D, createFlameState, renderFlameFrame, flameBreathColor, breathTimeMs } from './flame-banner.js'
 
 // 从 package.json 读取版本号（不要硬编码，否则 --version 会过期）
 const require = createRequire(import.meta.url)
@@ -116,7 +116,7 @@ async function startInteractive(opts: { contextSummarize?: boolean; newSession?:
   // ===== 帧模式输入（按键只更新状态，由渲染循环重绘）=====
   const lineInput = new LineInput('🔥 flare> ', {
     frameMode: true,
-    onChange: () => renderFrame(),
+    onChange: () => scheduleRender(),
   })
 
   // ===== 状态 =====
@@ -154,6 +154,7 @@ async function startInteractive(opts: { contextSummarize?: boolean; newSession?:
   let renderState = createRenderState()
 
   function renderFrame() {
+    lastRenderAt = Date.now()
     const t = Date.now() / 1000
     const plan = composeFrame(
       renderState,
@@ -162,7 +163,8 @@ async function startInteractive(opts: { contextSummarize?: boolean; newSession?:
         banner: renderState.bannerDone ? '' : renderFlameFrame(flame, t),
         hint: renderState.bannerDone ? '' : '输入 /help 查看命令，/exit 退出',
         agentOutput,
-        inputLine: lineInput.renderLine(flameBreathColor(Date.now())), // prompt 呼吸色
+        // prompt 呼吸色：量化到 16 档，否则每帧颜色都不同会让输入区每帧都重绘
+        inputLine: lineInput.renderLine(flameBreathColor(breathTimeMs(Date.now()))),
         inputCursor: lineInput.cursorPosInLine(),
         agentRunning,
         paused,
@@ -173,18 +175,43 @@ async function startInteractive(opts: { contextSummarize?: boolean; newSession?:
     if (plan.writes) process.stdout.write(plan.writes)
   }
 
-  // 渲染循环（常驻：火焰持续跳动）
+  // 帧率上限 16ms（≈60fps）。空闲帧由 composeFrame 直接早退（writes === ''），不产生写屏。
+  // 呼吸色已量化到 312ms 一档，所以「静止时」实际只有每秒 3 次输入区重绘。
+  const RENDER_MIN_INTERVAL = 16
+  let renderQueued = false
+  let lastRenderAt = 0
+
+  /** 合并短时间内的多次渲染请求（粘贴 6000 字符曾触发 6000 次整屏重绘） */
+  function scheduleRender() {
+    if (renderQueued) return
+    renderQueued = true
+    const wait = Math.max(0, RENDER_MIN_INTERVAL - (Date.now() - lastRenderAt))
+    setTimeout(() => {
+      renderQueued = false
+      renderFrame()
+    }, wait)
+  }
+
+  // 渲染循环（常驻：prompt 呼吸色）。setInterval 间隔本身就是节流，直接调 renderFrame。
   let renderTimer: ReturnType<typeof setInterval> | null = null
   const startRenderLoop = () => {
-    renderTimer = setInterval(() => {
-      updateFlame(flame, 0.08)
-      renderFrame()
-    }, 80)
+    if (renderTimer) return
+    renderTimer = setInterval(renderFrame, RENDER_MIN_INTERVAL)
   }
   const stopRenderLoop = () => {
     if (renderTimer) clearInterval(renderTimer)
     renderTimer = null
   }
+
+  // 窗口大小变化：终端重排后我们的行号模型失效。CSI 999B 会被终端 clamp 到屏底，
+  // 从底部擦到屏末只清掉输入区，上方已滚出的内容（含 scrollback）完好无损。
+  const onResize = () => {
+    const rows = process.stdout.rows || 24
+    process.stdout.write('\x1b[999B\r\x1b[0J')
+    renderState = { ...renderState, curRow: rows - 1, inputRows: 0, lastInputLine: '' }
+    renderFrame()
+  }
+  process.stdout.on('resize', onResize)
 
   // Ctrl+C：恢复光标退出
   const onSigint = () => {

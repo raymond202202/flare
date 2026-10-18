@@ -177,3 +177,16 @@ export function flameBreathColor(timeMs: number): string {
   const phase = (Math.sin(t * Math.PI * 4) + 1) / 2
   return flameColor(phase)
 }
+
+/**
+ * 量化到 BREATH_STEPS 档的呼吸时间戳（毫秒）。
+ *
+ * 直接用 Date.now() 会让输入行的 ANSI 色每帧都不同，进而让渲染器每帧都重绘输入区。
+ * 呼吸是 5s 周期的慢变化，16 档（每档 312ms）肉眼就是连续渐变，却能把空闲重绘
+ * 从「每帧一次」降到「每秒 3 次」。
+ */
+export const BREATH_STEPS = 16
+export function breathTimeMs(timeMs: number): number {
+  const step = 5000 / BREATH_STEPS
+  return Math.floor(timeMs / step) * step
+}
