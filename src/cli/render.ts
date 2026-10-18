@@ -10,6 +10,10 @@
  * 终端宽度已知，行号可以离线推算。有了 curRow 就能把输入区精确停在最后 rows-inputRows 行，
  * 而不需要任何绝对定位序列 \x1b[row;colH —— 那种序列正是「改窗口就错位」的根因。
  *
+ * 光标位置有两个真相：curRow（屏幕行）与 cursorRow（输入区内相对行）。
+ * 后者必须有：输入折行时最后一帧结束时光标被相对定位到输入区第一行，
+ * 下一帧擦除要按 cursorRow 上移，按 inputRows-1 上移会擦过头、吃掉上方内容。
+ *
  * 所有换行都发 \r\n：Node 的 setRawMode 会清掉 OPOST/ONLCR，裸 \n 不再自动回车。
  */
 import { stringWidth } from './line-input.js'
@@ -51,6 +55,8 @@ export interface RenderState {
   lastInputLine: string
   /** 光标当前所在的屏幕行（0 基，触底时饱和到 rows-1） */
   curRow: number
+  /** 光标在输入区内的相对行（0 基；无输入行时为 0） */
+  cursorRow: number
 }
 
 export interface FramePlan {
@@ -60,7 +66,14 @@ export interface FramePlan {
 }
 
 export function createRenderState(): RenderState {
-  return { bannerDone: false, lastCommitted: '', inputRows: 0, lastInputLine: '', curRow: 0 }
+  return {
+    bannerDone: false,
+    lastCommitted: '',
+    inputRows: 0,
+    lastInputLine: '',
+    curRow: 0,
+    cursorRow: 0,
+  }
 }
 
 /** 内容区行数（保留旧语义：空内容算 0 行，末尾换行多算一行） */
@@ -112,7 +125,7 @@ function stablePrefix(text: string): string {
 /**
  * 编译一帧。帧结构（自上而下）：[scrollback 内容] → 底部输入区
  *
- * 1. 擦除上一帧输入区（上移到输入区首行 + 擦到屏末），只擦输入区，不动内容
+ * 1. 擦除上一帧输入区（按 cursorRow 上移到输入区首行 + 擦到屏末），只擦输入区，不动内容
  * 2. 首帧：清屏一次 + banner + 提示语
  * 3. 追加内容增量（内容写高了终端自己上滚，滚出的行进 scrollback）
  * 4. 用换行把光标送到 rows-inputRows 行，写输入行，相对定位光标
@@ -140,14 +153,18 @@ export function composeFrame(state: RenderState, f: FrameInput, layout: Layout):
   }
 
   // 1. 擦掉上一帧输入区，光标回到输入区首行行首
+  //    上移行数按 cursorRow（光标在输入区内的相对行），不是 inputRows-1：
+  //    折行输入时上一帧把光标留在了输入区第一行，按 inputRows-1 上移会擦掉上方内容。
   if (state.bannerDone && state.inputRows > 0) {
-    if (state.inputRows > 1) {
-      writes += `\x1b[${state.inputRows - 1}A`
-      next.curRow = Math.max(0, state.curRow - (state.inputRows - 1))
+    const up = Math.max(0, Math.min(state.cursorRow, state.inputRows - 1))
+    if (up > 0) {
+      writes += `\x1b[${up}A`
+      next.curRow = Math.max(0, state.curRow - up)
     }
     writes += '\r\x1b[0J'
     next.inputRows = 0
     next.lastInputLine = ''
+    next.cursorRow = 0
   }
 
   // 2. 首帧：清一次屏 + 静态 banner + 提示语（I3：此后永不清屏）
@@ -158,7 +175,6 @@ export function composeFrame(state: RenderState, f: FrameInput, layout: Layout):
     if (f.hint) head += crlf(f.hint) + '\r\n'
     writes += head
     next.curRow = advance(0, head, cols, rows)
-    next.lastCommitted = ''
     next.bannerDone = true
   }
 
@@ -166,8 +182,8 @@ export function composeFrame(state: RenderState, f: FrameInput, layout: Layout):
   if (delta) {
     writes += crlf(delta)
     next.curRow = advance(next.curRow, delta, cols, rows)
-    next.lastCommitted = committed
   }
+  next.lastCommitted = committed
 
   // 4. 把输入区停到屏幕最后 inputRows 行（I2），再写输入行
   if (drawInput) {
@@ -178,26 +194,33 @@ export function composeFrame(state: RenderState, f: FrameInput, layout: Layout):
       writes += '\r\n'.repeat(gap)
       next.curRow = targetFirst
     } else if (gap < 0) {
-      // 输入区比内容底部更低：换行触底滚屏 |gap| 行，再上移回输入区首行
-      const k = -gap
-      writes += '\r\n'.repeat(k) + `\x1b[${k}A`
+      // 内容已经压到输入区要占的行：必须把内容整体上推 -gap 行（滚出屏幕的进 scrollback）。
+      // 不能直接 \r\n × -gap 再上移：光标若没贴底，头几次换行只是下移不滚屏，上移就会错位。
+      // 所以先把光标送到屏底，再换行滚屏，最后按影子行号上移回输入区首行。
+      const down = rows - 1 - next.curRow
+      if (down > 0) writes += `\x1b[${down}B`
+      writes += '\r' + '\r\n'.repeat(-gap)
+      const upBack = rows - 1 - targetFirst
+      if (upBack > 0) writes += `\x1b[${upBack}A`
       next.curRow = targetFirst
     }
 
     writes += f.inputLine
     next.inputRows = inputRowsTarget
     next.lastInputLine = f.inputLine
-    next.curRow = rows - 1
+    next.cursorRow = Math.max(0, Math.min(f.inputCursor.row, inputRowsTarget - 1))
+    next.curRow = Math.max(0, Math.min(rows - 1, targetFirst + next.cursorRow))
 
     // 相对定位光标：写完输入行时光标在末行末列，先 \r 再上下移动
     const fromRow = inputRowsTarget - 1
     writes += '\r'
-    if (fromRow > f.inputCursor.row) writes += `\x1b[${fromRow - f.inputCursor.row}A`
-    else if (f.inputCursor.row > fromRow) writes += `\x1b[${f.inputCursor.row - fromRow}B`
+    if (fromRow > next.cursorRow) writes += `\x1b[${fromRow - next.cursorRow}A`
+    else if (next.cursorRow > fromRow) writes += `\x1b[${next.cursorRow - fromRow}B`
     if (f.inputCursor.col > 0) writes += `\x1b[${f.inputCursor.col}C`
   } else {
     next.inputRows = 0
     next.lastInputLine = ''
+    next.cursorRow = 0
   }
 
   return { writes, state: next }

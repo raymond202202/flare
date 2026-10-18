@@ -281,6 +281,58 @@ describe('空闲帧与运行态', () => {
   })
 })
 
+describe('折行输入 + 光标在首行（回归：擦除不能吃掉上方内容）', () => {
+  it('多行折行输入、光标停在首行时，下一帧增量不会擦掉内容', () => {
+    const L: Layout = { cols: 40, rows: 12 }
+    const screen = new VtScreen(L.cols, L.rows)
+    // 输入共 3 个显示行（40 列），光标停在输入区第一行 → 上一帧结束时光标不在末行
+    const long = PROMPT + 'z'.repeat(100) // 用 z：提示语里含 x("/exit")，会污染计数
+    const rowsNeeded = displayRows(long, L.cols)
+    expect(rowsNeeded).toBe(3)
+
+    const f1 = composeFrame(
+      createRenderState(),
+      mk({ agentOutput: 'A1\nA2\nA3\n', inputLine: long, inputCursor: { row: 0, col: stringWidth(PROMPT) } }),
+      L,
+    )
+    screen.write(f1.writes)
+    expect(f1.state.cursorRow).toBe(0)
+    expect(f1.state.curRow).toBe(L.rows - rowsNeeded)
+
+    // 第二帧：agent 又来了一行输出（增量），同时输入行不变
+    const f2 = composeFrame({ ...f1.state }, mk({ agentOutput: 'A1\nA2\nA3\nA4\n', inputLine: long, inputCursor: { row: 0, col: stringWidth(PROMPT) } }), L)
+    screen.write(f2.writes)
+
+    // 内容必须还在（旧实现按 inputRows-1=2 上移，会把 A2/A3 擦掉）
+    const all = screen.allLines().join('\n')
+    expect(all).toContain('A1')
+    expect(all).toContain('A2')
+    expect(all).toContain('A3')
+    expect(all).toContain('A4')
+    // 输入行仍然贴底且完整
+    expect(screen.allLines().join('').split('z').length - 1).toBe(100)
+    expect(screen.line(L.rows - 1)).toContain('z')
+  })
+
+  it('光标在中间行时也按 cursorRow 上移（不多不少）', () => {
+    const L: Layout = { cols: 40, rows: 12 }
+    const screen = new VtScreen(L.cols, L.rows)
+    const long = PROMPT + 'y'.repeat(100) // 3 行
+    const f1 = composeFrame(
+      createRenderState(),
+      mk({ agentOutput: 'B1\nB2\nB3\n', inputLine: long, inputCursor: { row: 1, col: 2 } }),
+      L,
+    )
+    screen.write(f1.writes)
+    expect(f1.state.cursorRow).toBe(1)
+    const f2 = composeFrame({ ...f1.state }, mk({ agentOutput: 'B1\nB2\nB3\nB4\n', inputLine: long, inputCursor: { row: 1, col: 2 } }), L)
+    screen.write(f2.writes)
+    const all = screen.allLines().join('\n')
+    for (const tag of ['B1', 'B2', 'B3', 'B4']) expect(all).toContain(tag)
+    expect(screen.allLines().join('').split('y').length - 1).toBe(100)
+  })
+})
+
 describe('窗口大小变化（S2）', () => {
   it('resize 后跳到底部重画输入区，上方内容不被擦掉', () => {
     const screen = new VtScreen(LAYOUT.cols, LAYOUT.rows)
