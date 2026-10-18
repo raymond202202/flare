@@ -220,4 +220,5 @@ src/cli/commands/*.ts   → 每个子命令一个模块
 
 每步仍按现有规矩走：tsc 0 错误 → 全量测试 → PTY 脚本实测 → 自安装 → 独立验收。
 （P0-B 交付时基线：82 个测试文件 / 1271 用例全绿，PTY 布局回归 19/19。）
-P0-A 做完用 `tests/manual/pty-paste-regression.py` 验收，标准是 LINE-1 到 LINE-10 全部出现。
+P0-A 用 `tests/manual/pty_paste_verify.py` 验收，标准是 LINE-1 到 LINE-10 全部出现；
+P0-B 用 `tests/manual/pty_layout_check.py` 验收。
