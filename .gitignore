@@ -8,3 +8,7 @@ test-*
 *.tsbuildinfo
 secrets/
 
+
+# Python 手工测试脚本的字节码缓存
+__pycache__/
+*.pyc
