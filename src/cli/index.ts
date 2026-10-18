@@ -16,6 +16,7 @@ import { readFileSync } from 'node:fs'
 import { createInterface } from 'node:readline'
 import { pathToFileURL } from 'node:url'
 import { LineInput } from './line-input.js'
+import { composeFrame } from './render.js'
 import { R, O, A, Y, D, createFlameState, updateFlame, renderFlameFrame, flameBreathColor } from './flame-banner.js'
 
 // 从 package.json 读取版本号（不要硬编码，否则 --version 会过期）
@@ -126,7 +127,7 @@ async function startInteractive(opts: { contextSummarize?: boolean; newSession?:
   let paused = false     // 动画暂停（便于复制输出；暂停时只重绘输入行不清屏）
 
   // ===== 渲染 =====
-  const CONTENT_ROW = 6   // 内容区起始行（0 基）：banner 4 行 + 空行 + 提示语行
+  // 布局常量与帧编译已抽到 render.ts（P0-B S0）：renderFrame 只负责收集状态并写屏
 
   const flushDraft = () => {
     if (!pendingText.trim()) return
@@ -149,39 +150,19 @@ async function startInteractive(opts: { contextSummarize?: boolean; newSession?:
     return `\n${D(`  ┌─ ${toolName}`)}\n${body}\n${D('  └─')}\n`
   }
 
-  /** 渲染一帧：火焰 banner（常驻动画）+ 固定提示语 + 内容区（输入行或 Agent 输出） */
+  /** 渲染一帧：收集状态 → render.ts 编译帧 → 写屏 + 定位输入光标 */
   function renderFrame() {
     const t = Date.now() / 1000
-    const banner = renderFlameFrame(flame, t)
-    const breath = flameBreathColor(Date.now())
-
-    // 暂停模式：只重绘输入行（不清屏），屏幕静止可选中复制
-    if (paused) {
-      const inputRow = CONTENT_ROW + (agentOutput.trim() ? agentOutput.split('\n').length : 0)
-      process.stdout.write(`\x1b[${inputRow};1H\x1b[2K` + lineInput.renderLine(breath))
-      lineInput.positionCursorAt(inputRow - 1, 0)
-      return
-    }
-
-    let out = '\x1b[2J\x1b[H'
-    out += '\n'                       // 顶部空行（不顶格）
-    out += banner + '\n'
-    out += '输入 /help 查看命令，/exit 退出\n'
-    if (agentRunning) {
-      out += agentOutput
-    } else {
-      // 保留上一轮回答（不随运行结束清掉），输入行在回答下方
-      if (agentOutput.trim()) {
-        out += agentOutput
-      }
-      out += lineInput.renderLine(breath)  // prompt 呼吸色
-    }
-    process.stdout.write(out)
-    // 输入模式下光标定位到输入位置（Agent 运行时无输入光标）
-    if (!agentRunning) {
-      const contentRows = agentOutput.trim() ? agentOutput.split('\n').length : 0
-      lineInput.positionCursorAt(CONTENT_ROW + contentRows, 0)
-    }
+    const frame = composeFrame({
+      banner: renderFlameFrame(flame, t),
+      hint: '输入 /help 查看命令，/exit 退出',
+      agentOutput,
+      inputLine: lineInput.renderLine(flameBreathColor(Date.now())), // prompt 呼吸色
+      agentRunning,
+      paused,
+    })
+    process.stdout.write(frame.writes)
+    if (frame.cursor) lineInput.positionCursorAt(frame.cursor.row, frame.cursor.col)
   }
 
   // 渲染循环（常驻：火焰持续跳动）
