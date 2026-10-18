@@ -1,86 +1,204 @@
 /**
- * CLI 渲染层（P0-B / S0：从 index.ts 抽出，**零行为变化**）
+ * CLI 渲染层（P0-B S1：追加式内容 + 底部固定输入栏）
  *
- * S0 阶段只做搬移：composeFrame() 产出的字节序列与旧 renderFrame() 逐字节等价
- * （`\x1b[2J\x1b[H` 全屏清屏重绘），便于 S1 换成「追加式内容 + 底部固定输入栏」时
- * 只改这一个文件的实现，index.ts 里 40 个 handler 一行不动。
+ * 三条不变量：
+ *   I1 内容只追加，不重绘 —— 回答/工具输出一旦写屏就进 scrollback，可向上翻、可选中复制
+ *   I2 输入区永远贴屏幕底部 —— 内容变长靠屏幕整体上滚，输入框不移动、不消失
+ *   I3 除启动外不再发 \x1b[2J —— 全屏清屏是「输出放大 730 倍」和「输入框跑到 row 49」的共同根因
  *
- * 为什么抽出来：src/cli/index.ts 3429 行，渲染逻辑和命令注册混在一起，
- * 输入层因此长期没有单元测试（审计 2026-10-17 结论）。抽成纯函数后，
- * composeFrame({...}) → 写入序列 可直接断言，不需要真 TTY。
+ * 实现要点：渲染器自己维护「光标当前屏幕行」（curRow），因为每次写屏都经过它，
+ * 终端宽度已知，行号可以离线推算。有了 curRow 就能把输入区精确停在最后 rows-inputRows 行，
+ * 而不需要任何绝对定位序列 \x1b[row;colH —— 那种序列正是「改窗口就错位」的根因。
+ *
+ * 所有换行都发 \r\n：Node 的 setRawMode 会清掉 OPOST/ONLCR，裸 \n 不再自动回车。
  */
+import { stringWidth } from './line-input.js'
 
-/** 内容区起始行（0 基）：banner 4 行 + 空行 + 提示语行 */
+/**
+ * 旧整屏模型的常量。S1 起渲染不再依赖它，保留导出仅为兼容既有引用。
+ */
 export const CONTENT_ROW = 6
 
-/** 帧状态输入（全部由调用方准备好，本模块不读终端状态，保证可测） */
+export interface Layout {
+  cols: number
+  rows: number
+}
+
 export interface FrameInput {
-  /** 火焰 banner（含末尾换行；renderFlameFrame 产物） */
+  /** 启动 banner（含 ANSI 色）。只在首帧输出一次，之后永久留在 scrollback */
   banner: string
-  /** 固定提示语行（如「输入 /help 查看命令」） */
+  /** 固定提示语，只在首帧输出一次 */
   hint: string
-  /** 内容区累积文本（Agent 输出 / 命令结果） */
+  /** Agent 累积输出（含 ANSI 色）。渲染器自己算增量，只写新出现的部分 */
   agentOutput: string
-  /** 渲染好的输入行（含 prompt 呼吸色） */
+  /** 当前输入行（prompt 呼吸色 + buffer），可折行 */
   inputLine: string
-  /** Agent 是否正在运行（运行时无输入光标） */
+  /** 输入光标在输入行内的相对位置（0 基） */
+  inputCursor: { row: number; col: number }
+  /** Agent 运行中：不画输入行（没有输入光标） */
   agentRunning: boolean
-  /** 是否处于 /pause 静止模式（只重绘输入行、不清屏） */
+  /** 暂停：渲染循环已停，本字段不改变帧内容（屏幕天然静止） */
   paused: boolean
 }
 
-/** 帧状态输出 */
-export interface FrameOutput {
-  /** 要写给 stdout 的字节序列 */
+export interface RenderState {
+  bannerDone: boolean
+  /** 上一帧已提交的内容（用于算增量） */
+  lastCommitted: string
+  /** 上一帧输入区占的行数 */
+  inputRows: number
+  /** 上一帧输入行文本（用于跳过无变化重绘） */
+  lastInputLine: string
+  /** 光标当前所在的屏幕行（0 基，触底时饱和到 rows-1） */
+  curRow: number
+}
+
+export interface FramePlan {
+  /** 要写到 stdout 的字节序列；空串表示本帧无需写屏 */
   writes: string
-  /** 输入光标位置（0 基），null = 不定位光标（Agent 运行时） */
-  cursor: { row: number; col: number } | null
+  state: RenderState
 }
 
-/**
- * 内容区占用的显示行数。
- *
- * 注意保留旧实现的语义：以 agentOutput 是否 trim 后非空做判空，
- * 但行数用原始 agentOutput 的 split('\n').length 计算——
- * 末尾的换行会多算一行（作为光标落点），这是 v0.6.x 一直的布局，
- * S0 阶段不改，避免"零行为变化"的搬移和修 bug 混在一起。
- */
-export function contentRowsOf(agentOutput: string): number {
-  if (!agentOutput.trim()) return 0
-  return agentOutput.split('\n').length
+export function createRenderState(): RenderState {
+  return { bannerDone: false, lastCommitted: '', inputRows: 0, lastInputLine: '', curRow: 0 }
 }
 
+/** 内容区行数（保留旧语义：空内容算 0 行，末尾换行多算一行） */
+export function contentRowsOf(text: string): number {
+  return text.trim() ? text.split('\n').length : 0
+}
+
+/** 文本在给定列数下占几行显示行 */
+export function displayRows(text: string, cols: number): number {
+  return Math.max(1, Math.ceil(stringWidth(text) / Math.max(1, cols)))
+}
+
+/** 裸 \n 换成 \r\n（raw mode 下 ONLCR 已关，必须显式回车） */
+function crlf(s: string): string {
+  return s.replace(/\r\n/g, '\n').replace(/\n/g, '\r\n')
+}
+
+const ANSI = /\x1b\[[0-9;?]*[@-~]/g
+
 /**
- * 编译一帧。
- *
- * paused 分支保留旧实现的一处不自洽（S1 一并修，见下）：
- * `\x1b[${inputRow};1H` 把 0 基的 inputRow 当 1 基用，
- * 而随后 positionCursorAt(inputRow - 1) 又按 0 基处理，两者差一行。
- * S0 只搬移不修，保证可逐字节对比新旧输出。
+ * 推算文本写完后光标落在哪一行。
+ * 前提：从行首开始写（我们的内容总是从行首开始）。
+ * 行号在触底时饱和 —— 终端继续换行就是滚屏，光标留在最后一行。
  */
-export function composeFrame(f: FrameInput): FrameOutput {
-  if (f.paused) {
-    const inputRow = CONTENT_ROW + contentRowsOf(f.agentOutput)
-    return {
-      writes: `\x1b[${inputRow};1H\x1b[2K` + f.inputLine,
-      cursor: { row: inputRow - 1, col: 0 },
+function advance(row: number, text: string, cols: number, rows: number): number {
+  const plain = text.replace(ANSI, '').replace(/\r/g, '')
+  let r = row
+  const parts = plain.split('\n')
+  for (let i = 0; i < parts.length; i++) {
+    if (i > 0) r = Math.min(r + 1, rows - 1)
+    const w = stringWidth(parts[i])
+    if (w > 0) {
+      const wraps = Math.max(0, Math.ceil(w / cols) - 1) // 写满整行不算折行（pending-wrap）
+      r = Math.min(r + wraps, rows - 1)
     }
   }
+  return r
+}
 
-  let out = '\x1b[2J\x1b[H'
-  out += '\n' // 顶部空行（不顶格）
-  out += f.banner + '\n'
-  out += f.hint + '\n'
-  if (f.agentRunning) {
-    out += f.agentOutput
+/**
+ * 只取已收尾的完整行（以 \n 结束的部分）。
+ * 未收尾的尾巴可能是流式中间态，直接提交会导致下一帧重复追加、内容翻倍。
+ */
+function stablePrefix(text: string): string {
+  const nl = text.lastIndexOf('\n')
+  return nl >= 0 ? text.slice(0, nl + 1) : ''
+}
+
+/**
+ * 编译一帧。帧结构（自上而下）：[scrollback 内容] → 底部输入区
+ *
+ * 1. 擦除上一帧输入区（上移到输入区首行 + 擦到屏末），只擦输入区，不动内容
+ * 2. 首帧：清屏一次 + banner + 提示语
+ * 3. 追加内容增量（内容写高了终端自己上滚，滚出的行进 scrollback）
+ * 4. 用换行把光标送到 rows-inputRows 行，写输入行，相对定位光标
+ */
+export function composeFrame(state: RenderState, f: FrameInput, layout: Layout): FramePlan {
+  const cols = Math.max(1, layout.cols || 80)
+  const rows = Math.max(1, layout.rows || 24)
+  const next: RenderState = { ...state }
+  let writes = ''
+
+  const committed = stablePrefix(f.agentOutput)
+  // 增量：只在尾部增长时取差集；被重置/改写（新一轮对话）时整体追加，旧内容留在 scrollback
+  const delta = committed.startsWith(state.lastCommitted)
+    ? committed.slice(state.lastCommitted.length)
+    : committed
+
+  const drawInput = !f.agentRunning
+  const inputRowsTarget = drawInput ? displayRows(f.inputLine, cols) : 0
+  const inputUnchanged =
+    drawInput && state.bannerDone && state.inputRows === inputRowsTarget && f.inputLine === state.lastInputLine
+
+  // 空闲帧：内容无增量、输入行未变 → 不写屏（旧实现每 80ms 整屏重绘一次）
+  if (state.bannerDone && !delta && (inputUnchanged || (!drawInput && state.inputRows === 0))) {
+    return { writes: '', state: next }
+  }
+
+  // 1. 擦掉上一帧输入区，光标回到输入区首行行首
+  if (state.bannerDone && state.inputRows > 0) {
+    if (state.inputRows > 1) {
+      writes += `\x1b[${state.inputRows - 1}A`
+      next.curRow = Math.max(0, state.curRow - (state.inputRows - 1))
+    }
+    writes += '\r\x1b[0J'
+    next.inputRows = 0
+    next.lastInputLine = ''
+  }
+
+  // 2. 首帧：清一次屏 + 静态 banner + 提示语（I3：此后永不清屏）
+  if (!state.bannerDone) {
+    writes += '\x1b[2J\x1b[H'
+    let head = ''
+    if (f.banner) head += '\r\n' + crlf(f.banner) + '\r\n'
+    if (f.hint) head += crlf(f.hint) + '\r\n'
+    writes += head
+    next.curRow = advance(0, head, cols, rows)
+    next.lastCommitted = ''
+    next.bannerDone = true
+  }
+
+  // 3. 追加内容增量（I1：只追加；写高了终端自动上滚，滚出的行进 scrollback）
+  if (delta) {
+    writes += crlf(delta)
+    next.curRow = advance(next.curRow, delta, cols, rows)
+    next.lastCommitted = committed
+  }
+
+  // 4. 把输入区停到屏幕最后 inputRows 行（I2），再写输入行
+  if (drawInput) {
+    const targetFirst = Math.max(0, rows - inputRowsTarget)
+    const gap = targetFirst - next.curRow
+    if (gap > 0) {
+      // 内容还没填满屏幕：向下补空行到底部，不触发滚屏
+      writes += '\r\n'.repeat(gap)
+      next.curRow = targetFirst
+    } else if (gap < 0) {
+      // 输入区比内容底部更低：换行触底滚屏 |gap| 行，再上移回输入区首行
+      const k = -gap
+      writes += '\r\n'.repeat(k) + `\x1b[${k}A`
+      next.curRow = targetFirst
+    }
+
+    writes += f.inputLine
+    next.inputRows = inputRowsTarget
+    next.lastInputLine = f.inputLine
+    next.curRow = rows - 1
+
+    // 相对定位光标：写完输入行时光标在末行末列，先 \r 再上下移动
+    const fromRow = inputRowsTarget - 1
+    writes += '\r'
+    if (fromRow > f.inputCursor.row) writes += `\x1b[${fromRow - f.inputCursor.row}A`
+    else if (f.inputCursor.row > fromRow) writes += `\x1b[${f.inputCursor.row - fromRow}B`
+    if (f.inputCursor.col > 0) writes += `\x1b[${f.inputCursor.col}C`
   } else {
-    // 保留上一轮回答（不随运行结束清掉），输入行在回答下方
-    if (f.agentOutput.trim()) out += f.agentOutput
-    out += f.inputLine
+    next.inputRows = 0
+    next.lastInputLine = ''
   }
 
-  return {
-    writes: out,
-    cursor: f.agentRunning ? null : { row: CONTENT_ROW + contentRowsOf(f.agentOutput), col: 0 },
-  }
+  return { writes, state: next }
 }

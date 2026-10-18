@@ -16,7 +16,7 @@ import { readFileSync } from 'node:fs'
 import { createInterface } from 'node:readline'
 import { pathToFileURL } from 'node:url'
 import { LineInput } from './line-input.js'
-import { composeFrame } from './render.js'
+import { composeFrame, createRenderState } from './render.js'
 import { R, O, A, Y, D, createFlameState, updateFlame, renderFlameFrame, flameBreathColor } from './flame-banner.js'
 
 // 从 package.json 读取版本号（不要硬编码，否则 --version 会过期）
@@ -150,19 +150,27 @@ async function startInteractive(opts: { contextSummarize?: boolean; newSession?:
     return `\n${D(`  ┌─ ${toolName}`)}\n${body}\n${D('  └─')}\n`
   }
 
-  /** 渲染一帧：收集状态 → render.ts 编译帧 → 写屏 + 定位输入光标 */
+  /** 渲染一帧：收集状态 → render.ts 编译帧 → 写屏 */
+  let renderState = createRenderState()
+
   function renderFrame() {
     const t = Date.now() / 1000
-    const frame = composeFrame({
-      banner: renderFlameFrame(flame, t),
-      hint: '输入 /help 查看命令，/exit 退出',
-      agentOutput,
-      inputLine: lineInput.renderLine(flameBreathColor(Date.now())), // prompt 呼吸色
-      agentRunning,
-      paused,
-    })
-    process.stdout.write(frame.writes)
-    if (frame.cursor) lineInput.positionCursorAt(frame.cursor.row, frame.cursor.col)
+    const plan = composeFrame(
+      renderState,
+      {
+        // D1 静态开场：banner + 提示语只在首帧输出一次，之后永久留在 scrollback
+        banner: renderState.bannerDone ? '' : renderFlameFrame(flame, t),
+        hint: renderState.bannerDone ? '' : '输入 /help 查看命令，/exit 退出',
+        agentOutput,
+        inputLine: lineInput.renderLine(flameBreathColor(Date.now())), // prompt 呼吸色
+        inputCursor: lineInput.cursorPosInLine(),
+        agentRunning,
+        paused,
+      },
+      { cols: process.stdout.columns || 80, rows: process.stdout.rows || 24 },
+    )
+    renderState = plan.state
+    if (plan.writes) process.stdout.write(plan.writes)
   }
 
   // 渲染循环（常驻：火焰持续跳动）

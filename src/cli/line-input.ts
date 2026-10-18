@@ -537,6 +537,17 @@ export class LineInput {
     process.stdout.write(`\x1b[${row + 1};${col + 1}H`)
   }
 
+  /**
+   * 光标在输入行内的相对位置（0 基）：{ row, col }。
+   * 供 P0-B 底部固定输入栏使用——相对定位只需要"行内偏移"，
+   * 不再需要知道输入行的绝对屏幕行号（那是旧整屏模型的耦合点）。
+   */
+  cursorPosInLine(): { row: number; col: number } {
+    const cols = process.stdout.columns || 80
+    const prefixWidth = stringWidth(this.prompt) + stringWidth(displayOf(this.buffer.slice(0, this.cursor)))
+    return { row: Math.floor(prefixWidth / cols), col: prefixWidth % cols }
+  }
+
   /** 当前 buffer（提交/测试用） */
   get value() {
     return this.buffer
