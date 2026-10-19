@@ -1,6 +1,7 @@
-#!/bin/bash
+#!/bin/sh
 # Flare 安装脚本
 # 安装到 ~/.flare/install/，与项目文件夹完全分离
+# 只用 POSIX sh 语法：FreeBSD 的 base 没有 bash，脚本必须能在 /bin/sh 下跑
 
 set -e
 
@@ -43,11 +44,14 @@ chmod +x "$INSTALL_DIR/bin/flare"
 ln -sf "$INSTALL_DIR/bin/flare" "$LOCAL_BIN/flare"
 
 # 7. 检查 PATH
-if [[ ":$PATH:" != *":$LOCAL_BIN:"* ]]; then
-  echo "⚠️  $LOCAL_BIN 不在 PATH 中，请添加到你的 shell 配置："
-  echo "   echo 'export PATH=\"\$HOME/.local/bin:\$PATH\"' >> ~/.bashrc"
-  echo "   source ~/.bashrc"
-fi
+case ":$PATH:" in
+  *":$LOCAL_BIN:"*) ;;
+  *)
+    echo "⚠️  $LOCAL_BIN 不在 PATH 中，请添加到你的 shell 配置："
+    echo "   echo 'export PATH=\"\$HOME/.local/bin:\$PATH\"' >> ~/.profile"
+    echo "   . ~/.profile"
+    ;;
+esac
 
 echo ""
 echo "✅ Flare 安装完成！"

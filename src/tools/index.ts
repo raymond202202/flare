@@ -12,6 +12,15 @@ import { resolve, join } from 'path'
 import { memorySearchTool, memorySaveTool } from './memory.js'
 import { ferryTranslateTool } from './ferry.js'
 
+/**
+ * 执行 shell 命令用的解释器。
+ * Linux/macOS 优先 bash；FreeBSD base 没有 bash（只有 /bin/sh，
+ * Almquist 派生，无 [[ ]]/数组/花括号扩展），所以按存在性挑。
+ * ~ 展开已由调用方手动处理，因此 /bin/sh 也够用。
+ */
+const RUN_SHELL = ['/bin/bash', '/usr/local/bin/bash', '/bin/zsh', '/bin/sh']
+  .find((p) => existsSync(p)) || '/bin/sh'
+
 export interface ToolResult {
   success: boolean
   output: string
@@ -282,8 +291,8 @@ export const terminalTool: Tool = {
         }
       }
 
-      // 用 bash 执行：支持 ~ 展开、&& 链式命令等
-      // （execSync 默认 /bin/sh 不展开 ~，会导致 cd ~/xxx 失败）
+      // 用可用的 shell 执行：支持 ~ 展开、&& 链式命令等
+      // （execSync 默认 /bin/sh 不展开 ~，会导致 cd ~/xxx 失败；~ 已在上方手动替换）
       let cmd = args.command
       // 兜底：手动替换 ~ 为 HOME（即使 shell 不支持也能工作）
       const home = process.env.HOME || ''
@@ -294,7 +303,7 @@ export const terminalTool: Tool = {
         encoding: 'utf-8',
         timeout: (args.timeout || 30) * 1000,
         maxBuffer: 1024 * 1024,
-        shell: '/bin/bash',
+        shell: RUN_SHELL,
       })
       return { success: true, output: output.slice(0, 10000) }
     } catch (e: any) {

@@ -16,8 +16,9 @@ const here = dirname(fileURLToPath(import.meta.url))
 
 interface Case {
   input: string
-  target: 'linux' | 'macos' | 'windows'
+  target: 'linux' | 'macos' | 'freebsd' | 'windows'
   shell: string | null
+  source: string
   status: string
   command: string | null
   caveats: string[]
@@ -33,15 +34,15 @@ describe('内嵌 ferry 引擎', () => {
     expect(stats.entries).toBe(127)
     expect(stats.patterns).toBe(21)
     expect(stats.syntax).toBe(24)
-    expect(stats.pitfalls).toBe(22)
-    expect(stats.drills).toBe(33)
+    expect(stats.pitfalls).toBe(27)
+    expect(stats.drills).toBe(87)
     expect(kb.errors).toEqual([])
   })
 
   it(`与 Python 参考实现逐条一致（${cases.length} 条用例）`, () => {
     const bad: string[] = []
     for (const c of cases) {
-      const got = translateCommand({ command: c.input, target: c.target, shell: c.shell || undefined })
+      const got = translateCommand({ command: c.input, target: c.target, source: c.source as any, shell: c.shell || undefined })
       if (got.status !== c.status || (got.command || null) !== c.command
         || JSON.stringify(got.caveats) !== JSON.stringify(c.caveats)) {
         bad.push(`[${c.target}${c.shell ? '/' + c.shell : ''}] ${c.input}\n  期望 ${c.status} ${JSON.stringify(c.command)} ${JSON.stringify(c.caveats)}\n  实际 ${got.status} ${JSON.stringify(got.command)} ${JSON.stringify(got.caveats)}`)

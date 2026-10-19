@@ -47,7 +47,7 @@ export const ferryTranslateTool: Tool = {
       name: 'translate_command',
       description:
         '把一条 shell 命令翻译到另一个操作系统，并给出等价等级。' +
-        '在给 macOS/Windows 写命令、或要通过 ssh 在另一台机器上执行命令之前调用它——' +
+        '在给 macOS/FreeBSD/Windows 写命令、或要通过 ssh 在另一台机器上执行命令之前调用它——' +
         '跨平台差异常常不在命令名而在参数（BSD 与 GNU 的 sed/date/stat 不同），凭记忆写会静默出错。' +
         '返回 status：equivalent 可执行 / approximate 需先核对 caveats / unsupported 无等价、换方案。' +
         '引擎与映射数据内置于 flare，离线可用，不需要外部安装。' +
@@ -56,15 +56,15 @@ export const ferryTranslateTool: Tool = {
         type: 'object',
         properties: {
           command: { type: 'string', description: '要翻译的命令，可包含管道和 &&' },
-          target: { type: 'string', enum: ['linux', 'macos', 'windows'], description: '目标操作系统' },
+          target: { type: 'string', enum: ['linux', 'macos', 'freebsd', 'windows'], description: '目标操作系统' },
           shell: {
             type: 'string',
-            enum: ['bash', 'zsh', 'powershell', 'cmd'],
-            description: '目标 shell；Windows 默认 powershell，确实要 cmd.exe 才指定 cmd',
+            enum: ['bash', 'zsh', 'sh', 'powershell', 'cmd'],
+            description: '目标 shell；Windows 默认 powershell，确实要 cmd.exe 才指定 cmd，FreeBSD 默认 sh',
           },
           source: {
             type: 'string',
-            enum: ['linux', 'macos', 'windows'],
+            enum: ['linux', 'macos', 'freebsd', 'windows'],
             description: '源平台，默认按当前系统和命令名推断',
           },
           host: {
@@ -93,7 +93,7 @@ export const ferryTranslateTool: Tool = {
     if (!target) {
       return {
         success: false, output: '',
-        error: `不知道 ${args.host} 是什么系统：让用户补 target，或先登记 ferry hosts add ${args.host} macos`,
+        error: `不知道 ${args.host} 是什么系统：让用户补 target，或先登记 ferry hosts add ${args.host} <linux|macos|freebsd|windows>`,
       }
     }
 

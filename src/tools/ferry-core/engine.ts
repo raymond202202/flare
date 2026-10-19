@@ -18,9 +18,9 @@ import type {
 
 export const SCHEMA = 1
 export const VERSION = '0.2.0'
-export const PLATFORMS: Platform[] = ['linux', 'macos', 'windows']
-export const PLATFORM_LABEL: Record<string, string> = { linux: 'Linux', macos: 'macOS', windows: 'Windows' }
-export const DEFAULT_SHELL: Record<string, string> = { linux: 'bash', macos: 'zsh', windows: 'powershell' }
+export const PLATFORMS: Platform[] = ['linux', 'macos', 'freebsd', 'windows']
+export const PLATFORM_LABEL: Record<string, string> = { linux: 'Linux', macos: 'macOS', freebsd: 'FreeBSD', windows: 'Windows' }
+export const DEFAULT_SHELL: Record<string, string> = { linux: 'bash', macos: 'zsh', freebsd: 'sh', windows: 'powershell' }
 export const SHELL_FAMILY: Record<string, 'posix' | 'powershell' | 'cmd'> = {
   bash: 'posix', zsh: 'posix', sh: 'posix', dash: 'posix',
   powershell: 'powershell', pwsh: 'powershell', cmd: 'cmd',
@@ -35,7 +35,8 @@ export function normalizePlatform(p: string | null | undefined): Platform | null
   if (!p) return null
   const v = String(p).trim().toLowerCase()
   if (['linux', 'gnu', 'ubuntu', 'debian', 'fedora', 'arch', 'centos', 'rhel'].includes(v)) return 'linux'
-  if (['macos', 'mac', 'osx', 'darwin', 'apple', 'bsd'].includes(v)) return 'macos'
+  if (['macos', 'mac', 'osx', 'darwin', 'apple'].includes(v)) return 'macos'
+  if (['freebsd', 'fbsd', 'bsd', 'free-bsd', 'freebsd13', 'freebsd14', 'freebsd15'].includes(v)) return 'freebsd'
   if (['windows', 'win', 'win32', 'win64', 'nt', 'cmd', 'powershell', 'pwsh'].includes(v)) return 'windows'
   return null
 }
@@ -43,6 +44,7 @@ export function normalizePlatform(p: string | null | undefined): Platform | null
 export function currentPlatform(): Platform {
   if (process.platform === 'win32') return 'windows'
   if (process.platform === 'darwin') return 'macos'
+  if (process.platform === 'freebsd') return 'freebsd'
   return 'linux'
 }
 
@@ -497,6 +499,23 @@ export function slotMatch(recipeTok: string, inputTok: string): boolean {
   return true
 }
 
+function splitPrefix(tokens: string[]): string[] {
+  let i = 0
+  while (i < tokens.length && (PREFIXES.has(tokens[i]) || /^[A-Za-z_]\w*=\S*$/.test(tokens[i]))) i++
+  return tokens.slice(i)
+}
+
+/** recipe 与输入的"动词位"是否互斥（install vs update 这类同位置纯单词）。 */
+function verbConflict(rt: string[], want: string[]): boolean {
+  const rc = splitPrefix(rt)
+  const wc = splitPrefix(want)
+  if (rc.length < 2 || wc.length < 2) return false
+  const a = rc[1], b = wc[1]
+  if (a === b) return false
+  const pure = /^[a-z][a-z0-9-]*$/
+  return pure.test(a) && pure.test(b)
+}
+
 export function recipeMatch(entry: Entry, srcKey: string, tokens: string[]): RecipeRaw | null {
   const want = normTokens(tokens)
   const src = srcKey as keyof RecipeRaw
@@ -507,11 +526,14 @@ export function recipeMatch(entry: Entry, srcKey: string, tokens: string[]): Rec
     if (rt.length !== want.length) continue
     if (rt.every((t, i) => t === want[i])) return r
   }
+  // 模糊轮：示例值当槽位，但动词位互斥时跳过——否则 `apt install nginx`
+  // 会被 3 token 的 `sudo apt update` 吃掉，输出 `pkg nginx`。
   for (const r of entry.recipes) {
     const s = r[src] as string | null | undefined
     if (!s) continue
     const rt = normTokens(tokenize(s))
     if (rt.length !== want.length) continue
+    if (verbConflict(rt, want)) continue
     if (rt.every((t, i) => slotMatch(t, want[i]))) return r
   }
   return null
@@ -562,11 +584,16 @@ function translateFlags(
   let unknown = false
   const dropped = new Set<string>()
 
-  const table = new Map<string, FlagRaw>()
+  type FlagHit = { f: FlagRaw; extra: number; ex: string[] }
+  const table = new Map<string, FlagHit>()
   for (const f of entry.flags) {
     const s = f[srcKey as keyof FlagRaw] as string | null | undefined
     if (!s) continue
-    table.set(s, f)
+    const parts = s.split(/\s+/).filter((t) => t !== '')
+    if (!parts.length) continue
+    // 数据里的参数常写成 "-c %s" / "-n 100"（带示例值）：按首 token 建索引，
+    // 记下后面有几个示例值 token，输入里才认得出这个参数吃了几个值
+    table.set(parts[0], { f, extra: parts.length - 1, ex: parts.slice(1) })
   }
 
   const targetTokens = (f: FlagRaw): string[] => {
@@ -575,18 +602,42 @@ function translateFlags(
     return t ? t.split(/\s+/) : []
   }
 
-  for (const a of args) {
-    if (table.has(a)) {
-      const tts = targetTokens(table.get(a)!)
-      if (!tts.length) {
-        caveats.push(`参数 ${a} 在目标平台无直接对应，已丢弃（${table.get(a)!.semantic || ''}）`)
+  for (let i = 0; i < args.length; i++) {
+    const a = args[i]
+    const hit = table.get(a)
+    if (hit) {
+      const { f, extra, ex } = hit
+      const tts = targetTokens(f)
+      if (extra === 0) {
+        if (!tts.length) caveats.push(`参数 ${a} 在目标平台无直接对应，已丢弃（${f.semantic || ''}）`)
+        out.push(...tts)
+        continue
       }
-      out.push(...tts)
+      // 参数带示例值（大多是格式符，如 %s / %Lp）：只有输入与示例完全一致才整体替换，
+      // 否则会把用户的真实值（行数、路径）错误地换成示例值
+      const userVals = args.slice(i + 1, i + 1 + extra)
+      const sameAsExample = userVals.length === extra && userVals.every((v, k) => v === ex[k])
+      if (sameAsExample) {
+        if (!tts.length) caveats.push(`参数 ${a} ${ex.join(' ')} 在目标平台无直接对应，已丢弃（${f.semantic || ''}）`)
+        out.push(...tts)
+        i += extra
+        continue
+      }
+      if (!tts.length) {
+        // 目标平台没这个参数、值又是用户自己的：整段吞掉会静默改语义，保留并提示
+        caveats.push(`参数 ${a} ${userVals.join(' ')} 在目标平台无直接对应，原样保留，执行前务必核对（${f.semantic || ''}）`)
+        out.push(a, ...userVals)
+        i += extra
+        continue
+      }
+      // 目标参数也吃值：保留用户的值，只换开关部分
+      out.push(...tts.slice(0, Math.max(1, tts.length - extra)), ...userVals)
+      i += extra
       continue
     }
     const [key, val] = splitFlagValue(a)
     if (key !== a && table.has(key)) {
-      const tts = targetTokens(table.get(key)!)
+      const tts = targetTokens(table.get(key)!.f)
       if (tts.length) {
         out.push(...tts)
         if (val !== null) out.push(val)
@@ -594,14 +645,14 @@ function translateFlags(
       continue
     }
     // POSIX 组合短参数 -la
-    if ((srcKey === 'linux' || srcKey === 'macos') && /^-[A-Za-z]{2,}$/.test(a)) {
+    if (srcKey !== 'windows' && srcKey !== 'windows_cmd' && /^-[A-Za-z]{2,}$/.test(a)) {
       const expanded: string[] = []
       const lost: string[] = []
       let ok = true
       for (const ch of a.slice(1)) {
         const single = `-${ch}`
         if (table.has(single)) {
-          const tts = targetTokens(table.get(single)!)
+          const tts = targetTokens(table.get(single)!.f)
           if (tts.length) expanded.push(...tts)
           else lost.push(single)
         } else { ok = false; break }
@@ -623,7 +674,7 @@ function translateFlags(
       out.push(a)
       continue
     }
-    if (/^--?[A-Za-z][A-Za-z0-9_-]*(=.*)?$/.test(a) && tgt === 'windows' && (srcKey === 'linux' || srcKey === 'macos')) {
+    if (/^--?[A-Za-z][A-Za-z0-9_-]*(=.*)?$/.test(a) && tgt === 'windows' && srcKey !== 'windows' && srcKey !== 'windows_cmd') {
       dropped.add(a)
       caveats.push(`参数 ${a} 在 ${shellTgt} 无对应，已丢弃 —— 请核对结果是否符合原意`)
       continue
@@ -786,7 +837,8 @@ export function translateSegment(seg: string, src: string, tgt: string, shellTgt
 
 const PLATFORM_WORDS: Record<string, RegExp> = {
   windows: /PowerShell|PS ?5\.1|\bcmd\.exe\b|Select-String|Get-[A-Z]\w+|Remove-Item|Copy-Item|Start-Process|注册表|回收站|Windows|Win32|icacls|winget|\bNUL\b|tasklist|findstr/,
-  macos: /macOS|OS X|BSD|launchctl|Homebrew|brew |plutil|shasum|diskutil|-j -f|ditto|\bpbpaste\b/,
+  macos: /macOS|OS X|launchctl|Homebrew|brew |plutil|shasum|diskutil|-j -f|ditto|\bpbpaste\b|\/Applications|~\/Library|\/Volumes/,
+  freebsd: /FreeBSD|BSD|\/usr\/home|rc\.conf|sysrc|\bpkg (install|delete|search|info|upgrade)\b|ports|\bjail\b|pf\.conf|sockstat|\bfetch\b|\btruss\b|\/usr\/local\/etc|gpart/,
   linux: /Linux|GNU|systemd|systemctl|\bdnf\b|\bapt\b|\/proc|\/etc\/|\byum\b|netstat|\biproute\b/,
 }
 

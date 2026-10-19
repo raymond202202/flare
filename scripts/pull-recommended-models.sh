@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+#!/bin/sh
 # Flare 推荐本地模型一键拉取（混合模式：简单任务走本地小模型，省钱/隐私/离线）
 #
 # 背景：用户机器 64GB 内存 + 4GB 显存，混合模式方向——简单任务路由到本地 Ollama 模型。
@@ -48,7 +48,7 @@ pull_one() {
 }
 
 main() {
-  if [[ $# -gt 0 && "$1" == "--list" ]]; then
+  if [ $# -gt 0 ] && [ "$1" = "--list" ]; then
     list_recommended
     return 0
   fi
@@ -59,7 +59,7 @@ main() {
     exit 1
   fi
 
-  if [[ $# -eq 0 ]]; then
+  if [ $# -eq 0 ]; then
     # 无参数：拉取全部推荐模型
     list_recommended
     echo ""
@@ -77,17 +77,17 @@ main() {
   for model in "$@"; do
     local found=0
     for entry in "${RECOMMENDED[@]}"; do
-      if [[ "$model" == "${entry%%|*}" ]]; then
+      if [ "$model" = "${entry%%|*}" ]; then
         found=1
         break
       fi
     done
-    if [[ $found -eq 0 ]]; then
+    if [ $found -eq 0 ]; then
       echo "⚠️  未知推荐模型：$model（可用：qwen3:1.7b / deepseek-r1:1.5b / qwen3:30b-a3b）" >&2
       unknown=1
     fi
   done
-  if [[ $unknown -eq 1 ]]; then
+  if [ $unknown -eq 1 ]; then
     echo "提示：可用 --list 查看完整推荐清单。" >&2
     exit 1
   fi

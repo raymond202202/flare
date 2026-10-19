@@ -26,7 +26,7 @@ npm install
 npm run build
 
 # 安装到本地（项目目录与安装目录分离）
-bash scripts/install.sh
+sh scripts/install.sh
 
 # 交互模式
 flare
@@ -34,6 +34,24 @@ flare
 # 单次查询
 flare chat -q "帮我写一个 FastAPI 服务"
 ```
+
+### FreeBSD
+
+FreeBSD 的 base 系统里**没有** node / npm / python / bash，先装依赖（`better-sqlite3` 是原生模块，需要 python3 + base 自带的 clang 编译）：
+
+```sh
+# 以 root 执行（或 pkg install 到自己的前缀）
+pkg install -y node22 python3
+```
+
+之后步骤同上，用 POSIX shell 跑安装脚本即可（脚本本身不依赖 bash）：
+
+```sh
+sh scripts/install.sh
+```
+
+- 默认 shell 是 `/bin/sh`（Almquist 派生，无 `[[ ]]` / 数组 / 花括号扩展），Flare 执行命令时按 `/bin/bash` → `/usr/local/bin/bash` → `/bin/zsh` → `/bin/sh` 的顺序自动挑可用的那个
+- 平台识别：`process.platform === 'freebsd'` 时 ferry 翻译默认走 `freebsd` 方言（`pkg` / `sysrc` / `service` / `ifconfig`）
 
 ### 架构
 
@@ -250,7 +268,7 @@ npm install
 npm run build
 
 # Install locally (project dir separated from install dir)
-bash scripts/install.sh
+sh scripts/install.sh
 
 # Interactive mode
 flare
@@ -258,6 +276,24 @@ flare
 # Single query
 flare chat -q "Write a FastAPI service for me"
 ```
+
+### FreeBSD
+
+The FreeBSD base system ships **no** node / npm / python / bash. Install the prerequisites first (`better-sqlite3` is a native module and needs python3 + the clang in base):
+
+```sh
+# as root
+pkg install -y node22 python3
+```
+
+Then the usual steps work under a POSIX shell (the install script does not need bash):
+
+```sh
+sh scripts/install.sh
+```
+
+- The default shell is `/bin/sh` (Almquist-derived: no `[[ ]]`, no arrays, no brace expansion). Flare picks the shell for command execution in the order `/bin/bash` → `/usr/local/bin/bash` → `/bin/zsh` → `/bin/sh`
+- Platform detection: when `process.platform === 'freebsd'`, ferry translation defaults to the `freebsd` dialect (`pkg` / `sysrc` / `service` / `ifconfig`)
 
 ### Architecture
 

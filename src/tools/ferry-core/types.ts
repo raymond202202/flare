@@ -5,18 +5,19 @@
  * 可以共享同一批数据文件和同一批用例。
  */
 
-export type Platform = 'linux' | 'macos' | 'windows'
+export type Platform = 'linux' | 'macos' | 'freebsd' | 'windows'
 export type ShellName = 'bash' | 'zsh' | 'sh' | 'powershell' | 'pwsh' | 'cmd'
 export type Status = 'equivalent' | 'approximate' | 'unsupported' | 'error'
 
 /** 平台键：windows 有 powershell / cmd 两套写法 */
-export type PlatformKey = 'linux' | 'macos' | 'windows' | 'windows_cmd'
+export type PlatformKey = 'linux' | 'macos' | 'freebsd' | 'windows' | 'windows_cmd'
 
 export interface FlagRaw {
   /** 数据文件允许带额外字段（desc 等），类型层不拒绝 */
   [extra: string]: unknown
   linux?: string | null
   macos?: string | null
+  freebsd?: string | null
   windows?: string | null
   windows_cmd?: string | null
   semantic?: string
@@ -27,6 +28,7 @@ export interface RecipeRaw {
   [extra: string]: unknown
   linux?: string | null
   macos?: string | null
+  freebsd?: string | null
   windows?: string | null
   windows_cmd?: string | null
   status?: Status
@@ -53,6 +55,7 @@ export interface PatternRaw {
   [extra: string]: unknown
   linux?: string | null
   macos?: string | null
+  freebsd?: string | null
   windows?: string | null
   windows_cmd?: string | null
   status?: Status
