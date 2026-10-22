@@ -6059,3 +6059,19 @@
 > - **验证**：`npx tsc` 0 错误；全量 **84 文件 / 1287 用例全绿**（新增 ferry-core 5 用例；ferry-tool 从"ferry 未装则跳过"改为不跳过、用临时 hosts.json 保证确定性）。
 > - **文档**：`docs/ferry.md` 重写（内嵌架构 / 数据同步 / 一致性 / 独立性证据 / 限制）。
 > - **下一步候选**：① Pulse / StorySpire 升级 flare 依赖到 v0.6.153 并回归；② Windows 真机跑 drills；③ 数据自动跟随（CI 里比对 ferry 上游 sha，漂移则提醒同步）。
+
+---
+
+### 2026-10-22 修复（P208，v0.6.155）FLARE 问题记录 #13–#17：危险命令分段引擎 + 假成功检测 + 收尾报告
+
+> **P208 完成**：把「工具执行层」的系统性问题一次性收口。新增 `src/tools/risk.ts`（命令分段 + 三档风险判定引擎），替换 `src/tools/index.ts` 里原来的字符串黑名单式危险判定。
+> - **#14/#15/#16 危险命令判定重写**：`classifyCommand()` 先按 `; && || | & 换行 ( )` 分段，每段剥离 `sudo/env/nohup/VAR=…` 等透明前缀后取真实命令名 → 逐段规则匹配。三档 `block / confirm / safe`。
+>   - `rm -rf /`、`rm -rf ~` 等根级删除 → **block**（不可放行，`allowRiskRule` 对该规则返回 false）；
+>   - `rm -rf ./dist`、`git push --force`、`gh repo delete` → **confirm**（不可逆但合理，走确认门，而不是硬拦到诱发绕过）；
+>   - `--force-with-lease` 落到通用 `git-push` 规则，`gh repo create` 未指定可见性时提示默认 `--private`；
+>   - heredoc / 引号内分隔符 / 命令替换（`$(…)`、反引号）分别处理：引号内不当分隔符，动态命令段标记 `dynamic` 后从宽（不误报）。
+> - **放行名单按规则 id 粒度**：`allowRiskRule(rule, 'session'|'always')` / `revokeRiskRule` / `listRiskAllowed` / `isRiskRuleAllowed`；放行 `git-push` 不等于放行 `gh-repo-delete`，且可撤销。无人值守（无交互确认器）时执行不可逆命令会在输出里追加显式 ⚠️ 提示。
+> - **#17 gh 假成功**：`detectFalseSuccess(cmd, output, code)` 捕获退出码 0 但输出是 `HTTP 403/404` 一类错误的场景，避免「403 当成功」上报。
+> - **#13 迭代上限收尾报告**：`formatBudgetReport()` 替换原来那句「请简化你的请求」。现在给出续跑命令（`flare chat --continue <id>`）、动作摘要（`terminal ×2 / gh ×1` + 可读目标 `actionTarget()`）、失败原因、最后一段文本里的未完成线索；无工具调用时如实说明不编造。
+> - **验证**：`npx tsc` 0 错误；全量 **86 文件 / 1330 用例全绿**（新增 `tests/flare-issues-14.test.ts` 24 用例，覆盖 #13/#15/#16/#17；`tests/flare-issues-13.test.ts` 同步 23 用例）。`scripts/smoke-risk.mjs` 为手工冒烟脚本。
+> - **下一步候选**：① `confirm` 档在 TUI 里的交互确认面板落地（当前 CLI 已有 confirmer，非交互场景只有 ⚠️ 提示）；② risk 规则支持用户自定义（配置文件追加规则）；③ 真机 mac/win 跑 `ferry drills` 收尾 P206/P207 遗留。

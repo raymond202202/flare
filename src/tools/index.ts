@@ -11,6 +11,14 @@ import { existsSync, readFileSync, writeFileSync, readdirSync, statSync, renameS
 import { resolve, join } from 'path'
 import { memorySearchTool, memorySaveTool } from './memory.js'
 import { ferryTranslateTool } from './ferry.js'
+import {
+  classifyCommand,
+  detectFalseSuccess,
+  getRiskConfirmer,
+  isRiskRuleAllowed,
+  allowRiskRule,
+  parseCommandSegments,
+} from './risk.js'
 
 /**
  * 执行 shell 命令用的解释器。
@@ -234,30 +242,17 @@ function joinPath(...parts: string[]): string {
 }
 
 /**
- * 危险命令黑名单（正则匹配）
- * 命中直接拒绝执行，防止 AI 误操作毁灭性命令
+ * 危险命令判定（v0.6.155 起委托给 risk.ts 的命令分段引擎）
+ *
+ * 旧实现是「对整条命令行做正则匹配」，两类缺陷都出在这里：
+ *   - 误伤：命令行里出现 `wget` 一词（哪怕在 echo/grep/for 列表里）就拦
+ *   - 漏拦：heredoc 里写文档提到危险词 → 反而被当成命令拦下（#16 补充）
+ *   - 漏拦：gh repo delete / rm -rf 非 tmp 等真不可逆操作却没有规则
+ * 现在先做 shell 分词（丢 heredoc 正文、识别引号/注释/重定向），只在「命令位」判定。
  */
-const DANGEROUS_COMMANDS: RegExp[] = [
-  /\brm\s+(-[a-zA-Z]*[rf][a-zA-Z]*\s+)+\/\s*(\*|$)/,          // rm -rf /
-  /\brm\s+-[a-zA-Z]*[rf][a-zA-Z]*\s+~/,                        // rm -rf ~
-  /\brm\s+-[a-zA-Z]*[rf][a-zA-Z]*\s+\/home\b/,                 // rm -rf /home
-  /\bmkfs\./,                                                   // mkfs 格式化
-  /\bdd\s+if=.*\s+of=\/dev\/(sd|nvme|hd)/,                      // dd 写磁盘
-  /:\s*\(\)\s*\{\s*:\s*\|\s*:\s*&\s*\};?\s*:/,                 // fork bomb
-  /\bchmod\s+-R\s+777\s+\//,                                    // chmod 根目录
-  /\b>\/dev\/sda\b/,                                            // 直接写设备
-  /\b(?:wget|curl)\b[^\n]*\|\s*(?:ba)?sh\b/,                     // curl | bash（下载执行）
-  /(?:^|[;&|]\s*)(?:sudo\s+)?(?:shutdown|reboot|init\s+0)\b/,    // 关机/重启（锚定命令位，不误伤 echo/grep）
-  /\bgit\s+push\b[^\n]*\s--force(?![-\w])/,                      // force push（放过 --force-with-lease）
-]
-
 function isDangerousCommand(command: string): string | null {
-  for (const pattern of DANGEROUS_COMMANDS) {
-    if (pattern.test(command)) {
-      return pattern.toString()
-    }
-  }
-  return null
+  const v = classifyCommand(command)
+  return v.level === 'block' ? `${v.rule}（${v.reason}）` : null
 }
 
 /* ══════════════════ 终端执行引擎（v0.6.154 重写） ══════════════════
@@ -462,13 +457,47 @@ export const terminalTool: Tool = {
   },
   execute: (async (args: { command: string; timeout?: number; background?: boolean }) => {
     try {
-      // 危险命令拦截
-      const danger = isDangerousCommand(args.command)
-      if (danger) {
+      // ── 风险分级（v0.6.155，#15/#16）：block 硬拦 / confirm 需确认 / safe 直接跑 ──
+      const verdict = classifyCommand(args.command)
+      if (verdict.level === 'block') {
+        const seg = verdict.segment && verdict.segment.trim() !== args.command.trim()
+          ? `\n命中片段: ${verdict.segment.slice(0, 200)}`
+          : ''
         return {
           success: false,
           output: '',
-          error: `命令被安全策略拦截（匹配危险模式: ${danger}）。Flare 拒绝执行可能造成不可逆损坏的命令。`,
+          error: `命令被安全策略拦截（规则 ${verdict.rule}：${verdict.reason}）。Flare 拒绝执行可能造成不可逆损坏的命令。${seg}`,
+        }
+      }
+
+      // confirm 档（不可逆但可能合理）：交互模式先征询；无人值守模式放行但显式标注
+      let riskNote = ''
+      if (verdict.level === 'confirm' && verdict.rule) {
+        const rule = verdict.rule
+        if (!isRiskRuleAllowed(rule)) {
+          const confirmer = getRiskConfirmer()
+          if (confirmer) {
+            const decision = await confirmer({
+              command: args.command,
+              rule,
+              level: verdict.level,
+              reason: verdict.reason || '',
+              segment: verdict.segment,
+            })
+            if (decision === 'deny' || decision === 'alternative') {
+              return {
+                success: false,
+                output: '',
+                denied: true,
+                alternative: decision === 'alternative',
+                error: `用户拒绝执行不可逆操作（规则 ${rule}：${verdict.reason}）${decision === 'alternative' ? '，并要求换用其他方案' : ''}`,
+              }
+            }
+            if (decision === 'allow_session') allowRiskRule(rule, 'session')
+            if (decision === 'always') allowRiskRule(rule, 'always')
+          } else {
+            riskNote = `\n\n⚠️ 不可逆操作未经确认即执行（规则 ${rule}：${verdict.reason}）——当前无交互确认器（无人值守模式）。在终端交互运行 flare 时会先征询；/allow 可查看与管理放行名单。`
+          }
         }
       }
 
@@ -479,9 +508,20 @@ export const terminalTool: Tool = {
         cmd = cmd.replace(/^~(?=\/|$)/, home).replace(/(?<=\s)~(?=\/|$)/g, home)
       }
 
-      // pkill -f 自伤预警（记录 #9）：命令行自身就含该模式字符串，pkill 会把执行它的 shell 也匹配上
-      const selfKillWarn = /\bpkill\b[^\n]*\s-{1,2}f\b/.test(cmd)
-        ? '\n\n⚠️ 自伤风险：pkill -f 的模式会匹配到执行它的 shell 自身（你的命令行里就含这串字符），可能把自己杀掉、导致后续输出全部丢失。可靠做法：先用 pgrep -f <模式> 取 PID 再 kill，或写成 pkill -f "python3 xxx.py" 加解释器前缀以排除自身。'
+      // pkill -f 自伤预警（记录 #9 / #14）：模式字符串留在自己的命令行里，pkill 会把执行它的 shell 也匹配上。
+      // 只在真有 pkill 调用时提示（对 heredoc 里提到 pkill 的文档不再误报，见 #14/#16 补充）
+      const usesPkillF = parseCommandSegments(args.command).some(
+        (s) => s.name === 'pkill' && /(?:^|\s)-{1,2}f(?:\s|$)/.test(s.argText),
+      )
+      const selfKillWarn = usesPkillF
+        ? [
+            '',
+            '⚠️ 自伤风险：pkill -f 的模式串会出现在它自己的命令行里，pkill 会把执行它的 shell 一并匹配上（有时把整个会话杀掉、后续输出全丢）。',
+            '   可靠写法（任选）：',
+            '   ① 按端口定位：ss -tlnp | grep ":8080"  拿到 pid 后 kill <pid>',
+            '   ② 方括号技巧：pkill -f "[f]luxdl_server"  —— 模式里的 [f] 匹配真正的进程名，但不匹配命令行里字面的 "[f]luxdl_server"，因此不会自伤',
+            '   ③ 先看后杀：pgrep -af "server.py" 确认列表，再 kill <具体pid>',
+          ].join('\n')
         : ''
 
       // ── 后台模式：不等待结束，立即返回 PID + 日志路径（记录 #7/#8 的正解）──
@@ -494,7 +534,7 @@ export const terminalTool: Tool = {
             `输出日志: ${logPath}`,
             `查看最新输出: read_file ${logPath}（或终端 tail -n 50 "${logPath}"）`,
             `存活检查: kill -0 ${pid ?? '<pid>'} 2>/dev/null && echo running || echo exited`,
-          ].join('\n'),
+          ].join('\n') + riskNote,
         }
       }
 
@@ -513,22 +553,34 @@ export const terminalTool: Tool = {
       if (r.timedOut) {
         return {
           success: false,
-          output: body,
-          error: `命令超时（${timeoutSec}s）${r.forceKilled ? '，SIGINT 无效已 SIGKILL 强杀' : '，已发 SIGINT'}。以下是超时前已产生的输出（${body.length} 字符，未丢弃）。长时间任务请加 background: true。${spillNote}${selfKillWarn}`,
+          // 自伤预警放 output：模型主要读 output，塞进 error 容易被忽略（#14）
+          output: body + selfKillWarn,
+          error: `命令超时（${timeoutSec}s）${r.forceKilled ? '，SIGINT 无效已 SIGKILL 强杀' : '，已发 SIGINT'}。以下是超时前已产生的输出（${body.length} 字符，未丢弃）。长时间任务请加 background: true。${spillNote}`,
         }
       }
       if (r.code === null || r.code !== 0) {
         const codeDesc = r.code !== null ? `退出码 ${r.code}` : `被信号 ${r.signal ?? '未知'} 终止`
         return {
           success: false,
-          output: body,
-          error: `命令执行失败（${codeDesc}）${body ? '' : '：无输出'}${spillNote}${selfKillWarn}`,
+          output: body + selfKillWarn,
+          error: `命令执行失败（${codeDesc}）${body ? '' : '：无输出'}${spillNote}`,
         }
       }
+      // gh 的「退出码 0 但实际失败」（#17）：gh 把 HTTP 错误写到输出里却正常退出，
+      // 上游只看 exit code 就会以为 push/create 成功了。
+      const falseSuccess = detectFalseSuccess(args.command, body, r.code ?? 0)
+      if (falseSuccess) {
+        return {
+          success: false,
+          output: body,
+          error: `${falseSuccess}\ngh 打印错误但进程正常退出是 gh 的已知行为，不能凭退出码判断成功。请核对输出里的 HTTP 状态、仓库名与权限范围。${spillNote}`,
+        }
+      }
+
       const heldNote = r.pipeHeldOpen
         ? '\n\n[注：主进程已退出（退出码 0），但有子进程仍持有输出管道未关闭；已按完成处理并返回现有输出，不再误报超时]'
         : ''
-      return { success: true, output: body + heldNote + spillNote + selfKillWarn }
+      return { success: true, output: body + heldNote + spillNote + selfKillWarn + riskNote }
     } catch (e: any) {
       return {
         success: false,

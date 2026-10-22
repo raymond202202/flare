@@ -15,6 +15,7 @@
 import { describe, it, expect } from 'vitest'
 import { existsSync, unlinkSync } from 'fs'
 import { terminalTool } from '../src/tools/index.js'
+import { classifyCommand } from '../src/tools/risk.js'
 
 const BLOCKED = '安全策略拦截'
 
@@ -59,13 +60,16 @@ describe('#1 危险命令正则：放行误伤，仍然拦截真危险', () => {
     expect(bad.error).toContain(BLOCKED)
   })
 
-  it('git push --force-with-lease 放行，--force 拦截', async () => {
+  it('git push --force-with-lease 放行，--force 走确认而非硬拦', async () => {
     const ok = await terminalTool.execute({
       command: 'echo "git push --force-with-lease origin main"',
     })
     expect(ok.error || '').not.toContain(BLOCKED)
-    const bad = await terminalTool.execute({ command: 'git push --force origin main' })
-    expect(bad.error).toContain(BLOCKED)
+    // v0.6.155 起 #16：--force 降为 confirm（硬拦会把模型逼向删库重建这类更危险绕过），
+    // 不再真实执行 git push（旧用例跑真命令会挂网络）
+    const v = classifyCommand('git push --force origin main')
+    expect(v.level).toBe('confirm')
+    expect(v.rule).toBe('git-force-push')
   })
 })
 
@@ -151,11 +155,18 @@ describe('#7 #8 background 模式：立即返回，不阻塞对话', () => {
 })
 
 describe('#9 pkill -f 自伤预警', () => {
-  it('检测到 pkill -f 时给出预警文案', async () => {
-    const r = await terminalTool.execute({ command: "echo 'pkill -f fluxdl_server.py'" })
-    expect(r.success).toBe(true)
+  it('真实执行 pkill -f 时给出预警文案', async () => {
+    // v0.6.155：改为按命令位判定 —— 只对真正执行的 pkill 提示。
+    // 用不匹配任何进程的模式（[f] 方括号技巧），避免真的杀掉测试进程。
+    const r = await terminalTool.execute({ command: 'pkill -f "[f]lare_selftest_never_match"' })
     expect(r.output).toContain('自伤风险')
     expect(r.output).toContain('pgrep')
+  })
+
+  it('引号/echo 里提到 pkill -f 不误报（#14/#16）', async () => {
+    const r = await terminalTool.execute({ command: "echo 'pkill -f fluxdl_server.py'" })
+    expect(r.success).toBe(true)
+    expect(r.output).not.toContain('自伤风险')
   })
 
   it('pkill 不带 -f 不误报', async () => {

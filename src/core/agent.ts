@@ -299,7 +299,7 @@ export class Agent {
     // v0.6.154：默认 30 → 50；硬上限 50 → 200（可用 FLARE_MAX_ITERATIONS 或配置覆盖）
     // 原因：30 次在真实多文件项目里会被"对抗工具缺陷"吃掉三分之一（见 FLARE问题记录.md #11），
     // 长任务被腰斩后用户只能重开会话、上下文全丢。上限提高后仍保留护栏，避免失控死循环。
-    const HARD_MAX_ITERATIONS = 200
+    const HARD_MAX_ITERATIONS = 500
     const DEFAULT_MAX_ITERATIONS = 50
     const envMax = Number.parseInt(process.env.FLARE_MAX_ITERATIONS || '', 10)
     const configuredMax = Number.isFinite(envMax) && envMax > 0
@@ -308,6 +308,11 @@ export class Agent {
     const maxIter = Math.max(1, Math.min(configuredMax, HARD_MAX_ITERATIONS))
     let noProgressCount = 0 // 连续无文本输出的工具调用次数
     const recentToolSignatures: string[] = [] // 最近工具调用签名（检测死循环）
+    // v0.6.155（#13）：记录本轮动作与最后一段文本——命中迭代上限时给出「已做/未做」清单，
+    // 而不是一句「请简化你的请求」把长任务废掉（上下文其实都还在，能接着跑）。
+    const turnActions: TurnAction[] = []
+    let lastText = ''
+    let budgetExhausted = false
 
     while (iterations < maxIter) {
       iterations++
@@ -350,6 +355,7 @@ export class Agent {
       // 生成文本输出
       if (response.content) {
         noProgressCount = 0 // 有文本输出，重置计数器
+        lastText = response.content
         yield { type: 'text', content: response.content }
       }
 
@@ -389,6 +395,7 @@ export class Agent {
             }
           } catch (parseErr: any) {
             const errMsg = `工具「${tc.function.name}」的参数解析失败: ${parseErr.message}`
+            turnActions.push({ name: tc.function.name, target: '(参数无法解析)', ok: false, error: parseErr.message })
             yield { type: 'tool_result', content: errMsg, toolName: tc.function.name }
             // 把错误喂回给 LLM，让它修正参数而不是崩溃
             this.messages.push({
@@ -442,15 +449,22 @@ export class Agent {
             name: tc.function.name,
             content: result.success ? truncatedOutput : `错误: ${result.error?.slice(0, 500)}`,
           })
+          turnActions.push({
+            name: tc.function.name,
+            target: actionTarget(tc.function.name, args),
+            ok: !!result.success,
+            error: result.success ? undefined : String(result.error || '').replace(/\s+/g, ' ').slice(0, 120),
+          })
         }
+        if (iterations >= maxIter) budgetExhausted = true
       } else {
         // 没有工具调用，对话结束
         break
       }
     }
 
-    if (iterations >= maxIter) {
-      yield { type: 'error', content: `已达到最大迭代次数(${maxIter})，已自动停止。请简化你的请求后重试。` }
+    if (budgetExhausted) {
+      yield { type: 'error', content: formatBudgetReport({ actions: turnActions, lastText, maxIter, sessionId: this.config.sessionId }) }
     }
 
     // 保存到会话：把本轮所有消息（从 turnStartIdx 开始）完整保存
@@ -540,4 +554,78 @@ export class Agent {
   getMessages(): Message[] {
     return this.messages
   }
+}
+
+/* ────────────────────────── 迭代预算收尾（v0.6.155，#13） ────────────────────────── */
+
+/** 一轮里的一次工具动作（用于耗尽预算时汇报「已做 / 卡在哪」） */
+export interface TurnAction {
+  name: string
+  target: string
+  ok: boolean
+  error?: string
+}
+
+/** 从工具参数里取一个短目标描述（命令/路径/查询），便于人读 */
+export function actionTarget(toolName: string, args: Record<string, any> | undefined): string {
+  if (!args || typeof args !== 'object') return ''
+  const pick = ['command', 'path', 'file_path', 'filePath', 'pattern', 'query', 'url', 'name', 'repo']
+  for (const k of pick) {
+    const v = args[k]
+    if (typeof v === 'string' && v.trim()) {
+      return v.replace(/\s+/g, ' ').trim().slice(0, 80)
+    }
+  }
+  return ''
+}
+
+/**
+ * 命中迭代上限时的收尾文案。
+ *
+ * 设计依据（FLARE问题记录 #13）：一句「请简化你的请求后重试」等于把长任务判死——
+ * 上下文、工具结果、已完成步骤都还在，用户真正需要的是「停在哪、怎么接着跑」。
+ * 因此这里输出：续跑命令 + 本轮动作摘要（按工具聚合，含最后失败原因）+ 最后一段模型文本。
+ */
+export function formatBudgetReport(input: {
+  actions: TurnAction[]
+  lastText: string
+  maxIter: number
+  sessionId?: string
+}): string {
+  const { actions, lastText, maxIter, sessionId } = input
+  const lines: string[] = []
+  lines.push(`已达本轮迭代上限(${maxIter})，自动停止。上下文与工具结果均已保留，可直接续跑：`)
+  lines.push(`  flare chat --continue              # 接着这个会话继续（不重跑已完成步骤）`)
+  lines.push(`  flare chat --continue -m ${Math.min(maxIter * 2, 500)}         # 或本轮给更大预算（上限 500）`)
+  if (sessionId) lines.push(`  flare chat -s ${sessionId}          # 指定会话显式续聊`)
+
+  if (actions.length > 0) {
+    lines.push('')
+    lines.push(`本轮执行摘要（${actions.length} 次工具调用）：`)
+    const byTool = new Map<string, TurnAction[]>()
+    for (const a of actions) {
+      const arr = byTool.get(a.name) || []
+      arr.push(a)
+      byTool.set(a.name, arr)
+    }
+    for (const [name, arr] of byTool) {
+      const okCount = arr.filter((a) => a.ok).length
+      const failCount = arr.length - okCount
+      const last = arr[arr.length - 1]
+      const lastDesc = last.target ? `（最近：${last.target}）` : ''
+      lines.push(`  ${failCount === 0 ? '✓' : '✗'} ${name} ×${arr.length}${lastDesc}${failCount > 0 ? ` — 失败 ${failCount} 次` : ''}`)
+      const lastErr = [...arr].reverse().find((a) => !a.ok && a.error)
+      if (lastErr?.error) lines.push(`      最后失败原因：${lastErr.error}`)
+    }
+  } else {
+    lines.push('')
+    lines.push('本轮没有留下任何工具调用（模型停在思考阶段）。')
+  }
+
+  const clue = lastText.replace(/\s+/g, ' ').trim()
+  if (clue) {
+    lines.push('')
+    lines.push(`未完成线索（模型最后一段话）：${clue.slice(0, 200)}${clue.length > 200 ? '…' : ''}`)
+  }
+  return lines.join('\n')
 }

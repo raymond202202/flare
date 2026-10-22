@@ -192,3 +192,21 @@ export { memoryStoreKv } from './core/confirm.js'
 // v0.6.136：detectProvider 已从 core/models.js 直接导出（server.ts re-export 保持兼容，此处不再重复）
 export { startHostServer, wrapConfirmTools, DEFAULT_CONFIRM_TOOLS, collectModelInfo, describeTools, buildConfirmEvent } from './server.js'
 export type { HostServerOptions, ModelEndpointInfo, ModelInfoResponse, ToolMeta, ToolSourceSets, ConfirmEvent } from './server.js'
+
+// ===== 命令风险分级（v0.6.155）：block / confirm / safe 三档 + shell 分段判定 =====
+export {
+  classifyCommand,
+  parseCommandSegments,
+  commandPlainText,
+  detectFalseSuccess,
+  setRiskConfirmer,
+  getRiskConfirmer,
+  setRiskAllowanceStore,
+  isRiskRuleAllowed,
+  allowRiskRule,
+  revokeRiskRule,
+  listRiskAllowed,
+  resetRiskSession,
+  allRuleIds,
+} from './tools/risk.js'
+export type { RiskLevel, RiskVerdict, RiskDecision, RiskConfirmInfo, RiskConfirmer, CommandSegment } from './tools/risk.js'

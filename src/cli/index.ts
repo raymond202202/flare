@@ -8,7 +8,7 @@
  */
 
 import { Command } from 'commander'
-import { Agent, createProvider, getMemoryStore, config, tools, McpManager, estimateMessagesTokens, suggestTrim, ConfirmationGate, memoryStoreKv, wrapConfirmTools, describeTools, validateToolOutputPolicy, mcpContentToText, routeTaskModel, type AgentConfig, type McpServerStatus, type ConfirmDecision, type McpResourceRef, type McpResourceTemplateRef, type McpPromptRef, type McpResourceContents, type McpPromptResult, type McpCompletionResult, type McpCallResult, type McpToolRef, type ToolOutputPolicy } from '../index.js'
+import { Agent, createProvider, getMemoryStore, config, tools, McpManager, estimateMessagesTokens, suggestTrim, ConfirmationGate, memoryStoreKv, wrapConfirmTools, describeTools, validateToolOutputPolicy, mcpContentToText, routeTaskModel, type AgentConfig, type McpServerStatus, type ConfirmDecision, type McpResourceRef, type McpResourceTemplateRef, type McpPromptRef, type McpResourceContents, type McpPromptResult, type McpCompletionResult, type McpCallResult, type McpToolRef, type ToolOutputPolicy, setRiskConfirmer, setRiskAllowanceStore, listRiskAllowed, allRuleIds, revokeRiskRule, allowRiskRule, type RiskDecision, type RiskConfirmInfo } from '../index.js'
 import chalk from 'chalk'
 import { execSync } from 'child_process'
 import { createRequire } from 'module'
@@ -77,6 +77,53 @@ async function startInteractive(opts: { contextSummarize?: boolean; newSession?:
       onResume: () => { disableEcho(); startRenderLoop(); renderFrame() },
       onFeedback: (msg) => { agentOutput += Y(`  ${msg}\n`) },
     }),
+  })
+  // 命令级风险确认（v0.6.155）：terminal 工具的不可逆操作（git push / rm -r / gh repo delete …）
+  // 与上面的工具级确认门解耦——这里问的是「这条命令要不要执行」，粒度是规则 id，
+  // 放行 git-push 不会连带放行 gh-repo-delete。
+  setRiskAllowanceStore(memoryStoreKv(store))
+  setRiskConfirmer(async (info: RiskConfirmInfo): Promise<RiskDecision> => {
+    const prompt = [
+      '',
+      `⚠️ 不可逆操作（规则 ${info.rule}）：${info.reason}`,
+      `  命令: ${info.command.length > 240 ? info.command.slice(0, 240) + '…' : info.command}`,
+      info.segment && info.segment.trim() !== info.command.trim()
+        ? `  命中片段: ${info.segment.length > 120 ? info.segment.slice(0, 120) + '…' : info.segment}`
+        : '',
+      '  [y] 允许一次    [s] 本次会话允许    [a] 总是允许    [n] 拒绝（默认）    [e] 换个方案',
+      '  你的选择 [y/s/a/n/e]: ',
+    ].filter((l) => l !== '').join('\n')
+    stopRenderLoop()
+    restoreEcho()
+    try {
+      const ans = await new Promise<string>((resolve) => {
+        const rl = createInterface({ input: process.stdin, output: process.stdout })
+        rl.question(prompt, (a) => {
+          rl.close()
+          resolve(a.trim().toLowerCase())
+        })
+      })
+      let decision: RiskDecision = 'deny'
+      if (ans === 'y' || ans === 'yes' || ans === 'allow_once') decision = 'allow_once'
+      else if (ans === 's' || ans === 'session' || ans === 'allow_session') decision = 'allow_session'
+      else if (ans === 'a' || ans === 'always') decision = 'always'
+      else if (ans === 'e' || ans === 'alt' || ans === 'alternative') decision = 'alternative'
+      const fb =
+        decision === 'allow_once' ? '已允许本次执行'
+        : decision === 'allow_session' ? `已放行（本会话内不再确认 ${info.rule}）`
+        : decision === 'always' ? `已永久放行 ${info.rule}（跨会话记住；/allow revoke ${info.rule} 可撤销）`
+        : decision === 'alternative' ? '已要求换个方案'
+        : '已拒绝'
+      agentOutput += Y(`  ${fb}\n`)
+      return decision
+    } catch {
+      agentOutput += Y('  ⚠️ 确认输入异常，已按拒绝处理\n')
+      return 'deny'
+    } finally {
+      disableEcho()
+      startRenderLoop()
+      renderFrame()
+    }
   })
   // 主模型：settings main_model（/model 切换）优先，否则默认（.env DEFAULT_MODEL → 自动路由）
   // MCP 工具：已连接的服务器工具并入内置工具集（重建 Agent 时生效）
@@ -1145,12 +1192,38 @@ export async function handleSlashCommand(
           output(`  ${chalk.green(name)}${scope ? chalk.gray(scopeLabel(scope)) : ''}`)
         }
       }
-      output(chalk.gray('  /allow add <工具名> [session|always] - 显式放行（默认本会话）'))
-      output(chalk.gray('  /allow revoke <工具名> - 撤销放行（恢复每次确认）'))
+      // 命令级风险规则放行名单（v0.6.155）：与工具级放行分开列，粒度到规则 id
+      const riskRules = listRiskAllowed()
+      if (riskRules.length > 0) {
+        output(chalk.cyan('\n⚠️ 已放行的命令风险规则:'))
+        for (const r of riskRules) {
+          output(`  ${chalk.green(r.rule)}${chalk.gray(r.scope === 'always' ? '（跨会话持久化）' : '（本会话）')}`)
+        }
+      } else {
+        output(chalk.gray('\n  命令风险规则: 无放行（不可逆命令每次都会先征询）'))
+      }
+      output(chalk.gray('  /allow rules - 列出全部命令风险规则 id'))
+      output(chalk.gray('  /allow add <工具名|风险规则> [session|always] - 显式放行（默认本会话）'))
+      output(chalk.gray('  /allow revoke <工具名|风险规则> - 撤销放行（恢复每次确认）'))
+      return 'continue'
+    }
+    if (sub === 'rules') {
+      const ids = allRuleIds()
+      output(chalk.cyan('\n命令风险规则（confirm 档可放行；block 档不可放行）:'))
+      for (const id of ids) output(`  ${chalk.green(id)}`)
+      output(chalk.gray('  /allow add <规则id> [session|always] 放行 | /allow revoke <规则id> 撤销'))
       return 'continue'
     }
     if (sub === 'revoke' && rest.length > 0) {
       const name = rest.join(' ')
+      // 风险规则放行（v0.6.155）：先按规则 id 处理，再回退工具名
+      if (allRuleIds().includes(name)) {
+        const ok = revokeRiskRule(name)
+        output(ok
+          ? chalk.green(`\n  已撤销风险规则 ${name} 的放行（该命令恢复每次确认）`)
+          : chalk.yellow(`\n  风险规则 ${name} 未被放行`))
+        return 'continue'
+      }
       const ok = allowGate.revoke(name)
       output(ok
         ? chalk.green(`\n  已撤销 ${name} 的放行（恢复每次确认）`)
@@ -1166,6 +1239,14 @@ export async function handleSlashCommand(
       const mode = (rest[1] ?? 'session').toLowerCase()
       if (mode !== 'session' && mode !== 'always') {
         output(chalk.yellow(`\n  非法模式「${rest[1]}」：仅支持 session（本会话）或 always（跨会话持久化）`))
+        return 'continue'
+      }
+      // 风险规则放行（v0.6.155）：规则 id 优先，粒度到规则（放行 git-push 不影响 gh-repo-delete）
+      if (allRuleIds().includes(name)) {
+        const ok = allowRiskRule(name, mode)
+        output(ok
+          ? chalk.green(`\n  已放行风险规则 ${name}（${mode === 'always' ? '跨会话持久化' : '本会话内不再确认'}）`)
+          : chalk.yellow(`\n  放行风险规则 ${name} 失败（block 档规则不可放行）`))
         return 'continue'
       }
       if (!allowGate.allow) {
@@ -1535,6 +1616,36 @@ export async function handleSlashCommand(
   return 'continue'
 }
 
+/** --continue 注入的提示语（#13）：从断点接着做，少走回头路 */
+const CONTINUE_PROMPT =
+  '继续上一次未完成的任务：从断点接着做，已完成的部分不要重做或重复验证；' +
+  '若已经全部完成，简要汇报结果、仍未完成的项与阻塞原因。'
+
+/**
+ * v0.6.155（#13）：接着最近一个会话续跑。
+ * 与「重开会话重说一遍」的本质区别：历史工具结果都在上下文里，模型不必重跑已完成步骤。
+ */
+async function continueSession(maxIterations?: number, sessionId?: string) {
+  const store = getMemoryStore()
+  const all = store.getAllSessions()
+  let sid = sessionId
+  if (sid) {
+    if (!all.some((s) => s.id === sid)) {
+      console.error(chalk.red(`❌ 会话 ${sid} 不存在，无法 --continue（flare sessions 查看现有会话）`))
+      process.exit(1)
+    }
+  } else {
+    const recent = all.find((s) => !s.archived)
+    if (!recent) {
+      console.error(chalk.red('❌ 没有可续跑的会话（--continue 需要一个已有会话）'))
+      process.exit(1)
+    }
+    sid = recent.id
+    console.error(chalk.gray(`↩️ 续跑最近会话：${recent.title}（${sid.slice(0, 8)}，${recent.messageCount} 条消息）`))
+  }
+  await runQuery(CONTINUE_PROMPT, maxIterations, undefined, sid)
+}
+
 async function runQuery(query: string, maxIterations?: number, attachments?: string[], sessionId?: string) {
   const store = getMemoryStore()
   // v0.6.128：--session 续聊已有会话（Agent 构造自动加载历史）；缺省新建「单次查询」会话。
@@ -1624,11 +1735,17 @@ export function main() {
     .description('与 Flare 对话')
     .option('-q, --query <text>', '单次查询模式，直接提问')
     .option('-i, --image <path>', '附带图片路径（可与 -q 一起用；也可在问题中直接写路径）')
-    .option('-m, --max-iterations <n>', '最大工具调用迭代次数（默认50，上限200；可用环境变量 FLARE_MAX_ITERATIONS 覆盖）')
+    .option('-m, --max-iterations <n>', '最大工具调用迭代次数（默认50，硬上限500；可用环境变量 FLARE_MAX_ITERATIONS 覆盖。撞上限时 flare 会给出本轮摘要 + flare chat --continue 续跑，v0.6.155）')
     .option('-s, --session <sessionId>', '续聊已有会话（单次查询追加到该会话历史；缺省新建「单次查询」会话；会话不存在 exit 1 不触发生成；已归档会话续聊给黄色提示不拦截 v0.6.129；v0.6.128）')
     .option('-n, --new', '强制新建会话（交互模式默认自动恢复最近会话，聊天记录保留在窗口中；v0.6.145）')
+    .option('-c, --continue', '接着最近会话（或 --session 指定会话）续跑上一轮未完成的任务，不重跑已完成步骤（常配合 -m 提高本轮预算；v0.6.155）')
     .option('--context-summarize', '交互模式开启上下文压缩摘要（裁剪时把丢弃历史压缩成摘要消息，AI 保留话题连续性；v0.6.19）')
-    .action(async (options: { query?: string; image?: string; maxIterations?: string; session?: string; new?: boolean; contextSummarize?: boolean }) => {
+    .action(async (options: { query?: string; image?: string; maxIterations?: string; session?: string; new?: boolean; contextSummarize?: boolean; continue?: boolean }) => {
+      const maxIter0 = options.maxIterations ? parseInt(options.maxIterations, 10) : undefined
+      if (options['continue']) {
+        await continueSession(maxIter0, options.session)
+        return
+      }
       if (options.query) {
         const maxIter = options.maxIterations ? parseInt(options.maxIterations, 10) : undefined
         await runQuery(options.query, maxIter, options.image ? [options.image] : undefined, options.session)
