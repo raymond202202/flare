@@ -6,6 +6,7 @@
  */
 
 import { Message, LLMProvider, createProvider, createVisionProvider, buildImageContent, parseAttachments, type ContentPart, type ToolDefinition } from './llm.js'
+import { createHash } from 'crypto'
 import { getToolDefinitions, executeTool, type Tool } from '../tools/index.js'
 import { getMemoryStore, MemoryStore } from '../memory/store.js'
 import { trimContextMessages, summarizeTrimmedMessages } from './context.js'
@@ -253,6 +254,9 @@ export class Agent {
    */
   async *run(userInput: string, attachments?: string[]): AsyncGenerator<{ type: 'text' | 'tool_call' | 'tool_result' | 'done' | 'error'; content: string; toolName?: string; args?: string }, void, unknown> {
     // 防御：清理内存中可能存在的孤儿消息（上次运行中途失败等）
+    // #25：先补齐「悬空 tool_calls」再清理——旧做法是直接丢弃整对，等于把模型上一步
+    // 干过什么从上下文里抹掉；续跑时它会重复劳动。补齐后上下文合法且不丢信息。
+    this.repairDanglingToolCalls()
     this.cleanOrphanTail()
 
     // 自动识别图片（路径 / data URL）；显式 attachments 合并（去重）
@@ -322,6 +326,9 @@ export class Agent {
       this.trimContext()
 
       // 调用 LLM
+      // #25：历史里可能残留「assistant.tool_calls 缺 tool 响应」（早期版本 break 了但已落库，
+      // `--continue` 读回来仍是坏的）——上送前逐条补齐占位 tool 消息，否则必 400。
+      this.repairDanglingToolCalls()
       // 视觉模型（Ollama qwen2.5vl）不支持 function calling——看图时纯对话，不传 tools
       const response = await provider.chat(this.messages, hasImages ? undefined : this.tools)
       logger.debug(`LLM 响应: model=${response.model}, content=${(response.content || '').length}字符, tool_calls=${response.tool_calls?.length || 0}`)
@@ -361,6 +368,11 @@ export class Agent {
 
       // 处理工具调用
       if (response.tool_calls && response.tool_calls.length > 0) {
+        const allCalls = response.tool_calls
+        // #25：本批里「参数完全相同」的并行调用只执行第一次，其余去重（不是死循环）
+        const batchSignatures = new Set<string>()
+        let abortRun = false
+
         if (!response.content) {
           noProgressCount++ // 工具调用没有伴随文本输出，算"无进展"
         } else {
@@ -370,12 +382,26 @@ export class Agent {
         // 宽松无进展保护：探索型任务（连续读文件收集信息）允许较多次
         // 无文本工具调用，只有超过 15 次才强制停止
         if (noProgressCount >= 15) {
+          // #25：break 前必须补齐 tool 消息，否则下一条请求带 pending tool_calls → 400
+          this.backfillToolResults(allCalls, '连续多次工具调用均无文本进展，flare 已停止本轮；本条未执行。')
           yield { type: 'error', content: '连续多次工具调用均无进展，已自动停止。请简化任务后重试。' }
           break
         }
 
         // 限制每次工具调用的数量（允许并行 5 个）
-        const callsToProcess = response.tool_calls.slice(0, 5)
+        const MAX_PARALLEL_CALLS = 5
+        const callsToProcess = allCalls.slice(0, MAX_PARALLEL_CALLS)
+        // #25：被切掉的调用同样要回填 tool 消息，否则它们的 tool_call_id 悬空 → 400
+        const skippedCalls = allCalls.slice(MAX_PARALLEL_CALLS)
+        if (skippedCalls.length > 0) {
+          this.backfillToolResults(
+            skippedCalls,
+            `单轮最多并行 ${MAX_PARALLEL_CALLS} 个工具调用，本条超出上限被跳过；需要时请重新发起。`
+          )
+          for (const tc of skippedCalls) {
+            yield { type: 'tool_result', content: `未执行：超出单轮并行上限（${MAX_PARALLEL_CALLS}）`, toolName: tc.function.name }
+          }
+        }
 
         for (const tc of callsToProcess) {
           yield {
@@ -407,12 +433,34 @@ export class Agent {
             continue
           }
           
-          // 死循环检测：同一工具 + 相似参数连续出现 4 次 = 卡住
-          const signature = `${tc.function.name}:${JSON.stringify(args).slice(0, 120)}`
+          // 死循环检测（#25）：签名 = 工具名 + 全量参数 SHA1。
+          // 旧版只取 JSON 前 120 字符，长得像的两条不同命令（同一段 cd/heredoc 前缀）
+          // 会被算成同一条 → 误报「重复调用工具」；且只在 4 次「合计出现」时判死，
+          // 正常迭代里重跑同一命令（改一次跑一次测试）也会被误杀。
+          const signature = toolSignature(tc.function.name, args)
+
+          // 同一批并行调用里参数完全相同：视为重复提交，执行第一条即可，不当死循环
+          if (batchSignatures.has(signature)) {
+            const dupMsg = `未执行：与同一批内的另一个「${tc.function.name}」调用参数完全相同，已去重。`
+            this.messages.push({ role: 'tool', tool_call_id: tc.id, name: tc.function.name, content: dupMsg })
+            yield { type: 'tool_result', content: dupMsg, toolName: tc.function.name }
+            continue
+          }
+          batchSignatures.add(signature)
+
           recentToolSignatures.push(signature)
-          const repeatCount = recentToolSignatures.filter(s => s === signature).length
+          // 只统计「连续尾部相同」：跨轮重复但仍带着不同中间步骤，不算卡死
+          const repeatCount = countTrailingRepeats(recentToolSignatures, signature)
           if (repeatCount >= 4) {
-            yield { type: 'error', content: `检测到重复调用工具「${tc.function.name}」多次，已自动停止。请换个方式描述你的需求。` }
+            const reason = `连续 ${repeatCount} 次以完全相同的参数调用「${tc.function.name}」，判定为卡死循环，flare 已停止本轮；本条未执行。`
+            // #25：停止前补齐本批所有尚未回填的 tool_call —— 否则历史里残留 pending
+            // tool_calls，下一轮请求直接被上游拒为 400（本次事故的直接表现）。
+            this.backfillToolResults(allCalls, reason)
+            yield {
+              type: 'error',
+              content: `${reason}上下文与工具结果均已保留，可换参数/换思路后继续：flare chat --continue`,
+            }
+            abortRun = true
             break
           }
 
@@ -456,6 +504,9 @@ export class Agent {
             error: result.success ? undefined : String(result.error || '').replace(/\s+/g, ' ').slice(0, 120),
           })
         }
+        // #25：重复调用/死循环中止必须跳出整个 while —— 旧版这里的 break 只跳出 for，
+        // 循环继续 → 带着半截 tool_calls 再发请求 → 上游 400，整轮报废。
+        if (abortRun) break
         if (iterations >= maxIter) budgetExhausted = true
       } else {
         // 没有工具调用，对话结束
@@ -550,10 +601,123 @@ export class Agent {
     return { keptCount: kept.length, droppedCount }
   }
 
+  /**
+   * 为「不发 tool 响应就中止」的批次补齐 tool 消息（#25）。
+   *
+   * OpenAI/DeepSeek 协议要求 assistant.tool_calls 里的每个 id 都有一条紧跟其后的
+   * tool 消息；缺一条，下一次请求就是 400 invalid_request。flare 过去在
+   * 「重复调用/无进展/超出并行上限」三条路径上直接 break，把半截 tool_calls 留在
+   * 历史里——而且历史已经落库，连 `--continue` 都救不回来。
+   *
+   * 已存在的 tool 消息不重复插入（幂等）。
+   */
+  private backfillToolResults(calls: { id: string; function: { name: string } }[], reason: string): void {
+    const answered = new Set<string>()
+    for (const m of this.messages) {
+      if (m.role === 'tool' && typeof (m as any).tool_call_id === 'string') {
+        answered.add((m as any).tool_call_id)
+      }
+    }
+    for (const tc of calls) {
+      if (!tc?.id || answered.has(tc.id)) continue
+      answered.add(tc.id)
+      this.messages.push({
+        role: 'tool',
+        tool_call_id: tc.id,
+        name: tc.function?.name,
+        content: `未执行：${reason}`,
+      } as Message)
+    }
+  }
+
+  /**
+   * 修复历史里的「悬空 tool_calls」（#25）。
+   *
+   * 协议要求 assistant.tool_calls 的每个 id 都紧跟一条 tool 消息。早期 flare 在
+   * 重复调用/无进展中止时只 break，把没执行的 tool_calls 留在内存并落库；之后
+   * `--continue` 把这段历史读回来，任何请求都是 400 invalid_request，整个会话报废。
+   * 这里在上送前扫描：缺哪条补哪条（内容说明「未执行」），幂等、就地修改。
+   */
+  private repairDanglingToolCalls(): void {
+    const repaired: Message[] = []
+    for (let i = 0; i < this.messages.length; i++) {
+      const msg = this.messages[i]
+      repaired.push(msg)
+      const calls = (msg as any).tool_calls as Array<{ id?: string; function?: { name?: string } }> | undefined
+      if (msg.role !== 'assistant' || !Array.isArray(calls) || calls.length === 0) continue
+
+      // 收集紧随其后的 tool 消息（连续一段）
+      const answered = new Set<string>()
+      let j = i + 1
+      while (j < this.messages.length && this.messages[j].role === 'tool') {
+        const id = (this.messages[j] as any).tool_call_id
+        if (id) answered.add(id)
+        j++
+      }
+      for (const tc of calls) {
+        if (!tc?.id || answered.has(tc.id)) continue
+        answered.add(tc.id)
+        repaired.push({
+          role: 'tool',
+          tool_call_id: tc.id,
+          name: tc.function?.name,
+          content: '未执行：该调用所在批次被中止，缺少执行结果（flare 自动补齐以保证上下文合法）。',
+        } as Message)
+      }
+    }
+    this.messages.length = 0
+    this.messages.push(...repaired)
+  }
+
   /** 获取当前消息列表 */
   getMessages(): Message[] {
     return this.messages
   }
+}
+
+/* ──────────────────── 工具调用去重签名（v0.6.157，#25） ──────────────────── */
+
+/**
+ * 工具调用签名：工具名 + 全量参数指纹。
+ *
+ * 旧版用 `JSON.stringify(args).slice(0, 120)` 当签名——对长命令（`cd … && python3 - <<'PY'`
+ * 这类共享前缀）会截断成相同前缀，两条不同的 terminal 调用被判成「重复调用」而误杀整轮。
+ * 这里改用全量参数的 SHA-256（16 位十六进制足够区分，且不把命令内容留在内存里比对）。
+ */
+export function toolSignature(toolName: string, args: unknown): string {
+  let payload: string
+  try {
+    payload = stableStringify(args)
+  } catch {
+    payload = String(args)
+  }
+  const digest = createHash('sha256').update(payload).digest('hex').slice(0, 16)
+  return `${toolName}:${digest}`
+}
+
+/** 键序稳定的 JSON（同一对象不同键序应得到同一签名） */
+function stableStringify(value: unknown): string {
+  if (value === null || typeof value !== 'object') return JSON.stringify(value) ?? 'null'
+  if (Array.isArray(value)) return `[${value.map(stableStringify).join(',')}]`
+  const obj = value as Record<string, unknown>
+  const keys = Object.keys(obj).sort()
+  return `{${keys.map(k => `${JSON.stringify(k)}:${stableStringify(obj[k])}`).join(',')}}`
+}
+
+/**
+ * 尾部连续重复次数：从数组末尾往前数，有多少个连续元素等于 signature。
+ *
+ * 只统计「连续」是为了区分两种场景：
+ *   - 模型卡死：同一命令连着发 4 次，中间没有任何别的动作 → 该停
+ *   - 正常迭代：改一次代码跑一次测试，中间夹着 read_file/write_file → 不该停
+ */
+export function countTrailingRepeats(signatures: string[], signature: string): number {
+  let n = 0
+  for (let i = signatures.length - 1; i >= 0; i--) {
+    if (signatures[i] !== signature) break
+    n++
+  }
+  return n
 }
 
 /* ────────────────────────── 迭代预算收尾（v0.6.155，#13） ────────────────────────── */

@@ -426,6 +426,41 @@ function spillOutput(body: string): string | null {
   }
 }
 
+/**
+ * 复合命令失败归因（问题记录 #26）。
+ *
+ * `a && b | c` 退出码只反映「最后执行的那一段」/「管道末端」。只看一个数字，模型
+ * 很容易把失败归到被测命令上，进而去改本来正确的东西；而管道里 `$?` 取的是末端
+ * 命令的退出码，是同一类假信号。这里把段清单和定位方法一并交给模型。
+ */
+function describeFailureAttribution(command: string): { errorNote: string; outputNote: string } {
+  if (!command || typeof command !== 'string') return { errorNote: '', outputNote: '' }
+  let segs: Array<{ name: string; sepBefore: string }>
+  try {
+    segs = parseCommandSegments(command).filter((s) => (s.raw || '').trim().length > 0)
+  } catch {
+    return { errorNote: '', outputNote: '' }
+  }
+  if (segs.length <= 1) return { errorNote: '', outputNote: '' }
+
+  const hasPipe = segs.some((s) => s.sepBefore === '|')
+  const names = segs.map((s, i) => `${i + 1}.${s.name || '?'}`).join(' ')
+  const why = hasPipe
+    ? '退出码只反映管道末端命令，前面段失败也会被掩盖'
+    : '退出码只反映链上最后执行的那一段'
+  const hint = '定位失败段：把各段单独执行，或 `set -o pipefail` 后看 `${PIPESTATUS[@]}`'
+  // 管道 + 用 $? 读退出码：这台机器上已知的假信号来源，单独点出来
+  const dollarQ = hasPipe && /\$\?|PIPESTATUS/.test(command) && !/pipefail/.test(command)
+  const dollarNote = dollarQ
+    ? '；注意 `$?` 在管道里取的是末端命令的退出码，不是被测命令的——用 `${PIPESTATUS[0]}`'
+    : ''
+
+  return {
+    errorNote: `。复合命令共 ${segs.length} 段（${names}），${why}。${hint}${dollarNote}`,
+    outputNote: `\n\n[复合命令归因] 本条命令由 ${segs.length} 段组成（${names}）。${why}。${hint}${dollarNote}。`,
+  }
+}
+
 /** 后台执行：输出重定向到日志文件，立即返回 PID（记录 #7/#8 的正解） */
 function runBackground(cmd: string): { pid: number | undefined; logPath: string } {
   const dir = flareTmpDir()
@@ -568,10 +603,13 @@ export const terminalTool: Tool = {
       }
       if (r.code === null || r.code !== 0) {
         const codeDesc = r.code !== null ? `退出码 ${r.code}` : `被信号 ${r.signal ?? '未知'} 终止`
+        // #26：复合命令只报一个退出码会把模型引向错误归因——`a && b | c` 的退出码
+        // 只反映最后一段/管道末端，前段全成功也可能报 1，模型据此去改本来对的代码。
+        const attribution = describeFailureAttribution(args.command)
         return {
           success: false,
-          output: body + selfKillWarn,
-          error: `命令执行失败（${codeDesc}）${body ? '' : '：无输出'}${spillNote}`,
+          output: body + selfKillWarn + attribution.outputNote,
+          error: `命令执行失败（${codeDesc}）${body ? '' : '：无输出'}${attribution.errorNote}${spillNote}`,
         }
       }
       // gh 的「退出码 0 但实际失败」（#17）：gh 把 HTTP 错误写到输出里却正常退出，

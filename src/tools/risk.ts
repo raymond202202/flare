@@ -256,6 +256,26 @@ function tokens(s: string): string[] {
     .filter(Boolean)
 }
 
+/**
+ * 「纯格式化」解释器调用（问题记录 #26 的误报来源）。
+ *
+ * `curl … | python3 -m json.tool` 只把 stdin 当 JSON 解析并美化输出，不 eval、
+ * 不编译、不落盘执行——和 `| cat` 同级。旧规则只看「解释器 + 上游是下载器」就判
+ * block，把这种完全稳妥的命令当成「下载即执行未知代码」拦下，模型只好改用
+ * `curl -o` + `python3 -c "json.load(...)"` 甚至 `sed` 拼字符串，反而更危险。
+ *
+ * 白名单只认 `-m json.tool`；`python3 -` / `python3 脚本` / `node -e` 等一律照旧拦截。
+ */
+const FORMATTER_MODULES = new Set(['json.tool'])
+function isPureFormatter(seg: { name: string; argText: string }): boolean {
+  if (!INTERPRETERS.has(seg.name)) return false
+  if (seg.name !== 'python' && seg.name !== 'python3') return false
+  const t = tokens(seg.argText)
+  const mi = t.indexOf('-m')
+  if (mi < 0) return false
+  return FORMATTER_MODULES.has(t[mi + 1] || '')
+}
+
 function hasShortFlag(argText: string, flag: string): boolean {
   // -rf / -fr / -r -f 等组合写法
   for (const t of tokens(argText)) {
@@ -354,6 +374,9 @@ const BLOCK_RULES: Rule[] = [
     reason: '把网络下载内容直接交给解释器执行，等于执行未知代码',
     match: ({ seg, segs, idx }) => {
       if (!INTERPRETERS.has(seg.name)) return false
+      // #26 误报：`curl … | python3 -m json.tool` 是把下载内容当 JSON 解析美化，
+      // 不 eval / 不编译，风险等同 cat。纯格式化模块放行（白名单，别的一律照拦）。
+      if (isPureFormatter(seg)) return false
       const prev = segs[idx - 1]
       if (!prev) return false
       if (seg.sepBefore !== '|' && seg.sepBefore !== '&') return false
