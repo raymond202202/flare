@@ -152,9 +152,11 @@ describe('#13 迭代上限耗尽时给出可续跑的收尾报告', () => {
       maxIter: 50,
       sessionId: 'abc12345',
     })
-    expect(text).toContain('迭代上限(50)')
+    expect(text).toContain('迭代上限（50 次模型迭代）')
     expect(text).toContain('flare chat --continue')
-    expect(text).toContain('本轮执行摘要（3 次工具调用）')
+    expect(text).toContain('本轮执行摘要（共 3 次工具调用）')
+    // 用户会把「上限 50」和「61 次工具调用」当成计数 bug —— 必须解释口径
+    expect(text).toContain('批量执行最多 5 个工具调用')
     expect(text).toContain('terminal ×2')
     expect(text).toContain('gh ×1')
     expect(text).toContain('HTTP 403')

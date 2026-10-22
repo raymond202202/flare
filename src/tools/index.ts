@@ -8,7 +8,7 @@
 import { ToolDefinition } from '../core/llm.js'
 import { spawn } from 'child_process'
 import { existsSync, readFileSync, writeFileSync, readdirSync, statSync, renameSync, mkdirSync, openSync, closeSync, unlinkSync } from 'fs'
-import { resolve, join } from 'path'
+import { resolve, join, dirname } from 'path'
 import { memorySearchTool, memorySaveTool } from './memory.js'
 import { ferryTranslateTool } from './ferry.js'
 import {
@@ -151,10 +151,18 @@ export const writeFileTool: Tool = {
         return { success: false, output: '', error: `拒绝写入受保护路径: ${resolvedPath}。Flare 不会修改系统关键文件。` }
       }
 
+      // 父目录不存在时自动创建（否则模型在新建项目里写 src/xxx.ts 会撞 ENOENT）
+      try { mkdirSync(dirname(resolvedPath), { recursive: true }) } catch { /* 已存在 */ }
+
       // 原子写入：先写临时文件再 rename，避免中途崩溃损坏原文件
       const tmpPath = `${resolvedPath}.tmp-${process.pid}`
-      writeFileSync(tmpPath, args.content, 'utf-8')
-      renameSync(tmpPath, resolvedPath)
+      try {
+        writeFileSync(tmpPath, args.content, 'utf-8')
+        renameSync(tmpPath, resolvedPath)
+      } catch (e) {
+        try { unlinkSync(tmpPath) } catch { /* 临时文件可能没建起来 */ }
+        throw e
+      }
       return { success: true, output: `已写入 ${resolvedPath}` }
     } catch (e: any) {
       return { success: false, output: '', error: `写入失败: ${e.message}` }

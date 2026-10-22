@@ -594,14 +594,15 @@ export function formatBudgetReport(input: {
 }): string {
   const { actions, lastText, maxIter, sessionId } = input
   const lines: string[] = []
-  lines.push(`已达本轮迭代上限(${maxIter})，自动停止。上下文与工具结果均已保留，可直接续跑：`)
+  lines.push(`已达本轮迭代上限（${maxIter} 次模型迭代），自动停止。上下文与工具结果均已保留，可直接续跑：`)
   lines.push(`  flare chat --continue              # 接着这个会话继续（不重跑已完成步骤）`)
   lines.push(`  flare chat --continue -m ${Math.min(maxIter * 2, 500)}         # 或本轮给更大预算（上限 500）`)
   if (sessionId) lines.push(`  flare chat -s ${sessionId}          # 指定会话显式续聊`)
+  lines.push(`  （一次迭代可批量执行最多 5 个工具调用，所以工具调用数会多于迭代数）`)
 
   if (actions.length > 0) {
     lines.push('')
-    lines.push(`本轮执行摘要（${actions.length} 次工具调用）：`)
+    lines.push(`本轮执行摘要（共 ${actions.length} 次工具调用）：`)
     const byTool = new Map<string, TurnAction[]>()
     for (const a of actions) {
       const arr = byTool.get(a.name) || []

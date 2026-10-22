@@ -15,7 +15,7 @@ import { createRequire } from 'module'
 import { readFileSync } from 'node:fs'
 import { createInterface } from 'node:readline'
 import { pathToFileURL } from 'node:url'
-import { LineInput } from './line-input.js'
+import { LineInput, ensureStdinFlowing } from './line-input.js'
 import { composeFrame, createRenderState, contentEndRow } from './render.js'
 import { R, O, A, Y, D, createFlameState, renderFlameFrame, flameBreathColor, breathTimeMs } from './flame-banner.js'
 
@@ -70,6 +70,9 @@ async function startInteractive(opts: { contextSummarize?: boolean; newSession?:
         const rl = createInterface({ input: process.stdin, output: process.stdout })
         rl.question(prompt, (ans) => {
           rl.close()
+          // rl.close() 会把 process.stdin 留在 paused（readline 内部 pause 输入流），
+          // 不恢复的话回到主循环后输入框再也收不到键盘（连 Ctrl+C 都是死的）。
+          ensureStdinFlowing()
           resolve(ans.trim().toLowerCase())
         })
       }),
@@ -100,6 +103,8 @@ async function startInteractive(opts: { contextSummarize?: boolean; newSession?:
         const rl = createInterface({ input: process.stdin, output: process.stdout })
         rl.question(prompt, (a) => {
           rl.close()
+          // 同上：close() 会 pause stdin，必须显式恢复，否则本轮结束后输入框失灵
+          ensureStdinFlowing()
           resolve(a.trim().toLowerCase())
         })
       })
@@ -120,6 +125,9 @@ async function startInteractive(opts: { contextSummarize?: boolean; newSession?:
       agentOutput += Y('  ⚠️ 确认输入异常，已按拒绝处理\n')
       return 'deny'
     } finally {
+      // 兜底：无论确认流程怎么走（拒绝/异常/超时），都把 stdin 恢复到 flowing，
+      // 否则回到主循环后输入框再也收不到键盘。
+      ensureStdinFlowing()
       disableEcho()
       startRenderLoop()
       renderFrame()

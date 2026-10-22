@@ -28,6 +28,27 @@ const BRACKET_PASTE_OFF = '\u001b[?2004l'
 const PASTE_START = '\u001b[200~'
 const PASTE_END = '\u001b[201~'
 
+/**
+ * 确保 stdin 处于 flowing（可读）状态。
+ *
+ * 背景（FLARE 问题记录 #18）：交互里零散的 `readline.createInterface({input: process.stdin})`
+ * ——确认门 ask、不可逆命令风险确认——在 `rl.close()` 时内部会调用 `input.pause()`，
+ * 把 process.stdin 留在 paused。之后 LineInput 只做 `setRawMode(true)` + `on('data')`，
+ * 而「给一个已 paused 的流加 data 监听」并**不会**恢复流动，于是：
+ *   - 键入的字符不再送来 → 输入框完全没反应；
+ *   - raw mode 关闭了 ISIG，Ctrl+C 只是一个 `\x03` 字节，也没人收 → 退不出去；
+ *   - 只能关掉终端。
+ * 所以每次进入读行/恢复监听前都显式 resume 一次（幂等，非 TTY 下无副作用）。
+ */
+export function ensureStdinFlowing(stdin: NodeJS.ReadStream = process.stdin): void {
+  if (typeof stdin.resume !== 'function') return
+  try {
+    if (typeof stdin.isPaused === 'function' ? stdin.isPaused() : true) stdin.resume()
+  } catch {
+    try { stdin.resume() } catch { /* 忽略：拿不到控制权就算了 */ }
+  }
+}
+
 
 /** 字符显示宽度（wcwidth 简化版，正确处理中文/emoji/ANSI） */
 export function charWidth(ch: string): number {
@@ -126,10 +147,6 @@ export class LineInput {
       this.pasteBuf = ''
       this.decoder = new StringDecoder('utf8')
       this.historyIndex = this.history.length   // 从最新位置开始
-      this.drawPrompt()
-      // 开启 bracketed paste：终端把粘贴内容用 \x1b[200~ … \x1b[201~ 包裹，
-      // 于是内容里的换行不会被误判成"用户按了回车"
-      process.stdout.write(BRACKET_PASTE_ON)
 
       let pending = ''
 
@@ -231,7 +248,18 @@ export class LineInput {
       if (typeof process.stdin.setRawMode === 'function') {
         process.stdin.setRawMode(true)
       }
+      // 关键：先确保 stdin 是 flowing 的，再加监听。否则前面 confirm 的 rl.close()
+      // 留下的 paused 状态会让这一行输入彻底失灵（见 ensureStdinFlowing 注释）。
+      ensureStdinFlowing()
+      // 顺序很重要：先 setRawMode + 挂 data 监听，最后才画 prompt。
+      // 反过来的话，prompt 一出现用户就可能敲键，而那时监听还没挂上——
+      // 打字丢失、Ctrl+C 也变成内核回显的 ^C（问题记录 #18 的残余窗口）。
       process.stdin.on('data', this.onData)
+
+      this.drawPrompt()
+      // 开启 bracketed paste：终端把粘贴内容用 \x1b[200~ … \x1b[201~ 包裹，
+      // 于是内容里的换行不会被误判成"用户按了回车"
+      process.stdout.write(BRACKET_PASTE_ON)
     })
   }
 
@@ -264,6 +292,7 @@ export class LineInput {
       process.stdin.setRawMode(true)
     } catch { /* 忽略 */ }
     if (this.onData) {
+      ensureStdinFlowing()
       process.stdin.on('data', this.onData)
     }
   }
