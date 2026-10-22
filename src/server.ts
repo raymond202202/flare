@@ -538,19 +538,31 @@ export function startHostServer(opts: HostServerOptions) {
           }
           const flag = { cancelled: false }
           cancels.set(sessionId, flag)
+          let sawDone = false
           try {
             for await (const chunk of agent.run(String(req.input || ''))) {
               if (flag.cancelled) {
                 reply({ type: 'cancelled', sessionId })
                 break
               }
+              if ((chunk as any)?.type === 'done') sawDone = true
               reply({ ...chunk, sessionId })
             }
+          } catch (e: any) {
+            // v0.6.154：引擎异常（工具抛错 / 模型调用失败 / 上下文超限）必须显式通知前端。
+            // 旧版这里没有 catch，异常直接逃逸 —— 流断了但 done 帧永远不发，
+            // 前端就永久停在「生成中」，输入框锁死且没有任何报错。
+            reply({
+              type: 'error',
+              message: `生成中断: ${String(e?.message || e).slice(0, 800)}`,
+            })
           } finally {
             cancels.delete(sessionId)
-          }
-          if (!flag.cancelled) {
-            reply({ type: 'done', sessionId })
+            // v0.6.154：done 帧保证 —— 正常结束 / 取消 / 异常三条路径都收尾一次，
+            // 前端必定解除「生成中」；内核已发过 done 则不重复。
+            if (!flag.cancelled && !sawDone) {
+              reply({ type: 'done', sessionId })
+            }
           }
           break
         }

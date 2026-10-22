@@ -1624,7 +1624,7 @@ export function main() {
     .description('与 Flare 对话')
     .option('-q, --query <text>', '单次查询模式，直接提问')
     .option('-i, --image <path>', '附带图片路径（可与 -q 一起用；也可在问题中直接写路径）')
-    .option('-m, --max-iterations <n>', '最大工具调用迭代次数（默认30，上限50）')
+    .option('-m, --max-iterations <n>', '最大工具调用迭代次数（默认50，上限200；可用环境变量 FLARE_MAX_ITERATIONS 覆盖）')
     .option('-s, --session <sessionId>', '续聊已有会话（单次查询追加到该会话历史；缺省新建「单次查询」会话；会话不存在 exit 1 不触发生成；已归档会话续聊给黄色提示不拦截 v0.6.129；v0.6.128）')
     .option('-n, --new', '强制新建会话（交互模式默认自动恢复最近会话，聊天记录保留在窗口中；v0.6.145）')
     .option('--context-summarize', '交互模式开启上下文压缩摘要（裁剪时把丢弃历史压缩成摘要消息，AI 保留话题连续性；v0.6.19）')

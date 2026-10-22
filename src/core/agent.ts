@@ -296,7 +296,16 @@ export class Agent {
 
     let iterations = 0
     // 复杂任务（读文档→改代码→推送）可能需要 20-40 次工具调用
-    const maxIter = Math.min(this.config.maxIterations || 30, 50) // 上限50，默认30
+    // v0.6.154：默认 30 → 50；硬上限 50 → 200（可用 FLARE_MAX_ITERATIONS 或配置覆盖）
+    // 原因：30 次在真实多文件项目里会被"对抗工具缺陷"吃掉三分之一（见 FLARE问题记录.md #11），
+    // 长任务被腰斩后用户只能重开会话、上下文全丢。上限提高后仍保留护栏，避免失控死循环。
+    const HARD_MAX_ITERATIONS = 200
+    const DEFAULT_MAX_ITERATIONS = 50
+    const envMax = Number.parseInt(process.env.FLARE_MAX_ITERATIONS || '', 10)
+    const configuredMax = Number.isFinite(envMax) && envMax > 0
+      ? envMax
+      : (this.config.maxIterations || DEFAULT_MAX_ITERATIONS)
+    const maxIter = Math.max(1, Math.min(configuredMax, HARD_MAX_ITERATIONS))
     let noProgressCount = 0 // 连续无文本输出的工具调用次数
     const recentToolSignatures: string[] = [] // 最近工具调用签名（检测死循环）
 
@@ -401,10 +410,19 @@ export class Agent {
           }
 
           // M2: 注入工具优先执行（应用自定义工具），否则回退内置 executeTool
-          const injectedTool = this.toolExecutors.get(tc.function.name)
-          const result = injectedTool
-            ? await injectedTool.execute(args)
-            : await executeTool(tc.function.name, args)
+          // v0.6.154：单个工具抛异常不再让整个 run() 崩掉 —— 转成失败结果交给模型自我修正。
+          // 旧版这里裸奔，任何工具抛错都会从生成器逃逸；配合 server.ts 原本缺 catch，
+          // 表现就是「流断掉、done 帧不发、前端永久卡在生成中」。
+          let result: Awaited<ReturnType<typeof executeTool>>
+          try {
+            const injectedTool = this.toolExecutors.get(tc.function.name)
+            result = injectedTool
+              ? await injectedTool.execute(args)
+              : await executeTool(tc.function.name, args)
+          } catch (toolErr: any) {
+            const msg = String(toolErr?.message || toolErr).slice(0, 500)
+            result = { success: false, output: '', error: `工具执行抛异常: ${msg}` }
+          }
           
           // 截断工具结果（防止上下文爆炸；v0.6.30 起按工具类型定制策略——
           // 读文件类留头尾、终端类留尾部，默认与旧版逐字符一致，控制流不变）
