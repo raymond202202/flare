@@ -155,12 +155,18 @@ describe('#7 #8 background 模式：立即返回，不阻塞对话', () => {
 })
 
 describe('#9 pkill -f 自伤预警', () => {
-  it('真实执行 pkill -f 时给出预警文案', async () => {
+  it('真实执行 pkill -f 时给出预警文案（v0.6.158：pkill 属 confirm 档，无人值守需显式放行）', async () => {
     // v0.6.155：改为按命令位判定 —— 只对真正执行的 pkill 提示。
     // 用不匹配任何进程的模式（[f] 方括号技巧），避免真的杀掉测试进程。
-    const r = await terminalTool.execute({ command: 'pkill -f "[f]lare_selftest_never_match"' })
-    expect(r.output).toContain('自伤风险')
-    expect(r.output).toContain('pgrep')
+    // v0.6.158（#35）：无人值守下 confirm 档默认拒绝，这里显式放行才能测到执行期预警。
+    process.env.FLARE_ALLOW_RISKY = '1'
+    try {
+      const r = await terminalTool.execute({ command: 'pkill -f "[f]lare_selftest_never_match"' })
+      expect(r.output).toContain('自伤风险')
+      expect(r.output).toContain('pgrep')
+    } finally {
+      delete process.env.FLARE_ALLOW_RISKY
+    }
   })
 
   it('引号/echo 里提到 pkill -f 不误报（#14/#16）', async () => {

@@ -1630,6 +1630,34 @@ const CONTINUE_PROMPT =
   '若已经全部完成，简要汇报结果、仍未完成的项与阻塞原因。'
 
 /**
+ * #36（v0.6.158）：续跑前先把「上次到哪儿了」摆出来。
+ * 原先只提示一句「续跑最近会话」，主人得自己翻 sessions 才知道断点与工作区状态，
+ * 往往又把已完成的事重问一遍（正好抵消 --continue 的意义）。
+ */
+export function printResumeBriefing(sid: string, store: ReturnType<typeof getMemoryStore>) {
+  try {
+    const msgs = store.getRecentMessages(sid, 6)
+    if (msgs.length) {
+      console.error(chalk.gray('  ┌─ 断点摘要'))
+      for (const m of msgs.slice(-4)) {
+        const who = m.role === 'user' ? '你' : m.role === 'assistant' ? 'flare' : m.role
+        const text = String(m.content || '').replace(/\s+/g, ' ').trim().slice(0, 100)
+        if (!text) continue
+        console.error(chalk.gray(`  │ ${who}: ${text}`))
+      }
+    }
+    // 工作区状态：有未提交改动就点出来（续跑时最容易踩的就是"改了没提交/提交了没推"）
+    const { execFileSync } = require('node:child_process') as typeof import('node:child_process')
+    const status = execFileSync('git', ['status', '--short'], { encoding: 'utf-8', timeout: 3000 })
+      .trim().split('\n').filter((l: string) => l.trim())
+    const head = execFileSync('git', ['log', '--oneline', '-1'], { encoding: 'utf-8', timeout: 3000 }).trim()
+    console.error(chalk.gray(`  │ 工作区: ${status.length ? `${status.length} 个未提交改动（${status.slice(0, 3).join(' / ')}${status.length > 3 ? ' …' : ''}）` : '干净'}`))
+    if (head) console.error(chalk.gray(`  │ HEAD: ${head}`))
+    console.error(chalk.gray('  └─'))
+  } catch { /* 非 git 目录/无历史：摘要可缺，不阻断续跑 */ }
+}
+
+/**
  * v0.6.155（#13）：接着最近一个会话续跑。
  * 与「重开会话重说一遍」的本质区别：历史工具结果都在上下文里，模型不必重跑已完成步骤。
  */
@@ -1651,6 +1679,7 @@ async function continueSession(maxIterations?: number, sessionId?: string) {
     sid = recent.id
     console.error(chalk.gray(`↩️ 续跑最近会话：${recent.title}（${sid.slice(0, 8)}，${recent.messageCount} 条消息）`))
   }
+  printResumeBriefing(sid, store)
   await runQuery(CONTINUE_PROMPT, maxIterations, undefined, sid)
 }
 
@@ -1684,19 +1713,37 @@ async function runQuery(query: string, maxIterations?: number, attachments?: str
 
   console.error(Y('⚡ Flare 思考中...'))
 
+  // #33（v0.6.158）：原先所有输出攒在 parts 数组里、只在循环结束后 console.log 一次。
+  // 实测：563s 的无人值守运行，日志里始终只有一行「⚡ Flare 思考中...」——
+  // 被中断/SIGKILL 就一个字都不剩，主人无法判断它干到哪、是不是卡住。改成逐条即时写出。
+  const started = Date.now()
+  let lastOutput = Date.now()
+  const write = (line: string) => {
+    process.stdout.write(line.endsWith('\n') ? line : line + '\n')
+    lastOutput = Date.now()
+  }
+  // 心跳只走 stderr（stdout 留给正文，管道重定向时结果不被污染）：长时间无输出才打一行
+  const heartbeat = setInterval(() => {
+    const idle = Math.floor((Date.now() - lastOutput) / 1000)
+    if (idle >= 60) {
+      process.stderr.write(chalk.gray(`⏳ 已 ${idle}s 无新输出（模型/工具仍在跑；Ctrl-C 中断，flare chat -c 可续跑）\n`))
+      lastOutput = Date.now()
+    }
+  }, 15_000)
+  heartbeat.unref?.()
+
   try {
     let pendingText = ''
-    const parts: string[] = []
 
-    const flushDraft = () => {
+    const emitDraft = () => {
       if (!pendingText.trim()) return
-      parts.push(A(`  💭 ${pendingText.trim()}`))
+      write(A(`  💭 ${pendingText.trim()}`))
       pendingText = ''
     }
-    const flushAnswer = () => {
+    const emitAnswer = () => {
       if (!pendingText.trim()) return
       const sep = R('─'.repeat(44))
-      parts.push('\n' + sep + '\n' + pendingText.replace(/\n+$/, '') + '\n' + sep + '\n')
+      write('\n' + sep + '\n' + pendingText.replace(/\n+$/, '') + '\n' + sep + '\n')
       pendingText = ''
     }
 
@@ -1706,27 +1753,31 @@ async function runQuery(query: string, maxIterations?: number, attachments?: str
           pendingText += chunk.content
           break
         case 'tool_call':
-          flushDraft()
-          parts.push(O(`  🔧 调用工具: ${chunk.content}`))
+          emitDraft()
+          write(O(`  🔧 调用工具: ${chunk.content}`))
           break
         case 'tool_result':
-          parts.push(D(`  ┌─ ${chunk.toolName || 'tool'}`))
-          parts.push(chunk.content.slice(0, 200).split('\n').map(l => `  ${D('│')} ${l}`).join('\n'))
-          parts.push(D('  └─'))
+          write(D(`  ┌─ ${chunk.toolName || 'tool'}`))
+          write(chunk.content.slice(0, 200).split('\n').map(l => `  ${D('│')} ${l}`).join('\n'))
+          write(D('  └─'))
           break
         case 'error':
-          flushDraft()
-          parts.push(chalk.red(`❌ ${chunk.content}`))
+          emitDraft()
+          write(chalk.red(`❌ ${chunk.content}`))
           break
         case 'done':
-          flushAnswer()
+          emitAnswer()
           break
       }
     }
-    console.log(parts.join('\n'))
+    // 没有 done 事件就结束（迭代上限/异常中断）时，最后一段正文不能丢
+    emitAnswer()
+    process.stderr.write(chalk.gray(`（本轮结束，用时 ${Math.round((Date.now() - started) / 1000)}s）\n`))
   } catch (e: any) {
     console.error(chalk.red(`\n❌ 错误: ${e.message}`))
     process.exit(1)
+  } finally {
+    clearInterval(heartbeat)
   }
 }
 
@@ -1748,7 +1799,9 @@ export function main() {
     .option('-n, --new', '强制新建会话（交互模式默认自动恢复最近会话，聊天记录保留在窗口中；v0.6.145）')
     .option('-c, --continue', '接着最近会话（或 --session 指定会话）续跑上一轮未完成的任务，不重跑已完成步骤（常配合 -m 提高本轮预算；v0.6.155）')
     .option('--context-summarize', '交互模式开启上下文压缩摘要（裁剪时把丢弃历史压缩成摘要消息，AI 保留话题连续性；v0.6.19）')
-    .action(async (options: { query?: string; image?: string; maxIterations?: string; session?: string; new?: boolean; contextSummarize?: boolean; continue?: boolean }) => {
+    .option('--allow-risky', '无人值守模式显式放行 confirm 档（rm -rf / git push 等不可逆操作）。不给则该类命令默认拒绝；等价 FLARE_ALLOW_RISKY=1（v0.6.158）')
+    .action(async (options: { query?: string; image?: string; maxIterations?: string; session?: string; new?: boolean; contextSummarize?: boolean; continue?: boolean; allowRisky?: boolean }) => {
+      if (options.allowRisky) process.env.FLARE_ALLOW_RISKY = '1'
       const maxIter0 = options.maxIterations ? parseInt(options.maxIterations, 10) : undefined
       if (options['continue']) {
         await continueSession(maxIter0, options.session)

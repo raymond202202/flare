@@ -461,6 +461,50 @@ function describeFailureAttribution(command: string): { errorNote: string; outpu
   }
 }
 
+/** #35：无人值守模式下放行 confirm 档的唯一开关（显式、可审计） */
+function isUnattendedRiskAllowed(): boolean {
+  const v = (process.env.FLARE_ALLOW_RISKY || '').trim().toLowerCase()
+  return v === '1' || v === 'true'
+}
+
+/**
+ * #34（v0.6.158）：端口被占用时只报 `OSError: [Errno 98] Address already in use`，
+ * 模型会当成"代码写错了"去改监听逻辑（#31 实测：e2e 因此把"服务没起来"误判成"日志缓冲没修好"）。
+ * 这里直接点出这是环境脏（上一次任务的残留进程），并附现成的定位命令 + 当场读到的占用者。
+ */
+function describePortConflict(body: string, command: string): { errorNote: string; outputNote: string } {
+  if (!/EADDRINUSE|Address already in use/i.test(body)) return { errorNote: '', outputNote: '' }
+
+  // 候选端口：python 的 Errno 98 消息里根本不含端口号，只能从命令行里找。
+  // 找到了先拿 ss 验证「确实有人在这个端口 LISTEN」，验证过才敢报，避免瞎猜一个数字。
+  const candidates: string[] = []
+  const push = (m: RegExpMatchArray | null) => { if (m?.[1] && !candidates.includes(m[1])) candidates.push(m[1]) }
+  push(body.match(/(?:127\.0\.0\.1|0\.0\.0\.0|localhost|\[::1?\]):(\d{2,5})\b/))
+  push(body.match(/(?:port|端口)\D{0,3}(\d{2,5})/i))
+  push(command.match(/--?port[=\s]+(\d{2,5})/))
+  push(command.match(/PORT=(\d{2,5})/))
+  push(command.match(/[:=](\d{4,5})\b/))
+  push(command.match(/(?:^|\s)(\d{4,5})(?=\s|$)/))
+
+  const { execFileSync } = require('node:child_process') as typeof import('node:child_process')
+  const ssPort = (p: string) => execFileSync('ss', ['-ltnp', `sport = :${p}`], { encoding: 'utf-8', timeout: 3000 })
+    .trim().split('\n').filter((l) => l.trim())
+  let port: string | undefined
+  let holder = ''
+  for (const c of candidates) {
+    try {
+      const lines = ssPort(c)
+      if (lines.length > 1) { port = c; holder = lines.slice(0, 4).join('\n'); break }
+    } catch { /* ss 不可用：退回只给命令 */ }
+  }
+  const probe = port ? `ss -ltnp 'sport = :${port}'` : 'ss -ltnp'
+  const note = '这是端口被占用，不是代码逻辑错误：多半是上一次任务遗留的进程还活着（记录 #27/#31）。'
+    + `\n先确认再清理：${probe}`
+    + (holder ? `\n当前占用该端口的监听（ss 实时读取）:\n${holder}` : '')
+    + '\n清理用具体 pid（kill <pid>），不要用 pkill -f 拍模式串（会自伤，见 #28）。'
+  return { errorNote: `。${note.replace(/\n/g, ' ')}`, outputNote: `\n\n[端口占用] ${note}` }
+}
+
 /** 后台执行：输出重定向到日志文件，立即返回 PID（记录 #7/#8 的正解） */
 function runBackground(cmd: string): { pid: number | undefined; logPath: string } {
   const dir = flareTmpDir()
@@ -539,7 +583,23 @@ export const terminalTool: Tool = {
             if (decision === 'allow_session') allowRiskRule(rule, 'session')
             if (decision === 'always') allowRiskRule(rule, 'always')
           } else {
-            riskNote = `\n\n⚠️ 不可逆操作未经确认即执行（规则 ${rule}：${verdict.reason}）——当前无交互确认器（无人值守模式）。在终端交互运行 flare 时会先征询；/allow 可查看与管理放行名单。`
+            // #35（v0.6.158）：原先这里「放行 + 附一句 ⚠️」——对 rm -rf / git push 这类不可逆操作，
+            // 标注会被模型忽略、用户也看不到（无人值守时没人盯屏幕），等于静默执行。
+            // 实测：flare 自己在 -q 模式推 GitHub 时确实弹了告警，但没人看得到，照样推了。
+            // 改为默认拒绝 + 明确告知放行方式（显式放行才执行，符合「不可逆操作先确认」原则）。
+            if (!isUnattendedRiskAllowed()) {
+              return {
+                success: false,
+                output: '',
+                denied: true,
+                error: `命令未执行：规则 ${rule}（${verdict.reason}）属于不可逆操作，当前是无人值守模式（没有交互确认器），按安全默认拒绝。\n`
+                  + '确认要执行时，用以下任一方式显式放行：\n'
+                  + '  · flare chat --allow-risky ...（本次运行放行 confirm 档）\n'
+                  + '  · FLARE_ALLOW_RISKY=1 flare chat ...（环境变量，同等效果）\n'
+                  + '  · 交互模式直接运行 flare chat，会逐条询问，可选「本次/本会话/永久」。',
+              }
+            }
+            riskNote = `\n\n⚠️ 不可逆操作已在「无人值守 + 显式放行」下执行（规则 ${rule}：${verdict.reason}）。`
           }
         }
       }
@@ -606,10 +666,11 @@ export const terminalTool: Tool = {
         // #26：复合命令只报一个退出码会把模型引向错误归因——`a && b | c` 的退出码
         // 只反映最后一段/管道末端，前段全成功也可能报 1，模型据此去改本来对的代码。
         const attribution = describeFailureAttribution(args.command)
+        const portConflict = describePortConflict(body, args.command)
         return {
           success: false,
-          output: body + selfKillWarn + attribution.outputNote,
-          error: `命令执行失败（${codeDesc}）${body ? '' : '：无输出'}${attribution.errorNote}${spillNote}`,
+          output: body + selfKillWarn + attribution.outputNote + portConflict.outputNote,
+          error: `命令执行失败（${codeDesc}）${body ? '' : '：无输出'}${attribution.errorNote}${portConflict.errorNote}${spillNote}`,
         }
       }
       // gh 的「退出码 0 但实际失败」（#17）：gh 把 HTTP 错误写到输出里却正常退出，
